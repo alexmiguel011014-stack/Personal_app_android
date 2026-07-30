@@ -1,0 +1,169 @@
+package com.example.personalapp.ui.screen
+
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ToggleOff
+import androidx.compose.material.icons.filled.ToggleOn
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.example.personalapp.data.local.entity.WorkoutEntity
+import com.example.personalapp.ui.viewmodel.WorkoutViewModel
+
+@Preview(showBackground = true)
+@Composable
+fun WorkoutBuilderPreview() {
+    MaterialTheme {
+        WorkoutBuilderScreen("1", onBack = {})
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun WorkoutBuilderScreen(
+    studentId: String,
+    onBack: () -> Unit,
+    viewModel: WorkoutViewModel = hiltViewModel(),
+) {
+    val workouts by viewModel.workouts.collectAsState()
+
+    LaunchedEffect(studentId) {
+        viewModel.loadWorkouts(studentId)
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Construtor de Treinos") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar")
+                    }
+                }
+            )
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(16.dp)
+        ) {
+            Text(
+                text = "Novo Treino",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = { /* Criar Manual */ },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2196F3))
+                ) {
+                    Text("Criar Manual")
+                }
+                Button(
+                    onClick = { /* Criar IA */ },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF9C27B0))
+                ) {
+                    Text("Criar com IA")
+                }
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
+
+            Text(
+                text = "Treinos Ativos",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+
+            if (workouts.isEmpty()) {
+                Text(
+                    text = "Nenhum treino encontrado",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.Gray
+                )
+            } else {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(workouts) { workout ->
+                        WorkoutCard(
+                            workout = workout,
+                            onDelete = { viewModel.deleteWorkout(workout) }
+                        ) { viewModel.toggleWorkoutStatus(workout) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun WorkoutCard(
+    workout: WorkoutEntity,
+    onDelete: () -> Unit,
+    onToggleStatus: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(16.dp)
+                .fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = workout.name,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = if (workout.isActive) "Ativo" else "Inativo",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (workout.isActive) Color(0xFF4CAF50) else Color.Gray
+                )
+            }
+            
+            Row {
+                IconButton(onClick = { /* Editar */ }) {
+                    Icon(Icons.Default.Edit, contentDescription = "Editar", tint = Color.Gray)
+                }
+                IconButton(onClick = onToggleStatus) {
+                    Icon(
+                        if (workout.isActive) Icons.Default.ToggleOn else Icons.Default.ToggleOff,
+                        contentDescription = "Status",
+                        tint = if (workout.isActive) Color(0xFF4CAF50) else Color.Gray
+                    )
+                }
+                IconButton(onClick = onDelete) {
+                    Icon(Icons.Default.Delete, contentDescription = "Excluir", tint = Color.Red)
+                }
+            }
+        }
+    }
+}

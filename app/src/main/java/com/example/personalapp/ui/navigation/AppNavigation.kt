@@ -1,0 +1,119 @@
+package com.example.personalapp.ui.navigation
+
+import androidx.compose.runtime.Composable
+import androidx.navigation.NavType
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
+import com.example.personalapp.ui.screen.*
+
+sealed class Screen(val route: String) {
+    object Main : Screen("main")
+    object Settings : Screen("settings")
+    object AddStudent : Screen("add_student")
+    object EditStudent : Screen("edit_student/{studentId}") {
+        fun createRoute(studentId: String) = "edit_student/$studentId"
+    }
+    object StudentDetails : Screen("student_details/{studentId}") {
+        fun createRoute(studentId: String) = "student_details/$studentId"
+    }
+    object WorkoutBuilder : Screen("workout_builder/{studentId}") {
+        fun createRoute(studentId: String) = "workout_builder/$studentId"
+    }
+    object ManualWorkout : Screen("manual_workout/{studentId}") {
+        fun createRoute(studentId: String) = "manual_workout/$studentId"
+    }
+    object AIWorkout : Screen("ai_workout/{studentId}") {
+        fun createRoute(studentId: String) = "ai_workout/$studentId"
+    }
+}
+
+@Composable
+fun AppNavigation() {
+    val navController = rememberNavController()
+
+    NavHost(
+        navController = navController,
+        startDestination = Screen.Main.route
+    ) {
+        composable(Screen.Main.route) {
+            MainScreen(
+                onStudentSelected = { studentId ->
+                    navController.navigate(Screen.StudentDetails.createRoute(studentId))
+                },
+                onNavigateToSettings = {
+                    navController.navigate(Screen.Settings.route)
+                },
+                onNavigateToAddStudent = {
+                    navController.navigate(Screen.AddStudent.route)
+                }
+            )
+        }
+        composable(Screen.Settings.route) {
+            SettingsScreen(onBack = { navController.popBackStack() })
+        }
+        composable(Screen.AddStudent.route) {
+            AddStudentScreen(onBack = { navController.popBackStack() })
+        }
+        composable(
+            route = Screen.StudentDetails.route,
+            arguments = listOf(navArgument("studentId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val studentId = backStackEntry.arguments?.getString("studentId") ?: ""
+            StudentDetailsScreen(
+                studentId = studentId,
+                onBack = { navController.popBackStack() },
+                onNavigateToManual = { id ->
+                    navController.navigate(Screen.ManualWorkout.createRoute(id))
+                },
+                onNavigateToAI = { id ->
+                    navController.navigate(Screen.AIWorkout.createRoute(id))
+                },
+                onNavigateToEdit = { id ->
+                    navController.navigate(Screen.EditStudent.createRoute(id))
+                }
+            )
+        }
+        composable(
+            route = Screen.EditStudent.route,
+            arguments = listOf(navArgument("studentId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val studentId = backStackEntry.arguments?.getString("studentId") ?: ""
+            EditStudentScreen(
+                studentId = studentId,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(
+            route = Screen.ManualWorkout.route,
+            arguments = listOf(navArgument("studentId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val studentId = backStackEntry.arguments?.getString("studentId") ?: ""
+            ManualWorkoutScreen(
+                studentId = studentId,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(
+            route = Screen.AIWorkout.route,
+            arguments = listOf(navArgument("studentId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val studentId = backStackEntry.arguments?.getString("studentId") ?: ""
+            AIWorkoutScreen(
+                studentId = studentId,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(
+            route = Screen.WorkoutBuilder.route,
+            arguments = listOf(navArgument("studentId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val studentId = backStackEntry.arguments?.getString("studentId") ?: ""
+            WorkoutBuilderScreen(
+                studentId = studentId,
+                onBack = { navController.popBackStack() }
+            )
+        }
+    }
+}

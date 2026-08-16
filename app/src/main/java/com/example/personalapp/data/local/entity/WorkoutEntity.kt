@@ -13,4 +13,6 @@ data class WorkoutEntity(
     val isActive: Boolean,
     @ColumnInfo(name = "exercisesJson") val exercises: List<Exercise>,
     val createdAt: Long,
+    val status: String = "draft", // 'draft' or 'assigned'
+    val assignedAt: Long? = null,
 )

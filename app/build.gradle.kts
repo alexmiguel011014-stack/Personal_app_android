@@ -24,7 +24,7 @@ android {
     buildTypes {
         release {
             optimization {
-                enable = false
+                enable = true
             }
         }
     }
@@ -35,6 +35,10 @@ android {
     buildFeatures {
         compose = true
     }
+}
+
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 dependencies {
@@ -81,6 +85,8 @@ dependencies {
     implementation(libs.kotlinx.coroutines.play.services)
 
     testImplementation(libs.junit)
+    testImplementation(libs.mockk)
+    testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.junit)
 }

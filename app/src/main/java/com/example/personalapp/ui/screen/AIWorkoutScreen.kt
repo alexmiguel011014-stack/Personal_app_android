@@ -159,7 +159,7 @@ fun ChatBubble(text: String, isUser: Boolean) {
                 SelectionContainer {
                     Text(
                         text = text,
-                        color = if (isUser) Color.White else MaterialTheme.colorScheme.onSecondaryContainer
+                        color = if (isUser) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondaryContainer
                     )
                 }
                 

@@ -72,6 +72,9 @@ fun AppNavigation() {
                 },
                 onNavigateToEdit = { id ->
                     navController.navigate(Screen.EditStudent.createRoute(id))
+                },
+                onNavigateToWorkoutBuilder = { id ->
+                    navController.navigate(Screen.WorkoutBuilder.createRoute(id))
                 }
             )
         }
@@ -112,7 +115,13 @@ fun AppNavigation() {
             val studentId = backStackEntry.arguments?.getString("studentId") ?: ""
             WorkoutBuilderScreen(
                 studentId = studentId,
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                onNavigateToManual = { id ->
+                    navController.navigate(Screen.ManualWorkout.createRoute(id))
+                },
+                onNavigateToAI = { id ->
+                    navController.navigate(Screen.AIWorkout.createRoute(id))
+                }
             )
         }
     }

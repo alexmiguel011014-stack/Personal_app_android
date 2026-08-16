@@ -9,6 +9,8 @@ import com.example.personalapp.data.repository.TrainerRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -29,9 +31,9 @@ class StudentDetailsViewModel @Inject constructor(
     fun loadStudent(studentId: String) {
         viewModelScope.launch {
             _student.value = repository.getUserById(studentId)
-            _biometrics.value = repository.getBiometricsByUser(studentId)
-            _workouts.value = repository.getActiveWorkoutsByStudent(studentId)
         }
+        repository.getBiometricsByUser(studentId).onEach { _biometrics.value = it }.launchIn(viewModelScope)
+        repository.getActiveWorkoutsByStudent(studentId).onEach { _workouts.value = it }.launchIn(viewModelScope)
     }
 
     fun addBiometric(studentId: String, weight: Double, bodyFat: Double) {
@@ -45,7 +47,6 @@ class StudentDetailsViewModel @Inject constructor(
                 date = System.currentTimeMillis()
             )
             repository.insertBiometric(biometric)
-            loadStudent(studentId)
         }
     }
 

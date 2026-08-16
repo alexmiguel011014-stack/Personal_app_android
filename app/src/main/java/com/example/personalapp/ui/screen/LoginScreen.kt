@@ -94,7 +94,7 @@ fun LoginScreen(
                 enabled = authState !is AuthState.Loading
             ) {
                 if (authState is AuthState.Loading) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp), color = androidx.compose.ui.graphics.Color.White)
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary)
                 } else {
                     Text("Entrar")
                 }

@@ -15,7 +15,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -66,7 +65,7 @@ fun ScheduleScreen(
                         Text(
                             text = student.name,
                             fontWeight = FontWeight.Bold,
-                            color = if (isSelected) Color.White else Color.Black
+                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     }
                 }
@@ -139,7 +138,7 @@ fun DayAgendaItem(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column {
-                                Text(text = hour, fontSize = 14.sp, color = Color.Gray)
+                                Text(text = hour, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 if (student != null) {
                                     Text(
                                         text = student.name,
@@ -156,14 +155,14 @@ fun DayAgendaItem(
                                 }
                             } else {
                                 Icon(
-                                    Icons.Default.CheckCircle, 
-                                    contentDescription = "Ocupado", 
-                                    tint = Color(0xFF4CAF50),
+                                    Icons.Default.CheckCircle,
+                                    contentDescription = "Ocupado",
+                                    tint = SuccessGreen,
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
                         }
-                        if (hour != "21h") HorizontalDivider(thickness = 0.5.dp, color = Color.LightGray)
+                        if (hour != "21h") HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
                     }
                 }
             }

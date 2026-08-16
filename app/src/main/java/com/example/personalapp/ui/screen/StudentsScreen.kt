@@ -11,7 +11,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.personalapp.ui.viewmodel.TrainerViewModel
@@ -44,7 +43,7 @@ fun StudentsScreen(
 
             if (students.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) {
-                    Text(text = "Nenhum aluno cadastrado", color = Color.Gray)
+                    Text(text = "Nenhum aluno cadastrado", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             } else {
                 LazyVerticalGrid(

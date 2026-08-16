@@ -34,9 +34,12 @@ fun AddStudentScreen(
     var weight by remember { mutableStateOf("") }
     var height by remember { mutableStateOf("") }
     val selectedDays = remember { mutableStateListOf<String>() }
+    var showValidation by remember { mutableStateOf(false) }
 
     val daysOfWeek = listOf("Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo")
     val focusManager = LocalFocusManager.current
+    val nameError = showValidation && name.isBlank()
+    val daysError = showValidation && selectedDays.isEmpty()
 
     Scaffold(
         modifier = Modifier.imePadding(),
@@ -53,7 +56,8 @@ fun AddStudentScreen(
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = {
-                    if (name.isNotBlank()) {
+                    showValidation = true
+                    if (name.isNotBlank() && selectedDays.isNotEmpty()) {
                         viewModel.addStudent(
                             name = name,
                             phone = phone,
@@ -86,6 +90,8 @@ fun AddStudentScreen(
                 onValueChange = { name = it },
                 label = { Text("Nome Completo") },
                 modifier = Modifier.fillMaxWidth(),
+                isError = nameError,
+                supportingText = { if (nameError) Text("Nome é obrigatório") },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                 keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
             )
@@ -145,6 +151,13 @@ fun AddStudentScreen(
                         label = { Text(day) }
                     )
                 }
+            }
+            if (daysError) {
+                Text(
+                    "Selecione pelo menos um dia de treino",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.labelSmall
+                )
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {

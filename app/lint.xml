@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Dependency-freshness checks are suppressed deliberately, not fixed blindly (see GOALS.md §10).
+  Several pinned versions are one or more majors behind (e.g. Compose BOM 2024.12.01, a ~1.5-year
+  gap) — bumping them is real upgrade work that needs runtime verification this environment can't
+  do (no emulator/device set up here). Revisit as its own dedicated, tested pass.
+-->
+<lint>
+    <issue id="GradleDependency" severity="ignore" />
+    <issue id="NewerVersionAvailable" severity="ignore" />
+</lint>

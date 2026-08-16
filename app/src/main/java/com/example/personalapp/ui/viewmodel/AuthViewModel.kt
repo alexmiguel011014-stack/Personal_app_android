@@ -3,6 +3,7 @@ package com.example.personalapp.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.personalapp.data.repository.AuthRepository
+import com.example.personalapp.data.repository.TrainerRepository
 import com.example.personalapp.data.repository.UserRole
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,7 +20,8 @@ sealed class AuthState {
 
 @HiltViewModel
 class AuthViewModel @Inject constructor(
-    private val repository: AuthRepository
+    private val repository: AuthRepository,
+    private val trainerRepository: TrainerRepository,
 ) : ViewModel() {
 
     private val _authState = MutableStateFlow<AuthState>(AuthState.Idle)
@@ -43,6 +45,9 @@ class AuthViewModel @Inject constructor(
             _authState.value = AuthState.Loading
             val result = repository.login(email, pass)
             result.onSuccess { role ->
+                if (role == UserRole.TRAINER) {
+                    repository.getCurrentUser()?.uid?.let { trainerRepository.startListening(it) }
+                }
                 _authState.value = AuthState.Authenticated(role)
             }.onFailure { e ->
                 _authState.value = AuthState.Error(e.message ?: "Falha no login")
@@ -51,6 +56,7 @@ class AuthViewModel @Inject constructor(
     }
 
     fun logout() {
+        trainerRepository.stopListening()
         repository.logout()
         _authState.value = AuthState.Idle
     }

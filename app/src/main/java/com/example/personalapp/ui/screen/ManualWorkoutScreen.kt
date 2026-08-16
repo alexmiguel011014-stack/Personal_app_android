@@ -14,7 +14,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.personalapp.data.local.entity.WorkoutEntity
@@ -33,7 +32,10 @@ fun ManualWorkoutScreen(
     var workoutName by remember { mutableStateOf("") }
     val exercises = remember { mutableStateListOf<Exercise>() }
     var showAddExerciseDialog by remember { mutableStateOf(false) }
-    
+    var showValidation by remember { mutableStateOf(false) }
+    val nameError = showValidation && workoutName.isBlank()
+    val exercisesError = showValidation && exercises.isEmpty()
+
     // Smart Paste state
     var rawText by remember { mutableStateOf("") }
     var isSmartPasteExpanded by remember { mutableStateOf(false) }
@@ -59,6 +61,7 @@ fun ManualWorkoutScreen(
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = {
+                    showValidation = true
                     if (workoutName.isNotBlank() && exercises.isNotEmpty()) {
                         val workout = WorkoutEntity(
                             id = UUID.randomUUID().toString(),
@@ -87,7 +90,9 @@ fun ManualWorkoutScreen(
                 value = workoutName,
                 onValueChange = { workoutName = it },
                 label = { Text("Nome do Treino (ex: Treino A)") },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                isError = nameError,
+                supportingText = { if (nameError) Text("Nome do treino é obrigatório") }
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -155,7 +160,23 @@ fun ManualWorkoutScreen(
                     Icon(Icons.Default.Add, contentDescription = "Adicionar Manualmente", tint = MaterialTheme.colorScheme.primary)
                 }
             }
+            if (exercisesError) {
+                Text(
+                    "Adicione pelo menos um exercício",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
 
+            if (exercises.isEmpty()) {
+                Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                    Text(
+                        "Nenhum exercício adicionado ainda",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            } else {
             LazyColumn(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -178,11 +199,12 @@ fun ManualWorkoutScreen(
                             Text(
                                 text = "Peso: ---",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = Color.Gray
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
                 }
+            }
             }
         }
     }
@@ -194,13 +216,21 @@ fun AddExerciseDialog(onDismiss: () -> Unit, onAdd: (Exercise) -> Unit) {
     var sets by remember { mutableStateOf("3") }
     var reps by remember { mutableStateOf("12") }
     var weight by remember { mutableStateOf("") }
+    var showValidation by remember { mutableStateOf(false) }
+    val nameError = showValidation && name.isBlank()
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Novo Exercício") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Nome") })
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Nome") },
+                    isError = nameError,
+                    supportingText = { if (nameError) Text("Nome é obrigatório") }
+                )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(value = sets, onValueChange = { sets = it }, label = { Text("Séries") }, modifier = Modifier.weight(1f))
                     OutlinedTextField(value = reps, onValueChange = { reps = it }, label = { Text("Reps") }, modifier = Modifier.weight(1f))
@@ -209,6 +239,7 @@ fun AddExerciseDialog(onDismiss: () -> Unit, onAdd: (Exercise) -> Unit) {
         },
         confirmButton = {
             TextButton(onClick = {
+                showValidation = true
                 if (name.isNotBlank()) {
                     onAdd(Exercise(name, sets.toIntOrNull() ?: 0, reps, null))
                     onDismiss()

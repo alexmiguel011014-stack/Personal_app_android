@@ -81,13 +81,13 @@ fun LogsTab() {
         
         Card(
             modifier = Modifier.fillMaxSize(),
-            colors = CardDefaults.cardColors(containerColor = Color.Black)
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.inverseSurface)
         ) {
             LazyColumn(modifier = Modifier.padding(8.dp)) {
                 item {
                     Text(
                         "[18:30:22] ERROR: Gemini API Key invalid\n[18:31:05] WARN: Firestore sync slow",
-                        color = Color.Green,
+                        color = SuccessGreen,
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
@@ -119,9 +119,9 @@ fun ApiStatusTab() {
         Text("Status das APIs", style = MaterialTheme.typography.titleMedium)
         Spacer(modifier = Modifier.height(16.dp))
         
-        ApiStatusRow("Google Gemini", "Online", Color(0xFF4CAF50))
-        ApiStatusRow("OpenAI ChatGPT", "Online", Color(0xFF4CAF50))
-        ApiStatusRow("Firestore", "Online", Color(0xFF4CAF50))
+        ApiStatusRow("Google Gemini", "Online", SuccessGreen)
+        ApiStatusRow("OpenAI ChatGPT", "Online", SuccessGreen)
+        ApiStatusRow("Firestore", "Online", SuccessGreen)
     }
 }
 

@@ -44,27 +44,29 @@ depends on it.
 ## 0. Toolchain / local setup
 - [x] JDK 17 installed (Temurin, via winget).
 - [x] Android `platform-tools` (adb) installed.
-- [ ] **Android SDK Platform 37 + matching build-tools installed.** Only `platforms;android-34`
-      and `build-tools;34.0.0` are installed locally so far, but `app/build.gradle.kts` declares
-      `compileSdk = 37` / `targetSdk = 37`. Run before the first build:
-      `sdkmanager --sdk_root=<repo>/android-sdk "platforms;android-37" "build-tools;37.0.0"`
-      (fall back to the latest available `platforms;android-3x` if 37 isn't published yet under
-      that exact revision — check with `sdkmanager --list`).
-- [ ] `app/google-services.json` is **missing**. The `com.google.gms.google-services` plugin is
-      applied unconditionally in `app/build.gradle.kts`, so **the project cannot build at all**
-      until this file is added (from Firebase Console → Project settings → your Android app,
-      package `com.example.personalapp`). This is the single hardest blocker to a first build.
-- [ ] Create a Firebase project (or confirm the existing one) with Auth (Email/Password) and
-      Firestore enabled, matching applicationId `com.example.personalapp`.
+- [x] **Android SDK Platform 37 + matching build-tools installed** — `platforms;android-37.0` +
+      `build-tools;37.0.0` installed via `sdkmanager`, `local.properties` created pointing at
+      the project-local `android-sdk/` (the system `ANDROID_HOME` pointed at a nonexistent path).
+- [x] `app/google-services.json` — created via Firebase Console, placed at `app/google-services.json`
+      (`package_name` verified to match `com.example.personalapp`). `./gradlew assembleDebug`
+      confirmed green (`processDebugGoogleServices` passes).
+- [x] Firebase project confirmed working: Auth (Email/Password) enabled and Firestore Database
+      created — both verified live via unauthenticated Identity Toolkit / Firestore REST probes
+      (`INVALID_LOGIN_CREDENTIALS` and `403 PERMISSION_DENIED` respectively, not
+      `CONFIGURATION_NOT_FOUND` / 404).
 
 ## 1. Project identity
 - [x] `README.md` exists and accurately describes the app, stack and setup steps.
-- [ ] Add a `CLAUDE.md`/`AGENTS.md` at the project root documenting conventions that aren't
-      obvious from the code: the role-routing model in `RoleRouter.kt`, the local-Room-only data
-      layer (see §4), and the "Smart Paste" workout import format `WorkoutParser.kt` expects.
+- [x] `CLAUDE.md` added at the project root: role-routing model (`RoleRouter.kt`), the
+      Firestore-source-of-truth + Room-cache data layer (updated to match the §4a migration, not
+      the old "local-only" description), the Smart Paste parsing heuristic (`WorkoutParser.kt`),
+      and the AI-workout entry points (now two, see the `WorkoutBuilderScreen` finding above).
 
 ## 2. Version control
-- [x] Git repository, remote configured (`github.com/alexmiguel011014-stack/Personal_app_android`).
+- [x] Git repository, remote configured (`github.com/alexmiguel011014-stack/Personal_app_android`) —
+      the local folder had no `.git` at all until this session (the outer `sites/` monorepo
+      deliberately excludes this project via its own `.gitignore`); initialized locally, synced
+      onto the existing remote history via `git reset --soft`, dedicated SSH key added, pushed.
 - [x] `.gitignore` covers build artifacts, `.idea` noise, `google-services.json`, and (as of this
       session) `android-sdk/`, `graphify-out/`, `repomix-output.xml`.
 - [x] No secret committed (`google-services.json` and API keys are correctly gitignored/never
@@ -89,43 +91,41 @@ depends on it.
       model. Move to a current Gemini 2.x/3.x model id (e.g. a `gemini-2.x-flash`/`-pro` tier)
       once the backend proxy exists, matching whatever `google.ai.client.generativeai` /
       Firebase AI Logic SDK version is current at implementation time.
+- [ ] **`com.google.ai.client.generativeai` (the SDK `GenerativeAiService.kt` uses today) is
+      officially deprecated** — its own README: "No further changes or additions are planned for
+      this deprecated SDK," superseded by the Firebase AI Logic SDK (`Firebase.ai(backend =
+      GenerativeBackend.googleAI()).generativeModel(...)`, package `com.google.firebase:firebase-ai`).
+      Independent reason to migrate on top of the raw-client-key concern above — bundle the SDK
+      swap into the same pass as the Cloud Function proxy work. See §5d for why this specifically
+      matters now (the PDF-grounded ficha generation follow-up depends on this SDK swap).
 
 ## 4. Database — Firestore sync + new workout-log model
 
 **4a. Firestore as source of truth (confirmed requirement — see Product goal)**
 - [x] Room local DB (`AppDatabase`, v5) with entities: `UserEntity`, `BiometricEntity`,
       `WorkoutEntity`, `HistoryEntity`, `ScheduleEntity`. Full CRUD via `AppDao`/`TrainerRepository`.
-- [ ] **`TrainerRepository` is 100% local (Room-only) — students, workouts, biometrics, schedule
-      and history never touch Firestore.** Only auth + role live in Firebase. Migrate Firestore
-      to be the source of truth for students/workouts/schedule/logs, with Room as an
-      offline-first cache (repository writes to Firestore; a snapshot listener mirrors into
-      Room; UI reads Room). Required for the Student login flow (#2 in Product goal) to have
-      anything to show, and for a trainer's data to survive a reinstall/new device.
-- [ ] Firestore schema, per-trainer scoped (`trainerId` field on every doc + rules, not open
-      collections):
-      - `users/{uid}` — existing: `role`, profile fields. Add `trainerId` on Student user docs
-        (which trainer they belong to — needed so a Student's queries can be scoped).
-      - `students/{studentId}` — mirrors today's `UserEntity` (profile/biometric-adjacent
-        fields), owned by `trainerId`.
-      - `workouts/{workoutId}` — mirrors `WorkoutEntity` (`studentId`, `name`, `exercises[]`,
-        `isActive`, `createdAt`). Add `assignedAt` / `status` (`draft` | `assigned`) so a
-        Trainer can build a ficha before pushing it to the student — matches Product goal #1.
-      - `biometrics/{entryId}` — mirrors `BiometricEntity`.
-      - `schedules/{scheduleId}` — mirrors `ScheduleEntity`.
-      - **`workoutLogs/{logId}` — new collection, does not exist today.** One doc per exercise
-        actually performed in a session: `studentId`, `workoutId`, `exerciseName` (or index into
-        the plan), `date`, `performedSets: [{setNumber, weight, reps}]`, optional `note`.
-        Written by the Student after a session ("atualização de carga" — Product goal #3), read
-        by the Trainer for the evolution report (#4).
-- [ ] New Room entity mirroring `workoutLogs` (`WorkoutLogEntity` + `PerformedSet` — analogous to
-      how `Exercise` is embedded in `WorkoutEntity` today) so the offline cache pattern in the
-      item above covers it too.
-- [ ] Room migration strategy: currently `fallbackToDestructiveMigration(dropAllTables = true)`
-      and `exportSchema = false` — fine for pre-release iteration, **not** for a shipped app
-      (any schema bump wipes user data, and the new `WorkoutLogEntity` above is itself a schema
-      bump). Before first Play Store release: set `exportSchema = true`, commit the schema JSON,
-      and write real `Migration` objects for any version bump from that point on — including the
-      one this feature work introduces.
+- [x] `TrainerRepository` migrated: every write (students/workouts/biometrics/schedules/workoutLogs)
+      goes to Firestore (`FirestoreMappers.kt` entity↔doc mapping) in addition to Room; a
+      `startListening(trainerId)` snapshot listener per collection mirrors Firestore changes back
+      into Room (upsert on ADDED/MODIFIED, delete on REMOVED); every screen still reads Room, now
+      via `Flow` end-to-end (`getBiometricsByUser`/`getActiveWorkoutsByStudent` converted from
+      one-shot suspend calls so the UI updates reactively when the listener writes land). Wired to
+      start on trainer login / stop on logout in `AuthViewModel`. `HistoryEntity` intentionally
+      stays Room-only (superseded by `workoutLogs`, see Product goal #3). Verified via
+      `./gradlew assembleDebug` — not runtime-tested against a live device/emulator (none set up
+      in this environment); the Student-side write path (§5b) doesn't exist yet, so the
+      `workoutLogs` sync direction is exercised by the listener/rules but has no writer yet.
+- [x] Firestore schema, per-trainer scoped (`trainerId` field on every doc), implemented for
+      `students`, `workouts` (incl. `status`/`assignedAt`), `biometrics`, `schedules`,
+      `workoutLogs` — matches `firestore.rules`. **Not done:** `trainerId` on the Student's own
+      `users/{uid}` doc — that's set by the §7 linking mechanism, which is blocked on the Blaze
+      plan decision (Cloud Function), so there's no writer for it yet.
+- [x] New Room entity `WorkoutLogEntity` + `PerformedSet` (`data/model/PerformedSet.kt`,
+      `data/local/entity/WorkoutLogEntity.kt`) — same JSON-in-column pattern as `Exercise`.
+- [x] Room migration strategy: `exportSchema = true` (schema committed at
+      `app/schemas/.../6.json`), real `MIGRATION_5_6` (adds `workouts.status`/`assignedAt`,
+      creates `workout_logs`) registered via `.addMigrations(...)`, `fallbackToDestructiveMigration`
+      kept only as a safety net for anything without an explicit migration path.
 
 ## 5. Frontend (Jetpack Compose)
 
@@ -163,26 +163,77 @@ depends on it.
       let the Trainer pick which exercise to chart from that student's `workoutLogs`.
 
 **5d. Concrete UI/professionalism debt (Product goal #5, #6) — found while reading the code**
-- [ ] `DayAgendaItem` (`Components.kt`, used by `ScheduleScreen`) has a non-functional
-      "add appointment" button: `onClick = { /* Agendar */ }` is an empty placeholder — tapping
-      "+" on any hour slot does nothing. This is the single most visible "looks unfinished" bug
-      in the app today; wire it to actually create a `ScheduleEntity`/schedule doc.
-- [ ] `Components.kt` hardcodes raw hex colors instead of `MaterialTheme.colorScheme` (e.g.
-      `StudentCard`'s pink/blue-by-gender background, `Color.Black` text, `Color.Gray` labels,
-      the chart's fixed blue). The app already ships a proper light/dark theme
-      (`values/themes.xml`, `values-night/themes.xml`) that these composables bypass — audit
-      every screen for raw `Color(0x...)`/`Color.Black`/`Color.Gray` usage and replace with theme
-      tokens so dark mode (and any future theming) is actually consistent app-wide. Keep the
-      gender-based card tint as a *deliberate* choice if wanted, but source the two colors from
-      the theme (e.g. `tertiaryContainer`/`secondaryContainer`) instead of hardcoded hex.
-- [ ] Sweep every screen for missing **loading / empty / error states** — the codebase has no
-      loading-skeleton or empty-state pattern today (confirmed: only one commit in this repo's
-      history, "Initial commit", so this predates any UI polish pass). At minimum: a students
-      list with zero students, a workout list with zero workouts, and any Firestore-backed screen
-      mid-load (post-§4a) need explicit states instead of a blank screen.
-- [ ] Form validation pass on Add/Edit Student and the manual workout builder — confirm
-      required fields (name, at least one training day) are actually validated before save, with
-      inline error messages rather than silent no-ops or crashes.
+- [x] `DayAgendaItem`'s "add appointment" button — turned out to already be fixed: `ScheduleScreen.kt`
+      has its own working `DayAgendaItem(day, schedules, students, onBookSlot)` wired to
+      `viewModel.bookSlot(...)` → `repository.insertSchedule(...)`. The unwired duplicate this item
+      described lived in `Components.kt` as dead code (different signature, never called from
+      anywhere) — deleted it.
+- [x] Hardcoded colors swept across every screen (`Components.kt`, `ScheduleScreen.kt`,
+      `WorkoutBuilderScreen.kt`, `AdminDashboardScreen.kt`, `StudentDetailsScreen.kt`,
+      `StudentsScreen.kt`, `ManualWorkoutScreen.kt`, `LoginScreen.kt`, `AIWorkoutScreen.kt`) and
+      replaced with `MaterialTheme.colorScheme` tokens. Gender card tint now sources
+      `tertiaryContainer`/`secondaryContainer` as suggested. Added one shared `SuccessGreen`
+      constant (`Components.kt`) for the "active/online" indicators M3 has no built-in role for,
+      instead of the same hex duplicated across files.
+- [x] Loading/empty/error state sweep: the explicit examples named here (empty students list,
+      empty workout list) turned out to already exist (`StudentsScreen`, `WorkoutBuilderScreen`).
+      Added the one genuinely missing case found: an empty-exercises-list state in
+      `ManualWorkoutScreen`. Did not build a general loading-skeleton system — no screen is
+      Firestore-mid-load blocking today (offline-first Room reads are synchronous from cache).
+- [x] Form validation added: `AddStudentScreen`, `EditStudentScreen` (name required, at least one
+      training day required, inline `supportingText` errors) and `ManualWorkoutScreen` +
+      `AddExerciseDialog` (workout name / exercise name required, inline errors) — all previously
+      silent no-ops on missing required fields.
+- [x] **`WorkoutBuilderScreen.kt`'s "Criar Manual"/"Criar com IA" buttons wired** —
+      `onNavigateToManual`/`onNavigateToAI` params added, call the existing `ManualWorkout`/
+      `AIWorkout` routes (same pattern already used from `StudentDetailsScreen`). **Found while
+      wiring: the screen itself was completely unreachable** — no button anywhere navigated to
+      `Screen.WorkoutBuilder`; `StudentDetailsScreen`'s own "Ficha Personal" button already
+      reached the AI/Manual screens directly via a dialog, bypassing `WorkoutBuilderScreen`
+      entirely. Since `WorkoutBuilderScreen` additionally lists all active workouts with
+      edit/toggle/delete (which the read-only list on `StudentDetailsScreen` doesn't have), user
+      decision: keep both, link it — added a "Gerenciar" button next to `StudentDetailsScreen`'s
+      "Fichas de Treino" header navigating to `Screen.WorkoutBuilder.createRoute(studentId)`.
+      Verified via `./gradlew assembleDebug`.
+      - [ ] "Editar" (`WorkoutCard`'s edit icon inside `WorkoutBuilderScreen`) still has no
+        destination — no edit-existing-workout screen exists anywhere in the app. Out of scope for
+        this pass; build one later (reuse `ManualWorkoutScreen`'s exercise-list UI, prefilled,
+        calling `updateWorkout` instead of `insertWorkout`) or remove the dead icon — not decided.
+
+- [ ] **AI ficha generation — future: ground it in a reference PDF (explicitly deferred by the
+      user, documented now so `/execgoals` doesn't have to re-research it later).** Today
+      `GenerativeAiService.generateWorkout()` sends only a text prompt built from the student's
+      profile fields (§3). The user wants to later attach a PDF with partial training-volume
+      guidelines (sets/reps/frequency references) so the AI grounds its output in that reference
+      instead of general knowledge — "just getting AI integration working [the button, above] is
+      already a win" for now; this is the next increment after that.
+      - Researched (2026-08-16): Gemini's Kotlin SDKs support PDFs natively as multimodal input —
+        `content { inlineData(bytes = pdfBytes, mimeType = "application/pdf"); text(prompt) }`,
+        no separate text-extraction/OCR step needed. Docs source:
+        firebase.google.com/docs/ai-logic/analyze-documents. Limits: 50MB/file, 1000 pages/file,
+        each PDF page is billed/counted like an image.
+      - **Important, found during this same research pass:** the SDK this project currently uses
+        (`com.google.ai.client.generativeai`, `google.generativeai` in `libs.versions.toml`) is
+        **officially deprecated** — its own README states "No further changes or additions are
+        planned for this deprecated SDK," superseded by the Firebase AI Logic SDK
+        (`com.google.firebase:firebase-ai`, called via `Firebase.ai(backend =
+        GenerativeBackend.googleAI()).generativeModel(...)`). This is a second, independent reason
+        to migrate (on top of §3's client-side-API-key security concern) — do the SDK swap
+        *before or alongside* adding PDF grounding, not after, so the new feature isn't built on
+        the SDK that's about to be replaced.
+      - Planned shape once the user is ready to build this:
+        1. Migrate `GenerativeAiService` from `com.google.ai.client.generativeai` to the Firebase
+           AI Logic SDK (`Firebase.ai(...).generativeModel(...)`) — same `content { }` builder
+           DSL, low-risk swap; also resolves the outdated `gemini-1.5-pro` model id noted in §3.
+        2. Add a Settings entry (or a one-time asset bundled with the app) for the reference PDF;
+           read its bytes and pass via `inlineData(...)` alongside the existing text prompt in
+           `generateWorkout()`.
+        3. No change needed to `AIWorkoutViewModel`'s JSON-parsing contract — the PDF only changes
+           what grounds the model's answer, not the requested output shape.
+      - Still inherits §3's "don't call Gemini directly from the client with a raw key" concern
+        (unchanged by adding PDF input) — if/when the Cloud Function proxy from §3 gets built, the
+        PDF bytes get sent to the function instead of embedded client-side, same as the text
+        prompt today.
 
 ## 6. Connectivity
 - [ ] Define client↔Firestore sync strategy per §4 (snapshot listeners vs one-shot fetches,
@@ -201,18 +252,10 @@ depends on it.
 
 ## 7. Auth
 - [x] Firebase Auth (email/password) + Firestore-stored `role` field, read client-side.
-- [ ] **Firestore security rules file does not exist anywhere in the repo** (`firestore.rules`
-      not found). This means the project either has no deployed rules (default deny — nothing
-      works) or is running Firebase's insecure "test mode" (`allow read, write: if true` —
-      anyone can read/write any user's data, including their own `role` field and self-promote
-      to `ADM`). Write and commit `firestore.rules`:
-      - Users can read their own `users/{uid}` doc; only an ADM (or a Cloud Function) can write
-        the `role` field — never the user themselves.
-      - Trainer-scoped collections (`students`, `workouts`, `schedules`) readable/writable only
-        by the owning `trainerId`; students get read-only access to documents where they are the
-        `studentId`, once §4's schema exists.
-      - Deploy via `firebase deploy --only firestore:rules` (requires Firebase CLI + project
-        linked — not yet set up locally).
+- [x] `firestore.rules` written (users self-read, role/trainerId self-promotion blocked,
+      students/workouts/biometrics/schedules/workoutLogs scoped by `trainerId`, students read-only
+      on their own docs) and published via the Firestore console Rules tab. Verified live with an
+      unauthenticated REST probe returning `403 PERMISSION_DENIED` (not open, not 404-missing-db).
 - [ ] **Student↔Trainer linking (Product goal #2) — decide the mechanism:** today
       `AddStudentScreen` only creates a local `UserEntity` row, no auth account. Extend it so
       adding a student also provisions their login, e.g.: Trainer enters the student's email in
@@ -226,48 +269,63 @@ depends on it.
       Firestore `role` doc — likely needs to be set server-side/by an ADM, not client-writable).
 
 ## 8. Security
-- [ ] **`AndroidManifest.xml` is missing `<uses-permission android:name="android.permission.INTERNET" />`.**
-      Every network call in the app (Firebase Auth, Firestore, Gemini) will throw at runtime
-      without it. This is the second build/run blocker after `google-services.json` — add it
-      before first run on a device.
-- [ ] Gemini/OpenAI API keys are stored in **plaintext** DataStore Preferences
-      (`SettingsRepository`) with `android:allowBackup="true"` and no backup-exclusion rule, so
-      the key is included in Android's automatic cloud/local backups. Once §3's server-side
-      proxy exists this key may no longer need to live on-device at all; if a "bring your own
-      key" mode is kept, exclude the DataStore file in `data_extraction_rules.xml`/
-      `backup_rules.xml`, and consider `androidx.security.crypto` (EncryptedSharedPreferences /
-      Jetpack Security) if it must be stored client-side.
-- [ ] Write `firestore.rules` (see §7) — currently the biggest concrete security gap.
-- [ ] Release build has `optimization { enable = false }` in `app/build.gradle.kts` (AGP 9.x's
-      new DSL for what used to be `minifyEnabled`/`shrinkResources`) — R8 shrinking/obfuscation
-      is off for release. Enable it before shipping (`enable = true`, plus verify
-      `app/src/main/keepRules/rules.keep` covers Room/Hilt/Firebase reflection needs) both to
-      reduce APK size and to raise the bar on reverse-engineering the app (relevant given the
-      API-key-storage point above).
-- [ ] Target API compliance: `targetSdk = 37` already exceeds Google Play's Aug 31, 2026
-      requirement (API 36 for new apps/updates) — no action needed here, just don't regress it.
+- [x] `<uses-permission android:name="android.permission.INTERNET" />` added to `AndroidManifest.xml`.
+- [x] Gemini/OpenAI API keys — **backup exclusion done**: excluded the DataStore file
+      (`datastore/settings.preferences_pb`) in both `data_extraction_rules.xml` (cloud-backup +
+      device-transfer, API 31+) and `backup_rules.xml` (legacy full-backup-content) — the key no
+      longer rides along in Android's automatic cloud/local backups. **Encryption at rest: not
+      done, and the GOALS.md suggestion to use it is now stale** — researched
+      `androidx.security.crypto` before implementing (good thing: checked before recommending) and
+      found `MasterKey`/`EncryptedSharedPreferences` are now themselves deprecated upstream
+      ("Use `javax.crypto.KeyGenerator` with `AndroidKeyStore` instead" — androidx source, 2026).
+      Hand-rolling Keystore-backed AES/GCM correctly (IV handling, migrating already-stored
+      plaintext values, key alias lifecycle) is real security-sensitive work that deserves its own
+      pass, not a rushed add-on here. Once §3's proxy exists the key may not need to live
+      on-device at all, which could make this moot — decide after §3, not before.
+- [x] `firestore.rules` written and published (see §7) — no longer running in open/test mode.
+- [x] R8 shrinking/obfuscation enabled (`optimization { enable = true }`). Verified with a real
+      `./gradlew assembleRelease` (not just a config read) — `minifyReleaseWithR8`,
+      `optimizeReleaseResources` and the mandatory `lintVitalRelease` check all passed with the
+      existing `keepRules/rules.keep` (empty) and no extra keep rules needed: Room/Hilt/Firebase
+      each ship their own consumer R8 rules inside their AARs. Produced
+      `app/build/outputs/apk/release/app-release-unsigned.apk`.
+- [x] Target API compliance: `targetSdk = 37` already exceeds Google Play's Aug 31, 2026
+      requirement (API 36 for new apps/updates) — confirmed compliant, no action needed.
 
 ## 9. Testing
-- [ ] Only placeholder tests exist: `ExampleUnitTest` (trivial `2+2` assertion) and
-      `ExampleInstrumentedTest` (default template) — no real coverage.
-- [ ] Unit-test the actual business logic first, in priority order:
-      1. `WorkoutParser` (Smart Paste text→exercise parsing) — pure function, highest value,
-         easiest to test, most likely to silently break.
-      2. `AuthRepository.login` role-resolution logic (mock `FirebaseAuth`/`FirebaseFirestore`).
-      3. `TrainerRepository`/`AppDao` — Room in-memory database tests for CRUD + Flow emissions.
-      4. Once built (§4a): the `workoutLogs` write path — a Student's logged sets must round-trip
-         correctly (weight/reps per set, correct `workoutId`/`exerciseName` association) since
-         this is the data the evolution report (§5c) depends on being accurate.
+- [x] Real coverage added (placeholders `ExampleUnitTest`/`ExampleInstrumentedTest` left in place,
+      harmless):
+      1. `WorkoutParserTest` (`app/src/test/.../util/`) — 8 cases, name/exercise parsing including
+         the reps-first heuristic, multi-line input, blank/non-matching lines. **Ran, all pass.**
+      2. `AuthRepositoryTest` (`app/src/test/.../data/repository/`) — 5 cases, role resolution
+         (TRAINER/ADM, case-insensitive), default-to-STUDENT on missing/unrecognized role,
+         sign-in failure → `Result.failure`. Mocks `FirebaseAuth`/`FirebaseFirestore` with MockK +
+         `Tasks.forResult`/`forException` (added `mockk`, `kotlinx-coroutines-test` as test-only
+         deps). **Ran, all pass.**
+      3. `AppDaoTest` (`app/src/androidTest/.../data/local/`) — Room in-memory CRUD + Flow
+         emissions for students, workouts (incl. new `status` default), biometrics, schedules.
+         **Written and compiles clean** (`compileDebugAndroidTestKotlin`), but Room's in-memory
+         builder needs a real Android SQLite driver — **not runnable in this environment** (no
+         AVD/emulator set up here); needs a device/emulator or CI matrix to actually execute.
+      4. `workoutLog_roundTripsPerformedSets` (same file) — covers the `workoutLogs` round-trip
+         item explicitly. Same caveat: written, compiles, not run.
 - [ ] Add Compose UI tests (instrumented) for at least the Trainer golden path once Student flow
       exists: login → add student → assign workout → student logs a session → trainer sees the
-      update and the evolution chart moves.
+      update and the evolution chart moves. Still blocked on §5b (Student screens don't exist yet).
 - [ ] Wire a single command that runs everything (`./gradlew test connectedAndroidTest lint` or
       split unit vs instrumented as CI stages — see §11).
 
 ## 10. Code quality
-- [ ] No lint/format tooling configured beyond Android Gradle Plugin's built-in `lint` task —
-      confirm `./gradlew lint` runs clean; fix or explicitly suppress (with a reason) what it
-      flags before CI is added.
+- [x] `./gradlew lint` runs clean (0 errors, 0 warnings). Fixed the 2 real errors: an unescaped
+      drive-letter colon in `local.properties` (`PropertyEscape`), and a genuine
+      `NonObservableLocale` bug in `StudentDetailsScreen.kt` (`Locale.getDefault()` called inside
+      a composable doesn't recompose on locale change — switched to
+      `LocalConfiguration.current.locales[0]`, the stable, recomposition-safe equivalent;
+      `LocalLocale` didn't compile against this project's pinned Compose BOM). Deleted 3 unused
+      template colors (`purple_500`, `teal_700`, `white`). Explicitly suppressed (not silently,
+      documented in `app/lint.xml`) the 15 "newer dependency version available" warnings —
+      bumping them (esp. Compose BOM 2024.12.01, ~1.5 years behind) is real upgrade work needing
+      runtime verification this environment can't do; left as a dedicated future pass.
 - [ ] `StudentDetailsScreen.kt` (2.195 tokens) and `ManualWorkoutScreen.kt` (1.661 tokens) are
       the largest files in the project — not alarming yet, but if they keep growing, split UI
       state/logic into smaller composables or move logic into their ViewModels.
@@ -305,8 +363,14 @@ depends on it.
 6. §5d UI/professionalism debt (schedule button, hardcoded colors/theming, loading/empty/error
    states, form validation) → delivers Product goal #5/#6; can run in parallel with steps 3-5
    since it touches existing screens, not the new ones.
+6a. **§5d "Criar com IA" button wiring — do this next, current user priority (2026-08-16).**
+   Pure navigation, no dependency on anything still blocked (not Blaze, not CI secrets) — smallest
+   possible change that makes the already-built AI ficha generation actually reachable. The
+   PDF-grounding follow-up (also in §5d) is explicitly deferred by the user until this lands.
 7. §3 Cloud Function Gemini proxy → unblocks safely shipping the AI feature given the June/Sept
-   2026 Gemini key deprecation deadlines.
+   2026 Gemini key deprecation deadlines. Do this *before or alongside* the PDF-grounding
+   follow-up from step 6a, and note the SDK is now confirmed deprecated (see §5d) — swap to the
+   Firebase AI Logic SDK as part of this step, not after.
 8. §9 real tests (incl. the new `workoutLogs` round-trip test) + §11 CI → safety net before
    iterating faster.
 9. §8 release hardening (R8, key storage, signing) + §11 store prerequisites → Play Store

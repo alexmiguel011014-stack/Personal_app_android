@@ -2,6 +2,7 @@ package com.example.personalapp.data.local
 
 import androidx.room.TypeConverter
 import com.example.personalapp.data.model.Exercise
+import com.example.personalapp.data.model.PerformedSet
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
@@ -13,6 +14,20 @@ class Converters {
 
     @TypeConverter
     fun toExerciseList(value: String): List<Exercise> {
+        return try {
+            Json.decodeFromString(value)
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    @TypeConverter
+    fun fromPerformedSetList(value: List<PerformedSet>): String {
+        return Json.encodeToString(value)
+    }
+
+    @TypeConverter
+    fun toPerformedSetList(value: String): List<PerformedSet> {
         return try {
             Json.decodeFromString(value)
         } catch (e: Exception) {

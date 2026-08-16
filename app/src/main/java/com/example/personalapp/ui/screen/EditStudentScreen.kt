@@ -36,9 +36,12 @@ fun EditStudentScreen(
     var level by remember { mutableStateOf("Iniciante") }
     var notes by remember { mutableStateOf("") }
     val selectedDays = remember { mutableStateListOf<String>() }
+    var showValidation by remember { mutableStateOf(false) }
 
     val daysOfWeek = listOf("Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo")
     val focusManager = LocalFocusManager.current
+    val nameError = showValidation && name.isBlank()
+    val daysError = showValidation && selectedDays.isEmpty()
 
     LaunchedEffect(studentId) {
         viewModel.loadStudent(studentId)
@@ -72,17 +75,20 @@ fun EditStudentScreen(
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = {
-                    student?.let {
-                        val updated = it.copy(
-                            name = name,
-                            phone = phone,
-                            gender = gender,
-                            goal = goal,
-                            experienceLevel = level,
-                            medicalNotes = notes,
-                            trainingDays = selectedDays.toList()
-                        )
-                        viewModel.updateStudent(updated) { onBack() }
+                    showValidation = true
+                    if (name.isNotBlank() && selectedDays.isNotEmpty()) {
+                        student?.let {
+                            val updated = it.copy(
+                                name = name,
+                                phone = phone,
+                                gender = gender,
+                                goal = goal,
+                                experienceLevel = level,
+                                medicalNotes = notes,
+                                trainingDays = selectedDays.toList()
+                            )
+                            viewModel.updateStudent(updated) { onBack() }
+                        }
                     }
                 },
                 icon = { Icon(Icons.Default.Save, contentDescription = null) },
@@ -103,6 +109,8 @@ fun EditStudentScreen(
                 onValueChange = { name = it },
                 label = { Text("Nome Completo") },
                 modifier = Modifier.fillMaxWidth(),
+                isError = nameError,
+                supportingText = { if (nameError) Text("Nome é obrigatório") },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                 keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
             )
@@ -162,6 +170,13 @@ fun EditStudentScreen(
                         label = { Text(day) }
                     )
                 }
+            }
+            if (daysError) {
+                Text(
+                    "Selecione pelo menos um dia de treino",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.labelSmall
+                )
             }
 
             OutlinedTextField(

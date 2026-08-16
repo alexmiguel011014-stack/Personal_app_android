@@ -7,6 +7,8 @@ import com.example.personalapp.data.repository.TrainerRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -19,32 +21,24 @@ class WorkoutViewModel @Inject constructor(
     val workouts: StateFlow<List<WorkoutEntity>> = _workouts
 
     fun loadWorkouts(studentId: String) {
-        viewModelScope.launch {
-            _workouts.value = repository.getActiveWorkoutsByStudent(studentId)
-        }
+        repository.getActiveWorkoutsByStudent(studentId).onEach { _workouts.value = it }.launchIn(viewModelScope)
     }
 
     fun insertWorkout(workout: WorkoutEntity) {
         viewModelScope.launch {
             repository.insertWorkout(workout)
-            loadWorkouts(workout.studentId)
         }
     }
 
     fun deleteWorkout(workout: WorkoutEntity) {
         viewModelScope.launch {
             repository.deleteWorkout(workout)
-            // Refresh list
-            loadWorkouts(workout.studentId)
         }
     }
 
     fun toggleWorkoutStatus(workout: WorkoutEntity) {
         viewModelScope.launch {
-            val updatedWorkout = workout.copy(isActive = !workout.isActive)
-            repository.updateWorkout(updatedWorkout)
-            // Refresh list
-            loadWorkouts(workout.studentId)
+            repository.updateWorkout(workout.copy(isActive = !workout.isActive))
         }
     }
 }

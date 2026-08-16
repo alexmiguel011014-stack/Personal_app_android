@@ -11,7 +11,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -28,6 +27,7 @@ fun StudentDetailsScreen(
     onNavigateToManual: (String) -> Unit,
     onNavigateToAI: (String) -> Unit,
     onNavigateToEdit: (String) -> Unit,
+    onNavigateToWorkoutBuilder: (String) -> Unit,
     viewModel: StudentDetailsViewModel = hiltViewModel()
 ) {
     val student by viewModel.student.collectAsState()
@@ -122,7 +122,7 @@ fun StudentDetailsScreen(
                                     menuExpanded = false
                                     showDeleteConfirm = true
                                 },
-                                leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = Color.Red) }
+                                leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
                             )
                         }
                     }
@@ -131,6 +131,7 @@ fun StudentDetailsScreen(
         }
     ) { padding ->
         student?.let { s ->
+            val currentLocale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
@@ -181,11 +182,11 @@ fun StudentDetailsScreen(
                 }
 
                 items(biometrics.take(5)) { bio ->
-                    val dateStr = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(bio.date))
+                    val dateStr = SimpleDateFormat("dd/MM/yyyy", currentLocale).format(Date(bio.date))
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Row(modifier = Modifier.padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Column {
-                                Text(dateStr, style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                                Text(dateStr, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Text("${bio.weight} kg", fontWeight = FontWeight.Bold)
                             }
                             if (bio.bodyFat > 0) {
@@ -196,12 +197,21 @@ fun StudentDetailsScreen(
                 }
 
                 item {
-                    Text("Fichas de Treino", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Fichas de Treino", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        TextButton(onClick = { onNavigateToWorkoutBuilder(studentId) }) {
+                            Text("Gerenciar")
+                        }
+                    }
                     if (workouts.isEmpty()) {
                         Text(
                             "Nenhum treino cadastrado ainda.",
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color.Gray,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(vertical = 8.dp)
                         )
                     }
@@ -275,7 +285,7 @@ fun InfoRow(icon: ImageVector, label: String, value: String) {
         Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
         Spacer(modifier = Modifier.width(12.dp))
         Column {
-            Text(label, style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(value, style = MaterialTheme.typography.bodyLarge)
         }
     }

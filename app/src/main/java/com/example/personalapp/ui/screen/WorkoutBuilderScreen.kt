@@ -13,7 +13,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.tooling.preview.Preview
@@ -34,6 +33,8 @@ fun WorkoutBuilderPreview() {
 fun WorkoutBuilderScreen(
     studentId: String,
     onBack: () -> Unit,
+    onNavigateToManual: (String) -> Unit = {},
+    onNavigateToAI: (String) -> Unit = {},
     viewModel: WorkoutViewModel = hiltViewModel(),
 ) {
     val workouts by viewModel.workouts.collectAsState()
@@ -73,16 +74,16 @@ fun WorkoutBuilderScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Button(
-                    onClick = { /* Criar Manual */ },
+                    onClick = { onNavigateToManual(studentId) },
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2196F3))
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
                     Text("Criar Manual")
                 }
                 Button(
-                    onClick = { /* Criar IA */ },
+                    onClick = { onNavigateToAI(studentId) },
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF9C27B0))
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
                 ) {
                     Text("Criar com IA")
                 }
@@ -101,7 +102,7 @@ fun WorkoutBuilderScreen(
                 Text(
                     text = "Nenhum treino encontrado",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color.Gray
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             } else {
                 LazyColumn(
@@ -145,23 +146,23 @@ fun WorkoutCard(
                 Text(
                     text = if (workout.isActive) "Ativo" else "Inativo",
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (workout.isActive) Color(0xFF4CAF50) else Color.Gray
+                    color = if (workout.isActive) SuccessGreen else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            
+
             Row {
                 IconButton(onClick = { /* Editar */ }) {
-                    Icon(Icons.Default.Edit, contentDescription = "Editar", tint = Color.Gray)
+                    Icon(Icons.Default.Edit, contentDescription = "Editar", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 IconButton(onClick = onToggleStatus) {
                     Icon(
                         if (workout.isActive) Icons.Default.ToggleOn else Icons.Default.ToggleOff,
                         contentDescription = "Status",
-                        tint = if (workout.isActive) Color(0xFF4CAF50) else Color.Gray
+                        tint = if (workout.isActive) SuccessGreen else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 IconButton(onClick = onDelete) {
-                    Icon(Icons.Default.Delete, contentDescription = "Excluir", tint = Color.Red)
+                    Icon(Icons.Default.Delete, contentDescription = "Excluir", tint = MaterialTheme.colorScheme.error)
                 }
             }
         }

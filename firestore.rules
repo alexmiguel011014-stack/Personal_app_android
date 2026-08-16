@@ -1,0 +1,96 @@
+rules_version = '2';
+
+// Schema (see GOALS.md §4a):
+//   users/{uid}          - role ('ADM'|'TRAINER'|'STUDENT'), trainerId (STUDENT docs only)
+//   students/{studentId} - trainerId
+//   workouts/{workoutId} - trainerId, studentId, status ('draft'|'assigned')
+//   biometrics/{entryId} - trainerId, studentId
+//   schedules/{scheduleId} - trainerId, studentId
+//   workoutLogs/{logId}  - trainerId, studentId (written by the student, read by their trainer)
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function field(data, name) {
+      return data.get(name, null);
+    }
+
+    function myRole() {
+      return field(get(/databases/$(database)/documents/users/$(request.auth.uid)).data, 'role');
+    }
+
+    function isAdmin() {
+      return isSignedIn() && myRole() == 'ADM';
+    }
+
+    // The caller is the TRAINER who owns this record.
+    function isOwningTrainer(trainerId) {
+      return isSignedIn() && request.auth.uid == trainerId && myRole() == 'TRAINER';
+    }
+
+    // users/{uid} — self-read, admin-managed writes. A user can edit their own
+    // profile fields but can never change their own role or trainerId (no self-promotion).
+    match /users/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      allow create: if isAdmin();
+      allow update: if isAdmin() || (
+        isSignedIn() && request.auth.uid == uid &&
+        field(request.resource.data, 'role') == field(resource.data, 'role') &&
+        field(request.resource.data, 'trainerId') == field(resource.data, 'trainerId')
+      );
+      allow delete: if isAdmin();
+    }
+
+    // students/{studentId} — owned by trainerId; the linked student can read their own doc.
+    match /students/{studentId} {
+      allow read: if isOwningTrainer(resource.data.trainerId) ||
+        (isSignedIn() && request.auth.uid == studentId);
+      allow create: if isOwningTrainer(request.resource.data.trainerId);
+      allow update, delete: if isOwningTrainer(resource.data.trainerId);
+    }
+
+    // workouts/{workoutId} — trainer manages; student reads only their own assigned fichas.
+    match /workouts/{workoutId} {
+      allow read: if isOwningTrainer(resource.data.trainerId) ||
+        (isSignedIn() && resource.data.studentId == request.auth.uid && resource.data.status == 'assigned');
+      allow create: if isOwningTrainer(request.resource.data.trainerId);
+      allow update, delete: if isOwningTrainer(resource.data.trainerId);
+    }
+
+    // biometrics/{entryId} — trainer manages; student reads their own entries.
+    match /biometrics/{entryId} {
+      allow read: if isOwningTrainer(resource.data.trainerId) ||
+        (isSignedIn() && resource.data.studentId == request.auth.uid);
+      allow create: if isOwningTrainer(request.resource.data.trainerId);
+      allow update, delete: if isOwningTrainer(resource.data.trainerId);
+    }
+
+    // schedules/{scheduleId} — trainer manages; student reads their own appointments.
+    match /schedules/{scheduleId} {
+      allow read: if isOwningTrainer(resource.data.trainerId) ||
+        (isSignedIn() && resource.data.studentId == request.auth.uid);
+      allow create: if isOwningTrainer(request.resource.data.trainerId);
+      allow update, delete: if isOwningTrainer(resource.data.trainerId);
+    }
+
+    // workoutLogs/{logId} — the student logs their own performed sets; the owning
+    // trainer reads them for the evolution report. trainerId must match the
+    // student's own users/{uid}.trainerId so a student can't attribute a log to
+    // a trainer they don't belong to.
+    match /workoutLogs/{logId} {
+      allow read: if isOwningTrainer(resource.data.trainerId) ||
+        (isSignedIn() && resource.data.studentId == request.auth.uid);
+      allow create, update: if isSignedIn() &&
+        request.resource.data.studentId == request.auth.uid &&
+        request.resource.data.trainerId ==
+          field(get(/databases/$(database)/documents/users/$(request.auth.uid)).data, 'trainerId');
+      allow delete: if isSignedIn() && resource.data.studentId == request.auth.uid;
+    }
+
+    // Everything else: denied by default (no catch-all match).
+  }
+}

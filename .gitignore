@@ -19,3 +19,10 @@ google-services.json
 
 # AI Assistant Metadata
 .artifacts/
+
+# Local Android SDK toolchain (downloaded, never versioned)
+/android-sdk/
+
+# graphify / repomix generated artifacts
+graphify-out/
+repomix-output.xml

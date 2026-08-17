@@ -19,18 +19,31 @@ class AuthRepository @Inject constructor(
         return try {
             val result = auth.signInWithEmailAndPassword(email, pass).await()
             val uid = result.user?.uid ?: return Result.failure(Exception("UID não encontrado"))
-            
+
             // Buscar role no Firestore
             val doc = firestore.collection("users").document(uid).get().await()
             val roleStr = doc.getString("role")?.uppercase() ?: "STUDENT"
-            
+
             val role = try {
                 UserRole.valueOf(roleStr)
             } catch (e: Exception) {
                 UserRole.STUDENT
             }
-            
+
             Result.success(role)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    // Self-registration only ever produces an account with no Firestore role doc — `role`/
+    // `trainerId` are server-assigned (see firestore.rules), self-registered accounts can't
+    // grant themselves TRAINER/ADM. `login()`'s own missing-role fallback already resolves this
+    // to STUDENT, so this reuses the same path rather than duplicating the role lookup.
+    suspend fun register(email: String, pass: String): Result<UserRole> {
+        return try {
+            auth.createUserWithEmailAndPassword(email, pass).await()
+            login(email, pass)
         } catch (e: Exception) {
             Result.failure(e)
         }

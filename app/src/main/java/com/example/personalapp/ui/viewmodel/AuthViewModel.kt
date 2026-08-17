@@ -55,6 +55,18 @@ class AuthViewModel @Inject constructor(
         }
     }
 
+    fun register(email: String, pass: String) {
+        viewModelScope.launch {
+            _authState.value = AuthState.Loading
+            val result = repository.register(email, pass)
+            result.onSuccess { role ->
+                _authState.value = AuthState.Authenticated(role)
+            }.onFailure { e ->
+                _authState.value = AuthState.Error(e.message ?: "Falha ao criar conta")
+            }
+        }
+    }
+
     fun logout() {
         trainerRepository.stopListening()
         repository.logout()

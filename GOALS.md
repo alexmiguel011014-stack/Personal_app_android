@@ -61,6 +61,15 @@ depends on it.
       Firestore-source-of-truth + Room-cache data layer (updated to match the §4a migration, not
       the old "local-only" description), the Smart Paste parsing heuristic (`WorkoutParser.kt`),
       and the AI-workout entry points (now two, see the `WorkoutBuilderScreen` finding above).
+- [ ] **Module documentation strategy (decided 2026-08-17, not yet applied everywhere):** don't add
+      a separate `docs/` tree that will drift from the code — keep `CLAUDE.md` for cross-cutting
+      conventions (routing, data-layer shape, parsing quirks) and add a short KDoc block
+      (`/** ... */`) directly on classes whose *purpose* isn't obvious from their name/members
+      alone. Already done this session: `TrainerRepository` (Firestore-as-source-of-truth
+      explanation) and `FirestoreMappers.kt` (why plain maps, not POJO reflection). Still missing
+      real KDoc: `WorkoutParser` (the sets-vs-reps heuristic lives only in a code comment today,
+      should be a proper doc comment), `AppLogger`/`AdminViewModel` once §5e is built (new code,
+      document from the start rather than retrofitting).
 
 ## 2. Version control
 - [x] Git repository, remote configured (`github.com/alexmiguel011014-stack/Personal_app_android`) —
@@ -134,16 +143,20 @@ depends on it.
       bottom-nav tabs including `ScheduleScreen`), AddStudent, EditStudent, StudentDetails,
       ManualWorkout (detailed exercise builder), WorkoutBuilder, AIWorkout (Gemini generation +
       "Smart Paste" import via `WorkoutParser.kt`), Settings (API key entry).
-- [x] **ADM role** — `AdminDashboardScreen` exists and is routed from `RoleRouter`.
+- [~] **ADM role** — `AdminDashboardScreen` exists and is routed from `RoleRouter`, but **every
+      tab is a non-functional mockup** — confirmed 2026-08-17 from a real device screenshot after
+      first ADM login. See §5e for the concrete plan to make each tab real.
 - [x] Evolution/biometrics chart exists: `Components.kt` has a custom `WeightChart` (Compose
       `Canvas`, hand-drawn line + points), used from `StudentDetailsScreen`. No charting library
       dependency — keep it that way; extend this same component for exercise-load progression
       (5c) instead of adding a charting library.
 
 **5b. Student role — not built (Product goal #2)**
-- [ ] `RoleRouter` currently routes `STUDENT` back to `LoginScreen` with a placeholder message —
-      no student-facing screen exists at all. Blocked on §4a (Firestore migration). Build, once
-      unblocked:
+- [ ] `RoleRouter` now shows a real explanatory message instead of a silent dead-end for
+      `Authenticated(STUDENT)` (fixed 2026-08-16, see §5d's `LoginScreen` fix), but no actual
+      student-facing screens exist yet. **No longer blocked on §4a** — that migration is done.
+      Now blocked only on §7's invite-code linking (a student needs a `trainerId` before "my
+      workouts" means anything) and the data-model decision in §7. Build, once those land:
       - **My Workouts** — read-only list of ficha(s) the Trainer assigned (`workouts` where
         `studentId == me && status == assigned`), drill into exercises/sets/reps/weight targets.
       - **Log Session** — for an assigned workout, let the Student enter what they actually did
@@ -235,6 +248,66 @@ depends on it.
         PDF bytes get sent to the function instead of embedded client-side, same as the text
         prompt today.
 
+**5e. ADM Dashboard — currently 100% mocked (found 2026-08-17, from a real-device screenshot
+after the first successful ADM login).** All three tabs render fixed data that never changes and
+don't reflect anything real. Each needs its own fix:
+
+- [ ] **Logs tab** — the log text is a hardcoded string literal in `LogsTab()`
+      (`"[18:30:22] ERROR: Gemini API Key invalid\n..."`, always the same two lines), and
+      "Copiar"/"Limpar" are empty `onClick` placeholders (same "looks unfinished" bug pattern as
+      §5d). There is also **no error logging happening anywhere in the app today** — catch blocks
+      in `GenerativeAiService`, `AuthRepository`, and the `TrainerRepository` snapshot listeners
+      (`addSnapshotListener { snapshot, error -> ... }` — `error` is currently received and
+      silently ignored) just swallow or surface a one-off error to the immediate caller, nothing
+      persists. Two possible shapes, pick one before building:
+      - **Quick (device-local only):** new Room entity `AppLogEntity(id, timestamp, level,
+        message)` + a small injected `AppLogger` singleton that the existing catch blocks call
+        into; `LogsTab` reads it via `Flow`; "Copiar" copies the rendered text
+        (`ClipboardManager`/`LocalClipboard`); "Limpar" deletes all rows. Cheap to build, but only
+        shows errors that happened *on the ADM's own device* — not useful for monitoring other
+        trainers' sessions, which is presumably the actual point of an ADM log viewer.
+      - **Proper (fleet-wide):** wire Firebase Crashlytics (already Firebase-adjacent, purpose
+        built, free tier, no custom log-shipping code) instead of hand-rolling a Firestore log
+        collection — a hand-rolled `appLogs` Firestore collection would add real per-write cost at
+        scale for something Crashlytics already solves. Recommended over the quick option if the
+        ADM dashboard is meant to actually monitor the app in the field, not just the ADM's device.
+      - Either way, this needs a decision from the user on which shape before implementation —
+        don't build the quick version and call it done if fleet-wide monitoring is the actual goal.
+- [ ] **Gestão tab** — "Personais: 12" and "Total Usuários: 154" are hardcoded string literals in
+      `ApiStatusTab`'s caller (`StatCard("Personais", "12", ...)` / `StatCard("Total Usuários",
+      "154", ...)`), and "Personais Ativos" has no implementation at all (just a header, the body
+      is a `// Lista de personais aqui...` comment). Real implementation:
+      - Researched (2026-08-17): Firestore's count aggregation query —
+        `firestore.collection("users").whereEqualTo("role", "TRAINER").count().get(AggregateSource.SERVER).await()`,
+        read via `.count` on the result (`firebase.google.com/docs/firestore/query-data/aggregation-queries`).
+        No new index needed (single-field equality). Confirms `firestore.rules`' `isAdmin()`
+        already permits this: it only depends on the *caller's* own role, not each matched
+        document's fields, so Firestore can grant the query/count without evaluating it
+        per-document — no rules change needed.
+      - "Personais" card → `users` where `role == "TRAINER"`, count. "Total Usuários" card → count
+        of all `users` docs (no filter).
+      - "Personais Ativos" list → the same `where("role","==","TRAINER")` query, not aggregated —
+        actual `get()`, render name (+ maybe student count per trainer, later).
+      - New `AdminViewModel` (doesn't exist yet) to hold these three as `StateFlow`s, injected with
+        `FirebaseFirestore` directly (this is ADM-only cross-trainer data, doesn't belong in the
+        per-trainer-scoped `TrainerRepository`).
+- [ ] **APIs tab** — all three rows are hardcoded `ApiStatusRow(name, "Online", SuccessGreen)` —
+      always green, never actually checked. Also: **`OpenAI ChatGPT` isn't used anywhere in the
+      app** — `SettingsRepository.openaiApiKey` stores a key but no code ever calls OpenAI's API
+      with it; showing it as "Online" is doubly fake (nothing to be online). Decide: remove the
+      dead OpenAI key field from Settings/this tab (dead-code cleanup, no functionality lost since
+      none exists), or actually wire OpenAI as a real second provider (larger, undecided scope —
+      GOALS.md's Product goal never asked for multi-provider AI). Recommend removing it unless the
+      user actually wants a second AI provider. For the two real integrations:
+      - **Firestore**: don't spend a real network probe just to render a badge if avoidable — cheapest
+        honest signal is attempting one lightweight `.limit(1).get()` with a short timeout;
+        success/failure (not literally "online/offline", Firestore doesn't expose a ping endpoint).
+      - **Gemini**: showing true network uptime means burning a real API call (cost + quota) just
+        to paint a status dot. Cheaper and arguably more honest: reflect whether
+        `SettingsRepository.geminiApiKey` is non-blank ("Configurada" / "Não configurada") rather
+        than claiming "Online". If true uptime is actually wanted, that's a deliberate tradeoff to
+        confirm with the user first, not a default.
+
 ## 6. Connectivity
 - [ ] Define client↔Firestore sync strategy per §4 (snapshot listeners vs one-shot fetches,
       offline persistence — Firestore's built-in offline cache is likely sufficient, no custom
@@ -256,17 +329,64 @@ depends on it.
       students/workouts/biometrics/schedules/workoutLogs scoped by `trainerId`, students read-only
       on their own docs) and published via the Firestore console Rules tab. Verified live with an
       unauthenticated REST probe returning `403 PERMISSION_DENIED` (not open, not 404-missing-db).
-- [ ] **Student↔Trainer linking (Product goal #2) — decide the mechanism:** today
-      `AddStudentScreen` only creates a local `UserEntity` row, no auth account. Extend it so
-      adding a student also provisions their login, e.g.: Trainer enters the student's email in
-      `AddStudentScreen` → a Cloud Function creates a Firebase Auth user (or a pending invite)
-      with `role = STUDENT` and `trainerId = <this trainer's uid>` already set in Firestore, and
-      the student sets their password on first login. This keeps `role`/`trainerId` writable
-      only server-side (see the security-rules item above), so a student can never self-assign a
-      trainer or a role.
-- [ ] Add basic auth UX gaps: password reset flow, and a way for an ADM to create
-      Trainer/Student accounts with a role (currently unclear how a non-ADM user first gets a
-      Firestore `role` doc — likely needs to be set server-side/by an ADM, not client-writable).
+- [ ] **Student↔Trainer linking — revised 2026-08-17: invite-code pattern, no Cloud Function
+      needed.** The original plan required a Cloud Function (blocked on the Blaze plan). Researched
+      an alternative that stays on Spark: a short-lived invite code, stored as its own Firestore
+      doc, validated entirely inside `firestore.rules` — a standard pattern for exactly this
+      problem (general confirmation: Firestore rules can reference *other* documents via `get()`/
+      `exists()` inside a condition, which is what makes self-service claims like this safe without
+      a server). Design:
+      - New collection `invites/{code}` — `code` is a random ~8-char id generated client-side
+        (`UUID.randomUUID().toString().take(8).uppercase()` is fine, collision risk is negligible
+        at this scale). Doc: `{trainerId, used: false, createdAt}` (+ whatever student-profile
+        draft fields the data-model decision below needs).
+      - Rules: `allow create: if isOwningTrainer(request.resource.data.trainerId) &&
+        request.resource.data.used == false;` — only the trainer can mint one, and only unused.
+        `allow read: if isSignedIn();` — a prospective student needs to look up the code to
+        validate it before claiming (codes are random+long enough that guessing isn't practical,
+        same tradeoff every "invite link" system makes). `allow update` only permits the one
+        `used: false -> true` transition, `trainerId` unchanged — nothing else about an invite can
+        ever be edited.
+      - `users/{uid}` rules gain a **create**-time (not update-time — a self-registered student has
+        no `users/{uid}` doc yet, so this is their very first write) exception: `allow create: if
+        isAdmin() || (isSignedIn() && request.auth.uid == uid && request.resource.data.role ==
+        'STUDENT' && get(/databases/$(database)/documents/invites/$(request.resource.data.inviteCode)).data.trainerId
+        == request.resource.data.trainerId && get(...).data.used == false);` — a student can claim
+        `role: STUDENT` + `trainerId: X` for themselves *only* by presenting a currently-valid,
+        unused invite that was minted by trainer X. The existing `update` rule (role/trainerId
+        immutable after the first write) is untouched, so this is a true one-time claim — exactly
+        the same self-promotion protection as before, just with one narrow, provable exception.
+      - UI: Trainer gets a "Gerar convite" action (new invite doc + share sheet with the code).
+        Student gets a "Tenho um código de convite" entry point (probably on first login when
+        `authState` resolves to `Authenticated` with no role — reuse the message card just added
+        to `LoginScreen`, turn it into an input instead of a dead-end).
+      - **Open data-model question — needs a decision before implementation, not a silent pick:**
+        today `AddStudentScreen` writes a `UserEntity`/`students` doc keyed by a random
+        client-generated UUID, entirely disconnected from any Firebase Auth account (there's no
+        login for that student at all). Once a student has a *real* Auth uid, every existing
+        `resource.data.studentId == request.auth.uid` check in `firestore.rules` (and every
+        `workouts`/`biometrics`/`schedules`/`workoutLogs` write from `TrainerRepository`) implicitly
+        assumes `studentId` *is* that uid. Two ways to reconcile, pick one:
+        1. **Unify**: stop treating `students/{id}` as a separate collection for linked students —
+           a linked student's profile *is* their `users/{uid}` doc (role, trainerId, name, phone,
+           goal, trainingDays, etc. all together). `students/{id}` stays only for trainer-authored
+           drafts *before* an invite is claimed; claiming migrates the draft's fields into
+           `users/{uid}` and the trainer can archive/delete the draft. Fewer moving parts long-term,
+           but touches `TrainerRepository`, `AddStudentScreen`, `StudentDetailsScreen`, and
+           `FirestoreMappers` (all currently built around `UserEntity`/`students`).
+        2. **Bridge**: keep `students/{id}` exactly as-is (still keyed by the original random id,
+           still where `AddStudentScreen`/`StudentDetailsScreen` read/write from), and add a
+           `linkedUid` field set once an invite is claimed; every place that currently does
+           `studentId == request.auth.uid` instead resolves through one extra lookup
+           (`students` doc where `linkedUid == request.auth.uid`). Less code churn in the existing
+           trainer-side screens, but every rule and every `workouts`/`biometrics`/... write gains a
+           layer of indirection, and Firestore rules can't easily do this uid-and-not know
+(` in`/`array-contains` queries inside rules exist but add real complexity).
+        Recommendation: **option 1 (unify)** — it's more work up front but removes a permanent
+        source of confusion (two ids referring to the same person) instead of papering over it.
+- [ ] Add basic auth UX gaps: password reset flow now that self-registration exists (`register()`
+      already added to `AuthRepository`/`AuthViewModel`/`LoginScreen`, 2026-08-16 — password reset
+      is the remaining gap, same screen, `auth.sendPasswordResetEmail(email)`).
 
 ## 8. Security
 - [x] `<uses-permission android:name="android.permission.INTERNET" />` added to `AndroidManifest.xml`.
@@ -291,6 +411,17 @@ depends on it.
       `app/build/outputs/apk/release/app-release-unsigned.apk`.
 - [x] Target API compliance: `targetSdk = 37` already exceeds Google Play's Aug 31, 2026
       requirement (API 36 for new apps/updates) — confirmed compliant, no action needed.
+- [ ] **Firebase App Check — not enabled** (noticed the console's own banner prompting this while
+      working in Firestore, 2026-08-17: "Proteja os recursos do Cloud Firestore de abusos, como
+      fraude de faturamento ou phishing"). App Check attests that requests hitting
+      Firestore/Auth/the future Cloud Function actually come from *this* real app build, not a
+      script replaying the API key — directly relevant now that self-registration (`register()`)
+      and the invite-code system above both accept unauthenticated-adjacent writes (account
+      creation, invite lookups) that a script could otherwise hit directly with just the public
+      API key. Low effort (Play Integrity provider on Android, a few lines in `MainApplication`),
+      meaningfully raises the bar against automated abuse. Do this alongside the invite-code work,
+      not as an afterthought — it's cheapest to add before there's real invite-code traffic to
+      protect.
 
 ## 9. Testing
 - [x] Real coverage added (placeholders `ExampleUnitTest`/`ExampleInstrumentedTest` left in place,
@@ -348,30 +479,64 @@ depends on it.
 
 ---
 
-## Suggested build order (what blocks what)
+## 12. Phase 2 — full feature parity with commercial PT/coaching apps (researched, deliberately
+deferred — not started, not blocking the MVP above)
 
-1. §0 SDK 37 + `google-services.json` + §8 INTERNET permission → **project builds and runs at
-   all**.
-2. §7 `firestore.rules` (even a minimal safe version) before any real user data touches
-   Firestore — currently nothing stops data leakage/role self-escalation the moment Firestore
-   rules move out of test mode, or the risk if they're already in test mode.
-3. §4a Firestore-as-source-of-truth migration (incl. the new `workoutLogs` collection) → unblocks
-   everything below.
-4. §7 Student↔Trainer linking + §5b Student screens (My Workouts, Log Session, My Evolution) →
-   delivers Product goal #2/#3, the core new feature.
-5. §5c Trainer-side "recent activity" + generalized evolution chart → delivers Product goal #4.
-6. §5d UI/professionalism debt (schedule button, hardcoded colors/theming, loading/empty/error
-   states, form validation) → delivers Product goal #5/#6; can run in parallel with steps 3-5
-   since it touches existing screens, not the new ones.
-6a. **§5d "Criar com IA" button wiring — do this next, current user priority (2026-08-16).**
-   Pure navigation, no dependency on anything still blocked (not Blaze, not CI secrets) — smallest
-   possible change that makes the already-built AI ficha generation actually reachable. The
-   PDF-grounding follow-up (also in §5d) is explicitly deferred by the user until this lands.
-7. §3 Cloud Function Gemini proxy → unblocks safely shipping the AI feature given the June/Sept
-   2026 Gemini key deprecation deadlines. Do this *before or alongside* the PDF-grounding
-   follow-up from step 6a, and note the SDK is now confirmed deprecated (see §5d) — swap to the
-   Firebase AI Logic SDK as part of this step, not after.
-8. §9 real tests (incl. the new `workoutLogs` round-trip test) + §11 CI → safety net before
-   iterating faster.
-9. §8 release hardening (R8, key storage, signing) + §11 store prerequisites → Play Store
+Researched 2026-08-17 what personal-trainer client-management apps are expected to have today
+(GetApp/Jotform/Capsule CRM/1fit market surveys — see sources at the end of this session's reply,
+not reproduced here). Cross-referenced against this app's current + planned (§§1-11) scope:
+
+| Commercial feature | This app's status |
+|---|---|
+| Client profiles + progress tracking | Have it (`BiometricEntity`/`WeightChart`, §4a sync) |
+| Workout/program delivery | Have it (manual + AI builder, §5a) |
+| Mobile access | Have it (native Android) |
+| Booking with automatic reminders | Have scheduling (`ScheduleScreen`); **no reminders** — would need push notifications (FCM), explicitly out of scope per the original Product goal ("don't add FCM unless explicitly requested") |
+| In-app messaging | **Don't have** — no chat/messaging feature or data model anywhere |
+| Progress photos | **Don't have** — `BiometricEntity` is numeric only, no image storage/Firebase Storage integration |
+| Payment processing | **Don't have** — no billing/subscription concept, no payment processor integration |
+| Habit tracking | **Don't have** — out of scope, not part of the Product goal |
+
+None of these are started, and none should be picked up silently — each is a real subsystem
+(messaging needs a data model + real-time UI + likely FCM for delivery; payments need a processor
+decision, PCI-scope discussion, and real business terms; photos need Firebase Storage + upload
+UI + storage-rules; reminders need FCM). Flagging them here so the *complete* picture is visible,
+per the request that triggered this research pass — not recommending building any of them without
+an explicit go-ahead and, for payments specifically, real business decisions only the user can
+make (pricing, which processor, subscription vs. one-time).
+
+If/when any of these become real priorities, treat each as its own `/newgoal` research pass (the
+depth needed — e.g. messaging's real-time delivery model, or payment PCI scope — deserves the same
+front-loaded research this file already does for the rest of the app, not a rushed bolt-on).
+
+---
+
+## Suggested build order (what blocks what) — revised 2026-08-17
+
+**Done** (§0, §1 CLAUDE.md, §2 git, §4a Firestore migration, §5d UI debt + AI button wiring, §7
+firestore.rules + self-registration, §8 INTERNET/backup-exclusion/R8, §9 first real tests, §10
+lint) — see each section's `[x]` items for what was actually verified, not just attempted.
+
+Next, in order:
+
+1. **§7 invite-code Student↔Trainer linking** — resolve the data-model decision (unify vs.
+   bridge, see §7) first, it's a prerequisite decision, not code. Then: `invites` collection +
+   rules, trainer "Gerar convite" UI, student claim UI.
+2. **§5b Student screens** (My Workouts, Log Session, My Evolution) — needs #1 done first (a
+   student needs a `trainerId` before any of these queries mean anything).
+3. **§5e ADM Dashboard** — independent of #1/#2, can run in parallel: needs one decision first
+   (Logs tab: device-local Room vs. Crashlytics, see §5e), then Gestão tab (real counts, already
+   researched, no blocker) and APIs tab (honest status, decide on removing the unused OpenAI key
+   field) can proceed immediately.
+4. **§8 Firebase App Check** — do alongside #1, before real invite-code traffic exists to abuse.
+5. §5c Trainer-side "recent activity" + generalized evolution chart → delivers Product goal #4,
+   needs #1/#2 done first (nothing to show otherwise).
+6. §3 Cloud Function Gemini proxy + SDK migration (deprecated `com.google.ai.client.generativeai`
+   → Firebase AI Logic SDK) → still needs the Blaze plan; unblocks safely shipping the AI feature
+   given the June/Sept 2026 Gemini key deprecation deadlines, and unblocks the PDF-grounding
+   follow-up in §5d.
+7. §9 remaining tests (Compose UI golden path, needs #1/#2 built first) + §11 CI → safety net.
+8. §8 remaining hardening (encrypted key storage, signing) + §11 store prerequisites → Play Store
    readiness.
+9. §12 Phase 2 (messaging, payments, photos, booking reminders) — only if/when explicitly
+   prioritized; each deserves its own `/newgoal` pass when the time comes.

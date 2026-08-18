@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.personalapp.data.local.entity.WorkoutEntity
+import com.example.personalapp.data.service.AiProvider
 import com.example.personalapp.ui.viewmodel.AIWorkoutViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -30,6 +31,7 @@ fun AIWorkoutScreen(
     val messages by viewModel.messages.collectAsState()
     val isGenerating by viewModel.isGenerating.collectAsState()
     var inputText by remember { mutableStateOf("") }
+    var provider by remember { mutableStateOf(AiProvider.GEMINI) }
 
     Scaffold(
         topBar = {
@@ -48,6 +50,21 @@ fun AIWorkoutScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilterChip(
+                    selected = provider == AiProvider.GEMINI,
+                    onClick = { provider = AiProvider.GEMINI },
+                    label = { Text("Gemini") }
+                )
+                FilterChip(
+                    selected = provider == AiProvider.OPENAI,
+                    onClick = { provider = AiProvider.OPENAI },
+                    label = { Text("ChatGPT") }
+                )
+            }
             LazyColumn(
                 modifier = Modifier
                     .weight(1f)
@@ -95,7 +112,7 @@ fun AIWorkoutScreen(
                     Spacer(modifier = Modifier.width(8.dp))
                     IconButton(
                         onClick = {
-                            viewModel.sendMessage(inputText, studentId)
+                            viewModel.sendMessage(inputText, studentId, provider)
                             inputText = ""
                         },
                         enabled = !isGenerating && inputText.isNotBlank()

@@ -18,6 +18,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.personalapp.data.repository.UserRole
 import com.example.personalapp.ui.viewmodel.AuthState
 import com.example.personalapp.ui.viewmodel.AuthViewModel
+import com.example.personalapp.ui.viewmodel.InviteClaimState
+import com.example.personalapp.ui.viewmodel.PasswordResetState
 
 @Composable
 fun LoginScreen(
@@ -29,7 +31,11 @@ fun LoginScreen(
     var isRegisterMode by remember { mutableStateOf(false) }
 
     val authState by viewModel.authState.collectAsState()
-    val authenticatedRole = (authState as? AuthState.Authenticated)?.role
+    val authenticated = authState as? AuthState.Authenticated
+    val authenticatedRole = authenticated?.role
+    var inviteCode by remember { mutableStateOf("") }
+    val inviteClaimState by viewModel.inviteClaimState.collectAsState()
+    val passwordResetState by viewModel.passwordResetState.collectAsState()
 
     Column(
         modifier = Modifier
@@ -121,15 +127,85 @@ fun LoginScreen(
                 Text(if (isRegisterMode) "Já tem conta? Entrar" else "Não tem conta? Criar conta")
             }
 
-            if (authState is AuthState.Authenticated && authenticatedRole != UserRole.ADM && authenticatedRole != UserRole.TRAINER) {
+            if (!isRegisterMode) {
+                TextButton(
+                    onClick = { viewModel.resetPassword(email) },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = email.isNotBlank() && passwordResetState !is PasswordResetState.Loading
+                ) {
+                    Text("Esqueci minha senha")
+                }
+                when (passwordResetState) {
+                    is PasswordResetState.Sent -> Text(
+                        text = "E-mail de redefinição enviado.",
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    is PasswordResetState.Error -> Text(
+                        text = (passwordResetState as PasswordResetState.Error).message,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    else -> {}
+                }
+            }
+
+            if (authenticatedRole == UserRole.STUDENT) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        if (authenticated.trainerId != null) {
+                            Text(
+                                text = "Vinculado ao seu personal. A área do aluno chega em breve por aqui.",
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        } else {
+                            Text(
+                                text = "Login feito. Insira o código de convite que seu personal te enviou " +
+                                    "para vincular sua conta.",
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            OutlinedTextField(
+                                value = inviteCode,
+                                onValueChange = { inviteCode = it.uppercase() },
+                                label = { Text("Código de convite") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = inviteClaimState !is InviteClaimState.Loading
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(
+                                onClick = { viewModel.claimInvite(inviteCode.trim()) },
+                                enabled = inviteCode.isNotBlank() && inviteClaimState !is InviteClaimState.Loading,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                if (inviteClaimState is InviteClaimState.Loading) {
+                                    CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                                } else {
+                                    Text("Vincular")
+                                }
+                            }
+                            if (inviteClaimState is InviteClaimState.Error) {
+                                Text(
+                                    text = (inviteClaimState as InviteClaimState.Error).message,
+                                    color = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.padding(top = 8.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            } else if (authState is AuthState.Authenticated && authenticatedRole == UserRole.NONE) {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
                     modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
                 ) {
                     Text(
-                        text = "Login feito, mas esta conta ainda não tem um papel de Personal atribuído " +
-                            "(área de Aluno em construção). Peça para um ADM configurar o campo \"role\" " +
-                            "desta conta no Firestore.",
+                        text = "Login feito, mas esta conta ainda não tem um papel atribuído. " +
+                            "Peça para um ADM configurar o campo \"role\" desta conta no Firestore.",
                         color = MaterialTheme.colorScheme.onSecondaryContainer,
                         modifier = Modifier.padding(16.dp)
                     )

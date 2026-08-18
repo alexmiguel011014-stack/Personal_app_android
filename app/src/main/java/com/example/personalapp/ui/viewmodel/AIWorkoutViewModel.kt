@@ -7,6 +7,7 @@ import com.example.personalapp.data.local.entity.UserEntity
 import com.example.personalapp.data.local.entity.WorkoutEntity
 import com.example.personalapp.data.model.Exercise
 import com.example.personalapp.data.repository.TrainerRepository
+import com.example.personalapp.data.service.AiProvider
 import com.example.personalapp.data.service.GenerativeAiService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
@@ -58,13 +59,13 @@ class AIWorkoutViewModel @Inject constructor(
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    fun sendMessage(text: String, studentId: String) {
+    fun sendMessage(text: String, studentId: String, provider: AiProvider = AiProvider.GEMINI) {
         if (text.isBlank()) return
-        
+
         viewModelScope.launch {
             _messages.value = _messages.value + ChatMessage(text, true)
             _isGenerating.value = true
-            
+
             try {
                 val student = trainerRepository.getUserById(studentId)
                 if (student == null) {
@@ -72,7 +73,7 @@ class AIWorkoutViewModel @Inject constructor(
                     return@launch
                 }
 
-                val aiRawResponse = aiService.generateWorkout(student, text)
+                val aiRawResponse = aiService.generateWorkout(student, text, provider)
                 
                 // Try to parse JSON from AI response
                 val suggestedWorkouts = tryParseWorkouts(aiRawResponse, studentId)

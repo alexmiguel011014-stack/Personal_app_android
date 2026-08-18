@@ -1,8 +1,10 @@
 rules_version = '2';
 
-// Schema (see GOALS.md §4a):
-//   users/{uid}          - role ('ADM'|'TRAINER'|'STUDENT'), trainerId (STUDENT docs only)
-//   students/{studentId} - trainerId
+// Schema (see GOALS.md §4a, §7):
+//   users/{uid}          - role ('ADM'|'TRAINER'|'STUDENT'), trainerId (STUDENT docs only).
+//                           A linked STUDENT's full profile lives here (GOALS.md §7 "unify").
+//   students/{studentId} - trainerId. Trainer-authored draft, pre-invite only.
+//   invites/{code}        - trainerId, used, createdAt + copied draft fields.
 //   workouts/{workoutId} - trainerId, studentId, status ('draft'|'assigned')
 //   biometrics/{entryId} - trainerId, studentId
 //   schedules/{scheduleId} - trainerId, studentId
@@ -36,13 +38,40 @@ service cloud.firestore {
     // profile fields but can never change their own role or trainerId (no self-promotion).
     match /users/{uid} {
       allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
-      allow create: if isAdmin();
+      // A self-registered student has no users/{uid} doc yet, so claiming an invite is their
+      // first-ever write here (create, not update) — allowed only by presenting a currently
+      // valid, unused invite minted by the trainerId being claimed.
+      allow create: if isAdmin() || (
+        isSignedIn() && request.auth.uid == uid &&
+        request.resource.data.role == 'STUDENT' &&
+        request.resource.data.trainerId ==
+          get(/databases/$(database)/documents/invites/$(request.resource.data.inviteCode)).data.trainerId &&
+        get(/databases/$(database)/documents/invites/$(request.resource.data.inviteCode)).data.used == false
+      );
       allow update: if isAdmin() || (
         isSignedIn() && request.auth.uid == uid &&
         field(request.resource.data, 'role') == field(resource.data, 'role') &&
         field(request.resource.data, 'trainerId') == field(resource.data, 'trainerId')
       );
-      allow delete: if isAdmin();
+      // The owning trainer may also remove a linked student's account (symmetric with every
+      // other collection here); non-STUDENT docs have no trainerId field so this never matches them.
+      allow delete: if isAdmin() || isOwningTrainer(field(resource.data, 'trainerId'));
+    }
+
+    // invites/{code} — a short-lived, single-use claim token minted by a trainer so a student
+    // can self-serve role=STUDENT + trainerId without a server (see GOALS.md §7).
+    match /invites/{code} {
+      allow get: if isSignedIn();
+      allow list: if false;
+      allow create: if isOwningTrainer(request.resource.data.trainerId) && request.resource.data.used == false;
+      // The claiming student (not the trainer) performs this write — only the used:false->true
+      // transition is permitted, no other field (including trainerId) may change.
+      allow update: if isSignedIn() &&
+        resource.data.used == false &&
+        request.resource.data.used == true &&
+        request.resource.data.trainerId == resource.data.trainerId &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used']);
+      allow delete: if isOwningTrainer(resource.data.trainerId);
     }
 
     // students/{studentId} — owned by trainerId; the linked student can read their own doc.

@@ -46,6 +46,39 @@ fun DocumentSnapshot.toUserEntity(): UserEntity? {
     )
 }
 
+// Maps a linked student's own users/{uid} doc (role stored as "STUDENT", matching AuthRepository's
+// convention) into the same UserEntity shape the trainer-side screens already read — role is
+// normalized to Room's lowercase convention so it still matches AppDao.getStudents()'s query.
+fun DocumentSnapshot.toLinkedUserEntity(): UserEntity? {
+    if (getString("role") != "STUDENT") return null
+    val name = getString("name") ?: return null
+    return UserEntity(
+        id = id,
+        name = name,
+        role = "student",
+        gender = getString("gender") ?: "Masculino",
+        phone = getString("phone") ?: "",
+        goal = getString("goal") ?: "",
+        experienceLevel = getString("experienceLevel") ?: "",
+        medicalNotes = getString("medicalNotes") ?: "",
+        trainingDays = (get("trainingDays") as? List<*>)?.filterIsInstance<String>() ?: emptyList(),
+        createdAt = getLong("createdAt") ?: 0L,
+        linked = true,
+    )
+}
+
+// Update-only payload for a linked student's users/{uid} doc: never includes role/trainerId, so a
+// trainer edit can't trip the immutability check in firestore.rules' users/{uid} update rule.
+fun UserEntity.toLinkedStudentUpdateMap(): Map<String, Any?> = mapOf(
+    "name" to name,
+    "gender" to gender,
+    "phone" to phone,
+    "goal" to goal,
+    "experienceLevel" to experienceLevel,
+    "medicalNotes" to medicalNotes,
+    "trainingDays" to trainingDays,
+)
+
 fun WorkoutEntity.toFirestoreMap(trainerId: String): Map<String, Any?> = mapOf(
     "trainerId" to trainerId,
     "studentId" to studentId,

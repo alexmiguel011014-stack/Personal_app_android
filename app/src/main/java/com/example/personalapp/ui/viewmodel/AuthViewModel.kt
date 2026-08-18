@@ -14,8 +14,23 @@ import javax.inject.Inject
 sealed class AuthState {
     object Idle : AuthState()
     object Loading : AuthState()
-    data class Authenticated(val role: UserRole) : AuthState()
+    // trainerId is only ever non-null for a STUDENT who has already claimed an invite (§7).
+    data class Authenticated(val role: UserRole, val trainerId: String?) : AuthState()
     data class Error(val message: String) : AuthState()
+}
+
+sealed class InviteClaimState {
+    object Idle : InviteClaimState()
+    object Loading : InviteClaimState()
+    object Success : InviteClaimState()
+    data class Error(val message: String) : InviteClaimState()
+}
+
+sealed class PasswordResetState {
+    object Idle : PasswordResetState()
+    object Loading : PasswordResetState()
+    object Sent : PasswordResetState()
+    data class Error(val message: String) : PasswordResetState()
 }
 
 @HiltViewModel
@@ -26,6 +41,12 @@ class AuthViewModel @Inject constructor(
 
     private val _authState = MutableStateFlow<AuthState>(AuthState.Idle)
     val authState: StateFlow<AuthState> = _authState
+
+    private val _inviteClaimState = MutableStateFlow<InviteClaimState>(InviteClaimState.Idle)
+    val inviteClaimState: StateFlow<InviteClaimState> = _inviteClaimState
+
+    private val _passwordResetState = MutableStateFlow<PasswordResetState>(PasswordResetState.Idle)
+    val passwordResetState: StateFlow<PasswordResetState> = _passwordResetState
 
     init {
         checkCurrentUser()
@@ -44,11 +65,11 @@ class AuthViewModel @Inject constructor(
         viewModelScope.launch {
             _authState.value = AuthState.Loading
             val result = repository.login(email, pass)
-            result.onSuccess { role ->
-                if (role == UserRole.TRAINER) {
+            result.onSuccess { auth ->
+                if (auth.role == UserRole.TRAINER) {
                     repository.getCurrentUser()?.uid?.let { trainerRepository.startListening(it) }
                 }
-                _authState.value = AuthState.Authenticated(role)
+                _authState.value = AuthState.Authenticated(auth.role, auth.trainerId)
             }.onFailure { e ->
                 _authState.value = AuthState.Error(e.message ?: "Falha no login")
             }
@@ -59,13 +80,41 @@ class AuthViewModel @Inject constructor(
         viewModelScope.launch {
             _authState.value = AuthState.Loading
             val result = repository.register(email, pass)
-            result.onSuccess { role ->
-                _authState.value = AuthState.Authenticated(role)
+            result.onSuccess { auth ->
+                _authState.value = AuthState.Authenticated(auth.role, auth.trainerId)
             }.onFailure { e ->
                 _authState.value = AuthState.Error(e.message ?: "Falha ao criar conta")
             }
         }
     }
+
+    fun claimInvite(code: String) {
+        viewModelScope.launch {
+            _inviteClaimState.value = InviteClaimState.Loading
+            repository.claimInvite(code).onSuccess { trainerId ->
+                _inviteClaimState.value = InviteClaimState.Success
+                val current = _authState.value
+                if (current is AuthState.Authenticated) {
+                    _authState.value = current.copy(trainerId = trainerId)
+                }
+            }.onFailure { e ->
+                _inviteClaimState.value = InviteClaimState.Error(e.message ?: "Código inválido")
+            }
+        }
+    }
+
+    fun resetPassword(email: String) {
+        viewModelScope.launch {
+            _passwordResetState.value = PasswordResetState.Loading
+            repository.resetPassword(email).onSuccess {
+                _passwordResetState.value = PasswordResetState.Sent
+            }.onFailure { e ->
+                _passwordResetState.value = PasswordResetState.Error(e.message ?: "Falha ao enviar e-mail")
+            }
+        }
+    }
+
+    fun currentUid(): String? = repository.getCurrentUser()?.uid
 
     fun logout() {
         trainerRepository.stopListening()

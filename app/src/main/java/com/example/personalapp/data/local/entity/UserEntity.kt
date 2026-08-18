@@ -15,4 +15,7 @@ data class UserEntity(
     val medicalNotes: String = "",
     val trainingDays: List<String> = emptyList(),
     val createdAt: Long,
+    // true once this student claimed an invite: profile lives in Firestore's users/{uid} (this id
+    // IS their Firebase Auth uid), not students/{id}. See GOALS.md §7 "unify".
+    val linked: Boolean = false,
 )

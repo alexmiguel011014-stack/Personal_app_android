@@ -27,8 +27,11 @@ class AuthRepositoryTest {
         every { auth.signInWithEmailAndPassword(any(), any()) } returns Tasks.forResult(authResult)
     }
 
-    private fun stubRoleDoc(uid: String, role: String?) {
-        val snapshot = mockk<DocumentSnapshot> { every { getString("role") } returns role }
+    private fun stubRoleDoc(uid: String, role: String?, trainerId: String? = null) {
+        val snapshot = mockk<DocumentSnapshot> {
+            every { getString("role") } returns role
+            every { getString("trainerId") } returns trainerId
+        }
         val docRef = mockk<DocumentReference> { every { get() } returns Tasks.forResult(snapshot) }
         val collectionRef = mockk<CollectionReference> { every { document(uid) } returns docRef }
         every { firestore.collection("users") } returns collectionRef
@@ -42,7 +45,7 @@ class AuthRepositoryTest {
         val result = repository.login("trainer@example.com", "pw")
 
         assertTrue(result.isSuccess)
-        assertEquals(UserRole.TRAINER, result.getOrNull())
+        assertEquals(UserRole.TRAINER, result.getOrNull()?.role)
     }
 
     @Test
@@ -52,7 +55,7 @@ class AuthRepositoryTest {
 
         val result = repository.login("admin@example.com", "pw")
 
-        assertEquals(UserRole.ADM, result.getOrNull())
+        assertEquals(UserRole.ADM, result.getOrNull()?.role)
     }
 
     @Test
@@ -62,7 +65,7 @@ class AuthRepositoryTest {
 
         val result = repository.login("new@example.com", "pw")
 
-        assertEquals(UserRole.STUDENT, result.getOrNull())
+        assertEquals(UserRole.STUDENT, result.getOrNull()?.role)
     }
 
     @Test
@@ -72,7 +75,17 @@ class AuthRepositoryTest {
 
         val result = repository.login("weird@example.com", "pw")
 
-        assertEquals(UserRole.STUDENT, result.getOrNull())
+        assertEquals(UserRole.STUDENT, result.getOrNull()?.role)
+    }
+
+    @Test
+    fun `login resolves trainerId for a linked student`() = runTest {
+        stubSignIn("uid-5")
+        stubRoleDoc("uid-5", "STUDENT", trainerId = "trainer-42")
+
+        val result = repository.login("student@example.com", "pw")
+
+        assertEquals("trainer-42", result.getOrNull()?.trainerId)
     }
 
     @Test

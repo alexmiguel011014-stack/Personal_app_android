@@ -1,5 +1,6 @@
 package com.example.personalapp.ui.screen
 
+import android.content.Intent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -12,6 +13,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -33,10 +37,15 @@ fun StudentDetailsScreen(
     val student by viewModel.student.collectAsState()
     val biometrics by viewModel.biometrics.collectAsState()
     val workouts by viewModel.workouts.collectAsState()
+    val workoutLogs by viewModel.workoutLogs.collectAsState()
+    val inviteCode by viewModel.inviteCode.collectAsState()
+    val inviteError by viewModel.inviteError.collectAsState()
     var showFichaDialog by remember { mutableStateOf(false) }
     var showBiometricDialog by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var menuExpanded by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
 
     LaunchedEffect(studentId) {
         viewModel.loadStudent(studentId)
@@ -76,6 +85,49 @@ fun StudentDetailsScreen(
         )
     }
 
+    if (inviteCode != null || inviteError != null) {
+        AlertDialog(
+            onDismissRequest = { viewModel.clearInvite() },
+            title = { Text("Convite gerado") },
+            text = {
+                if (inviteError != null) {
+                    Text(inviteError!!, color = MaterialTheme.colorScheme.error)
+                } else {
+                    Column {
+                        Text("Envie este código para o aluno vincular a conta dele:")
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            inviteCode!!,
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                if (inviteCode != null) {
+                    TextButton(onClick = {
+                        val intent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_TEXT, "Seu código de convite Personal Tracker: $inviteCode")
+                        }
+                        context.startActivity(Intent.createChooser(intent, null))
+                    }) { Text("Compartilhar") }
+                }
+            },
+            dismissButton = {
+                if (inviteCode != null) {
+                    TextButton(onClick = { clipboardManager.setText(AnnotatedString(inviteCode!!)) }) {
+                        Text("Copiar")
+                    }
+                } else {
+                    TextButton(onClick = { viewModel.clearInvite() }) { Text("Fechar") }
+                }
+            }
+        )
+    }
+
     if (showDeleteConfirm) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
@@ -110,12 +162,22 @@ fun StudentDetailsScreen(
                         DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                             DropdownMenuItem(
                                 text = { Text("Editar Perfil") },
-                                onClick = { 
+                                onClick = {
                                     menuExpanded = false
                                     onNavigateToEdit(studentId)
                                 },
                                 leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
                             )
+                            if (student?.linked == false) {
+                                DropdownMenuItem(
+                                    text = { Text("Gerar Convite") },
+                                    onClick = {
+                                        menuExpanded = false
+                                        viewModel.generateInvite()
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.PersonAdd, contentDescription = null) }
+                                )
+                            }
                             DropdownMenuItem(
                                 text = { Text("Excluir Aluno") },
                                 onClick = { 
@@ -164,6 +226,44 @@ fun StudentDetailsScreen(
                     Text("Evolução de Peso", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Card(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                         WeightChart(biometrics = biometrics)
+                    }
+                }
+
+                item {
+                    Text("Progressão de Carga", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    ExerciseProgressionChart(workoutLogs = workoutLogs)
+                }
+
+                item {
+                    Text("Atividade Recente", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    if (workoutLogs.isEmpty()) {
+                        Text(
+                            "Nenhuma sessão registrada pelo aluno ainda.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
+                    }
+                }
+
+                items(workoutLogs.sortedByDescending { it.date }.take(10)) { log ->
+                    val dateStr = SimpleDateFormat("dd/MM/yyyy HH:mm", currentLocale).format(Date(log.date))
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text(log.exerciseName, fontWeight = FontWeight.Bold)
+                                Text(dateStr, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Text(
+                                log.performedSets.joinToString(" · ") { "${it.weight}x${it.reps}" },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
                 }
 

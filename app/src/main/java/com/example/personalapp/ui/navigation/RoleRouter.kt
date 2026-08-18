@@ -15,15 +15,19 @@ fun RoleRouter(
     viewModel: AuthViewModel = hiltViewModel()
 ) {
     val authState by viewModel.authState.collectAsState()
-    val role = (authState as? AuthState.Authenticated)?.role
+    val authenticated = authState as? AuthState.Authenticated
+    val role = authenticated?.role
+    val studentUid = authenticated?.let { if (it.role == UserRole.STUDENT) viewModel.currentUid() else null }
 
     // LoginScreen is called from a single site on purpose: Compose keys @Composable calls by
     // call-site position, so calling LoginScreen() from multiple branches of a when-on-authState
     // (as this used to do) makes Compose tear down and recreate it — including its remembered
     // email/password text field state — on every Idle->Loading->Error/Authenticated transition.
-    when (role) {
-        UserRole.ADM -> AdminDashboardScreen(onLogout = { viewModel.logout() })
-        UserRole.TRAINER -> AppNavigation() // O Dashboard original está dentro do AppNavigation
-        else -> LoginScreen() // covers Idle/Loading/Error and Authenticated(STUDENT/NONE)
+    when {
+        role == UserRole.ADM -> AdminDashboardScreen(onLogout = { viewModel.logout() })
+        role == UserRole.TRAINER -> AppNavigation() // O Dashboard original está dentro do AppNavigation
+        role == UserRole.STUDENT && studentUid != null && authenticated.trainerId != null ->
+            StudentNavigation(studentId = studentUid, trainerId = authenticated.trainerId, onLogout = { viewModel.logout() })
+        else -> LoginScreen() // covers Idle/Loading/Error, Authenticated(NONE) and unclaimed STUDENT
     }
 }

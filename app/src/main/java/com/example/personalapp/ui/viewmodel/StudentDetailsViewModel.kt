@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.personalapp.data.local.entity.BiometricEntity
 import com.example.personalapp.data.local.entity.UserEntity
 import com.example.personalapp.data.local.entity.WorkoutEntity
+import com.example.personalapp.data.local.entity.WorkoutLogEntity
 import com.example.personalapp.data.repository.TrainerRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,12 +29,22 @@ class StudentDetailsViewModel @Inject constructor(
     private val _workouts = MutableStateFlow<List<WorkoutEntity>>(emptyList())
     val workouts: StateFlow<List<WorkoutEntity>> = _workouts
 
+    private val _workoutLogs = MutableStateFlow<List<WorkoutLogEntity>>(emptyList())
+    val workoutLogs: StateFlow<List<WorkoutLogEntity>> = _workoutLogs
+
+    private val _inviteCode = MutableStateFlow<String?>(null)
+    val inviteCode: StateFlow<String?> = _inviteCode
+
+    private val _inviteError = MutableStateFlow<String?>(null)
+    val inviteError: StateFlow<String?> = _inviteError
+
     fun loadStudent(studentId: String) {
         viewModelScope.launch {
             _student.value = repository.getUserById(studentId)
         }
         repository.getBiometricsByUser(studentId).onEach { _biometrics.value = it }.launchIn(viewModelScope)
         repository.getActiveWorkoutsByStudent(studentId).onEach { _workouts.value = it }.launchIn(viewModelScope)
+        repository.getWorkoutLogsByStudent(studentId).onEach { _workoutLogs.value = it }.launchIn(viewModelScope)
     }
 
     fun addBiometric(studentId: String, weight: Double, bodyFat: Double) {
@@ -63,5 +74,22 @@ class StudentDetailsViewModel @Inject constructor(
             repository.updateUser(user)
             onSuccess()
         }
+    }
+
+    fun generateInvite() {
+        val draft = _student.value ?: return
+        viewModelScope.launch {
+            try {
+                _inviteCode.value = repository.generateInvite(draft)
+                _inviteError.value = null
+            } catch (e: Exception) {
+                _inviteError.value = e.message ?: "Falha ao gerar convite"
+            }
+        }
+    }
+
+    fun clearInvite() {
+        _inviteCode.value = null
+        _inviteError.value = null
     }
 }

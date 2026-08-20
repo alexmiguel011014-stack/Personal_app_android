@@ -8,7 +8,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -39,6 +38,9 @@ fun ManualWorkoutScreen(
     // Smart Paste state
     var rawText by remember { mutableStateOf("") }
     var isSmartPasteExpanded by remember { mutableStateOf(false) }
+    // Non-empty only when the pasted text carried [Muscle:coef] annotations (GOALS.md §15c) —
+    // a manually-typed or plain-text-pasted ficha shows nothing extra here, no regression.
+    val effectiveVolume = remember(exercises.toList()) { WorkoutParser.calculateEffectiveVolume(exercises) }
 
     if (showAddExerciseDialog) {
         AddExerciseDialog(
@@ -97,55 +99,27 @@ fun ManualWorkoutScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Smart Paste Section
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
-                ),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Importador Inteligente", style = MaterialTheme.typography.titleSmall)
-                        }
-                        TextButton(onClick = { isSmartPasteExpanded = !isSmartPasteExpanded }) {
-                            Text(if (isSmartPasteExpanded) "Fechar" else "Abrir")
-                        }
+            SmartPasteCard(
+                isExpanded = isSmartPasteExpanded,
+                onToggleExpanded = { isSmartPasteExpanded = !isSmartPasteExpanded },
+                rawText = rawText,
+                onRawTextChange = {
+                    rawText = it
+                    val parsedName = WorkoutParser.parseWorkoutName(it)
+                    if (parsedName != null && workoutName.isBlank()) {
+                        workoutName = parsedName
                     }
+                    val parsedExercises = WorkoutParser.parseExercises(it)
+                    if (parsedExercises.isNotEmpty()) {
+                        exercises.clear()
+                        exercises.addAll(parsedExercises)
+                    }
+                },
+            )
 
-                    if (isSmartPasteExpanded) {
-                        Text(
-                            "Cole o texto (ex: Biceps 12x4) abaixo para identificar os exercícios automaticamente.",
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
-                        OutlinedTextField(
-                            value = rawText,
-                            onValueChange = { 
-                                rawText = it
-                                val parsedName = WorkoutParser.parseWorkoutName(it)
-                                if (parsedName != null && workoutName.isBlank()) {
-                                    workoutName = parsedName
-                                }
-                                val parsedExercises = WorkoutParser.parseExercises(it)
-                                if (parsedExercises.isNotEmpty()) {
-                                    exercises.clear()
-                                    exercises.addAll(parsedExercises)
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth().height(120.dp),
-                            placeholder = { Text("Ex:\nFicha A\nSupino 3x12\nBiceps 12x4") },
-                            textStyle = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                }
+            if (effectiveVolume.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(16.dp))
+                EffectiveVolumeSummary(effectiveVolume)
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -181,70 +155,9 @@ fun ManualWorkoutScreen(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(exercises) { exercise ->
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Row(
-                            modifier = Modifier.padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(text = exercise.name, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-                                Text(
-                                    text = "${exercise.sets} séries x ${exercise.reps} reps",
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                            }
-                            // Campo de peso em aberto para o futuro
-                            Text(
-                                text = "Peso: ---",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
+                items(exercises) { exercise -> ExerciseListItem(exercise) }
             }
             }
         }
     }
-}
-
-@Composable
-fun AddExerciseDialog(onDismiss: () -> Unit, onAdd: (Exercise) -> Unit) {
-    var name by remember { mutableStateOf("") }
-    var sets by remember { mutableStateOf("3") }
-    var reps by remember { mutableStateOf("12") }
-    var weight by remember { mutableStateOf("") }
-    var showValidation by remember { mutableStateOf(false) }
-    val nameError = showValidation && name.isBlank()
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Novo Exercício") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Nome") },
-                    isError = nameError,
-                    supportingText = { if (nameError) Text("Nome é obrigatório") }
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = sets, onValueChange = { sets = it }, label = { Text("Séries") }, modifier = Modifier.weight(1f))
-                    OutlinedTextField(value = reps, onValueChange = { reps = it }, label = { Text("Reps") }, modifier = Modifier.weight(1f))
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                showValidation = true
-                if (name.isNotBlank()) {
-                    onAdd(Exercise(name, sets.toIntOrNull() ?: 0, reps, null))
-                    onDismiss()
-                }
-            }) { Text("Adicionar") }
-        }
-    )
 }

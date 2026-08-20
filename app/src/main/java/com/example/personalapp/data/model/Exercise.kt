@@ -9,5 +9,10 @@ data class Exercise(
     val reps: String, // String to allow "10-12" or "Exhaustion"
     val weight: String? = null,
     val restSeconds: Int? = null,
-    val notes: String? = null
+    val notes: String? = null,
+    // Per-muscle activation coefficient (0.0-1.0), parsed from an optional Smart Paste
+    // annotation — see WorkoutParser.parseExercises and GOALS.md §15c. Null/empty when the
+    // pasted text carried no annotation; existing serialized Exercise JSON without this field
+    // deserializes fine since it's a new field with a default.
+    val muscleActivation: Map<String, Double>? = null,
 )

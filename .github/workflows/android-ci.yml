@@ -1,0 +1,44 @@
+name: Android CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # google-services.json is gitignored (see CLAUDE.md/GOALS.md §2) — the real file must be
+      # added as a repo secret (Settings → Secrets and variables → Actions → GOOGLE_SERVICES_JSON,
+      # paste the file's raw contents) for this step to produce a working config. Missing/empty
+      # secret still lets lint/unit tests run, but Firebase-dependent code won't initialize.
+      - name: Write google-services.json
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: echo "$GOOGLE_SERVICES_JSON" > app/google-services.json
+
+      - name: Lint + unit tests
+        run: ./gradlew verify
+
+      - name: Assemble debug APK
+        run: ./gradlew assembleDebug
+
+      - name: Upload lint report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-report
+          path: app/build/reports/lint-results-debug.html

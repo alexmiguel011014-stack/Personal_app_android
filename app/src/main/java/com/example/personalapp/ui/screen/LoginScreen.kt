@@ -20,6 +20,7 @@ import com.example.personalapp.ui.viewmodel.AuthState
 import com.example.personalapp.ui.viewmodel.AuthViewModel
 import com.example.personalapp.ui.viewmodel.InviteClaimState
 import com.example.personalapp.ui.viewmodel.PasswordResetState
+import com.example.personalapp.ui.viewmodel.TrainerRequestState
 
 @Composable
 fun LoginScreen(
@@ -36,6 +37,7 @@ fun LoginScreen(
     var inviteCode by remember { mutableStateOf("") }
     val inviteClaimState by viewModel.inviteClaimState.collectAsState()
     val passwordResetState by viewModel.passwordResetState.collectAsState()
+    val trainerRequestState by viewModel.trainerRequestState.collectAsState()
 
     Column(
         modifier = Modifier
@@ -194,6 +196,49 @@ fun LoginScreen(
                                     color = MaterialTheme.colorScheme.error,
                                     modifier = Modifier.padding(top = 8.dp)
                                 )
+                            }
+                            // Self-service handoff for the "I should be a TRAINER, not a
+                            // STUDENT" case: self-registration always starts as STUDENT (no
+                            // self-promotion — see GOALS.md §7). This just queues a request the
+                            // ADM sees and approves from the Gestão tab (GOALS.md §5e) — approval
+                            // itself is still an ADM-only write, this button can't grant TRAINER
+                            // on its own.
+                            Spacer(modifier = Modifier.height(16.dp))
+                            HorizontalDivider()
+                            Spacer(modifier = Modifier.height(12.dp))
+                            when (trainerRequestState) {
+                                is TrainerRequestState.Sent -> Text(
+                                    text = "Solicitação enviada! Assim que o administrador aprovar, saia e entre novamente no app.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                                else -> {
+                                    Text(
+                                        text = "É personal trainer? Peça acesso ao administrador:",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    OutlinedButton(
+                                        onClick = { viewModel.requestTrainerAccess() },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        enabled = trainerRequestState !is TrainerRequestState.Loading
+                                    ) {
+                                        if (trainerRequestState is TrainerRequestState.Loading) {
+                                            CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                                        } else {
+                                            Text("Solicitar acesso de Trainer")
+                                        }
+                                    }
+                                    if (trainerRequestState is TrainerRequestState.Error) {
+                                        Text(
+                                            text = (trainerRequestState as TrainerRequestState.Error).message,
+                                            color = MaterialTheme.colorScheme.error,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            modifier = Modifier.padding(top = 8.dp)
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

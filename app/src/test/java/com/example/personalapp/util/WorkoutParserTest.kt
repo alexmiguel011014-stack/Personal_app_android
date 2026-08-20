@@ -76,4 +76,57 @@ class WorkoutParserTest {
     fun `parseExercises returns empty list for text with no exercise patterns`() {
         assertEquals(emptyList<Any>(), WorkoutParser.parseExercises("Apenas um texto qualquer"))
     }
+
+    @Test
+    fun `parseExercises parses a trailing muscle-activation annotation`() {
+        val exercises = WorkoutParser.parseExercises("Supino reto 4x10 [Peitoral:1.0, Deltoide ant:0.5]")
+        assertEquals(1, exercises.size)
+        assertEquals(mapOf("Peitoral" to 1.0, "Deltoide ant" to 0.5), exercises[0].muscleActivation)
+    }
+
+    @Test
+    fun `parseExercises requires a period decimal in the annotation, not a comma`() {
+        // A comma is ambiguous with the muscle-list separator (e.g. "[Costas:0,75]" would look
+        // like two entries, "Costas:0" and "75") — treated as malformed and skipped, not parsed.
+        val exercises = WorkoutParser.parseExercises("Remada 3x10 [Costas:0.75]")
+        assertEquals(mapOf("Costas" to 0.75), exercises[0].muscleActivation)
+    }
+
+    @Test
+    fun `parseExercises leaves muscleActivation null when no annotation is present`() {
+        val exercises = WorkoutParser.parseExercises("Supino 3x12")
+        assertNull(exercises[0].muscleActivation)
+    }
+
+    @Test
+    fun `parseExercises ignores a malformed annotation instead of crashing`() {
+        val exercises = WorkoutParser.parseExercises("Supino 3x12 [not valid]")
+        assertEquals(1, exercises.size)
+        assertNull(exercises[0].muscleActivation)
+    }
+
+    @Test
+    fun `calculateEffectiveVolume sums fractional contributions across exercises`() {
+        val exercises = WorkoutParser.parseExercises(
+            """
+            Supino reto 4x10 [Peitoral:1.0, Triceps:0.5]
+            Puxada frontal 3x12 [Costas:1.0, Biceps:0.5]
+            Triceps corda 3x15 [Triceps:1.0]
+            """.trimIndent()
+        )
+
+        val effectiveVolume = WorkoutParser.calculateEffectiveVolume(exercises)
+
+        assertEquals(4.0, effectiveVolume["Peitoral"])
+        assertEquals(3.0, effectiveVolume["Costas"])
+        assertEquals(1.5, effectiveVolume["Biceps"])
+        // 4 sets * 0.5 (Supino) + 3 sets * 1.0 (Triceps corda) = 5.0
+        assertEquals(5.0, effectiveVolume["Triceps"])
+    }
+
+    @Test
+    fun `calculateEffectiveVolume returns an empty map when no exercise has annotations`() {
+        val exercises = WorkoutParser.parseExercises("Supino 3x12\nAgachamento 4x10")
+        assertEquals(emptyMap<String, Double>(), WorkoutParser.calculateEffectiveVolume(exercises))
+    }
 }

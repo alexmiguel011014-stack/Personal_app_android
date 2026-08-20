@@ -9,6 +9,8 @@ rules_version = '2';
 //   biometrics/{entryId} - trainerId, studentId
 //   schedules/{scheduleId} - trainerId, studentId
 //   workoutLogs/{logId}  - trainerId, studentId (written by the student, read by their trainer)
+//   trainerRequests/{uid} - email, createdAt. Self-written "please promote me" mailbox, doc ID is
+//                           the requester's own uid; only an ADM can read/act on it (GOALS.md §5e).
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -48,10 +50,28 @@ service cloud.firestore {
           get(/databases/$(database)/documents/invites/$(request.resource.data.inviteCode)).data.trainerId &&
         get(/databases/$(database)/documents/invites/$(request.resource.data.inviteCode)).data.used == false
       );
+      // The second branch is a narrow re-claim exception (GOALS.md §13d): an account that
+      // already has a users/{uid} doc but is still an unclaimed STUDENT (trainerId null) may
+      // attach to a trainer for the first time via the same valid-unused-invite proof the
+      // create rule above requires. Any other existing role/trainerId (TRAINER, ADM, or already
+      // linked to a different trainer) stays blocked — that needs an explicit ADM decision, not
+      // a client-driven overwrite.
       allow update: if isAdmin() || (
         isSignedIn() && request.auth.uid == uid &&
-        field(request.resource.data, 'role') == field(resource.data, 'role') &&
-        field(request.resource.data, 'trainerId') == field(resource.data, 'trainerId')
+        (
+          (
+            field(request.resource.data, 'role') == field(resource.data, 'role') &&
+            field(request.resource.data, 'trainerId') == field(resource.data, 'trainerId')
+          ) ||
+          (
+            field(resource.data, 'role') == 'STUDENT' &&
+            field(resource.data, 'trainerId') == null &&
+            request.resource.data.role == 'STUDENT' &&
+            request.resource.data.trainerId ==
+              get(/databases/$(database)/documents/invites/$(request.resource.data.inviteCode)).data.trainerId &&
+            get(/databases/$(database)/documents/invites/$(request.resource.data.inviteCode)).data.used == false
+          )
+        )
       );
       // The owning trainer may also remove a linked student's account (symmetric with every
       // other collection here); non-STUDENT docs have no trainerId field so this never matches them.
@@ -118,6 +138,15 @@ service cloud.firestore {
         request.resource.data.trainerId ==
           field(get(/databases/$(database)/documents/users/$(request.auth.uid)).data, 'trainerId');
       allow delete: if isSignedIn() && resource.data.studentId == request.auth.uid;
+    }
+
+    // trainerRequests/{uid} — a self-registered STUDENT asks to become a TRAINER; only the ADM
+    // can see the queue. Acceptance/rejection are just isAdmin() writes (users/{uid}.role update,
+    // or deleting this doc) — this collection carries zero privilege on its own, it's a mailbox.
+    match /trainerRequests/{uid} {
+      allow read: if isAdmin() || (isSignedIn() && request.auth.uid == uid);
+      allow create: if isSignedIn() && request.auth.uid == uid;
+      allow delete: if isAdmin();
     }
 
     // Everything else: denied by default (no catch-all match).

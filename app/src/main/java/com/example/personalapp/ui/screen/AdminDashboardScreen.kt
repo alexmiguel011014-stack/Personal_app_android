@@ -1,8 +1,8 @@
 package com.example.personalapp.ui.screen
 
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -109,14 +109,120 @@ fun UserManagementTab(viewModel: AdminViewModel) {
     val trainerCount by viewModel.trainerCount.collectAsState()
     val totalUserCount by viewModel.totalUserCount.collectAsState()
     val activeTrainers by viewModel.activeTrainers.collectAsState()
+    val pendingRequests by viewModel.pendingTrainerRequests.collectAsState()
+    val promoteResult by viewModel.promoteResult.collectAsState()
+    val promoteError by viewModel.promoteError.collectAsState()
 
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+    var uidInput by remember { mutableStateOf("") }
+    var nameInput by remember { mutableStateOf("") }
+
+    // The initial load happens once in AdminViewModel's init{}, which can predate data written
+    // after this screen was already open — re-check every time this tab is (re)entered.
+    LaunchedEffect(Unit) {
+        viewModel.loadTrainerRequests()
+        viewModel.loadUserStats()
+    }
+
+    if (promoteResult != null || promoteError != null) {
+        AlertDialog(
+            onDismissRequest = { viewModel.clearPromoteResult() },
+            title = { Text(if (promoteError != null) "Erro" else "Sucesso") },
+            text = { Text(promoteError ?: promoteResult.orEmpty()) },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.clearPromoteResult()
+                    if (promoteError == null) {
+                        uidInput = ""
+                        nameInput = ""
+                    }
+                }) { Text("OK") }
+            }
+        )
+    }
+
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
         Text("Gestão de Personais & Usuários", style = MaterialTheme.typography.titleMedium)
         Spacer(modifier = Modifier.height(16.dp))
 
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             StatCard("Personais", trainerCount?.toString() ?: "...", Modifier.weight(1f))
             StatCard("Total Usuários", totalUserCount?.toString() ?: "...", Modifier.weight(1f))
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Solicitações Pendentes", style = MaterialTheme.typography.labelLarge)
+            IconButton(onClick = {
+                viewModel.loadTrainerRequests()
+                viewModel.loadUserStats()
+            }) {
+                Icon(Icons.Default.Refresh, contentDescription = "Atualizar")
+            }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        if (pendingRequests.isEmpty()) {
+            Text(
+                "Nenhuma solicitação no momento.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                pendingRequests.forEach { request ->
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(request.email, modifier = Modifier.weight(1f))
+                            TextButton(onClick = { viewModel.rejectTrainerRequest(request) }) { Text("Recusar") }
+                            Button(onClick = { viewModel.acceptTrainerRequest(request) }) { Text("Aceitar") }
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Promover manualmente (avançado)", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "Só necessário se a solicitação não aparecer acima. Peça o UID da conta " +
+                        "(Firebase Console → Authentication → Users) e cole abaixo.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = uidInput,
+                    onValueChange = { uidInput = it },
+                    label = { Text("UID do usuário") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = nameInput,
+                    onValueChange = { nameInput = it },
+                    label = { Text("Nome (opcional)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Button(
+                    onClick = { viewModel.promoteToTrainer(uidInput, nameInput) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Promover a Trainer")
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -129,8 +235,8 @@ fun UserManagementTab(viewModel: AdminViewModel) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(activeTrainers) { trainer ->
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                activeTrainers.forEach { trainer ->
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Text(trainer.name, modifier = Modifier.padding(12.dp))
                     }
@@ -143,7 +249,6 @@ fun UserManagementTab(viewModel: AdminViewModel) {
 @Composable
 fun ApiStatusTab(viewModel: AdminViewModel) {
     val firestoreStatus by viewModel.firestoreStatus.collectAsState()
-    val geminiConfigured by viewModel.geminiConfigured.collectAsState()
     val openaiConfigured by viewModel.openaiConfigured.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
@@ -164,9 +269,9 @@ fun ApiStatusTab(viewModel: AdminViewModel) {
             }
         )
         ApiStatusRow(
-            "Google Gemini (neste aparelho)",
-            if (geminiConfigured) "Configurada" else "Não configurada",
-            if (geminiConfigured) SuccessGreen else MaterialTheme.colorScheme.outline
+            "Google Gemini",
+            "Ativo (Firebase AI Logic, grátis)",
+            SuccessGreen
         )
         ApiStatusRow(
             "OpenAI ChatGPT (neste aparelho)",
@@ -175,8 +280,9 @@ fun ApiStatusTab(viewModel: AdminViewModel) {
         )
         Spacer(modifier = Modifier.height(12.dp))
         Text(
-            "Gemini e OpenAI usam uma chave por personal (§3), então o status acima reflete só " +
-                "este aparelho, não a frota inteira.",
+            "Gemini é gerenciado centralmente pelo app (Firebase AI Logic, sem chave por " +
+                "personal). OpenAI continua opcional, com uma chave por personal — o status " +
+                "acima reflete só este aparelho, não a frota inteira.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

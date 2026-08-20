@@ -35,6 +35,7 @@ fun WorkoutBuilderScreen(
     onBack: () -> Unit,
     onNavigateToManual: (String) -> Unit = {},
     onNavigateToAI: (String) -> Unit = {},
+    onNavigateToPromptFicha: (String) -> Unit = {},
     viewModel: WorkoutViewModel = hiltViewModel(),
 ) {
     val workouts by viewModel.workouts.collectAsState()
@@ -67,25 +68,31 @@ fun WorkoutBuilderScreen(
                 fontWeight = FontWeight.Bold
             )
             
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Button(
                     onClick = { onNavigateToManual(studentId) },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
                     Text("Criar Manual")
                 }
                 Button(
                     onClick = { onNavigateToAI(studentId) },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
                 ) {
-                    Text("Criar com IA")
+                    Text("Criar com IA no App")
+                }
+                OutlinedButton(
+                    onClick = { onNavigateToPromptFicha(studentId) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Criar com Prompt para IA Externa")
                 }
             }
 

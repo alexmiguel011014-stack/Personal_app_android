@@ -5,14 +5,12 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -30,6 +28,7 @@ fun StudentDetailsScreen(
     onBack: () -> Unit,
     onNavigateToManual: (String) -> Unit,
     onNavigateToAI: (String) -> Unit,
+    onNavigateToPromptFicha: (String) -> Unit,
     onNavigateToEdit: (String) -> Unit,
     onNavigateToWorkoutBuilder: (String) -> Unit,
     viewModel: StudentDetailsViewModel = hiltViewModel()
@@ -43,7 +42,6 @@ fun StudentDetailsScreen(
     var showFichaDialog by remember { mutableStateOf(false) }
     var showBiometricDialog by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
-    var menuExpanded by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
 
@@ -52,33 +50,18 @@ fun StudentDetailsScreen(
     }
 
     if (showFichaDialog) {
-        AlertDialog(
-            onDismissRequest = { showFichaDialog = false },
-            title = { Text("Ficha Personal") },
-            text = { Text("Como deseja criar os treinos deste aluno?") },
-            confirmButton = {
-                TextButton(onClick = { 
-                    showFichaDialog = false
-                    onNavigateToManual(studentId)
-                }) {
-                    Text("Manual")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { 
-                    showFichaDialog = false
-                    onNavigateToAI(studentId)
-                }) {
-                    Text("Com IA")
-                }
-            }
+        FichaChoiceDialog(
+            onDismiss = { showFichaDialog = false },
+            onManual = { showFichaDialog = false; onNavigateToManual(studentId) },
+            onAi = { showFichaDialog = false; onNavigateToAI(studentId) },
+            onPromptExterno = { showFichaDialog = false; onNavigateToPromptFicha(studentId) },
         )
     }
 
     if (showBiometricDialog) {
         AddBiometricDialog(
             onDismiss = { showBiometricDialog = false },
-            onSave = { w, bf -> 
+            onSave = { w, bf ->
                 viewModel.addBiometric(studentId, w, bf)
                 showBiometricDialog = false
             }
@@ -86,109 +69,37 @@ fun StudentDetailsScreen(
     }
 
     if (inviteCode != null || inviteError != null) {
-        AlertDialog(
-            onDismissRequest = { viewModel.clearInvite() },
-            title = { Text("Convite gerado") },
-            text = {
-                if (inviteError != null) {
-                    Text(inviteError!!, color = MaterialTheme.colorScheme.error)
-                } else {
-                    Column {
-                        Text("Envie este código para o aluno vincular a conta dele:")
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            inviteCode!!,
-                            style = MaterialTheme.typography.headlineMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
+        InviteCodeDialog(
+            inviteCode = inviteCode,
+            inviteError = inviteError,
+            onDismiss = { viewModel.clearInvite() },
+            onShare = { code ->
+                val intent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, "Seu código de convite Personal Tracker: $code")
                 }
+                context.startActivity(Intent.createChooser(intent, null))
             },
-            confirmButton = {
-                if (inviteCode != null) {
-                    TextButton(onClick = {
-                        val intent = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_TEXT, "Seu código de convite Personal Tracker: $inviteCode")
-                        }
-                        context.startActivity(Intent.createChooser(intent, null))
-                    }) { Text("Compartilhar") }
-                }
-            },
-            dismissButton = {
-                if (inviteCode != null) {
-                    TextButton(onClick = { clipboardManager.setText(AnnotatedString(inviteCode!!)) }) {
-                        Text("Copiar")
-                    }
-                } else {
-                    TextButton(onClick = { viewModel.clearInvite() }) { Text("Fechar") }
-                }
-            }
+            onCopy = { code -> clipboardManager.setText(AnnotatedString(code)) },
         )
     }
 
     if (showDeleteConfirm) {
-        AlertDialog(
-            onDismissRequest = { showDeleteConfirm = false },
-            title = { Text("Excluir Aluno") },
-            text = { Text("Tem certeza que deseja excluir este aluno? Esta ação não pode ser desfeita.") },
-            confirmButton = {
-                Button(
-                    onClick = { viewModel.deleteStudent { onBack() } },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) { Text("Excluir") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancelar") }
-            }
+        DeleteStudentDialog(
+            onDismiss = { showDeleteConfirm = false },
+            onConfirm = { viewModel.deleteStudent { onBack() } },
         )
     }
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(student?.name ?: "Detalhes") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar")
-                    }
-                },
-                actions = {
-                    Box {
-                        IconButton(onClick = { menuExpanded = true }) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "Mais")
-                        }
-                        DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                            DropdownMenuItem(
-                                text = { Text("Editar Perfil") },
-                                onClick = {
-                                    menuExpanded = false
-                                    onNavigateToEdit(studentId)
-                                },
-                                leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
-                            )
-                            if (student?.linked == false) {
-                                DropdownMenuItem(
-                                    text = { Text("Gerar Convite") },
-                                    onClick = {
-                                        menuExpanded = false
-                                        viewModel.generateInvite()
-                                    },
-                                    leadingIcon = { Icon(Icons.Default.PersonAdd, contentDescription = null) }
-                                )
-                            }
-                            DropdownMenuItem(
-                                text = { Text("Excluir Aluno") },
-                                onClick = { 
-                                    menuExpanded = false
-                                    showDeleteConfirm = true
-                                },
-                                leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
-                            )
-                        }
-                    }
-                }
+            StudentDetailsTopBar(
+                studentName = student?.name,
+                canGenerateInvite = student?.linked == false,
+                onBack = onBack,
+                onEditProfile = { onNavigateToEdit(studentId) },
+                onGenerateInvite = { viewModel.generateInvite() },
+                onDeleteStudent = { showDeleteConfirm = true },
             )
         }
     ) { padding ->
@@ -348,45 +259,6 @@ fun StudentDetailsScreen(
             }
         } ?: Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
-        }
-    }
-}
-
-@Composable
-fun AddBiometricDialog(onDismiss: () -> Unit, onSave: (Double, Double) -> Unit) {
-    var weight by remember { mutableStateOf("") }
-    var bf by remember { mutableStateOf("") }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Nova Medida") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(value = weight, onValueChange = { weight = it }, label = { Text("Peso (kg)") })
-                OutlinedTextField(value = bf, onValueChange = { bf = it }, label = { Text("% Gordura (opcional)") })
-            }
-        },
-        confirmButton = {
-            Button(onClick = { 
-                val w = weight.toDoubleOrNull() ?: 0.0
-                val f = bf.toDoubleOrNull() ?: 0.0
-                if (w > 0) onSave(w, f)
-            }) { Text("Salvar") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancelar") }
-        }
-    )
-}
-
-@Composable
-fun InfoRow(icon: ImageVector, label: String, value: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-        Spacer(modifier = Modifier.width(12.dp))
-        Column {
-            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(value, style = MaterialTheme.typography.bodyLarge)
         }
     }
 }

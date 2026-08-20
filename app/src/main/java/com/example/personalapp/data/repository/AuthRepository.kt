@@ -2,6 +2,7 @@ package com.example.personalapp.data.repository
 
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -53,6 +54,24 @@ class AuthRepository @Inject constructor(
         }
     }
 
+    // Queues a request an ADM can see and approve from the Gestão tab (GOALS.md §5e) — approval
+    // itself is a separate, ADM-only write to users/{uid}.role, so this never grants TRAINER by
+    // itself; it's just a visible "someone is asking" mailbox, doc ID = the requester's own uid.
+    suspend fun requestTrainerAccess(): Result<Unit> {
+        val user = auth.currentUser ?: return Result.failure(Exception("Não autenticado"))
+        return try {
+            firestore.collection("trainerRequests").document(user.uid).set(
+                mapOf(
+                    "email" to (user.email ?: ""),
+                    "createdAt" to System.currentTimeMillis(),
+                )
+            ).await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun resetPassword(email: String): Result<Unit> {
         return try {
             auth.sendPasswordResetEmail(email).await()
@@ -98,7 +117,17 @@ class AuthRepository @Inject constructor(
             }.await()
             Result.success(trainerId)
         } catch (e: Exception) {
-            Result.failure(e)
+            // A PERMISSION_DENIED here (not an invalid-code/already-used message from the checks
+            // above) means this account's users/{uid} doc already has an incompatible role or
+            // trainerId — firestore.rules deliberately blocks overwriting that (GOALS.md §13d).
+            // The raw Firebase message is opaque, so surface something actionable instead.
+            val firestoreCause = e as? FirebaseFirestoreException
+                ?: (e.cause as? FirebaseFirestoreException)
+            if (firestoreCause?.code == FirebaseFirestoreException.Code.PERMISSION_DENIED) {
+                Result.failure(Exception("Esta conta já está vinculada a um perfil existente — fale com o administrador."))
+            } else {
+                Result.failure(e)
+            }
         }
     }
 

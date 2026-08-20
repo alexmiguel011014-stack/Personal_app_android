@@ -1,0 +1,64 @@
+package com.example.personalapp.ui.viewmodel
+
+import android.content.Context
+import com.example.personalapp.data.local.entity.UserEntity
+import com.example.personalapp.data.local.entity.WorkoutEntity
+import com.example.personalapp.data.repository.TrainerRepository
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
+// Backs PromptFichaScreen (GOALS.md §15): assembles the copy-paste prompt (fixed formatting
+// template + the muscle-activation reference table + the student's profile + whatever the
+// trainer types) instead of calling any AI API directly — the trainer runs this prompt in
+// whichever AI app they already have and pastes the reply back via the existing Smart Paste
+// importer, which WorkoutParser (§15c) now understands including the muscle-activation
+// annotations this same template asks the AI to produce.
+@HiltViewModel
+class PromptFichaViewModel @Inject constructor(
+    private val trainerRepository: TrainerRepository,
+    @ApplicationContext private val context: Context,
+) : ViewModel() {
+
+    private val _student = MutableStateFlow<UserEntity?>(null)
+    val student: StateFlow<UserEntity?> = _student
+
+    fun loadStudent(studentId: String) {
+        viewModelScope.launch {
+            _student.value = trainerRepository.getUserById(studentId)
+        }
+    }
+
+    fun buildPrompt(userRequest: String): String {
+        val template = context.assets.open("ficha_prompt_template.md").bufferedReader().use { it.readText() }
+        val table = context.assets.open("hypertrophy_volume_reference.md").bufferedReader().use { it.readText() }
+        val fullTemplate = template.replace("\$TABLE_PLACEHOLDER\$", table)
+
+        val student = _student.value
+        val profile = if (student != null) {
+            """
+            Nome: ${student.name}
+            Sexo: ${student.gender}
+            Objetivo: ${student.goal}
+            Nível: ${student.experienceLevel}
+            Notas Médicas/Restrições: ${student.medicalNotes}
+            Dias de treino na semana: ${student.trainingDays.joinToString(", ")}
+            """.trimIndent()
+        } else {
+            ""
+        }
+
+        return "$fullTemplate$profile\n\nPedido do Professor: $userRequest"
+    }
+
+    fun insertWorkout(workout: WorkoutEntity) {
+        viewModelScope.launch {
+            trainerRepository.insertWorkout(workout)
+        }
+    }
+}

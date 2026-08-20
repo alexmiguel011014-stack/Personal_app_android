@@ -154,17 +154,30 @@ class TrainerRepository @Inject constructor(
     fun getBiometricsByUser(userId: String): Flow<List<BiometricEntity>> = appDao.getBiometricsByUser(userId)
 
     // Workouts
+    //
+    // `status`/`assignedAt` are derived from `isActive` here, not set by callers — `isActive` is
+    // the one flag the UI (WorkoutBuilderScreen's Ativo/Inativo toggle) actually manipulates, and
+    // StudentRepository.getMyWorkouts() queries Firestore for status == "assigned". Without this,
+    // every workout stays "draft" forever and the student never sees anything.
+    private fun WorkoutEntity.withDerivedStatus(): WorkoutEntity = if (isActive) {
+        copy(status = "assigned", assignedAt = assignedAt ?: System.currentTimeMillis())
+    } else {
+        copy(status = "draft", assignedAt = null)
+    }
+
     suspend fun insertWorkout(workout: WorkoutEntity) {
-        appDao.insertWorkout(workout)
+        val toSave = workout.withDerivedStatus()
+        appDao.insertWorkout(toSave)
         currentTrainerId()?.let {
-            firestore.collection("workouts").document(workout.id).set(workout.toFirestoreMap(it)).await()
+            firestore.collection("workouts").document(toSave.id).set(toSave.toFirestoreMap(it)).await()
         }
     }
 
     suspend fun updateWorkout(workout: WorkoutEntity) {
-        appDao.updateWorkout(workout)
+        val toSave = workout.withDerivedStatus()
+        appDao.updateWorkout(toSave)
         currentTrainerId()?.let {
-            firestore.collection("workouts").document(workout.id).set(workout.toFirestoreMap(it)).await()
+            firestore.collection("workouts").document(toSave.id).set(toSave.toFirestoreMap(it)).await()
         }
     }
 

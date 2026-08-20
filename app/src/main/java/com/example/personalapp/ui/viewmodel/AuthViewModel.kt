@@ -33,6 +33,13 @@ sealed class PasswordResetState {
     data class Error(val message: String) : PasswordResetState()
 }
 
+sealed class TrainerRequestState {
+    object Idle : TrainerRequestState()
+    object Loading : TrainerRequestState()
+    object Sent : TrainerRequestState()
+    data class Error(val message: String) : TrainerRequestState()
+}
+
 @HiltViewModel
 class AuthViewModel @Inject constructor(
     private val repository: AuthRepository,
@@ -47,6 +54,9 @@ class AuthViewModel @Inject constructor(
 
     private val _passwordResetState = MutableStateFlow<PasswordResetState>(PasswordResetState.Idle)
     val passwordResetState: StateFlow<PasswordResetState> = _passwordResetState
+
+    private val _trainerRequestState = MutableStateFlow<TrainerRequestState>(TrainerRequestState.Idle)
+    val trainerRequestState: StateFlow<TrainerRequestState> = _trainerRequestState
 
     init {
         checkCurrentUser()
@@ -110,6 +120,17 @@ class AuthViewModel @Inject constructor(
                 _passwordResetState.value = PasswordResetState.Sent
             }.onFailure { e ->
                 _passwordResetState.value = PasswordResetState.Error(e.message ?: "Falha ao enviar e-mail")
+            }
+        }
+    }
+
+    fun requestTrainerAccess() {
+        viewModelScope.launch {
+            _trainerRequestState.value = TrainerRequestState.Loading
+            repository.requestTrainerAccess().onSuccess {
+                _trainerRequestState.value = TrainerRequestState.Sent
+            }.onFailure { e ->
+                _trainerRequestState.value = TrainerRequestState.Error(e.message ?: "Falha ao enviar solicitação")
             }
         }
     }

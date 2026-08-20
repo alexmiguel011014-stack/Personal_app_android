@@ -17,27 +17,38 @@ class SettingsRepository @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
     companion object {
-        val GEMINI_API_KEY = stringPreferencesKey("gemini_api_key")
         val OPENAI_API_KEY = stringPreferencesKey("openai_api_key")
-    }
-
-    val geminiApiKey: Flow<String> = context.dataStore.data.map { preferences ->
-        preferences[GEMINI_API_KEY] ?: ""
+        val DEEPSEEK_API_KEY = stringPreferencesKey("deepseek_api_key")
+        val CLAUDE_API_KEY = stringPreferencesKey("claude_api_key")
     }
 
     val openaiApiKey: Flow<String> = context.dataStore.data.map { preferences ->
         preferences[OPENAI_API_KEY] ?: ""
     }
 
-    suspend fun saveGeminiApiKey(key: String) {
-        context.dataStore.edit { preferences ->
-            preferences[GEMINI_API_KEY] = key
-        }
+    val deepseekApiKey: Flow<String> = context.dataStore.data.map { preferences ->
+        preferences[DEEPSEEK_API_KEY] ?: ""
+    }
+
+    val claudeApiKey: Flow<String> = context.dataStore.data.map { preferences ->
+        preferences[CLAUDE_API_KEY] ?: ""
     }
 
     suspend fun saveOpenaiApiKey(key: String) {
         context.dataStore.edit { preferences ->
             preferences[OPENAI_API_KEY] = key
+        }
+    }
+
+    suspend fun saveDeepseekApiKey(key: String) {
+        context.dataStore.edit { preferences ->
+            preferences[DEEPSEEK_API_KEY] = key
+        }
+    }
+
+    suspend fun saveClaudeApiKey(key: String) {
+        context.dataStore.edit { preferences ->
+            preferences[CLAUDE_API_KEY] = key
         }
     }
 }

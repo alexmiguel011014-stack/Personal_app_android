@@ -17,6 +17,10 @@ local.properties
 # Firebase
 google-services.json
 
+# Release signing (GOALS.md §11) — never commit the keystore or its passwords
+*.jks
+*.keystore
+
 # AI Assistant Metadata
 .artifacts/
 

@@ -1,3 +1,6 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.compiler)
@@ -7,6 +10,18 @@ plugins {
     alias(libs.plugins.googleServices)
     alias(libs.plugins.firebaseCrashlytics)
 }
+
+// Release signing (GOALS.md §11): keystore path + passwords live only in the gitignored
+// local.properties, never in this file or in CI config directly. A clone without those entries
+// (a fresh dev machine, CI without the secret) just gets an unsigned release build — assembleDebug
+// and the verify task are unaffected either way.
+val localProperties = Properties().apply {
+    val localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+        load(FileInputStream(localPropertiesFile))
+    }
+}
+val releaseStoreFilePath: String? = localProperties.getProperty("RELEASE_STORE_FILE")
 
 android {
     namespace = "com.example.personalapp"
@@ -22,10 +37,24 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        if (releaseStoreFilePath != null) {
+            create("release") {
+                storeFile = rootProject.file(releaseStoreFilePath)
+                storePassword = localProperties.getProperty("RELEASE_STORE_PASSWORD")
+                keyAlias = localProperties.getProperty("RELEASE_KEY_ALIAS")
+                keyPassword = localProperties.getProperty("RELEASE_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             optimization {
                 enable = true
+            }
+            if (releaseStoreFilePath != null) {
+                signingConfig = signingConfigs.getByName("release")
             }
         }
     }
@@ -76,15 +105,16 @@ dependencies {
     // DataStore
     implementation(libs.androidx.datastore.preferences)
 
-    // Generative AI
-    implementation(libs.google.generativeai)
-
     // Firebase
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.auth)
     implementation(libs.firebase.firestore)
     implementation(libs.firebase.crashlytics)
     implementation(libs.firebase.appcheck.playintegrity)
+    implementation(libs.firebase.appcheck.debug)
+    // Firebase AI Logic (GOALS.md §3) — replaces the deprecated com.google.ai.client.generativeai
+    // SDK for Gemini calls; free on the Spark plan via the Gemini Developer API backend.
+    implementation(libs.firebase.ai)
     implementation(libs.kotlinx.coroutines.play.services)
 
     testImplementation(libs.junit)
@@ -92,4 +122,16 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.mockk.android)
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.ui.test.junit4)
+    debugImplementation(libs.androidx.ui.test.manifest)
+}
+
+// GOALS.md §9: one command for the checks that don't need a device (see §11 for why
+// connectedAndroidTest is deliberately excluded — it's a separate CI/local stage, emulator-only).
+tasks.register("verify") {
+    group = "verification"
+    description = "Runs unit tests and lint together (excludes connectedAndroidTest, which needs a device/emulator)."
+    dependsOn("testDebugUnitTest", "lint")
 }

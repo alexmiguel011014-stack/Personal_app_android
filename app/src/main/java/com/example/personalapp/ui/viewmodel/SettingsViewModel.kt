@@ -15,21 +15,38 @@ class SettingsViewModel @Inject constructor(
     private val repository: SettingsRepository
 ) : ViewModel() {
 
-    val geminiApiKey: StateFlow<String> = repository.geminiApiKey
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
-
     val openaiApiKey: StateFlow<String> = repository.openaiApiKey
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
 
-    fun saveGeminiApiKey(key: String) {
-        viewModelScope.launch {
-            repository.saveGeminiApiKey(key)
-        }
-    }
+    val deepseekApiKey: StateFlow<String> = repository.deepseekApiKey
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+
+    val claudeApiKey: StateFlow<String> = repository.claudeApiKey
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
 
     fun saveOpenaiApiKey(key: String) {
         viewModelScope.launch {
             repository.saveOpenaiApiKey(key)
+        }
+    }
+
+    fun saveDeepseekApiKey(key: String) {
+        viewModelScope.launch {
+            repository.saveDeepseekApiKey(key)
+        }
+    }
+
+    fun saveClaudeApiKey(key: String) {
+        viewModelScope.launch {
+            repository.saveClaudeApiKey(key)
+        }
+    }
+
+    fun saveAllKeys(openai: String, deepseek: String, claude: String) {
+        viewModelScope.launch {
+            repository.saveOpenaiApiKey(openai)
+            repository.saveDeepseekApiKey(deepseek)
+            repository.saveClaudeApiKey(claude)
         }
     }
 }

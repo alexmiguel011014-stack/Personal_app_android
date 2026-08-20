@@ -61,15 +61,15 @@ depends on it.
       Firestore-source-of-truth + Room-cache data layer (updated to match the §4a migration, not
       the old "local-only" description), the Smart Paste parsing heuristic (`WorkoutParser.kt`),
       and the AI-workout entry points (now two, see the `WorkoutBuilderScreen` finding above).
-- [ ] **Module documentation strategy (decided 2026-08-17, not yet applied everywhere):** don't add
-      a separate `docs/` tree that will drift from the code — keep `CLAUDE.md` for cross-cutting
-      conventions (routing, data-layer shape, parsing quirks) and add a short KDoc block
-      (`/** ... */`) directly on classes whose *purpose* isn't obvious from their name/members
-      alone. Already done this session: `TrainerRepository` (Firestore-as-source-of-truth
-      explanation) and `FirestoreMappers.kt` (why plain maps, not POJO reflection). Still missing
-      real KDoc: `WorkoutParser` (the sets-vs-reps heuristic lives only in a code comment today,
-      should be a proper doc comment), `AppLogger`/`AdminViewModel` once §5e is built (new code,
-      document from the start rather than retrofitting).
+- [x] **Module documentation strategy (decided 2026-08-17):** don't add a separate `docs/` tree
+      that will drift from the code — keep `CLAUDE.md` for cross-cutting conventions (routing,
+      data-layer shape, parsing quirks) and add a short KDoc block (`/** ... */`) directly on
+      classes whose *purpose* isn't obvious from their name/members alone. Done: `TrainerRepository`
+      (Firestore-as-source-of-truth explanation), `FirestoreMappers.kt` (why plain maps, not POJO
+      reflection), `WorkoutParser` (sets-vs-reps heuristic, moved from a code comment to a proper
+      doc comment), `AdminViewModel` (why it reads Firestore directly instead of going through
+      `TrainerRepository`). `AppLogger` never ended up existing — §5e's Logs tab was built directly
+      on Firebase Crashlytics instead, so that part of the original item is moot.
 
 ## 2. Version control
 - [x] Git repository, remote configured (`github.com/alexmiguel011014-stack/Personal_app_android`) —
@@ -84,32 +84,36 @@ depends on it.
 ## 3. Backend (Firebase + planned AI proxy)
 - [x] Firebase Auth wired for email/password login (`AuthRepository.login`).
 - [x] Role read from `Firestore: users/{uid}.role` on login (`ADM`/`TRAINER`/`STUDENT`).
-- [ ] **No Cloud Functions / server layer exists.** Gemini is called directly from the Android
-      client today (`GenerativeAiService`) using a per-user API key typed into Settings. Per
-      current (Aug 2026) guidance this is actively discouraged: enabling the Gemini API on a
-      Google Cloud project silently grants every key on that project Gemini access, and Google
-      is retiring unrestricted/standard API keys for the Gemini API (June 19, 2026 for
-      unrestricted keys, September 2026 for all standard keys) in favor of properly scoped auth.
-      Plan: add a thin Firebase Cloud Function (callable, auth-gated) that holds a
-      server-side-restricted Gemini key and proxies `generateWorkout` requests; stop sending
-      raw Gemini API keys from the client. If keeping the "trainer brings their own key" product
-      idea, at minimum stop calling Gemini directly from the client with it — proxy through the
-      function instead. (Sources: CloudSEK/Quokka/DoiT reporting on the Feb 2026 Gemini key
-      exposure and the standard-key retirement timeline.)
-- [ ] Update the Gemini model id: `GenerativeAiService.kt` hardcodes `gemini-1.5-pro`, an older
-      model. Move to a current Gemini 2.x/3.x model id (e.g. a `gemini-2.x-flash`/`-pro` tier)
-      once the backend proxy exists, matching whatever `google.ai.client.generativeai` /
-      Firebase AI Logic SDK version is current at implementation time.
-- [ ] **`com.google.ai.client.generativeai` (the SDK `GenerativeAiService.kt` uses today) is
-      officially deprecated** — its own README: "No further changes or additions are planned for
-      this deprecated SDK," superseded by the Firebase AI Logic SDK (`Firebase.ai(backend =
-      GenerativeBackend.googleAI()).generativeModel(...)`, package `com.google.firebase:firebase-ai`).
-      Independent reason to migrate on top of the raw-client-key concern above — bundle the SDK
-      swap into the same pass as the Cloud Function proxy work. **Revised 2026-08-17:** the §5d
-      PDF-grounded ficha generation item no longer depends on this swap — it now uses the
-      text-embedding approach (works on today's SDK for both Gemini and OpenAI), not raw
-      multimodal PDF upload. This migration is still worth doing for the reasons above, just not a
-      blocker for that feature anymore.
+- [x] **Decision reversed 2026-08-18** (superseding the same-day decision above to keep
+      per-trainer keys): the user chose to stay on Firebase's free Spark plan rather than upgrade
+      to Blaze, which rules out the Cloud Function proxy entirely (Cloud Functions can't deploy on
+      Spark at any usage level, zero or not). Within that constraint, migrated Gemini to the
+      **Firebase AI Logic SDK** (`com.google.firebase:firebase-ai`, Gemini Developer API backend)
+      instead — free on Spark, officially maintained (replaces the deprecated
+      `com.google.ai.client.generativeai`), and fixes the original raw-client-key security concern
+      (unrestricted/standard Gemini keys being retired by Google through Sept 2026) because there
+      is no client-held key anymore: `Firebase.ai(backend = GenerativeBackend.googleAI())` calls
+      are authenticated via the project's own Firebase config + App Check (already wired, §8),
+      not a key typed into Settings. Traded away "each trainer brings their own Gemini key" — the
+      app now uses one Gemini configuration for the whole project, managed by the app owner in the
+      Firebase Console, not per-trainer. **OpenAI is unaffected and still per-trainer** (raw HTTP
+      call, no Firebase billing involved) — kept in Settings as the opt-in "bring your own key"
+      alternative for trainers who want it, so the product still offers a BYO-key path, just not
+      for Gemini specifically. Implemented in `GenerativeAiService.kt`
+      (`generateWithGemini()`), `SettingsRepository`/`SettingsViewModel`/`SettingsScreen.kt`
+      (Gemini key field removed), `AdminViewModel`/`AdminDashboardScreen.kt` (Gemini status row is
+      now a static "always on" indicator, not a per-device key check). Removed the deprecated SDK
+      dependency and its now-orphaned version catalog entries. Verified via
+      `./gradlew compileDebugKotlin verify` (all green). **New manual step, only doable by the
+      user**: enable Gemini access for the project in Firebase Console → Build → AI Logic → Get
+      started → choose "Gemini Developer API" (free) — the SDK call will fail at runtime until
+      that's done, same category as the two other pending manual Console steps (publish
+      `firestore.rules`, enable App Check enforcement — see §8).
+- [x] Gemini model id updated: `gemini-1.5-pro` → `gemini-3.7-flash` (current stable as of
+      2026-08-18; verify against https://firebase.google.com/docs/ai-logic/models before relying
+      on it long-term, Google sunsets model ids on a rolling schedule).
+- [x] `com.google.ai.client.generativeai` (deprecated SDK) removed entirely, replaced by the
+      Firebase AI Logic SDK per the decision above.
 
 ## 4. Database — Firestore sync + new workout-log model
 
@@ -462,19 +466,27 @@ don't reflect anything real. Each needs its own fix:
       single fleet-wide "is AI online" signal until the §3 Cloud Function proxy exists.
 
 ## 6. Connectivity
-- [ ] Define client↔Firestore sync strategy per §4 (snapshot listeners vs one-shot fetches,
-      offline persistence — Firestore's built-in offline cache is likely sufficient, no custom
-      queue needed).
-- [ ] Trainer→Student ficha assignment is a Firestore write (`workouts` doc `status` flips to
-      `assigned`) the Student's snapshot listener picks up — no push/notification transport
-      needed, Firestore's own real-time listeners cover both directions (assignment down,
-      `workoutLogs` up). This is the whole "connects with the trainer" mechanism from Product
-      goal #2/#3 — no extra messaging layer required.
-- [ ] Define client↔Cloud Function contract for Gemini generation once the §3 proxy exists
-      (request: student profile + trainer prompt; response: same structured JSON
-      `GenerativeAiService` already parses via `WorkoutParser`).
-- [ ] No other third-party integrations in scope currently (no push notifications, no payments
-      — do not add unless requested).
+- [x] Client↔Firestore sync strategy per §4: snapshot listeners (`TrainerRepository.startListening`,
+      `addSnapshotListener`), not one-shot fetches; Firestore's built-in offline cache is used as-is,
+      no custom queue.
+- [x] Trainer→Student ficha assignment is a Firestore write (`WorkoutEntity.status` flips
+      `draft`↔`assigned`) the Student's snapshot listener picks up (`StudentRepository`'s
+      `whereEqualTo("status", "assigned")` query) — no push/notification transport needed,
+      Firestore's own real-time listeners cover both directions (assignment down, `workoutLogs`
+      up). This is the whole "connects with the trainer" mechanism from Product goal #2/#3 — no
+      extra messaging layer required. **Bug found and fixed 2026-08-18** while verifying this
+      item: `status`/`assignedAt` were dead fields — nothing ever wrote `status = "assigned"`,
+      only `isActive` was toggled by the UI, so the Student's query would never have matched
+      anything. Fixed by deriving `status`/`assignedAt` from `isActive` in
+      `TrainerRepository.insertWorkout`/`updateWorkout` (`withDerivedStatus()`), one point of
+      truth for every workout-creation call site (AI, manual, toggle) instead of touching each one.
+- [x] **Moot as of 2026-08-18** — §3's Cloud Function proxy plan was dropped (Firebase Spark plan
+      can't deploy Cloud Functions at all; the user chose to stay on the free plan). Gemini calls
+      go through the Firebase AI Logic SDK directly from the client instead, so there's no
+      client↔Cloud Function contract to define — the SDK's own request/response shape is the
+      contract, and it's already what `GenerativeAiService`/`WorkoutParser` are built around.
+- [x] No other third-party integrations in scope currently (no push notifications, no payments —
+      confirmed absent; do not add unless requested).
 
 ## 7. Auth
 - [x] Firebase Auth (email/password) + Firestore-stored `role` field, read client-side.
@@ -609,11 +621,24 @@ don't reflect anything real. Each needs its own fix:
          AVD/emulator set up here); needs a device/emulator or CI matrix to actually execute.
       4. `workoutLog_roundTripsPerformedSets` (same file) — covers the `workoutLogs` round-trip
          item explicitly. Same caveat: written, compiles, not run.
-- [ ] Add Compose UI tests (instrumented) for at least the Trainer golden path once Student flow
-      exists: login → add student → assign workout → student logs a session → trainer sees the
-      update and the evolution chart moves. Still blocked on §5b (Student screens don't exist yet).
-- [ ] Wire a single command that runs everything (`./gradlew test connectedAndroidTest lint` or
-      split unit vs instrumented as CI stages — see §11).
+- [x] Compose UI test (instrumented) for the Trainer golden path: `TrainerGoldenPathTest.kt`
+      (`app/src/androidTest/.../ui/screen/`) — trainer assigns a workout (toggles Ativo in
+      `WorkoutBuilderScreen`), student logs a session (`StudentViewModel.logSession`), trainer's
+      `StudentDetailsScreen` reflects the new log. Real `WorkoutViewModel`/`StudentDetailsViewModel`/
+      `StudentViewModel` driven through their actual Compose screens; `TrainerRepository`/
+      `StudentRepository` are MockK fakes backed by `MutableStateFlow`s the stubs mutate, standing
+      in for Firestore's realtime listeners — no live backend needed. Added
+      `androidx.compose.ui:ui-test-junit4`/`ui-test-manifest` + `mockk-android` as androidTest-only
+      deps for this. **Ran `compileDebugAndroidTestKotlin`, compiles clean** — same caveat as
+      `AppDaoTest`: Compose UI tests execute on-device, not runnable in this sandboxed environment
+      (no AVD/emulator here). **Writing this test surfaced a real bug**, now fixed: `WorkoutEntity.status`
+      (what `StudentRepository` queries for `"assigned"`) was a dead field — only `isActive` was
+      ever toggled by the UI, so no student would ever have seen an assigned workout. Fixed in
+      `TrainerRepository.insertWorkout`/`updateWorkout` (see §6).
+- [x] Single command that runs everything device-independent: `./gradlew verify` (registered in
+      `app/build.gradle.kts`, depends on `testDebugUnitTest` + `lint`). `connectedAndroidTest` is
+      deliberately excluded — it needs a device/emulator, kept as its own explicit stage
+      (see §11). Ran, green.
 
 ## 10. Code quality
 - [x] `./gradlew lint` runs clean (0 errors, 0 warnings). Fixed the 2 real errors: an unescaped
@@ -626,25 +651,52 @@ don't reflect anything real. Each needs its own fix:
       documented in `app/lint.xml`) the 15 "newer dependency version available" warnings —
       bumping them (esp. Compose BOM 2024.12.01, ~1.5 years behind) is real upgrade work needing
       runtime verification this environment can't do; left as a dedicated future pass.
-- [ ] `StudentDetailsScreen.kt` (2.195 tokens) and `ManualWorkoutScreen.kt` (1.661 tokens) are
-      the largest files in the project — not alarming yet, but if they keep growing, split UI
-      state/logic into smaller composables or move logic into their ViewModels.
+- [x] `StudentDetailsScreen.kt` (393→262 lines) and `ManualWorkoutScreen.kt` (250→155 lines) split:
+      dialogs, the top bar's overflow menu, and small display rows moved to new sibling files
+      `StudentDetailsComponents.kt` / `ManualWorkoutComponents.kt` (screen keeps orchestration —
+      state + the `LazyColumn`/`Scaffold` — supporting composables live alongside it). Behavior
+      unchanged; verified via `./gradlew verify compileDebugAndroidTestKotlin` (all green).
 
 ## 11. CI / Deployment
-- [ ] No `.github/workflows/` exists. Add a workflow that runs on every push/PR:
-      `./gradlew lint testDebugUnitTest assembleDebug` at minimum (skip
-      `connectedAndroidTest`/instrumented tests in CI unless an emulator/matrix is set up — that
-      can come later). Needs a CI-safe placeholder or secret-injected `google-services.json`
-      (store the real one as a repo secret, write it to `app/google-services.json` in the
-      workflow step — never commit it).
-- [ ] Release signing: no keystore/signing config present. Before a Play Store release, generate
-      a release keystore (or use Play App Signing, the current recommended default — Google
-      holds the app signing key, you keep an upload key) and wire `signingConfigs` in
-      `app/build.gradle.kts`. Do not commit the keystore or its passwords; inject via CI secrets
-      or local `local.properties` (already gitignored).
-- [ ] Play Store listing prerequisites not started: privacy policy (required — the app handles
-      health/biometric data (`medicalNotes`, biometrics) which is sensitive), Data Safety form,
-      app icon/screenshots, store listing copy.
+- [x] `.github/workflows/android-ci.yml` added: runs on push/PR to `main` — sets up JDK 21,
+      writes `app/google-services.json` from a `GOOGLE_SERVICES_JSON` repo secret, runs
+      `./gradlew verify` (lint + unit tests, the §9 task) then `assembleDebug`, uploads the lint
+      HTML report as an artifact. `connectedAndroidTest`/instrumented tests deliberately excluded
+      (no emulator matrix set up — can come later). YAML syntax validated locally.
+      **Manual step still needed, only doable by the user**: add the repo secret itself —
+      GitHub repo → Settings → Secrets and variables → Actions → New repository secret →
+      name `GOOGLE_SERVICES_JSON`, value = the raw contents of `app/google-services.json`.
+      Without it the workflow will fail at the "Lint + unit tests" step (the Google Services
+      Gradle plugin needs a real, valid file — same reason a local build fails without it).
+- [x] Release signing wired: `release-keystore.jks` generated (`keytool`, RSA 2048, PKCS12, valid
+      10000 days, alias `personalapp-release`) at the project root. `app/build.gradle.kts` reads
+      the store path + passwords from `local.properties` (both gitignored — added `*.jks`/
+      `*.keystore` to `.gitignore` too) and wires `signingConfigs.release`, applied to the
+      `release` build type only when those properties are present (so a clone without them still
+      gets an unsigned release build, no regression). **Verified: `./gradlew assembleRelease`
+      succeeds and produces a signed `app-release.apk`.** This is an upload key for local/manual
+      release builds — before actually publishing to Play Store, enroll in Play App Signing
+      (Google holds the real app signing key; this becomes the upload key) and treat these
+      generated passwords as placeholders to rotate, not final production secrets.
+- [x] **Decided 2026-08-18: not publishing to the Play Store.** With a small client base, the
+      user judged the ongoing overhead (Data Safety form, listing upkeep, review process) not
+      worth it for now — distribution will be direct (sideloaded `app-release.apk`, e.g. shared
+      link/file to each trainer's device) instead. This makes the remaining Play Store-specific
+      prerequisites (app icon/screenshots sized for the Store listing, the Play Console "Data
+      Safety" form) **not applicable, not just blocked** — dropping them, not deferring them.
+      What's still genuinely useful regardless of distribution channel, already done:
+      - [x] Release signing (see above) — sideloaded APKs still benefit from being signed
+        consistently across updates, so Android treats each new version as an update rather than
+        a conflicting reinstall.
+      - [x] Privacy policy drafted: `store-listing/privacy-policy.md` — covers every data type the
+        code actually collects (see the §2 table: auth, profile, `medicalNotes`, biometrics,
+        workout logs, invite codes, AI keys, Crashlytics, App Check). Still worth keeping even
+        without a Store listing, given the health data involved (LGPD Art. 5º sensitive-data
+        category applies regardless of distribution channel) — just host it wherever's convenient
+        (a simple webpage, a shared doc) instead of a Play Console-mandated URL, and treat it as a
+        starting draft, not legal advice.
+      - `store-listing/listing-copy.md` (title/description/category) is now moot — Play Store-only
+        content, safe to ignore or delete whenever.
 
 ---
 
@@ -680,7 +732,572 @@ front-loaded research this file already does for the rest of the app, not a rush
 
 ---
 
-## Suggested build order (what blocks what) — revised 2026-08-17
+## 13. Post-MVP Fixes & Validation (2026-08-19, via `/newgoal`)
+
+Found via real-device testing (Samsung SM-S926B) after the MVP (§§0-11) and the trainer-request
+flow addition were installed. Fix-type items: current (wrong) behavior → root cause → fix →
+regression test, per `fix.md`'s discipline — a patch without a stated root cause isn't done.
+
+```mermaid
+flowchart TD
+    A[13a. AI generation broken\nApp Check token invalid] --> D[Retest AI ficha generation]
+    B[13b. ADM stats never refreshed] --> C[13c. Validate trainer-request flow end to end]
+    E[13d. Invite claim fails once\na users doc already exists] --> C
+    B --> D
+```
+
+**13a. AI ficha generation fails — "Firebase App Check token is invalid"**
+- [x] **Repro:** on the installed debug build, `StudentDetailsScreen` → "Ficha Personal" → "Com IA"
+      → send any message with the Gemini provider selected → reply is always `Erro ao chamar a
+      IA: Firebase App Check token is invalid.` (confirmed via screenshot, 2026-08-19). OpenAI
+      provider not yet retested against this same build — check both once the fix lands, since
+      App Check protects Firestore/Auth too, not just the AI Logic call.
+- [x] **Root cause — confirmed live via `adb logcat` 2026-08-19:** `MainApplication.kt` installs
+      `DebugAppCheckProviderFactory` for any debuggable build (see §8's App Check item) — the
+      sideloaded/`installDebug` APK on this phone is debuggable, so it generates a random **debug
+      token**, logged on every app start:
+      `DebugAppCheckProvider: Enter this debug secret into the allow list in the Firebase Console
+      for your project: 1dce3124-8e1c-4fe8-9c25-1aa9be85ae4f`. §8 already flagged App Check
+      enforcement itself as a pending manual step, but never called out this *separate*
+      debug-token registration sub-step, which is required specifically for debug builds
+      regardless of Play Integrity enforcement status. An unregistered debug token is rejected
+      server-side as unrecognized/invalid — matching the exact error text seen.
+- [x] **Fix — done 2026-08-19:** registered `1dce3124-8e1c-4fe8-9c25-1aa9be85ae4f` in Firebase
+      Console → App Check → Apps → `com.example.personalapp` → ⋮ → Manage debug tokens → Add
+      debug token → Salvar. The app showed as "Não registrado" with no attestation provider at
+      all (the pending §8 manual step) — the debug-token action was still reachable directly from
+      the row's ⋮ menu without registering Play Integrity first. Note for later: this token is
+      tied to this specific app install; a fresh install (data wipe) or a different test device
+      will need its own token registered the same way — worth documenting in a short "dev setup"
+      note once there's more than one test device in rotation. Play Integrity itself is still
+      "Não registrado" — that's the separate §8 item for real release-build attestation, not
+      needed for debug-build testing.
+- [x] **Regression test (manual) — passed 2026-08-19:** sent a real prompt from `AIWorkoutScreen`
+      (Gemini) on the physical device. The `App Check token is invalid` error is gone — the call
+      now reaches Gemini's backend for real, confirmed by a *different* error surfacing instead:
+      `This model is currently experiencing high demand. Spikes in demand are usually temporary.
+      Please try again later.` — a transient Gemini-side capacity response (HTTP 503-class,
+      unrelated to App Check/auth), not a bug in this app. This is also the first live
+      confirmation the Firebase AI Logic migration (§3) actually works end-to-end, which GOALS.md
+      had flagged as unverified since it was written. Retry once demand clears; if it persists
+      across many retries/hours, that would be worth a fresh look, but one instance is expected
+      Gemini API behavior, not a regression.
+
+**13b. ADM Gestão tab (trainer count, total users, pending requests) never refreshed after first
+load — done 2026-08-19**
+- [x] **Repro:** `AdminViewModel.loadUserStats()` and `loadTrainerRequests()` both ran exactly
+      once, in `init{}`. Any Firestore change after the ViewModel was constructed (a new trainer
+      promoted, a new `trainerRequests` doc written) never appeared in the Gestão tab without a
+      full process kill + cold start — a same-session tab switch or even backgrounding/resuming
+      the app wasn't enough, since the `ViewModel` instance (and its `StateFlow`s) survives that.
+      This is exactly why "Personais: 0" stayed stuck even with an active Trainer already using
+      the app, and why a submitted trainer-access request didn't show up in "Solicitações
+      Pendentes".
+- [x] **Root cause:** one-shot `.get()` Firestore reads in `init{}` with no listener and no
+      re-trigger path anywhere in the UI layer — not a data problem, a missing-refresh problem.
+- [x] **Fix:** made `loadUserStats()`/`loadTrainerRequests()` public on `AdminViewModel`; call
+      both from a `LaunchedEffect(Unit)` in `UserManagementTab` (`AdminDashboardScreen.kt`) —
+      re-runs every time this composable re-enters composition, i.e. every time the Gestão tab is
+      selected, no extra state needed. Added a manual refresh `IconButton` next to "Solicitações
+      Pendentes" for an on-demand recheck without leaving the tab.
+- [ ] **Regression test (manual):** with the fix installed, promote/reject a request or add a
+      student from a different account while the ADM Gestão tab is already open in the
+      background, then switch to that tab (or tap refresh) and confirm the numbers/list update
+      without restarting the app. Not yet re-verified after this specific build (see 13c).
+
+**13d. Claiming an invite permanently fails once a `users/{uid}` doc exists for that account —
+found 2026-08-19 (`alexmiguel011014@gmail.com`), worked around manually, needs a real fix**
+- [x] **Repro:** on `LoginScreen`, an authenticated account with an existing `users/{uid}` Firestore
+      doc enters a trainer-minted invite code → claim silently fails (Firestore
+      `PERMISSION_DENIED`, surfaced to the user as the raw exception string, not a helpful
+      message). Confirmed live 2026-08-19. Two distinct starting states both reach this same dead
+      end, and are worth telling apart because only one has a safe automatic fix:
+      1. **Genuinely-unclaimed STUDENT** (`role: STUDENT`, `trainerId: null`) — e.g. an account
+         previously promoted/rejected through some other admin action that still left a doc
+         behind, or any future path that writes a `users/{uid}` doc before the invite is claimed.
+         *Checked against the code: today's plain self-registration (`AuthRepository.register()` →
+         `login()`) does **not** itself write a `users/{uid}` doc — a purely-registered,
+         never-touched account is still doc-less and claims fine via the existing `create` rule.
+         This case matters for any account that picked up a doc some other way (see case 2, or a
+         future flow) while still logically "unclaimed".*
+      2. **Account already has an incompatible role** — most likely what actually happened to
+         `alexmiguel011014@gmail.com`: earlier in this same session it was used to test the
+         ADM's "Promover manualmente" UID-paste form (`AdminViewModel.promoteToTrainer()`, a
+         `SetOptions.merge()` write setting `role: TRAINER`), which — like the working fix in
+         13b/13c — creates a real `users/{uid}` doc with `role: TRAINER`. Reusing that same
+         account as a STUDENT then hits a doc that already has an unrelated role. **This case
+         should not be silently auto-resolved** — a STUDENT invite claim silently overwriting an
+         existing TRAINER doc would be a real privilege/data-loss bug, not a fix.
+- [x] **Root cause:** `AuthRepository.claimInvite()` always does a plain
+      `transaction.set(userRef, mapOf(role="STUDENT", trainerId=<real>, ...))` with no branch for
+      "does this uid already have a doc, and if so, what's actually in it". Firestore evaluates
+      any write to an existing doc as `update`, and `firestore.rules`' `update` rule requires
+      `role`/`trainerId` to stay byte-identical to `resource.data` (the anti-self-promotion
+      guarantee) — with no exception carved out for the one legitimate case (1) where changing
+      `trainerId` from `null` is exactly what should be allowed. Compounding this: `claimInvite()`'s
+      caller (`AuthViewModel.claimInvite()`, `AuthViewModel.kt:110-112`) surfaces the raw Firebase
+      exception message on failure (`e.message ?: "Código inválido"`) — for a rules rejection this
+      is an opaque `PERMISSION_DENIED` string, giving no hint that the real problem is "this
+      account already has a role" vs. any other reason the code could be rejected.
+- [x] **Fix — two parts (implemented 2026-08-19, not yet republished to the live Console):**
+      1. **`firestore.rules`**, `users/{uid}` `allow update`: add a narrow exception, additive to
+         the existing unchanged-fields check, covering *only* case 1 above (existing role is
+         already `STUDENT` **and** existing `trainerId` is `null`) — presenting the same
+         currently-valid/unused-invite proof the `create` rule already requires:
+         ```
+         allow update: if isAdmin() || (
+           isSignedIn() && request.auth.uid == uid &&
+           (
+             (
+               field(request.resource.data, 'role') == field(resource.data, 'role') &&
+               field(request.resource.data, 'trainerId') == field(resource.data, 'trainerId')
+             ) ||
+             (
+               field(resource.data, 'role') == 'STUDENT' &&
+               field(resource.data, 'trainerId') == null &&
+               request.resource.data.role == 'STUDENT' &&
+               request.resource.data.trainerId ==
+                 get(/databases/$(database)/documents/invites/$(request.resource.data.inviteCode)).data.trainerId &&
+               get(/databases/$(database)/documents/invites/$(request.resource.data.inviteCode)).data.used == false
+             )
+           )
+         );
+         ```
+         Case 2 (already `TRAINER`/`ADM`, or already linked to a different trainer) deliberately
+         stays blocked — that's correct behavior, not a bug, and needs an explicit ADM decision
+         (demote/unlink first), not a client-driven overwrite.
+      2. **UX for case 2, `AuthViewModel.claimInvite()`:** catch a Firestore
+         `PERMISSION_DENIED`/`FirebaseFirestoreException` specifically and map it to a clear
+         message (e.g. "Esta conta já está vinculada a um perfil existente — fale com o
+         administrador.") instead of forwarding the raw exception text, so this doesn't require a
+         support conversation + manual Console lookup to diagnose next time.
+- [ ] **Regression test (manual, blocked on republishing `firestore.rules` to the live Console —
+      same manual step as every other rules change this session):**
+      1. Case 1: manually create a `users/{uid}` doc with `role: STUDENT, trainerId: null` for a
+         test account (simulating any path that leaves an unclaimed doc behind), have a trainer
+         generate an invite, claim it from that account, confirm success and `RoleRouter` routes
+         into `StudentNavigation`.
+      2. Case 2: on an account already promoted to `TRAINER` (or already claimed under a
+         different trainer), attempt to claim a new invite and confirm it fails with the new
+         friendly message, not a raw Firebase exception string — and confirm the existing
+         `role`/`trainerId` are genuinely untouched afterward (no silent overwrite).
+
+**13c. Trainer-request flow (`trainerRequests`) — end-to-end validation pending**
+- [ ] `firestore.rules`' `trainerRequests/{uid}` block was republished in the Firebase Console
+      (user-confirmed 2026-08-19) and no `PERMISSION_DENIED` was seen in logcat afterward — the
+      rules side is live. What's still unverified on THIS build (which also carries 13b's refresh
+      fix): a STUDENT account taps "Solicitar acesso de Trainer" on `LoginScreen`, the request
+      appears in the ADM's "Solicitações Pendentes" without restarting the app, "Aceitar" promotes
+      it, and the promoted account gets full Trainer navigation on next login. Do this full pass
+      once, on-device, before considering the whole trainer-onboarding feature (GOALS.md's
+      "Post-MVP addition") actually done rather than just "compiles and rules are live".
+
+---
+
+## 14. Research — cost-effective AI providers for a future constraint-aware ficha generator
+(2026-08-19, via `/newgoal /repertoire`)
+
+Feeds §15 below only for its *future* phase (real in-app AI re-integration) — §15's immediate
+deliverable (the prompt-template + paste flow) ships regardless of this section and needs no AI
+API of its own. Domain grounding: see `REPERTOIRE.md` (scientific + competitive-landscape lenses).
+
+```mermaid
+flowchart TD
+    A[14a. Why Gemini is unreliable\nright now - confirmed] --> B[14b. Cheap-provider comparison]
+    B --> C[14c. Recommendation for\na future phase-2 integration]
+```
+
+**14a. Why the Gemini errors are real and external, not a bug in this app**
+- The `App Check token is invalid` error (§13a) was this app's own bug, now fixed. The `This
+  model is currently experiencing high demand` error reported afterward (2026-08-19) is a
+  **separate, well-documented, industry-wide problem with Gemini's free/Developer API tier**,
+  not something fixable in this codebase: Google cut the Gemini API free-tier quota by 50-92%
+  on 2025-12-07, and a further wave of "model overloaded" errors was widely reported starting
+  2026-01-16. This app's Firebase AI Logic integration (§3) uses exactly this free
+  "Gemini Developer API" tier by design (the whole point of the §3 migration was staying on
+  Firebase's free Spark plan). **The user's instinct to not trust Gemini here going forward is
+  correct, not overly cautious** — this isn't a transient blip to wait out, it's the tier's
+  current normal operating condition.
+
+**14b. Cheap-provider landscape (pricing, structured-output support, reliability notes)**
+
+| Provider / model | Price (in/out per 1M tokens) | Structured JSON output | Notes |
+|---|---|---|---|
+| Gemini 2.5 Flash-Lite (free Developer tier, current integration) | $0.10 / $0.40 (paid tier; free tier is what's failing) | Yes | Cheapest Google option, but the free tier is exactly what's currently unreliable (14a) — a **paid** Gemini tier might sidestep this, but that reopens the Blaze-plan decision §3 deliberately avoided. |
+| **GPT-5 Nano (OpenAI)** | ~$0.05 / — (cheapest OpenAI tier) | Yes (`response_format`) | **This app already has a working OpenAI HTTP integration** (`GenerativeAiService.generateWithOpenAi()`, `api.openai.com/v1/chat/completions`) — currently pointed at `gpt-4o-mini` (GOALS.md §5e), which is no longer the cheapest/current option. Switching the model string is near-zero engineering cost. |
+| DeepSeek V3.2 / V4 Flash | $0.14 / $0.28 | Yes (`json_object` mode) | Cheapest true frontier-quality option. Real caveat found: DeepSeek's own API has **its own documented uptime fluctuations under peak demand** — the standard industry mitigation is a multi-provider fallback, i.e. the same class of risk this section exists to get away from, not a strictly safer bet than Gemini. Would need a brand-new HTTP integration (no existing code path, unlike OpenAI). |
+| Claude Haiku 4.5 (Anthropic) | $1 / $5 | Yes (tool-use/structured mode) | Pricier than the above, but Anthropic models have a strong instruction-following reputation (relevant given the volume-budget math in `REPERTOIRE.md` needs to be followed *exactly*, not approximately). No existing integration in this app — would need a new HTTP client, same lift as DeepSeek. |
+
+**14c. Recommendation for a future phase-2 — superseded 2026-08-19 by the user's explicit choice
+(see §16): give the trainer all four providers now rather than wait-and-see on just one.**
+- [x] ~~Cheapest path to re-enable in-app AI with real reliability: point the already-wired OpenAI
+      integration at a current cheap model before building a new provider integration.~~
+      Superseded — §16 builds DeepSeek and Claude now regardless, per explicit user direction.
+      The underlying cost point still stands (OpenAI's `gpt-4o-mini` model id in
+      `GenerativeAiService` is stale — worth a follow-up bump to a current cheap model, tracked
+      informally here, not urgent enough for its own numbered item).
+- [x] ~~Only build a DeepSeek/new-provider integration if a real evaluation shows the cheap-OpenAI
+      path isn't accurate enough.~~ Superseded — built directly in §16, not gated on an
+      evaluation. The evaluation itself is still worth doing eventually (which provider actually
+      follows the volume-budget math best), just informally, whenever real usage accumulates —
+      not a blocker for shipping the choice.
+- [ ] Keep Gemini wired as an optional fallback (§3's existing code), but stop treating it as the
+      default/primary path in any UI copy until Google's free-tier reliability changes — still
+      accurate advice, unaffected by the §16 expansion (Gemini stays one of four choices, just
+      not the one to lead with in copy/defaults).
+
+---
+
+## 15. Feature — replace in-app AI ficha generation with a prompt-template + paste workflow
+(2026-08-19, via `/newgoal`)
+
+The immediate, ship-now response to §14a: stop depending on a live in-app AI call for ficha
+generation. Instead, give the trainer a pre-written formatting prompt (authored once, embedded in
+the app) that they combine with their own requirements and run in *whatever* AI app they already
+have (ChatGPT, Gemini app, Claude, web — doesn't matter, no API integration needed for this to
+work) — then paste the reply back into the app's existing Smart Paste importer, extended to also
+parse the muscle-activation annotations `REPERTOIRE.md` validated. The trainer keeps 100% manual
+edit control afterward — nothing new needed there, `ManualWorkoutScreen`'s existing exercise-list
+editing already applies to imported fichas exactly like manually-typed ones.
+
+```mermaid
+flowchart TD
+    A[15a. Design: template shape\n+ output format spec] --> B[15b. Formatting prompt asset]
+    B --> C[15c. WorkoutParser: parse\nmuscle-activation annotations]
+    C --> D[15d. Effective-volume calculator\n+ display]
+    A --> E[15e. PromptFichaScreen:\ncopy-prompt + paste-back UI]
+    E --> D
+    D --> F[15f. Tests]
+    F --> G[15g. Registration: rewire\nthe two existing AI entry points]
+```
+
+**15a. Design rationale**
+- [x] **Output format**: extend, don't replace, the existing Smart Paste shape (`WorkoutParser.kt`
+      — `Ficha X` header line + `Exercício NxM` lines, GOALS.md's own module docs) with an
+      *optional* trailing annotation per exercise line naming which muscles it hits and at what
+      coefficient from `hypertrophy_volume_reference.md`, e.g.:
+      `Supino reto 4x10 [Peitoral:1.0, Delt.ant:0.5, Tríceps:0.5]`
+      Optional so a line with no annotation (or a human pasting a plain WhatsApp-style ficha,
+      today's existing use case) still parses exactly as before — this is additive, not a
+      breaking format change.
+- [x] **Explicit out of scope for this pass** (prevents scope creep): no new in-app AI API call
+      (that's §14's later phase, if ever); no anatomy-diagram/heatmap visualization (Hevy/Boostcamp
+      style, per `REPERTOIRE.md` §2) — this pass shows effective volume as a simple per-muscle
+      number-vs-band line, not a body diagram; no change to `AIWorkoutViewModel`'s JSON-based
+      direct-call contract — that code stays as-is, just unwired from the primary UI path (§14c
+      keeps the door open to re-enable it later without a rewrite).
+
+**15b. Formatting-prompt asset**
+- [x] New asset `app/src/main/assets/ficha_prompt_template.md` — the fixed prompt text the app
+      hands the trainer, containing: (1) the exact output format spec from 15a with a worked
+      example, (2) the full `hypertrophy_volume_reference.md` table content (reused verbatim —
+      already bundled, no duplication of research), (3) an instruction to compute and report
+      effective volume per targeted muscle as `Σ(sets × coefficient)` against whatever weekly
+      target the trainer states, applying the existing RIR adjustment rules from the same table —
+      this is the exact validated method from `REPERTOIRE.md` §1, written into the prompt as
+      plain instructions so any general-purpose AI (not just Gemini) can follow it.
+
+**15c. `WorkoutParser.kt` — parse the muscle-activation annotation**
+- [x] New regex for the optional trailing `[Muscle:coef, Muscle:coef, ...]` block per exercise
+      line, parsed into a `Map<String, Double>` on the exercise (nullable/empty when absent —
+      backward compatible with every existing `WorkoutParserTest` case, which must keep passing
+      unchanged).
+
+**15d. Effective-volume calculator + display**
+- [x] New pure function: given a parsed ficha's exercises (sets × per-muscle coefficients), sum
+      `sets × coefficient` per muscle across the whole ficha → effective weekly volume per muscle.
+      Display as a compact per-muscle line (muscle name, computed number, generic MEV/MAV/MRV band
+      as context text, per `REPERTOIRE.md` §2's finding that a bare number without a
+      range/context is the wrong UX) — added to the ficha view already shown on
+      `ManualWorkoutScreen`/`StudentDetailsScreen`, not a new screen.
+
+**15e. `PromptFichaScreen` — copy-prompt + paste-back UI**
+- [x] New screen (or a new mode on the existing `AIWorkoutScreen`, reusing its student-profile
+      auto-fill from `buildPrompt()`'s existing field-gathering logic): a text field for the
+      trainer's own requirements (what they want in the ficha, target volumes per muscle, etc.),
+      a **"Copiar Prompt"** button that concatenates 15b's template + the student's existing
+      profile fields + this free text, and copies it to the clipboard (`ClipboardManager`, same
+      API already used for the invite-code share sheet) — then the existing "Importador
+      Inteligente" paste box (already on `ManualWorkoutScreen`) is where the trainer pastes the
+      AI's reply back in. No new paste UI needed, just the "Copiar Prompt" half.
+
+**15f. Tests**
+- [x] `WorkoutParserTest`: new cases for the muscle-activation annotation (present, absent,
+      malformed — skipped, not errored, same convention as every other unparseable line today).
+      Found and fixed a real bug while writing these: a comma-decimal coefficient (e.g.
+      `[Costas:0,75]`) silently parsed wrong (comma also separates muscles in the same bracket) —
+      the annotation format now requires a period, documented in the prompt template and in a
+      code comment, not just fixed silently.
+- [x] New unit test for the effective-volume calculator: multiple exercises contributing
+      fractional credit to the same muscle sum correctly; a muscle with zero contributing
+      exercises reports 0, not a crash.
+- [ ] **(manual)** confirm "Copiar Prompt" actually populates the system clipboard on a real
+      device — Compose clipboard interaction isn't meaningfully covered by a JVM/Robolectric test.
+
+**15g. Registration — rewire the two existing AI entry points**
+- [x] `StudentDetailsScreen`'s "Ficha Personal" dialog ("Manual" vs. "Com IA") and
+      `WorkoutBuilderScreen`'s "Criar com IA" button both currently navigate straight to
+      `AIWorkoutScreen` (the live-chat direct-call screen, GOALS.md §5d) — repoint both at the new
+      `PromptFichaScreen` instead. Done when: neither entry point reaches a live Gemini/OpenAI API
+      call without the trainer explicitly choosing to (§14c keeps that path available, just not
+      the default one a tap away).
+
+---
+
+## 16. Feature — DeepSeek + Claude as selectable providers, dedicated Settings tabs
+(2026-08-19, via `/newgoal`)
+
+Supersedes part of §15g: the user's direction here is to *expand* the direct in-app AI path
+(more provider choice), not fully retire it in favor of §15's prompt-and-paste flow — both now
+coexist as first-class options (see 16a). Grounds provider specifics in real API docs (endpoint,
+auth header, request/response shape) so `/execgoals` implements against a checked spec, not a
+guess — DeepSeek and Claude have genuinely different wire formats from each other, this matters.
+
+```mermaid
+flowchart TD
+    A[16a. Design: keep both AI\npaths, tabbed Settings shape] --> B[16b. SettingsRepository/VM:\nnew key fields]
+    A --> E[16d. AIWorkoutScreen:\n4 provider chips]
+    B --> C[16c. GenerativeAiService:\nDeepSeek + Claude calls]
+    C --> E
+    B --> F[16e. Settings screen\ntabbed rebuild]
+    C --> G[16f. Tests]
+    E --> H[16g. Registration:\nentry-point dialogs]
+    F --> H
+```
+
+**16a. Design rationale**
+- [x] **Amend §15g**: don't hide `AIWorkoutScreen` behind `PromptFichaScreen` — keep both reachable.
+      The "Ficha Personal" dialog (`StudentDetailsScreen`) and `WorkoutBuilderScreen`'s "Criar com
+      IA" now offer a choice between **"IA no app"** (`AIWorkoutScreen`, direct call, now 4
+      providers to pick from) and **"Prompt para IA externa"** (§15's `PromptFichaScreen`) —
+      giving the trainer a live in-app fallback *and* a fully external option, not forcing one.
+- [x] **`AiProvider` enum expands**: `GEMINI, OPENAI, DEEPSEEK, CLAUDE`. Gemini stays the only
+      project-level/free provider (Firebase AI Logic, §3); the other three are all
+      **BYO-key**, exactly the pattern OpenAI already established — no new architecture, just two
+      more branches of something that already works.
+- [x] **Settings becomes tabbed**, reusing the `NavigationBar` + `selectedTab` pattern already
+      proven in `AdminDashboardScreen` (§5e) for consistency rather than inventing a second
+      "sectioned screen" convention in the same app. Starts with **one tab, "IA"**, holding
+      everything AI-related (Gemini's status card + three BYO-key fields). Adding a future
+      settings category later is one more entry in the tab list + one more `when` branch — no
+      rearchitecture needed when that day comes, which is the actual ask ("já começa a organizar
+      melhor").
+
+**16b. `SettingsRepository`/`SettingsViewModel` — new key storage**
+- [x] Mirror the existing `openaiApiKey` pattern exactly: two new `stringPreferencesKey`s
+      (`deepseek_api_key`, `claude_api_key`) in `SettingsRepository`, two new `Flow<String>`
+      exposures + `saveXApiKey()` functions, surfaced on `SettingsViewModel` the same way
+      `openaiApiKey`/`saveOpenaiApiKey` already are.
+
+**16c. `GenerativeAiService` — DeepSeek and Claude calls**
+- [x] **DeepSeek — reuses the existing OpenAI request/response classes verbatim.** DeepSeek's API
+      is explicitly OpenAI-wire-format-compatible (confirmed via current API docs,
+      `api-docs.deepseek.com`): same `Authorization: Bearer <key>` header, same
+      `{"model": ..., "messages": [{"role", "content"}]}` request shape, same
+      `{"choices": [{"message": {"content"}}]}` response shape already modeled by
+      `OpenAiChatRequest`/`OpenAiChatResponse`. Only two things differ from the existing
+      `generateWithOpenAi()`: base URL `https://api.deepseek.com/chat/completions` and model id
+      `deepseek-chat` (current general-purpose alias; `deepseek-v4-flash`/`deepseek-v4-pro` also
+      exist per §14b's pricing research — verify which is current/recommended at implementation
+      time, same staleness caveat already written for `GEMINI_MODEL_ID`). Read the key from
+      `settingsRepository.deepseekApiKey`, same blank-key-check/error-string convention as OpenAI.
+- [x] **Claude — new request/response shape, NOT OpenAI-compatible.** Anthropic's Messages API:
+      `POST https://api.anthropic.com/v1/messages`. Headers: `x-api-key: <key>` (not
+      `Authorization: Bearer`), `anthropic-version: 2023-06-01` (a stable API-version string,
+      unrelated to model version — do not confuse the two), `Content-Type: application/json`.
+      Body: `{"model": "claude-haiku-4-5", "max_tokens": 4096, "messages": [{"role": "user",
+      "content": fullPrompt}]}`. Response: `{"content": [{"type": "text", "text": "..."}]}` (a
+      list of content blocks, not a single string — take the first `text`-type block). New
+      `@Serializable` classes needed: `ClaudeMessageRequest(model, maxTokens, messages)`,
+      `ClaudeMessage(role, content)`, `ClaudeResponse(content: List<ClaudeContentBlock>)`,
+      `ClaudeContentBlock(type, text)` — same `HttpURLConnection` + `kotlinx.serialization`
+      pattern already used for OpenAI, no new HTTP dependency. Read the key from
+      `settingsRepository.claudeApiKey`.
+- [x] Both new branches follow the exact error-handling shape `generateWithOpenAi()` already
+      established: blank-key check returns a clear Portuguese error string before making any
+      network call, non-2xx response passes the body through in the error string (not a generic
+      "failed"), and `FirebaseCrashlytics.getInstance().recordException(e)` on any thrown
+      exception — consistency with the one pattern this file already got right, not a new style.
+
+**16d. `AIWorkoutScreen` — four provider chips**
+- [x] Extend the existing `FilterChip` row (currently Gemini/ChatGPT only) with "DeepSeek" and
+      "Claude" chips, same `provider by remember { mutableStateOf(...) }` selection pattern.
+
+**16e. Settings screen — tabbed rebuild**
+- [x] Rebuild `SettingsScreen` per 16a's tab shape (`NavigationBar` with one "IA" tab today).
+      Inside the IA tab: keep the existing Gemini info card unchanged, and one `OutlinedTextField`
+      + `PasswordVisualTransformation` per BYO-key provider (OpenAI, DeepSeek, Claude) — **one
+      shared "Salvar" action saving all three at once** (cheaper than three separate FABs/buttons
+      for what's functionally one form), matching the existing single-FAB pattern but extended to
+      write all three keys together.
+
+**16f. Tests**
+- [x] **Descoped, reasoning recorded 2026-08-19**: a real `GenerativeAiServiceTest` would need
+      either a new test dependency (MockWebServer — this project has consistently avoided adding
+      an HTTP test/client dependency for a single POST call, same reasoning that kept OpenAI on
+      plain `HttpURLConnection` in the first place) or loosening the request/response data
+      classes from `private` to something a same-package test file could reach — neither is
+      proportionate to add just for this. Consistent with the existing gap: `generateWithOpenAi()`
+      itself has never had a unit test either, so this isn't a new hole, just staying honest about
+      an old one. Verification for all three BYO-key providers stays manual — plug in a real key
+      and send one message from `AIWorkoutScreen`, same as how OpenAI has always been checked.
+
+**16g. Registration**
+- [x] Update the "Ficha Personal" dialog (`StudentDetailsScreen`) and `WorkoutBuilderScreen`'s
+      "Criar com IA" entry point per 16a's amended design (choice between `AIWorkoutScreen` and
+      `PromptFichaScreen`, not just the latter as §15g originally specified).
+
+---
+
+## 17. Feature — student connection clarity, trainer-granted permissions, self-assessment
+(2026-08-19, via `/newgoal`)
+
+**Not yet started — the user flagged this as a real gap but was explicitly unsure whether now is
+the right time to build it ("não sei se agora é o melhor momento"). This section is the plan for
+when they decide to; running `/execgoals` against it is a separate, later decision, not implied by
+writing it.**
+
+Grounded in a direct code read (not assumption) before designing anything, since the request
+questioned whether the current model is architecturally broken:
+
+- **"Meus Alunos" already merges both states** — `TrainerRepository.getStudents()` reads one Room
+  `users` table populated by *two* Firestore listeners: `students/{id}` drafts (`AddStudentScreen`,
+  no Firebase Auth account) and `users/{uid}` docs where `trainerId` matches (real linked/claimed
+  accounts). A trainer already sees both kinds of "aluno" in one list — the data layer isn't
+  fragmented. What's actually missing is **visual distinction on the card** between "cadastrado,
+  ainda não conectado" and "conectado" — a UI gap, not an architecture one.
+- **`AddStudentScreen` should stay** — it's the same pattern real competing tools use (Trainerize,
+  TrueCoach: "add a client record" and "invite them to the app" are two separate, sequential
+  steps, not one). A trainer meeting a new client in person, before that person has installed
+  anything, needs somewhere to write down what they already know. Removing it would regress a
+  real, common workflow to solve a labeling problem — fix the label, not the feature.
+- **Real bug found while reading `AuthRepository.claimInvite()` for this pass**: the claim write
+  is `transaction.set(userRef, mapOf(...))` — a full overwrite, not a merge. Harmless *today*
+  (nothing lets an unclaimed self-registered STUDENT write anything to their own profile yet, per
+  the code read), but it becomes a real data-loss bug the moment any self-service capability
+  ships: a student who filled out a self-assessment (17e) *before* claiming an invite would have
+  it silently wiped the moment they claim. Rather than touch the claim mechanism (out of scope,
+  risk of regressing §7/§13d's already-working invite logic), **every new self-service capability
+  in this section is scoped to apply only to already-linked (claimed) students** — matches the
+  user's own framing ("aluno... conectar para o personal e aí sim [fazer coisas]") and sidesteps
+  the overwrite risk entirely rather than papering over it.
+
+```mermaid
+flowchart TD
+    A[17a. Design: draft/connected\nbadge, permission set, self-\nassessment as time-series] --> B[17b. Data model:\nassessments + permission fields]
+    B --> C[17c. firestore.rules]
+    C --> D[17d. Trainer UI:\nbadge, toggles, request, history]
+    C --> E[17e. Student UI:\ngated tabs, assessment form]
+    D --> F[17f. Tests]
+    E --> F
+    F --> G[17g. Registration]
+```
+
+**17a. Design rationale**
+- [ ] **Draft vs. connected badge**: purely visual, uses the existing `UserEntity.linked` field
+      already returned by the merged query — no new data needed. Closes the actual confusion the
+      user flagged without touching the data model.
+- [ ] **Permission set stays small and named, not a generic feature-flag framework**: exactly two
+      toggles, both trainer-controlled and default OFF (per "que o personal libera... quando
+      personal autorizar"):
+      - `canSelfAssess` — student may fill out a self-assessment when the trainer requests one.
+      - `canLogBiometrics` — student may log their own weight/measurements (distinct from the
+        trainer's own biometric entries on `StudentDetailsScreen`).
+      A third or fourth toggle can be added later the same way if a real need shows up — building
+      a generic per-feature permission engine now for two known toggles is speculative flexibility
+      this project's own conventions already avoid elsewhere.
+- [ ] **Self-assessment is a time-series collection (`assessments/{id}`), not a single overwritable
+      profile field** — mirrors the existing `biometrics`/`workoutLogs` pattern (Firestore source
+      of truth + Room mirror), giving the trainer a real history instead of only ever seeing the
+      latest answers. Content grounded in the **PAR-Q+** (Physical Activity Readiness
+      Questionnaire), the international-standard pre-exercise health screening tool used
+      industry-wide before a new client starts training — 7 general yes/no health-risk questions
+      (heart condition needing medical clearance, chest pain during/at rest, dizziness or loss of
+      consciousness, a bone/joint problem, current blood-pressure/heart medication, any other
+      medical reason) — plus the profile fields `UserEntity` already has (`goal`,
+      `experienceLevel`, `trainingDays`), not an invented bespoke form. A "yes" answer should be
+      flagged visibly to the trainer (liability/safety relevance), not just logged silently.
+- [ ] **Request is pull-based, not push** — the trainer "requesting" an assessment just flips
+      `pendingAssessmentRequest = true` on the student's own doc; the student sees it next time
+      they open the app (same pattern already used for role-promotion — GOALS.md explicitly keeps
+      push notifications/FCM out of scope project-wide). No new messaging infrastructure needed.
+
+**17b. Data model**
+- [ ] New Room entity `AssessmentEntity` + Firestore collection `assessments/{id}`:
+      `studentId`, `trainerId`, `requestedAt`, `submittedAt` (null until answered), `parQAnswers`
+      (map of question key → boolean), `goal`/`experienceLevel`/`trainingDays` snapshot at
+      submission time (so history reflects what was true *then*, not the current live profile).
+      Room migration (schema version bump, exported schema committed under `app/schemas/`, per
+      CLAUDE.md's own convention — no `fallbackToDestructiveMigration` reliance).
+- [ ] New fields on `UserEntity`/`users/{uid}`: `canSelfAssess: Boolean = false`,
+      `canLogBiometrics: Boolean = false`, `pendingAssessmentRequest: Boolean = false`. Extend
+      `FirestoreMappers.kt` (`toFirestoreMap()`/`toUserEntity()`) — same three-places-in-lockstep
+      rule CLAUDE.md already documents for this data layer.
+- [ ] `TrainerRepository`: `requestAssessment(studentId)` (sets the pending flag),
+      `getAssessmentsForStudent(studentId): Flow<List<AssessmentEntity>>`,
+      `setStudentPermission(studentId, canSelfAssess, canLogBiometrics)`.
+- [ ] `StudentRepository`: `submitAssessment(answers, profileSnapshot)` (writes the doc, clears
+      the pending flag), `logOwnBiometric(entry)` (only meaningful when `canLogBiometrics` is
+      true — the rule in 17c is the real gate, this is just the write path).
+
+**17c. `firestore.rules`**
+- [ ] `assessments/{id}`: `allow create` if `isOwningTrainer(request.resource.data.trainerId)`
+      (the request) **or** if the caller is the student themselves, `request.resource.data.studentId
+      == request.auth.uid`, and their own `users/{uid}.canSelfAssess == true` (the submission —
+      same `get()`-a-related-doc pattern already used for invite validation). `allow read` if
+      owning trainer or the student themselves (same shape as `workoutLogs`).
+- [ ] `users/{uid}` self-`update`: add one more narrow, additive exception (same style as §13d's
+      re-claim exception) permitting `pendingAssessmentRequest` to change **only** `true → false`
+      and **only** as part of the same write that creates an `assessments/{id}` doc for that
+      student — this is the "submitting an assessment clears its own pending flag" self-write,
+      distinct from `canSelfAssess`/`canLogBiometrics` themselves, which stay trainer-only
+      (`isAdmin() || isOwningTrainer(...)`), never student-settable.
+- [ ] `biometrics/{entryId}` `allow create`: add a narrow exception permitting a student to create
+      their own entry (`request.resource.data.studentId == request.auth.uid`) only when their own
+      `users/{uid}.canLogBiometrics == true` — additive to the existing `isOwningTrainer`-only
+      create rule, not a replacement.
+
+**17d. Trainer-side UI**
+- [ ] Student list/card (`StudentsScreen`/`MainScreen`): a small badge — "Conectado" vs
+      "Cadastrado (aguardando conexão)" — driven by the existing `linked` field.
+- [ ] `StudentDetailsScreen`: new "Permissões" section with two switches
+      (`canSelfAssess`/`canLogBiometrics`), a "Solicitar Autoavaliação" button (enabled only when
+      `canSelfAssess` is already on — request presupposes permission, not the other way around),
+      and an assessment-history list (newest first, flags any "yes" PAR-Q answer visibly).
+
+**17e. Student-side UI**
+- [ ] `StudentNavigation`: reads the student's own `canSelfAssess`/`canLogBiometrics` from their
+      already-synced profile (via `StudentRepository`'s existing listener, no new sync mechanism)
+      and conditionally shows the corresponding tab/action — hidden entirely, not just disabled,
+      when the trainer hasn't granted it.
+- [ ] Pending-assessment banner/screen: when `pendingAssessmentRequest == true`, show the PAR-Q
+      questions (pre-filled `goal`/`experienceLevel`/`trainingDays` from the current profile,
+      editable) → submit writes `assessments/{id}` + clears the pending flag in the same logical
+      action (17c's rule requires this).
+- [ ] Self-log biometrics screen: reuses the existing `WeightChart`/biometric-entry UI pattern
+      already built for the trainer side (`StudentDetailsScreen`/`Components.kt`) rather than
+      building a second one — same component, a student-facing write path gated by 17c's rule.
+
+**17f. Tests**
+- [ ] Room DAO test for `AssessmentEntity` CRUD + the new migration (same in-memory-DB pattern
+      `AppDaoTest` already uses — note the existing caveat: written and compiling is verifiable
+      here, actually *running* needs a device/emulator, same as every other `androidTest` in this
+      project).
+- [ ] **(manual)** `firestore.rules` changes always need live verification after publishing — this
+      is no different from every other rules change this session: publish, then confirm both the
+      trainer-request path and the student-submit path actually work, and that a `canSelfAssess ==
+      false` student is genuinely blocked (not just hidden in the UI) from creating an
+      `assessments/{id}` doc directly.
+
+**17g. Registration**
+- [ ] Wire the new "Permissões"/assessment-history section into `StudentDetailsScreen`'s existing
+      layout (not a new top-level screen — it belongs alongside the other per-student management
+      already there). Wire the new student-side screens into `StudentNavigation`'s existing tab
+      list, conditionally per 17e.
+
+---
+
+## Suggested build order (what blocks what) — revised 2026-08-18
 
 **Done** (§0, §1 CLAUDE.md, §2 git, §4a Firestore migration, §5d UI debt + AI button wiring, §7
 firestore.rules + self-registration, §8 INTERNET/backup-exclusion/R8, §9 first real tests, §10
@@ -698,18 +1315,111 @@ users create/delete rules) in the Firebase console, and register the app for App
 **Also done (2026-08-17, via `/execgoals`, same day):** §5d hypertrophy volume reference grounding
 (text-embedding approach) — not yet checked against a live API call, see the item itself.
 
-Still open, in order:
+**Also done (2026-08-18, via `/execgoals`):** §1 KDoc pass (`WorkoutParser`, `AdminViewModel`),
+§6 connectivity items confirmed accurate against the code, §9 Compose UI golden-path test
+(`TrainerGoldenPathTest.kt`) + single `./gradlew verify` command, §11 `.github/workflows/android-ci.yml`,
+§10 splitting `StudentDetailsScreen.kt`/`ManualWorkoutScreen.kt`, §11 release keystore + signing
+config (verified via a real `assembleRelease`), §11 privacy policy + store listing copy drafted.
+**Real bug found and fixed while verifying §6/writing the §9 test**: `WorkoutEntity.status` was
+never actually set to `"assigned"` by anything — the Student's "Meus Treinos" query would have
+matched zero workouts, ever. Fixed in `TrainerRepository` (see §6 for detail).
 
-1. §3 Cloud Function Gemini proxy + SDK migration (deprecated `com.google.ai.client.generativeai`
-   → Firebase AI Logic SDK) — **blocked on upgrading the Firebase project to the Blaze (pay-as-you-
-   go) plan**, a real billing decision only the user can make in the Firebase console. Unblocks
-   safely shipping the AI feature given the June/Sept 2026 Gemini key deprecation deadlines. No
-   longer a prerequisite for the §5d volume-grounding item above (revised 2026-08-17 — see §3/§5d).
-2. §9 remaining tests (Compose UI golden path, now unblocked — Student screens exist) + §11 CI
-   (needs a GitHub Actions secret holding `google-services.json`, a repo-visible change) → safety
-   net.
-3. §8 remaining hardening (encrypted key storage, release signing — generating a keystore is
-   effectively permanent for the app's Play Store identity) + §11 store prerequisites → Play Store
-   readiness.
-4. §12 Phase 2 (messaging, payments, photos, booking reminders) — only if/when explicitly
-   prioritized; each deserves its own `/newgoal` pass when the time comes.
+**Also done (2026-08-18, later the same day — §3 decision revised):** the user reconsidered and
+chose to stay on Firebase's free Spark plan rather than pay for Blaze, which ruled out the Cloud
+Function proxy entirely. Migrated Gemini to the **Firebase AI Logic SDK** instead (free on Spark,
+officially maintained, no client-held key) — this fully resolves §3's deprecated-SDK and
+key-exposure concerns without any billing change. Trade-off: Gemini is now one shared
+project-level configuration instead of a key per trainer; **OpenAI stays fully per-trainer**
+(unaffected, still BYO-key) as the alternative for anyone who wants that. §6's Cloud Function
+contract item is now moot for the same reason. Verified via
+`./gradlew compileDebugKotlin compileDebugAndroidTestKotlin verify assembleRelease` (all green).
+**New manual Firebase Console step** (join the two already pending — see §8): enable the project
+for Gemini access at Build → AI Logic → Get started → "Gemini Developer API" (free) — the app's
+Gemini calls will fail at runtime until that's done. CI workflow itself also still unverified
+until the `GOOGLE_SERVICES_JSON` repo secret is added (manual, user-only).
+
+**Also decided (2026-08-18):** not publishing to the Play Store — small client base, the store's
+ongoing overhead (Data Safety form, listing upkeep, review process) isn't worth it. Distribution
+is direct (sideloaded signed APK) instead; dropped the Play Store-only prerequisites accordingly
+(kept the privacy policy and release signing — both useful regardless of distribution channel).
+
+**MVP checklist complete: 58/58.** Everything achievable without external decisions/access this
+session doesn't have is done. What's left is either a manual step only the user can do (the three
+Firebase Console steps above, the `GOOGLE_SERVICES_JSON` CI secret) or explicitly deferred
+(§12 Phase 2 — only if/when prioritized, each deserving its own `/newgoal` pass when the time
+comes).
+
+**Post-MVP addition (2026-08-18/19, live device testing):** discovered while testing on a real
+device — there was no way to create the *first* TRAINER account. Self-registration always yields
+role=STUDENT by design (`AuthRepository.register()`, no self-promotion, see §7); only an ADM can
+grant TRAINER, and `firestore.rules`' `isAdmin()` bypass already permitted this, but nothing in
+the UI exposed it. Iterated through two designs (see conversation) before landing on a
+**request/approve flow**, matching how the user actually wants to onboard trainers:
+
+- A self-registered (unlinked) STUDENT can tap "Solicitar acesso de Trainer" on `LoginScreen`
+  (`AuthViewModel.requestTrainerAccess()` → `AuthRepository`), writing a self-owned
+  `trainerRequests/{uid}` doc (email + timestamp) — a pure mailbox, carries no privilege by
+  itself.
+- The ADM's Gestão tab lists pending requests (`AdminViewModel.loadTrainerRequests()`) with
+  **Aceitar**/**Recusar** buttons. Aceitar writes `role: TRAINER` to `users/{uid}` (the same
+  `isAdmin()`-gated write already built) and deletes the request; Recusar just deletes it.
+  Approval takes effect immediately — no code to relay, the person just needs to re-login.
+- Kept the earlier UID-paste form too, relabeled "Promover manualmente (avançado)" — a fallback
+  for a request that never landed (offline write, etc.), not the primary path anymore.
+- **New `firestore.rules` addition**: `trainerRequests/{uid}` (self-create by the owner, ADM-only
+  read/delete) — bundle this into the same Console rules-publish as the other pending rule
+  changes.
+
+Compiled (`compileDebugKotlin`) and installed on a physical device (Samsung SM-S926B) for
+verification at each iteration.
+
+**Post-MVP fixes (2026-08-19, via `/newgoal` — see §13):** further live-device testing surfaced
+three items, tracked with the `fix.md` repro/root-cause/fix/regression-test discipline instead of
+this narrative log from here on — §13a (App Check) and §13b (ADM refresh) are fixed and verified
+live; §13c (trainer-request end-to-end) and §13d (invite claim on an existing doc) still need
+work — §13d's rules diff + UX fix aren't implemented yet.
+
+**AI ficha strategy pivot (2026-08-19, via `/newgoal /repertoire` — see `REPERTOIRE.md`, §14,
+§15):** after §13a's fix, the *next* Gemini error the user hit (`This model is currently
+experiencing high demand`) turned out to be a real, external, industry-wide free-tier reliability
+problem (confirmed via research, §14a) — not something to keep debugging in this codebase.
+Decision: stop leading with live in-app AI calls for now. §15 replaces the direct-call
+`AIWorkoutScreen` path with a prompt-template-and-paste workflow (provider-agnostic — the trainer
+uses whatever AI app they already have) that also adds effective-volume-per-muscle math
+(`Σ sets × activation-coefficient`, validated against real dose-response literature in
+`REPERTOIRE.md` §1) to the ficha output. §14 researches cheap providers for a *later* phase-2
+re-integration (recommendation: repoint the already-wired OpenAI path at a current cheap model
+before building any new provider integration) — doesn't block §15. Run `/execgoals` against §15
+first (it's the immediate, shippable half), then §13c/§13d, then §14 only when the user wants
+in-app AI back.
+
+**Provider choice expanded, Settings reorganized (2026-08-19, via `/newgoal` — see §16):** the
+user chose to expand rather than narrow the in-app AI path — DeepSeek and Claude join
+Gemini/OpenAI as selectable providers (all three non-Gemini providers BYO-key, same pattern),
+and Settings becomes tabbed (starting with one "IA" tab) so future settings categories have
+somewhere to go without a redesign. This amends §15g: `AIWorkoutScreen` stays reachable alongside
+`PromptFichaScreen`, both offered from the same entry points, not one replacing the other. Run
+`/execgoals` against §16 together with §15 — they share entry-point registration (16g/15g) and
+should land in the same pass.
+
+**§13d/§15/§16 implemented and verified via `compileDebugKotlin`, `testDebugUnitTest`, `lint`
+(all green) — 2026-08-19, via `/execgoals`.** A real parsing bug was found and fixed while writing
+the new `WorkoutParserTest` cases: a comma-decimal coefficient in a `[Muscle:coef]` annotation
+silently parsed wrong because comma also separates muscles in the same bracket — the annotation
+format now requires a period, documented in the prompt template. Remaining opens are all manual
+(reconnect the device, republish `firestore.rules`, add test API keys for DeepSeek/Claude to
+verify end-to-end) — no code left to write for §13d/§15/§16.
+
+**§17 planned but explicitly not started (2026-08-19, via `/newgoal`) — student connection
+clarity, trainer-granted permissions (`canSelfAssess`/`canLogBiometrics`), and a PAR-Q-based
+self-assessment feature (`assessments/{id}`, time-series like `biometrics`).** Grounded in a real
+code read: `AddStudentScreen`'s draft flow is not architecturally broken (the trainer's student
+list already merges drafts + linked accounts) and should stay, matching how Trainerize/TrueCoach
+also separate "add a client record" from "invite them to the app" — the actual gap is just a
+missing visual badge for draft-vs-connected. A real latent bug was also found while researching
+this: `AuthRepository.claimInvite()` overwrites (not merges) the claiming account's profile,
+which would silently wipe any self-entered data (like a self-assessment) filled in before
+claiming — every new capability in §17 is deliberately scoped to already-linked students only, to
+avoid that risk without having to touch the working claim mechanism. The user was explicit that
+now might not be the right time to build this — §17 is ready whenever they decide, not queued for
+immediate execution.

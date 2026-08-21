@@ -39,7 +39,12 @@ service cloud.firestore {
     // users/{uid} — self-read, admin-managed writes. A user can edit their own
     // profile fields but can never change their own role or trainerId (no self-promotion).
     match /users/{uid} {
-      allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      // The owning trainer may also list/read their own linked students' docs (GOALS.md §13d
+      // follow-up: the §7 "unify" model's Meus Alunos listener needs this to ever return
+      // linked-account results, not just self-read/admin).
+      allow read: if isSignedIn() && (
+        request.auth.uid == uid || isAdmin() || isOwningTrainer(field(resource.data, 'trainerId'))
+      );
       // A self-registered student has no users/{uid} doc yet, so claiming an invite is their
       // first-ever write here (create, not update) — allowed only by presenting a currently
       // valid, unused invite minted by the trainerId being claimed.

@@ -800,10 +800,10 @@ load — done 2026-08-19**
       re-runs every time this composable re-enters composition, i.e. every time the Gestão tab is
       selected, no extra state needed. Added a manual refresh `IconButton` next to "Solicitações
       Pendentes" for an on-demand recheck without leaving the tab.
-- [ ] **Regression test (manual):** with the fix installed, promote/reject a request or add a
-      student from a different account while the ADM Gestão tab is already open in the
-      background, then switch to that tab (or tap refresh) and confirm the numbers/list update
-      without restarting the app. Not yet re-verified after this specific build (see 13c).
+- [x] **Regression test (manual) — passed 2026-08-20:** on-device, `alexmiguel011014@gmail.com`
+      tapped "Solicitar acesso de Trainer" while the ADM's Gestão tab was already open in the
+      background; switching back to the tab showed the new pending request without restarting the
+      app. Confirms the `LaunchedEffect(Unit)` re-trigger fix works for real, not just compiles.
 
 **13d. Claiming an invite permanently fails once a `users/{uid}` doc exists for that account —
 found 2026-08-19 (`alexmiguel011014@gmail.com`), worked around manually, needs a real fix**
@@ -871,26 +871,64 @@ found 2026-08-19 (`alexmiguel011014@gmail.com`), worked around manually, needs a
          message (e.g. "Esta conta já está vinculada a um perfil existente — fale com o
          administrador.") instead of forwarding the raw exception text, so this doesn't require a
          support conversation + manual Console lookup to diagnose next time.
-- [ ] **Regression test (manual, blocked on republishing `firestore.rules` to the live Console —
-      same manual step as every other rules change this session):**
-      1. Case 1: manually create a `users/{uid}` doc with `role: STUDENT, trainerId: null` for a
-         test account (simulating any path that leaves an unclaimed doc behind), have a trainer
-         generate an invite, claim it from that account, confirm success and `RoleRouter` routes
-         into `StudentNavigation`.
-      2. Case 2: on an account already promoted to `TRAINER` (or already claimed under a
-         different trainer), attempt to claim a new invite and confirm it fails with the new
-         friendly message, not a raw Firebase exception string — and confirm the existing
-         `role`/`trainerId` are genuinely untouched afterward (no silent overwrite).
+- [x] **Regression test (manual) — case 1 passed 2026-08-20; case 2 accepted as UI-unreachable
+      (see below).**
+      1. **Case 1 — passed.** Registered a fresh test account (`teste@teste.com`), manually created
+         its `users/{uid}` doc (`role: STUDENT, trainerId: null`, simulating a path that leaves an
+         unclaimed doc behind), had a trainer (`alexmiguel011014@gmail.com`) generate an invite,
+         claimed it from the test account — confirmed success, `RoleRouter` routed into
+         `StudentNavigation` (verified on-device: "Treinos"/"Evolução" tabs, "Nenhuma ficha
+         atribuída ainda"). **Real deployment bug found and fixed along the way, not a code bug**:
+         the first claim attempt failed with the exact pre-fix "already linked" error even though
+         the local `firestore.rules` file had the §13d exception. Root cause: the rules **published
+         on the live Firebase Console were stale** — an older version without the §13d `update`
+         exception (confirmed by having the user paste the live rules text back for comparison).
+         The user had believed this was already republished (see the "13b/13c" pass), but it
+         hadn't actually gone out. Republishing the current local file fixed it immediately — no
+         code change needed. **Process takeaway**: after any `firestore.rules` edit, verify what's
+         *live* by reading it back from the Console, don't just trust "I published it" from memory
+         — this cost real debugging time chasing a phantom code bug that didn't exist.
+      2. **Case 2 — accepted as structurally unreachable via the UI, not hands-on tested.** Traced
+         `RoleRouter`: an account with an existing role (`TRAINER`, or already-linked `STUDENT`)
+         never reaches the invite-claim screen at all — it's routed straight into
+         `AppNavigation`/`StudentNavigation` instead. The rule is defense-in-depth against a direct
+         API/DB write, not something a normal user flow can trigger, so a click-through regression
+         test isn't structurally possible without a raw authenticated Firestore call outside the
+         app. User decision: accept this as covered by code review + UI routing, skip the extra
+         verification step.
+      - **Two unrelated real bugs surfaced during this test pass — both fixed and verified
+        on-device 2026-08-21:**
+        1. `TrainerRepository`'s `users where trainerId==X and role==STUDENT` listener query
+           (the §7 "unify" model's linked-student sync) failed with `PERMISSION_DENIED` — confirmed
+           live via logcat (`Listen for QueryWrapper(...) failed: Status{code=PERMISSION_DENIED}`).
+           `firestore.rules`' `users/{uid}` collection only allowed self-read or `isAdmin()` — no
+           rule let a trainer read/list their own linked students' `users/{uid}` docs, so the
+           "linked student" half of the §7 unify model had never actually synced into a trainer's
+           `Meus Alunos` list. **Fixed**: added `isOwningTrainer(field(resource.data, 'trainerId'))`
+           to the `users/{uid}` `allow read` rule, republished. **Verified on-device**: after the
+           fix, `alexmiguel011014@gmail.com`'s "Meus Alunos" correctly showed *two* cards (the
+           original `students/` draft + the newly-linked `users/` account from the 13d case-1
+           test) — before the fix only the draft ever appeared.
+        2. The Trainer's main screen (`MainScreen`/students list) had **no logout button** — found
+           when trying to switch test accounts, had to force-close the app instead. **Fixed**:
+           added a logout `IconButton` (`Icons.AutoMirrored.Filled.Logout`) to `MainScreen`'s
+           `TopAppBar`, threaded `onLogout` through `AppNavigation()` from `RoleRouter` (same
+           `viewModel.logout()` pattern already used for ADM/Student). **Verified on-device**:
+           tapping it returns to `LoginScreen` cleanly.
+        Both changes verified via `./gradlew compileDebugKotlin verify assembleDebug` (all green)
+        before on-device testing.
 
-**13c. Trainer-request flow (`trainerRequests`) — end-to-end validation pending**
-- [ ] `firestore.rules`' `trainerRequests/{uid}` block was republished in the Firebase Console
+**13c. Trainer-request flow (`trainerRequests`) — end-to-end validation — done 2026-08-20**
+- [x] `firestore.rules`' `trainerRequests/{uid}` block was republished in the Firebase Console
       (user-confirmed 2026-08-19) and no `PERMISSION_DENIED` was seen in logcat afterward — the
-      rules side is live. What's still unverified on THIS build (which also carries 13b's refresh
-      fix): a STUDENT account taps "Solicitar acesso de Trainer" on `LoginScreen`, the request
-      appears in the ADM's "Solicitações Pendentes" without restarting the app, "Aceitar" promotes
-      it, and the promoted account gets full Trainer navigation on next login. Do this full pass
-      once, on-device, before considering the whole trainer-onboarding feature (GOALS.md's
-      "Post-MVP addition") actually done rather than just "compiles and rules are live".
+      rules side is live. Full pass confirmed on-device 2026-08-20:
+      `alexmiguel011014@gmail.com` (a STUDENT account) tapped "Solicitar acesso de Trainer" on
+      `LoginScreen`, the request appeared live in the ADM's "Solicitações Pendentes" (see 13b),
+      "Aceitar" promoted it to TRAINER. The whole trainer-onboarding feature (GOALS.md's "Post-MVP
+      addition") is now verified end-to-end, not just "compiles and rules are live". Side effect
+      worth noting: this reused `alexmiguel011014@gmail.com` as the test account, so it's now a
+      real TRAINER — no longer available as a clean unclaimed-STUDENT fixture for 13d below, which
+      needs a fresh account instead.
 
 ---
 

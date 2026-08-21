@@ -25,7 +25,7 @@ fun RoleRouter(
     // email/password text field state — on every Idle->Loading->Error/Authenticated transition.
     when {
         role == UserRole.ADM -> AdminDashboardScreen(onLogout = { viewModel.logout() })
-        role == UserRole.TRAINER -> AppNavigation() // O Dashboard original está dentro do AppNavigation
+        role == UserRole.TRAINER -> AppNavigation(onLogout = { viewModel.logout() }) // O Dashboard original está dentro do AppNavigation
         role == UserRole.STUDENT && studentUid != null && authenticated.trainerId != null ->
             StudentNavigation(studentId = studentUid, trainerId = authenticated.trainerId, onLogout = { viewModel.logout() })
         else -> LoginScreen() // covers Idle/Loading/Error, Authenticated(NONE) and unclaimed STUDENT

@@ -33,7 +33,7 @@ sealed class Screen(val route: String) {
 }
 
 @Composable
-fun AppNavigation() {
+fun AppNavigation(onLogout: () -> Unit = {}) {
     val navController = rememberNavController()
 
     NavHost(
@@ -50,7 +50,8 @@ fun AppNavigation() {
                 },
                 onNavigateToAddStudent = {
                     navController.navigate(Screen.AddStudent.route)
-                }
+                },
+                onLogout = onLogout
             )
         }
         composable(Screen.Settings.route) {

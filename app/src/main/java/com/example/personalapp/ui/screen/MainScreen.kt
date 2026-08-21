@@ -2,6 +2,7 @@ package com.example.personalapp.ui.screen
 
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Settings
@@ -19,6 +20,7 @@ fun MainScreen(
     onStudentSelected: (String) -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToAddStudent: () -> Unit,
+    onLogout: () -> Unit = {},
 ) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -31,6 +33,9 @@ fun MainScreen(
                 actions = {
                     IconButton(onClick = onNavigateToSettings) {
                         Icon(Icons.Default.Settings, contentDescription = "Configurações")
+                    }
+                    IconButton(onClick = onLogout) {
+                        Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "Sair")
                     }
                 }
             )

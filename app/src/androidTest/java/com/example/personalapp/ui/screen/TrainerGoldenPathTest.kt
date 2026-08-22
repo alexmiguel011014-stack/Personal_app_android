@@ -123,6 +123,7 @@ class TrainerGoldenPathTest {
                     onNavigateToAI = {},
                     onNavigateToEdit = {},
                     onNavigateToWorkoutBuilder = {},
+                    onNavigateToPromptFicha = {},
                     viewModel = studentDetailsViewModel,
                 )
             }

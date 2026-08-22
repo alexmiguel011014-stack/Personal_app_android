@@ -85,7 +85,7 @@ class WorkoutParserTest {
     }
 
     @Test
-    fun `parseExercises requires a period decimal in the annotation, not a comma`() {
+    fun `parseExercises requires a period decimal in the annotation not a comma`() {
         // A comma is ambiguous with the muscle-list separator (e.g. "[Costas:0,75]" would look
         // like two entries, "Costas:0" and "75") — treated as malformed and skipped, not parsed.
         val exercises = WorkoutParser.parseExercises("Remada 3x10 [Costas:0.75]")

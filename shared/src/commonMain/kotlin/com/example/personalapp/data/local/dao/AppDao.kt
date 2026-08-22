@@ -56,7 +56,7 @@ class AppDao(driverFactory: DatabaseDriverFactory) {
     suspend fun deleteUser(user: UserEntity) = deleteUserById(user.id)
 
     fun getStudents(): Flow<List<UserEntity>> =
-        database.usersQueries.getStudents(::toUserEntity).asFlow().mapToList(Dispatchers.IO)
+        database.usersQueries.getStudents(::toUserEntity).asFlow().mapToList(Dispatchers.Default)
 
     suspend fun getUserById(id: String): UserEntity? =
         database.usersQueries.getUserById(id, ::toUserEntity).executeAsOneOrNull()
@@ -81,7 +81,7 @@ class AppDao(driverFactory: DatabaseDriverFactory) {
 
     fun getBiometricsByUser(userId: String): Flow<List<BiometricEntity>> =
         database.biometricsQueries.getBiometricsByUser(userId, ::BiometricEntity)
-            .asFlow().mapToList(Dispatchers.IO)
+            .asFlow().mapToList(Dispatchers.Default)
 
     suspend fun deleteBiometricById(id: String) {
         database.biometricsQueries.deleteBiometricById(id)
@@ -112,7 +112,7 @@ class AppDao(driverFactory: DatabaseDriverFactory) {
 
     fun getActiveWorkoutsByStudent(studentId: String): Flow<List<WorkoutEntity>> =
         database.workoutsQueries.getActiveWorkoutsByStudent(studentId, ::toWorkoutEntity)
-            .asFlow().mapToList(Dispatchers.IO)
+            .asFlow().mapToList(Dispatchers.Default)
 
     private fun toWorkoutEntity(
         id: String, studentId: String, name: String, isActive: Boolean,
@@ -160,7 +160,7 @@ class AppDao(driverFactory: DatabaseDriverFactory) {
 
     fun getWorkoutLogsByStudent(studentId: String): Flow<List<WorkoutLogEntity>> =
         database.workoutLogsQueries.getWorkoutLogsByStudent(studentId, ::toWorkoutLogEntity)
-            .asFlow().mapToList(Dispatchers.IO)
+            .asFlow().mapToList(Dispatchers.Default)
 
     suspend fun getWorkoutLogsByWorkout(workoutId: String): List<WorkoutLogEntity> =
         database.workoutLogsQueries.getWorkoutLogsByWorkout(workoutId, ::toWorkoutLogEntity).executeAsList()

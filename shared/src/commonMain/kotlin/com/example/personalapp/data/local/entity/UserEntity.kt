@@ -1,11 +1,7 @@
 package com.example.personalapp.data.local.entity
 
-import androidx.room.Entity
-import androidx.room.PrimaryKey
-
-@Entity(tableName = "users")
 data class UserEntity(
-    @PrimaryKey val id: String,
+    val id: String,
     val name: String,
     val role: String, // 'trainer' or 'student'
     val gender: String = "Masculino", // 'Masculino' or 'Feminino'

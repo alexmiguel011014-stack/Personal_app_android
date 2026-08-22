@@ -1,6 +1,6 @@
 package com.example.personalapp.di
 
-import com.example.personalapp.data.local.AppDatabase
+import com.example.personalapp.data.local.DatabaseDriverFactory
 import com.example.personalapp.data.local.dao.AppDao
 import com.example.personalapp.data.repository.AuthRepository
 import com.example.personalapp.data.repository.SettingsRepository
@@ -31,8 +31,8 @@ import org.koin.dsl.module
 val appModule = module {
     single<FirebaseAuth> { Firebase.auth }
     single<FirebaseFirestore> { Firebase.firestore }
-    single { AppDatabase.getDatabase(androidContext()) }
-    single<AppDao> { get<AppDatabase>().appDao() }
+    single { DatabaseDriverFactory(androidContext()) }
+    single { AppDao(get()) }
 
     single { AuthRepository(get(), get()) }
     single { SettingsRepository(androidContext()) }

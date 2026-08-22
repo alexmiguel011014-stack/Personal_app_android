@@ -1,6 +1,5 @@
 package com.example.personalapp.data.local
 
-import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.example.personalapp.data.local.dao.AppDao
@@ -22,28 +21,25 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Room CRUD + Flow-emission coverage for §9 of GOALS.md. Needs a device/emulator to run
- * (Room's in-memory database requires a real Android SQLite driver) — not runnable in this
- * sandboxed environment, which has no AVD/emulator set up.
+ * SQLDelight CRUD + Flow-emission coverage for §9 of GOALS.md (moved off Room in §18d — see
+ * GOALS.md for why). Needs a device/emulator to run (needs a real Android SQLite driver) — not
+ * runnable in this sandboxed environment, which has no AVD/emulator set up.
  */
 @RunWith(AndroidJUnit4::class)
 class AppDaoTest {
 
-    private lateinit var db: AppDatabase
     private lateinit var dao: AppDao
 
     @Before
     fun createDb() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
-            .allowMainThreadQueries()
-            .build()
-        dao = db.appDao()
+        // null name = in-memory database (AndroidSqliteDriver's own documented convention).
+        dao = AppDao(DatabaseDriverFactory(context, databaseName = null))
     }
 
     @After
     fun closeDb() {
-        db.close()
+        dao.close()
     }
 
     @Test

@@ -1,0 +1,31 @@
+import kotlin.Boolean;
+import kotlin.collections.List;
+import com.example.personalapp.data.model.Exercise;
+
+CREATE TABLE workouts (
+    id TEXT NOT NULL PRIMARY KEY,
+    studentId TEXT NOT NULL,
+    name TEXT NOT NULL,
+    isActive INTEGER AS Boolean NOT NULL,
+    exercisesJson TEXT AS List<Exercise> NOT NULL,
+    createdAt INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    assignedAt INTEGER
+);
+
+insertWorkout:
+INSERT OR REPLACE INTO workouts(id, studentId, name, isActive, exercisesJson, createdAt, status, assignedAt)
+VALUES (:id, :studentId, :name, :isActive, :exercisesJson, :createdAt, :status, :assignedAt);
+
+updateWorkout:
+UPDATE workouts SET
+    studentId = :studentId, name = :name, isActive = :isActive,
+    exercisesJson = :exercisesJson, createdAt = :createdAt, status = :status,
+    assignedAt = :assignedAt
+WHERE id = :id;
+
+deleteWorkoutById:
+DELETE FROM workouts WHERE id = :id;
+
+getActiveWorkoutsByStudent:
+SELECT * FROM workouts WHERE studentId = :studentId AND isActive = 1;

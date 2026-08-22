@@ -22,6 +22,7 @@ firebaseCrashlyticsPlugin = "3.0.7"
 firebaseBom = "34.16.0"
 mockk = "1.13.13"
 kotlinxCoroutinesTest = "1.8.1"
+composeMultiplatform = "1.11.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -63,9 +64,12 @@ androidx-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-man
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
+android-kotlin-multiplatform-library = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
 legacyKapt = { id = "com.android.legacy-kapt", version.ref = "agp" }
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+compose-multiplatform = { id = "org.jetbrains.compose", version.ref = "composeMultiplatform" }
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
 googleKsp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 googleServices = { id = "com.google.gms.google-services", version.ref = "googleServices" }

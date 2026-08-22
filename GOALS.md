@@ -663,11 +663,18 @@ don't reflect anything real. Each needs its own fix:
       `./gradlew verify` (lint + unit tests, the §9 task) then `assembleDebug`, uploads the lint
       HTML report as an artifact. `connectedAndroidTest`/instrumented tests deliberately excluded
       (no emulator matrix set up — can come later). YAML syntax validated locally.
-      **Manual step still needed, only doable by the user**: add the repo secret itself —
-      GitHub repo → Settings → Secrets and variables → Actions → New repository secret →
-      name `GOOGLE_SERVICES_JSON`, value = the raw contents of `app/google-services.json`.
-      Without it the workflow will fail at the "Lint + unit tests" step (the Google Services
-      Gradle plugin needs a real, valid file — same reason a local build fails without it).
+      **Repo secret added 2026-08-21** (`gh secret set GOOGLE_SERVICES_JSON`, user confirmed) —
+      confirmed live via a real green run, not just "added and assumed working": rerunning the
+      previously-failing CI run after adding the secret produced a full pass (`Lint + unit tests`,
+      `Assemble debug APK`, lint report upload, all green). **A second, previously-undiscovered
+      bug was also blocking every CI run before this, found while debugging §18k's new iOS CI
+      job**: `gradlew` was tracked in git as mode `100644` (not executable) instead of `100755`,
+      so every push/PR to `main` had actually been failing at the very first `./gradlew` call —
+      confirmed via `gh run list` showing failures on the last several pushes, all with the same
+      "Permission denied" error, unrelated to the missing secret. Fixed with
+      `git update-index --chmod=+x gradlew`, committed directly to `main`. Both root causes are
+      now resolved — CI is verified genuinely green, the first time this project's CI has
+      actually passed.
 - [x] Release signing wired: `release-keystore.jks` generated (`keytool`, RSA 2048, PKCS12, valid
       10000 days, alias `personalapp-release`) at the project root. `app/build.gradle.kts` reads
       the store path + passwords from `local.properties` (both gitignored — added `*.jks`/
@@ -1396,17 +1403,15 @@ flowchart TD
       sideloaded apps at once on the person's iPhone (irrelevant unless they already sideload
       other things), and updates depend on SideStore's periodic re-sign/refresh actually
       succeeding (mitigated by 18i's expiry warning).
-- [ ] **Open decision, needs the user's answer before 18h/18j start (not blocking 18a–18g)**:
-      does the user have access to a Mac (own one, borrow one, or is willing to use a cloud
-      Mac rental) for the *first-time* iOS project setup — generating the Xcode project Compose
-      Multiplatform's iOS target needs, configuring the free-Apple-ID signing certificate, and
-      hosting/testing the SideStore "source" the first time? CI (18k) handles *rebuilding* the
-      app headlessly afterward, but the initial signing/provisioning setup is realistically a
-      one-time, hands-on-Xcode task — confirmed by the current research (a Mac is required to
-      write/run iOS-specific code even with Compose Multiplatform, per Apple's own tooling
-      constraints). If no Mac access exists at all, flag that now — there are workaround services
-      (cloud Mac rental by the hour) but that's a real cost/logistics decision, not a default to
-      pick silently.
+- [x] **Decided 2026-08-21: no local Mac access** (confirmed with the user — owns an iPhone for
+      testing, but no Mac, and there is no legal free equivalent: Apple's EULA restricts macOS
+      virtualization to genuine Apple hardware, ruling out a "hackintosh"-style VM on the
+      existing Windows dev machine). **Plan**: do everything that doesn't need Xcode now
+      (18b–18g) using CI (18k) as the iOS verification gate instead of local compilation; rent a
+      real cloud-hosted Mac by the hour (e.g. MacinCloud, ~US$1/hr, genuine Apple hardware — not
+      a licensing violation, unlike a local VM) only when 18h/18j's Xcode-only steps (initial
+      signing certificate, SideStore source pairing) are actually reached. Not rented yet — no
+      need until then.
 - [x] **Module shape**: rename/restructure the existing single `app` Android module into a KMP
       layout — `shared/` (or `composeApp/`, matching current JetBrains project-template
       convention) holding `commonMain` (business logic, ViewModels, repositories, Compose UI,
@@ -1419,11 +1424,27 @@ flowchart TD
       structure invented for this app.
 
 **18b. Project restructure into KMP modules**
-- [ ] Convert `app/build.gradle.kts` into a KMP-aware module graph: new `shared` module declaring
-      `androidTarget()` and `iosX64()/iosArm64()/iosSimulatorArm64()` targets, `commonMain`/
-      `androidMain`/`iosMain`/`commonTest`/`androidUnitTest`/`iosTest` source sets. Done when:
-      `./gradlew :shared:compileKotlinIosSimulatorArm64` and the existing
-      `:app:compileDebugKotlin` (now depending on `:shared`) both succeed.
+- [x] **Toolchain checkpoint — done and verified 2026-08-21.** New `:shared` module (branch
+      `feature/kmp-ios`) using `org.jetbrains.kotlin.multiplatform` +
+      `com.android.kotlin.multiplatform.library` — **not** the classic `com.android.library`,
+      which AGP 9 made incompatible with the Kotlin Multiplatform plugin (confirmed live: the
+      classic plugin combo fails with an explicit error naming the new plugin as Google's own
+      recommended migration). Targets: the Android library target plus `iosX64()`/`iosArm64()`/
+      `iosSimulatorArm64()`. Holds one trivial common function + test on purpose — this is the
+      "does the whole toolchain actually work" checkpoint before any real logic moves in, exactly
+      as planned. **Verified for real, not just "configured":**
+      - Android side, locally: `:app:compileDebugKotlin` (now depending on `:shared`) succeeds,
+        `:shared:testAndroidHostTest` (the commonTest run on the JVM/Android host) passes, and
+        the full `./gradlew verify assembleDebug` still passes project-wide.
+      - iOS side, via CI (this Windows dev machine can't compile Kotlin/Native's Apple targets at
+        all — confirmed current fact, not an assumption): new `.github/workflows/ios-ci.yml` on
+        `macos-latest` (free — this repo is public) compiles all three iOS targets **and** runs
+        the shared module's test on the iOS simulator — both green, ~2 minutes.
+      - **Two real, previously-undiscovered bugs found and fixed while getting this checkpoint
+        green** (see §11 for detail): `gradlew`'s missing executable bit (broke *every* CI run on
+        this project, iOS and Android both, unrelated to this migration) and the never-added
+        `GOOGLE_SERVICES_JSON` repo secret. Both fixed; `main`'s own `android-ci.yml` is now
+        confirmed green for the first time.
 - [ ] Move every file with zero Android-framework imports into `commonMain` first (data models —
       `Exercise`, `PerformedSet`, `WorkoutEntity` fields, `WorkoutParser.kt`'s pure parsing logic,
       `AIWorkoutResponse`/`AIWorkout`/`AIExercise` — these are the lowest-risk, highest-value
@@ -1573,13 +1594,19 @@ flowchart TD
       free stage — same reasoning to revisit, not redo, once there's real revenue).
 
 **18k. CI: build iOS on GitHub Actions' macOS runner**
-- [ ] Extend `.github/workflows/android-ci.yml` (or a new `ios-ci.yml`) with a `macos-latest` job
-      building the `shared`/iOS target and (once 18j's signing exists) producing a signed `.ipa`.
-      **Confirmed free**: this repository is public, and GitHub Actions macOS runner minutes are
+- [x] **Pulled forward and done first, ahead of its original position in the plan — done
+      2026-08-21.** Since this dev machine can't compile Kotlin/Native's Apple targets at all
+      (confirmed, not assumed — Kotlin/Native's Apple-target compiler requires macOS/Xcode's
+      toolchain), CI had to exist *before* any real iOS-affecting code could be verified, not
+      after. New `.github/workflows/ios-ci.yml`, `macos-latest`, triggered on push to
+      `main`/`feature/kmp-ios` + `workflow_dispatch`: compiles all three iOS Kotlin/Native
+      targets and runs `:shared`'s test on the iOS simulator. **Confirmed green** (~2 min) and
+      **confirmed free**: this repository is public, and GitHub Actions macOS runner minutes are
       unlimited/free on public repos (confirmed current, `REPERTOIRE.md` research) — no CI cost
       concern here, unlike a private repo where macOS minutes bill at 10× the standard rate.
-- [ ] Keep the existing Android job unchanged; the new iOS job runs independently, not blocking
-      Android CI on iOS-specific failures during the migration.
+      Producing a signed `.ipa` is deferred to 18j (needs real signing setup, not yet done).
+- [x] Kept separate from `android-ci.yml`, which is unaffected — confirmed both workflows pass
+      independently (`android-ci.yml` on `main`, `ios-ci.yml` on `feature/kmp-ios`).
 
 **18l. Testing**
 - [ ] Move `WorkoutParserTest` (already dependency-free) to `commonTest` — done when it passes on
@@ -1759,3 +1786,19 @@ both platforms sharing one Firestore backend, not a subsystem to build. §18 is 
 foundational restructure — run `/execgoals` against it only when ready to commit real time to it,
 and confirm Mac access (18a's one open item) before starting the UI/distribution-heavy back half
 (18h onward).
+
+**§18 started 2026-08-21 — toolchain checkpoint (18b) and CI (18k) done and verified green,
+first real code of the migration.** Working on branch `feature/kmp-ios`, not `main` — this is a
+large, multi-step migration best kept isolated until it's stable. Confirmed with the user: no
+Mac access (18a decided — CI is the iOS verification gate for now, a cloud Mac rental is deferred
+until the Xcode-only steps in 18h/18j are actually reached, not needed yet). Set up the new
+`:shared` KMP module (using AGP 9's `com.android.kotlin.multiplatform.library` plugin, not the
+classic `com.android.library`, which AGP 9 made incompatible with Kotlin Multiplatform) and
+verified the whole toolchain end-to-end: Android compiles/tests locally, iOS compiles and its
+test runs on CI's free macOS runner (public repo). **Found and fixed two real, previously-hidden
+bugs unrelated to the migration itself while getting this green**: `gradlew` was committed
+without its executable bit, breaking every CI run (Android and iOS) since at least the last two
+pushes to `main`; and the `GOOGLE_SERVICES_JSON` repo secret documented as a pending manual step
+in §11 had still never actually been added. Both fixed directly — `main`'s `android-ci.yml` is
+now confirmed green for the first time this project has had working CI. Next: 18b's remaining
+item (move `WorkoutParser`/data models into `commonMain`), then 18c onward in order.

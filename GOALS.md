@@ -1335,6 +1335,282 @@ flowchart TD
 
 ---
 
+## 18. Build — Cross-platform: bring the app to iOS via Kotlin Multiplatform
+(2026-08-21, via `/newgoal /repertoire`)
+
+The single biggest architecture change to this project since it began — bigger than the §4a
+Firestore migration. Full research feeding this section is in `REPERTOIRE.md` Part 2 (regulatory
+lens: what iOS distribution actually costs/allows in 2026; competitive lens: why KMP fits this
+specific codebase better than a Flutter/React Native rewrite). This section is the *how*; that
+file is the *why these choices*.
+
+**Business framing (confirmed with the user, drives scope/sequencing below):** free/test phase
+now (current client base is under 10 students, staying free through ~20), paid platforms
+(App Store + Play Store) only once the trainer actually starts charging students and the pricing
+math is done. That means this section explicitly plans for **zero ongoing cost**, not "cheapest
+possible paid tier" — every choice below is free-tier-first, with the paid migration path
+documented (18g) but not built now.
+
+**Cross-platform connectivity is not a subsystem to build.** Android↔Android, Android↔iOS, and
+iOS↔iOS all resolve automatically once the iOS app talks to the same Firestore project the
+Android app already uses — Firestore is the shared source of truth regardless of client platform
+(§4a). The real engineering risk isn't "connecting" the platforms, it's making sure the *shared*
+Kotlin code has zero hidden Android-only assumptions that would silently produce
+platform-divergent behavior (e.g. a date/time formatter that behaves differently, a JSON shape
+that only round-trips correctly on one platform). Item 18h below is what actually protects this.
+
+```mermaid
+flowchart TD
+    A[18a. Design: module split,\nopen resource decisions] --> B[18b. Project restructure\ninto KMP modules]
+    B --> C[18c. DI: Hilt to Koin]
+    B --> D[18d. Database: Room KMP]
+    B --> E[18e. Settings: DataStore KMP]
+    C --> F[18f. Firebase access layer:\nGitLive SDK]
+    D --> F
+    E --> F
+    F --> G[18g. Auth and Security:\nApp Check, Crashlytics per platform]
+    F --> H[18h. UI: Compose Multiplatform\n+ Navigation]
+    G --> I[18i. Update checker\nboth platforms]
+    H --> I
+    I --> J[18j. iOS distribution:\nSideStore free path now]
+    J --> K[18k. CI: GitHub Actions\nmacOS runner]
+    K --> L[18l. Testing]
+    L --> M[18m. Registration / cutover]
+```
+
+**18a. Design rationale and open decisions**
+- [x] **Framework choice: Kotlin Multiplatform + Compose Multiplatform**, not Flutter/React
+      Native. Decided per `REPERTOIRE.md` Part 2 §4 — this app already *is* Kotlin/Compose, so
+      KMP reuses the existing domain/data layer and most Compose UI directly; Flutter/React Native
+      would both be full rewrites from zero. Compose Multiplatform reached stable iOS support in
+      version 1.8.0 (May 2025) and Navigation reached stable multiplatform status in 1.10.0
+      (January 2026) — both current and load-bearing enough to build on, not bleeding-edge risk.
+- [x] **iOS distribution: SideStore (free Apple ID sideload) for the free/test phase, Apple
+      Developer Program ($99/yr) deferred until the trainer starts charging.** Per
+      `REPERTOIRE.md` Part 2 §3: there is no zero-cost path to a *professional* iOS distribution
+      (TestFlight, alternative marketplaces, and the App Store all require the same $99/year
+      membership just for Apple's mandatory notarization step) — SideStore is the only genuinely
+      free route, and it's viable at this app's current scale because the trainer already
+      configures each Android device by hand today, so a one-time per-iPhone SideStore pairing
+      is the same category of effort, not new overhead. Real limitation accepted: max 3
+      sideloaded apps at once on the person's iPhone (irrelevant unless they already sideload
+      other things), and updates depend on SideStore's periodic re-sign/refresh actually
+      succeeding (mitigated by 18i's expiry warning).
+- [ ] **Open decision, needs the user's answer before 18h/18j start (not blocking 18a–18g)**:
+      does the user have access to a Mac (own one, borrow one, or is willing to use a cloud
+      Mac rental) for the *first-time* iOS project setup — generating the Xcode project Compose
+      Multiplatform's iOS target needs, configuring the free-Apple-ID signing certificate, and
+      hosting/testing the SideStore "source" the first time? CI (18k) handles *rebuilding* the
+      app headlessly afterward, but the initial signing/provisioning setup is realistically a
+      one-time, hands-on-Xcode task — confirmed by the current research (a Mac is required to
+      write/run iOS-specific code even with Compose Multiplatform, per Apple's own tooling
+      constraints). If no Mac access exists at all, flag that now — there are workaround services
+      (cloud Mac rental by the hour) but that's a real cost/logistics decision, not a default to
+      pick silently.
+- [x] **Module shape**: rename/restructure the existing single `app` Android module into a KMP
+      layout — `shared/` (or `composeApp/`, matching current JetBrains project-template
+      convention) holding `commonMain` (business logic, ViewModels, repositories, Compose UI,
+      Room database, Koin modules) plus `androidMain`/`iosMain` (platform-specific `expect`/
+      `actual` implementations only: DB file path, DataStore file location, App Check provider,
+      Crashlytics/CrashKiOS wiring, update-download mechanism). A thin `androidApp` module wraps
+      `commonMain` for the existing Android entry point (`MainApplication`, manifest); a
+      generated Xcode project wraps it for iOS. This is the standard KMP+Compose Multiplatform
+      project shape (JetBrains' own multiplatform wizard produces this layout) — not a bespoke
+      structure invented for this app.
+
+**18b. Project restructure into KMP modules**
+- [ ] Convert `app/build.gradle.kts` into a KMP-aware module graph: new `shared` module declaring
+      `androidTarget()` and `iosX64()/iosArm64()/iosSimulatorArm64()` targets, `commonMain`/
+      `androidMain`/`iosMain`/`commonTest`/`androidUnitTest`/`iosTest` source sets. Done when:
+      `./gradlew :shared:compileKotlinIosSimulatorArm64` and the existing
+      `:app:compileDebugKotlin` (now depending on `:shared`) both succeed.
+- [ ] Move every file with zero Android-framework imports into `commonMain` first (data models —
+      `Exercise`, `PerformedSet`, `WorkoutEntity` fields, `WorkoutParser.kt`'s pure parsing logic,
+      `AIWorkoutResponse`/`AIWorkout`/`AIExercise` — these are the lowest-risk, highest-value
+      moves since they have no platform dependency today). Done when: `WorkoutParserTest` (already
+      dependency-free Kotlin) runs unmodified from `commonTest` on both the JVM (Android) test
+      target and `iosSimulatorArm64` test target.
+
+**18c. Dependency injection: Hilt → Koin**
+- [ ] **Hilt has no Kotlin Multiplatform support at all** (confirmed current, `REPERTOIRE.md`
+      research) — this is a hard blocker, not a preference. Replace every `@HiltViewModel`/
+      `@Inject`/`@Module`/`@InstallIn` with Koin's `module { }`/`viewModel { }`/`get()` DSL,
+      declared in `commonMain` so the same DI graph serves both platforms. `androidApp` calls
+      `startKoin { androidContext(...) }` in `MainApplication.onCreate()`; the iOS entry point
+      calls the equivalent `initKoin()` from Swift/iosApp. Done when: every existing
+      `hiltViewModel()` call site in Compose screens compiles against Koin's `koinViewModel()`
+      instead, and `./gradlew :app:testDebugUnitTest` still passes (repository/ViewModel tests
+      updated to Koin's test-module-override pattern instead of Hilt's `@TestInstallIn`).
+
+**18d. Database: Room → Room Kotlin Multiplatform**
+- [x] **No SQLDelight migration needed** — Room 2.7+ added official KMP support, and Room 3.0
+      (March 2026) makes iOS/JS/WASM first-class targets, per current Android Developers docs.
+      This is the single biggest research-confirmed cost-saver in this whole plan: the existing
+      `AppDatabase`, all entities (`UserEntity`, `WorkoutEntity`, `WorkoutLogEntity`, etc.), and
+      every `AppDao` query move into `commonMain` largely unchanged.
+- [ ] The **only** required platform split is the database builder/file-path function (Android
+      and iOS locate the SQLite file differently) — write one `expect fun getDatabaseBuilder(): 
+      RoomDatabase.Builder<AppDatabase>` in `commonMain`, `actual` implementations in
+      `androidMain` (existing `Context`-based path) and `iosMain` (`NSDocumentDirectory`-based
+      path, per Room's own current KMP setup guide). Done when: a round-trip insert/read against
+      the same `AppDao` query compiles and runs on both `androidUnitTest` and a real
+      `iosSimulatorArm64` test target.
+- [ ] **Re-verify all existing Room migrations** (`MIGRATION_5_6`, the `linked` flag migration
+      6→7, `app/schemas/`) still apply cleanly once the database class lives in `commonMain` —
+      schema export path may need updating in `build.gradle.kts` for the new module location.
+
+**18e. Settings/preferences: DataStore → DataStore Multiplatform**
+- [x] DataStore Preferences (not DataStore Proto) has official multiplatform support already —
+      confirmed via current Android Developers KMP setup docs. `SettingsRepository`'s existing
+      `stringPreferencesKey`s (Gemini/OpenAI/DeepSeek/Claude API keys) move to `commonMain`
+      largely unchanged.
+- [ ] Platform split needed only for the DataStore file location: `expect`/`actual` for the
+      preferences file path (Android: existing `Context.dataStore` delegate; iOS: a path under
+      `NSDocumentDirectory`, mirroring 18d's DB path split). Done when: a saved API key
+      round-trips correctly on both platforms.
+- [ ] **Re-verify §8's backup-exclusion fix** (`data_extraction_rules.xml`/`backup_rules.xml`
+      excluding the DataStore file from Android auto-backup) still applies at the new file
+      location after the module restructure — don't silently lose that protection in the move.
+
+**18f. Backend access layer: Firebase via the GitLive Kotlin SDK**
+- [x] **Google ships no official Firebase KMP SDK** (confirmed current, mid-2026) — use the
+      community-maintained `dev.gitlive:firebase-firestore`/`firebase-auth` (`GitLiveApp/
+      firebase-kotlin-sdk` on GitHub), the established option for exactly this gap, actively
+      maintained, in production use by other teams. The newer `KFire` alternative is still beta
+      as of this research — not a safe bet for an app already depending heavily on Firestore
+      transactions (`AuthRepository.claimInvite`) and listeners.
+- [ ] Rewrite `TrainerRepository`/`StudentRepository`/`AuthRepository`'s direct
+      `com.google.firebase.firestore.*`/`com.google.firebase.auth.*` calls against GitLive's API
+      in `commonMain` — same snapshot-listener/transaction *shape* (GitLive's API deliberately
+      mirrors the Android Firebase SDK's), but a real rewrite, not a drop-in. Done when: the
+      existing `startListening(trainerId)` mirror-into-Room behavior and `claimInvite()`'s
+      transactional re-claim logic (§13d) both pass equivalent tests against GitLive on both
+      platforms.
+- [ ] `FirestoreMappers.kt`'s entity↔doc mapping moves to `commonMain` largely unchanged (it's
+      already plain-map-based, not tied to any Android-only Firestore API surface).
+- [ ] **`GenerativeAiService`'s HTTP calls (OpenAI/DeepSeek/Claude via plain `HttpURLConnection`)
+      need a multiplatform HTTP client** — `HttpURLConnection` is JVM/Android-only. Use Ktor
+      Client (JetBrains' own multiplatform HTTP library, the standard pairing with KMP) with the
+      `Darwin` engine on iOS and existing `OkHttp`/`CIO` engine on Android. Gemini's Firebase AI
+      Logic SDK call (`generateWithGemini()`) is Android-only today (`com.google.firebase:
+      firebase-ai`) — confirm whether it has an iOS equivalent before assuming Gemini stays
+      available on iOS; if not, either drop Gemini as an iOS-side provider option (the other
+      three BYO-key providers already work fine here since they're plain HTTP) or scope that as
+      a known iOS gap, not a silent omission.
+
+**18g. Auth and Security — platform-specific pieces GitLive doesn't cover**
+- [ ] **App Check**: GitLive's SDK doesn't wrap App Check. Keep Android's existing
+      `DebugAppCheckProviderFactory`/`PlayIntegrityAppCheckProviderFactory` wiring in
+      `androidMain` unchanged; add a thin `iosMain` `actual` bridging to Firebase iOS SDK's own
+      App Check (App Attest provider for release, debug provider for local iOS testing) — a
+      real native-bridge implementation, not optional, since `firestore.rules`'/Auth's security
+      posture assumes App Check is active on every client.
+- [ ] **Crashlytics**: no drop-in multiplatform equivalent exists yet (confirmed current
+      research). Options, pick one rather than defaulting silently: (a) **CrashKiOS**
+      (Touchlab's KMM crash-reporting bridge, explicitly built for this exact gap, forwards
+      crashes to the existing Firebase Crashlytics project) — closest to today's behavior,
+      recommended; (b) drop Crashlytics on iOS specifically and rely on manual bug reports during
+      the free/test phase — acceptable given the small current user count, revisit once paid.
+- [ ] Re-verify §8's App Check debug-token registration flow (§13a) still applies correctly once
+      requests can come from either platform's debug provider — the Firebase Console's debug
+      token allow-list is per-install, not per-platform, so this should be mechanically the same
+      process repeated once per iOS test device, not a new mechanism.
+
+**18h. UI: Jetpack Compose → Compose Multiplatform, Navigation**
+- [ ] Move every screen composable with no Android-only API calls (`ContentType`/autofill
+      semantics, `LocalConfiguration`, Android-specific icons) into `commonMain` — per current
+      migration reports for exactly this move (existing Jetpack Compose app → Compose
+      Multiplatform), most Composables are reported to work unchanged; the real work is
+      resources (no generated Android `R` class in common code — move string/icon resources to
+      Compose Multiplatform's resource system) and anything directly touching
+      `android.content.Context`/`ClipboardManager`/Android permissions APIs (`expect`/`actual`
+      those specifically, e.g. `PromptFichaScreen`'s clipboard copy from §15e).
+- [ ] Adopt the official Compose Multiplatform Navigation library (stable since 1.10.0) as a
+      drop-in for the existing Navigation Compose usage (`AppNavigation.kt`'s `Screen` sealed
+      class/`NavHost` already maps closely to the multiplatform API). iOS-specific: swipe-back
+      gesture needs an explicit `iosMain` UIKit gesture recognizer or Compose Cupertino — native
+      back-swipe isn't automatic, confirm current guidance at implementation time (this is an
+      area still actively evolving per the research).
+- [ ] **Explicitly re-verify each Android-only UI fix already shipped this project** doesn't
+      silently regress on iOS: the `NonObservableLocale` fix (§10, `LocalConfiguration.current
+      .locales[0]`), the R8/lint sweep (§8/§10, Android-build-only, doesn't apply to iOS but
+      shouldn't be assumed equivalent-safe without checking), and `Icons.AutoMirrored.*` usage
+      (already correctly multiplatform-safe per §13's fix this session).
+
+**18i. In-app update checker — both platforms (user's explicit ask)**
+- [ ] New `commonMain` `UpdateChecker`: reads a small `latest.json` manifest (version code,
+      changelog note, platform-specific download URL) hosted in this same public GitHub repo
+      (e.g. via GitHub Releases or a raw file on `main`) — no new backend needed, reuses existing
+      free infrastructure (the repo is already public, confirmed 2026-08-21).
+- [ ] **Automatic check**: on app launch (not a true background job — keeps this portable across
+      platforms without needing a cross-platform WorkManager equivalent, consistent with this
+      project's existing "no speculative infrastructure" convention), compare the running app's
+      version against the manifest; if newer, show a non-blocking banner.
+- [ ] **Manual check**: a "Verificar atualização" button in Settings (new tab or added to the
+      existing "IA" tab's shell — §16's tabbed Settings already anticipated more categories being
+      added later), calling the same `UpdateChecker` on demand.
+- [ ] **Android-specific action**: banner/button opens the new `.apk` download URL directly
+      (Android already trusts "install from unknown sources" for this app, per the existing
+      sideload distribution model) — the person taps through Android's own install prompt, same
+      as today's manual reinstall, just without needing you physically present.
+- [ ] **iOS-specific action**: since SideStore already re-signs/refreshes from its configured
+      source periodically, the in-app banner's role is different — show **days remaining until
+      the current signature expires** (the real risk flagged in 18a) with a "atualizar agora"
+      button that triggers SideStore's refresh directly if a URL scheme/deep link for that
+      exists, or at minimum clear instructions, so an expiring app is never a silent surprise.
+
+**18j. iOS distribution: SideStore free path (now) → Apple Developer Program (later, when paid)**
+- [ ] Host the built `.ipa` + an AltStore/SideStore-format "source" JSON (app metadata + download
+      URL + version) somewhere stable and free — a GitHub Release asset on this same public repo
+      is the natural choice, consistent with 18i's update-manifest hosting.
+- [ ] Document (in this file, not just in chat) the one-time per-iPhone SideStore setup steps —
+      this becomes the "dev setup note" the project has flagged needing before (§13a already
+      noted the same need for App Check debug tokens once more than one test device exists).
+- [ ] **(manual, deferred)** When the trainer starts charging students: enroll in the Apple
+      Developer Program ($99/yr), switch distribution to TestFlight (up to 10,000 testers, no
+      per-device technical setup for the end user), and revisit whether the Play Store's one-time
+      $25 fee is also worth paying at that point (§11 already declined this for Android at the
+      free stage — same reasoning to revisit, not redo, once there's real revenue).
+
+**18k. CI: build iOS on GitHub Actions' macOS runner**
+- [ ] Extend `.github/workflows/android-ci.yml` (or a new `ios-ci.yml`) with a `macos-latest` job
+      building the `shared`/iOS target and (once 18j's signing exists) producing a signed `.ipa`.
+      **Confirmed free**: this repository is public, and GitHub Actions macOS runner minutes are
+      unlimited/free on public repos (confirmed current, `REPERTOIRE.md` research) — no CI cost
+      concern here, unlike a private repo where macOS minutes bill at 10× the standard rate.
+- [ ] Keep the existing Android job unchanged; the new iOS job runs independently, not blocking
+      Android CI on iOS-specific failures during the migration.
+
+**18l. Testing**
+- [ ] Move `WorkoutParserTest` (already dependency-free) to `commonTest` — done when it passes on
+      both `testDebugUnitTest` (Android/JVM) and an `iosSimulatorArm64` test run.
+- [ ] `AuthRepositoryTest` (MockK-based) needs a KMP-compatible mocking approach — MockK is
+      JVM-only; either keep this test Android-only (acceptable, it's testing Android-specific
+      Firebase mock plumbing today, not core logic) or migrate the assertions it covers into a
+      `commonTest` against GitLive's SDK using a fake/in-memory implementation instead of a mock.
+      Don't silently drop the coverage — decide and document which.
+- [ ] `AppDaoTest`/`workoutLog_roundTripsPerformedSets` (Room in-memory, currently `androidTest`-
+      only) — re-run against Room's KMP in-memory test builder on `iosTest` too, given 18d's
+      migration; this is genuinely new coverage the project didn't have before (Room's iOS path
+      was untested until this move).
+- [ ] `TrainerGoldenPathTest.kt` (Compose UI test) — Compose Multiplatform's iOS UI-testing
+      tooling is comparatively less mature than Android's `ui-test-junit4`; confirm current
+      support at implementation time. If iOS Compose UI testing isn't practical yet, keep this
+      test Android-only and say so explicitly rather than silently losing golden-path coverage
+      with no note.
+
+**18m. Registration/cutover**
+- [ ] Once 18a–18l are green on both platforms, cut the existing `app` module over to depend on
+      `shared` as its only source of truth (no dead duplicate Android-only copies of anything
+      that moved to `commonMain`) — verified via a full `./gradlew verify assembleDebug` pass
+      identical in spirit to every other verification gate this project already uses, plus the
+      equivalent iOS build succeeding in CI (18k).
+- [ ] Update `CLAUDE.md` and `README.md` to describe the new KMP module shape — this is exactly
+      the kind of cross-cutting convention change CLAUDE.md exists to document (per its own
+      existing "Module documentation strategy" note, §1).
+
+---
+
 ## Suggested build order (what blocks what) — revised 2026-08-18
 
 **Done** (§0, §1 CLAUDE.md, §2 git, §4a Firestore migration, §5d UI debt + AI button wiring, §7
@@ -1461,3 +1737,25 @@ claiming — every new capability in §17 is deliberately scoped to already-link
 avoid that risk without having to touch the working claim mechanism. The user was explicit that
 now might not be the right time to build this — §17 is ready whenever they decide, not queued for
 immediate execution.
+
+**§18 planned (2026-08-21, via `/newgoal /repertoire`) — bring the app to iOS via Kotlin
+Multiplatform + Compose Multiplatform, distributed free through SideStore until the trainer
+starts charging students.** Triggered by a direct user need, not speculative scope: the trainer's
+real client base includes iPhone users, and per `REPERTOIRE.md` Part 2, there is no zero-cost way
+to distribute a *professional* iOS build (TestFlight and every 2026-era alternative marketplace,
+including Brazil's new CADE-mandated one, still requires the same $99/yr Apple Developer Program
+membership for mandatory notarization) — SideStore (free-Apple-ID sideload with periodic
+self-refresh) is the one genuinely free route, judged acceptable at the current sub-20-student
+scale given the trainer already does comparable per-device setup manually for Android today. Key
+technical finding that de-risks this significantly: **Room now has official first-class Kotlin
+Multiplatform support as of Room 3.0 (March 2026)**, so the existing Room-based data layer mostly
+just moves into shared code rather than needing a separate database engine (SQLDelight) — this
+was the single biggest unknown going in and turned out to be a non-issue. The two real forced
+rewrites are **Hilt → Koin** (Hilt has zero KMP support, confirmed current) and the Firebase
+access layer (**no official Google KMP Firebase SDK exists**; using the community-maintained
+GitLive `firebase-kotlin-sdk`, the established option). Cross-platform connectivity
+(Android↔Android/Android↔iOS/iOS↔iOS) needs no separate engineering — it's a free consequence of
+both platforms sharing one Firestore backend, not a subsystem to build. §18 is a large,
+foundational restructure — run `/execgoals` against it only when ready to commit real time to it,
+and confirm Mac access (18a's one open item) before starting the UI/distribution-heavy back half
+(18h onward).

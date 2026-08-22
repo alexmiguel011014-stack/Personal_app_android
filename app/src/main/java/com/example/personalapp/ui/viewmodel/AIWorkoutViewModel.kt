@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.personalapp.data.local.entity.UserEntity
 import com.example.personalapp.data.local.entity.WorkoutEntity
+import com.example.personalapp.data.model.AIWorkoutResponse
 import com.example.personalapp.data.model.Exercise
 import com.example.personalapp.data.repository.TrainerRepository
 import com.example.personalapp.data.service.AiProvider
@@ -13,7 +14,6 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.Serializable
 import java.util.UUID
 import javax.inject.Inject
 
@@ -21,26 +21,6 @@ data class ChatMessage(
     val text: String,
     val isFromUser: Boolean,
     val suggestedWorkouts: List<WorkoutEntity>? = null
-)
-
-@Serializable
-data class AIWorkoutResponse(
-    val workouts: List<AIWorkout>
-)
-
-@Serializable
-data class AIWorkout(
-    val name: String,
-    val exercises: List<AIExercise>
-)
-
-@Serializable
-data class AIExercise(
-    val name: String,
-    val sets: Int,
-    val reps: String,
-    val weight: String? = null,
-    val notes: String? = null
 )
 
 @HiltViewModel

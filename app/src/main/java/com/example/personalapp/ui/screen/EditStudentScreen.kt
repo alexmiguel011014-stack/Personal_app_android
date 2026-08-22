@@ -16,7 +16,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import org.koin.androidx.compose.koinViewModel
 import com.example.personalapp.ui.viewmodel.StudentDetailsViewModel
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
@@ -24,7 +24,7 @@ import com.example.personalapp.ui.viewmodel.StudentDetailsViewModel
 fun EditStudentScreen(
     studentId: String,
     onBack: () -> Unit,
-    viewModel: StudentDetailsViewModel = hiltViewModel()
+    viewModel: StudentDetailsViewModel = koinViewModel()
 ) {
     val student by viewModel.student.collectAsState()
     

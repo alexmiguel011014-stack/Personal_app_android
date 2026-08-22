@@ -16,7 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import org.koin.androidx.compose.koinViewModel
 import com.example.personalapp.data.local.entity.WorkoutEntity
 import com.example.personalapp.data.model.Exercise
 import com.example.personalapp.ui.viewmodel.PromptFichaViewModel
@@ -33,7 +33,7 @@ import java.util.UUID
 fun PromptFichaScreen(
     studentId: String,
     onBack: () -> Unit,
-    viewModel: PromptFichaViewModel = hiltViewModel()
+    viewModel: PromptFichaViewModel = koinViewModel()
 ) {
     val student by viewModel.student.collectAsState()
     val clipboardManager = LocalClipboardManager.current

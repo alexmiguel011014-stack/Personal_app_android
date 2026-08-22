@@ -5,7 +5,6 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.kotlin.serialization)
-    alias(libs.plugins.hilt)
     alias(libs.plugins.googleKsp)
     alias(libs.plugins.googleServices)
     alias(libs.plugins.firebaseCrashlytics)
@@ -92,10 +91,10 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.kotlinx.serialization.json)
 
-    // Hilt
-    implementation(libs.hilt.android)
-    ksp(libs.hilt.compiler)
-    implementation(libs.androidx.hilt.navigation.compose)
+    // Koin (GOALS.md §18c — replaces Hilt, which has no Kotlin Multiplatform support)
+    implementation(platform(libs.koin.bom))
+    implementation(libs.koin.android)
+    implementation(libs.koin.androidx.compose)
 
     // Lifecycle
     implementation(libs.androidx.lifecycle.viewmodel.compose)

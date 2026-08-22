@@ -12,7 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import org.koin.androidx.compose.koinViewModel
 import com.example.personalapp.ui.viewmodel.AdminViewModel
 import com.example.personalapp.ui.viewmodel.ApiStatus
 import com.example.personalapp.ui.viewmodel.AuthViewModel
@@ -21,8 +21,8 @@ import com.example.personalapp.ui.viewmodel.AuthViewModel
 @Composable
 fun AdminDashboardScreen(
     onLogout: () -> Unit,
-    viewModel: AuthViewModel = hiltViewModel(),
-    adminViewModel: AdminViewModel = hiltViewModel()
+    viewModel: AuthViewModel = koinViewModel(),
+    adminViewModel: AdminViewModel = koinViewModel()
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("Logs", "Gestão", "APIs")

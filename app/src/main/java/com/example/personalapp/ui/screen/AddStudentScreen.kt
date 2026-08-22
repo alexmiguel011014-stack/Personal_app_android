@@ -16,14 +16,14 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import org.koin.androidx.compose.koinViewModel
 import com.example.personalapp.ui.viewmodel.TrainerViewModel
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun AddStudentScreen(
     onBack: () -> Unit,
-    viewModel: TrainerViewModel = hiltViewModel()
+    viewModel: TrainerViewModel = koinViewModel()
 ) {
     var name by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }

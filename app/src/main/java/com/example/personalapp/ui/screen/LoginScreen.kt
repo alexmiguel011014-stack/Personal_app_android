@@ -14,7 +14,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import org.koin.androidx.compose.koinViewModel
 import com.example.personalapp.data.repository.UserRole
 import com.example.personalapp.ui.viewmodel.AuthState
 import com.example.personalapp.ui.viewmodel.AuthViewModel
@@ -24,7 +24,7 @@ import com.example.personalapp.ui.viewmodel.TrainerRequestState
 
 @Composable
 fun LoginScreen(
-    viewModel: AuthViewModel = hiltViewModel()
+    viewModel: AuthViewModel = koinViewModel()
 ) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }

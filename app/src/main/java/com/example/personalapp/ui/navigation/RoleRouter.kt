@@ -3,7 +3,7 @@ package com.example.personalapp.ui.navigation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.hilt.navigation.compose.hiltViewModel
+import org.koin.androidx.compose.koinViewModel
 import com.example.personalapp.data.repository.UserRole
 import com.example.personalapp.ui.screen.AdminDashboardScreen
 import com.example.personalapp.ui.screen.LoginScreen
@@ -12,7 +12,7 @@ import com.example.personalapp.ui.viewmodel.AuthViewModel
 
 @Composable
 fun RoleRouter(
-    viewModel: AuthViewModel = hiltViewModel()
+    viewModel: AuthViewModel = koinViewModel()
 ) {
     val authState by viewModel.authState.collectAsState()
     val authenticated = authState as? AuthState.Authenticated

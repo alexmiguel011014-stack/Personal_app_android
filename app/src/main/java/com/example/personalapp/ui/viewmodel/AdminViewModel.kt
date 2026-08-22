@@ -6,14 +6,12 @@ import com.example.personalapp.data.repository.SettingsRepository
 import com.google.firebase.firestore.AggregateSource
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
-import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeout
-import javax.inject.Inject
 
 data class TrainerInfo(val uid: String, val name: String)
 data class TrainerRequest(val uid: String, val email: String)
@@ -25,8 +23,7 @@ enum class ApiStatus { CHECKING, ONLINE, OFFLINE }
  * [com.example.personalapp.data.repository.TrainerRepository], which is deliberately scoped to
  * one trainer's own roster (GOALS.md §5e).
  */
-@HiltViewModel
-class AdminViewModel @Inject constructor(
+class AdminViewModel(
     private val firestore: FirebaseFirestore,
     private val settingsRepository: SettingsRepository,
 ) : ViewModel() {

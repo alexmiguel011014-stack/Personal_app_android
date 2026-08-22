@@ -3,17 +3,23 @@ package com.example.personalapp
 import android.app.Application
 import android.content.pm.ApplicationInfo
 import android.util.Log
+import com.example.personalapp.di.appModule
 import com.example.personalapp.shared.sharedModulePlatformName
 import com.google.firebase.Firebase
 import com.google.firebase.appcheck.appCheck
 import com.google.firebase.appcheck.debug.DebugAppCheckProviderFactory
 import com.google.firebase.appcheck.playintegrity.PlayIntegrityAppCheckProviderFactory
-import dagger.hilt.android.HiltAndroidApp
+import org.koin.android.ext.koin.androidContext
+import org.koin.core.context.startKoin
 
-@HiltAndroidApp
 class MainApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        // GOALS.md §18c: Koin replaces Hilt (which has no Kotlin Multiplatform support).
+        startKoin {
+            androidContext(this@MainApplication)
+            modules(appModule)
+        }
         // GOALS.md §18b toolchain checkpoint: confirms :app actually links against :shared,
         // not just that both modules happen to compile independently.
         Log.d("MainApplication", "Loaded ${sharedModulePlatformName()}")

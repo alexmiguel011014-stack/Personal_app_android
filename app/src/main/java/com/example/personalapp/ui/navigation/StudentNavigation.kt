@@ -9,7 +9,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
-import androidx.hilt.navigation.compose.hiltViewModel
+import org.koin.androidx.compose.koinViewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -33,7 +33,7 @@ sealed class StudentScreen(val route: String) {
 @Composable
 fun StudentNavigation(studentId: String, trainerId: String, onLogout: () -> Unit) {
     val navController = rememberNavController()
-    val viewModel: StudentViewModel = hiltViewModel()
+    val viewModel: StudentViewModel = koinViewModel()
     LaunchedEffect(studentId, trainerId) { viewModel.start(studentId, trainerId) }
 
     val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route

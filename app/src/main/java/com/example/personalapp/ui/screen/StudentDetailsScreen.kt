@@ -16,7 +16,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import org.koin.androidx.compose.koinViewModel
 import com.example.personalapp.ui.viewmodel.StudentDetailsViewModel
 import java.text.SimpleDateFormat
 import java.util.*
@@ -31,7 +31,7 @@ fun StudentDetailsScreen(
     onNavigateToPromptFicha: (String) -> Unit,
     onNavigateToEdit: (String) -> Unit,
     onNavigateToWorkoutBuilder: (String) -> Unit,
-    viewModel: StudentDetailsViewModel = hiltViewModel()
+    viewModel: StudentDetailsViewModel = koinViewModel()
 ) {
     val student by viewModel.student.collectAsState()
     val biometrics by viewModel.biometrics.collectAsState()

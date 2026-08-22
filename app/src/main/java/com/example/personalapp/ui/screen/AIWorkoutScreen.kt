@@ -18,7 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import org.koin.androidx.compose.koinViewModel
 import com.example.personalapp.data.local.entity.WorkoutEntity
 import com.example.personalapp.data.service.AiProvider
 import com.example.personalapp.ui.viewmodel.AIWorkoutViewModel
@@ -28,7 +28,7 @@ import com.example.personalapp.ui.viewmodel.AIWorkoutViewModel
 fun AIWorkoutScreen(
     studentId: String,
     onBack: () -> Unit,
-    viewModel: AIWorkoutViewModel = hiltViewModel()
+    viewModel: AIWorkoutViewModel = koinViewModel()
 ) {
     val messages by viewModel.messages.collectAsState()
     val isGenerating by viewModel.isGenerating.collectAsState()

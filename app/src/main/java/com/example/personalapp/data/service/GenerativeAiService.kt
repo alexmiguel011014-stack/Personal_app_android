@@ -8,7 +8,6 @@ import com.google.firebase.ai.ai
 import com.google.firebase.ai.type.GenerativeBackend
 import com.google.firebase.ai.type.content
 import com.google.firebase.crashlytics.FirebaseCrashlytics
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -18,15 +17,12 @@ import kotlinx.serialization.json.Json
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
-import javax.inject.Inject
-import javax.inject.Singleton
 
 enum class AiProvider { GEMINI, OPENAI, DEEPSEEK, CLAUDE }
 
-@Singleton
-class GenerativeAiService @Inject constructor(
+class GenerativeAiService(
     private val settingsRepository: SettingsRepository,
-    @ApplicationContext private val context: Context,
+    private val context: Context,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 

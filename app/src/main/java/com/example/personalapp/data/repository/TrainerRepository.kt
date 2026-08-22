@@ -22,16 +22,13 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import java.util.UUID
-import javax.inject.Inject
-import javax.inject.Singleton
 
 /**
  * Firestore is the source of truth (see GOALS.md §4a): writes here go to Firestore first,
  * a snapshot listener (started via [startListening]) mirrors each trainer-scoped collection
  * back into Room, and every screen keeps reading from Room's Flows as before.
  */
-@Singleton
-class TrainerRepository @Inject constructor(
+class TrainerRepository(
     private val appDao: AppDao,
     private val firestore: FirebaseFirestore,
     private val auth: FirebaseAuth,

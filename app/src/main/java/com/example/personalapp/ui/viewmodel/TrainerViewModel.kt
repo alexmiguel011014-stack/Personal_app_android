@@ -6,17 +6,14 @@ import com.example.personalapp.data.local.entity.BiometricEntity
 import com.example.personalapp.data.local.entity.ScheduleEntity
 import com.example.personalapp.data.local.entity.UserEntity
 import com.example.personalapp.data.repository.TrainerRepository
-import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.UUID
-import javax.inject.Inject
 
-@HiltViewModel
-class TrainerViewModel @Inject constructor(
+class TrainerViewModel(
     private val repository: TrainerRepository
 ) : ViewModel() {
 

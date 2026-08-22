@@ -18,7 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.hilt.navigation.compose.hiltViewModel
+import org.koin.androidx.compose.koinViewModel
 import com.example.personalapp.data.local.entity.ScheduleEntity
 import com.example.personalapp.data.local.entity.UserEntity
 import com.example.personalapp.ui.viewmodel.TrainerViewModel
@@ -26,7 +26,7 @@ import java.util.Locale
 
 @Composable
 fun ScheduleScreen(
-    viewModel: TrainerViewModel = hiltViewModel()
+    viewModel: TrainerViewModel = koinViewModel()
 ) {
     val students by viewModel.students.collectAsState()
     val schedules by viewModel.schedules.collectAsState()

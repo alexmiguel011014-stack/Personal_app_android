@@ -1453,15 +1453,30 @@ flowchart TD
       target and `iosSimulatorArm64` test target.
 
 **18c. Dependency injection: Hilt → Koin**
-- [ ] **Hilt has no Kotlin Multiplatform support at all** (confirmed current, `REPERTOIRE.md`
-      research) — this is a hard blocker, not a preference. Replace every `@HiltViewModel`/
-      `@Inject`/`@Module`/`@InstallIn` with Koin's `module { }`/`viewModel { }`/`get()` DSL,
-      declared in `commonMain` so the same DI graph serves both platforms. `androidApp` calls
-      `startKoin { androidContext(...) }` in `MainApplication.onCreate()`; the iOS entry point
-      calls the equivalent `initKoin()` from Swift/iosApp. Done when: every existing
-      `hiltViewModel()` call site in Compose screens compiles against Koin's `koinViewModel()`
-      instead, and `./gradlew :app:testDebugUnitTest` still passes (repository/ViewModel tests
-      updated to Koin's test-module-override pattern instead of Hilt's `@TestInstallIn`).
+- [x] **Done and verified 2026-08-22.** Hilt has no Kotlin Multiplatform support at all
+      (confirmed, `REPERTOIRE.md` research) — a hard blocker, not a preference. Every
+      `@HiltViewModel`/`@Inject`/`@Module`/`@InstallIn`/`@Singleton`/`@ApplicationContext`
+      removed across 5 repositories/services (`AuthRepository`, `SettingsRepository`,
+      `TrainerRepository`, `StudentRepository`, `GenerativeAiService`) and 9 ViewModels — plain
+      constructors now, wired from one new `di/AppModule.kt` (Koin `module { }`), replacing the
+      old `AuthModule.kt`/`DatabaseModule.kt`. `MainApplication`:
+      `@HiltAndroidApp` → `startKoin { androidContext(this@MainApplication); modules(appModule) }`.
+      `MainActivity`'s `@AndroidEntryPoint` removed (Koin has no per-Activity injection entry
+      point to replace it with — not needed). 14 Compose screens: `hiltViewModel()` →
+      `koinViewModel()` (`androidx.hilt.navigation.compose` → `org.koin.androidx.compose`).
+      **One deliberate deviation from the original phrasing above**: the Koin module lives in
+      `:app` for now, not `commonMain` — the repositories/ViewModels it wires haven't moved to
+      `:shared` yet (that's 18f/18g/18h's job), so there's nothing in `commonMain` to wire yet.
+      Moving `appModule` itself into `commonMain` happens naturally alongside those later items,
+      not as separate work. No iOS `initKoin()` entry point exists yet either, for the same
+      reason (no iOS UI to call it from until 18h). Verified: `./gradlew verify assembleDebug
+      compileDebugAndroidTestKotlin` all green, first full pass after the sweep — no test-file
+      changes were needed (`AuthRepositoryTest` already constructed `AuthRepository` directly
+      with MockK fakes, never went through Hilt's test DI). **Bonus fix found while verifying**:
+      `TrainerGoldenPathTest.kt` had been failing to compile since §15g added a parameter to
+      `StudentDetailsScreen` that the test was never updated to pass — invisible until now
+      because `verify` deliberately excludes `connectedAndroidTest` (§9) and never compiles that
+      source set. Fixed (added the missing `onNavigateToPromptFicha = {}`), unrelated to Koin.
 
 **18d. Database: Room → Room Kotlin Multiplatform**
 - [x] **No SQLDelight migration needed** — Room 2.7+ added official KMP support, and Room 3.0

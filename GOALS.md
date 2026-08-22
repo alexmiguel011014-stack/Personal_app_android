@@ -1370,7 +1370,7 @@ that only round-trips correctly on one platform). Item 18h below is what actuall
 flowchart TD
     A[18a. Design: module split,\nopen resource decisions] --> B[18b. Project restructure\ninto KMP modules]
     B --> C[18c. DI: Hilt to Koin]
-    B --> D[18d. Database: Room KMP]
+    B --> D[18d. Database: Room to SQLDelight]
     B --> E[18e. Settings: DataStore KMP]
     C --> F[18f. Firebase access layer:\nGitLive SDK]
     D --> F
@@ -1478,22 +1478,51 @@ flowchart TD
       because `verify` deliberately excludes `connectedAndroidTest` (§9) and never compiles that
       source set. Fixed (added the missing `onNavigateToPromptFicha = {}`), unrelated to Koin.
 
-**18d. Database: Room → Room Kotlin Multiplatform**
-- [x] **No SQLDelight migration needed** — Room 2.7+ added official KMP support, and Room 3.0
-      (March 2026) makes iOS/JS/WASM first-class targets, per current Android Developers docs.
-      This is the single biggest research-confirmed cost-saver in this whole plan: the existing
-      `AppDatabase`, all entities (`UserEntity`, `WorkoutEntity`, `WorkoutLogEntity`, etc.), and
-      every `AppDao` query move into `commonMain` largely unchanged.
-- [ ] The **only** required platform split is the database builder/file-path function (Android
-      and iOS locate the SQLite file differently) — write one `expect fun getDatabaseBuilder(): 
-      RoomDatabase.Builder<AppDatabase>` in `commonMain`, `actual` implementations in
-      `androidMain` (existing `Context`-based path) and `iosMain` (`NSDocumentDirectory`-based
-      path, per Room's own current KMP setup guide). Done when: a round-trip insert/read against
-      the same `AppDao` query compiles and runs on both `androidUnitTest` and a real
-      `iosSimulatorArm64` test target.
-- [ ] **Re-verify all existing Room migrations** (`MIGRATION_5_6`, the `linked` flag migration
-      6→7, `app/schemas/`) still apply cleanly once the database class lives in `commonMain` —
-      schema export path may need updating in `build.gradle.kts` for the new module location.
+**18d. Database: Room → SQLDelight** (originally planned as Room → Room KMP; superseded, see below)
+- [x] **Done and verified 2026-08-22.** The original plan's premise — "no SQLDelight migration
+      needed, Room 3.0 has official KMP support" — was correct on paper but **hit a confirmed,
+      reproducible upstream tooling bug**, discovered only through hands-on implementation, not
+      something the original research could have caught: Room 3.0.1's KSP processor fails with a
+      `[MissingType]` error the instant `@TypeConverters` is used (isolated via direct testing —
+      reproduces with a trivial non-serialization converter, applied at either `@Database` or
+      `@Entity` level; a database with *zero* converters processes fine, same everything else).
+      Related to `github.com/google/ksp/issues/3053` but not an exact match (that issue is about
+      `@Parcelize`, not `@TypeConverters` — a different trigger, same symptom category). Not
+      fixable from this project — tried KSP 2.3.10 and 2.3.11, KSP1 vs KSP2, with/without
+      `@ConstructedBy`, with/without AGP 9's built-in-Kotlin opt-out (that path also cascaded into
+      breaking `:app`'s own task graph, worse than the original problem). **User decision:
+      pivot to SQLDelight** — mature, multi-year KMP support, no equivalent issue, confirmed by
+      actually building the whole database layer against it successfully on the first real attempt
+      once the API specifics were right.
+      - 6 tables + queries defined in `.sq` files (`shared/src/commonMain/sqldelight/...`),
+        mirroring the exact schema Room had exported (`shared/schemas/.../7.json`, moved from
+        `app/schemas/`) — same table/column names and types, so this isn't a schema redesign.
+      - **No data-loss risk beyond what already existed**: Room was always documented (CLAUDE.md,
+        this file) as an offline *cache* of Firestore, never authoritative storage — a fresh local
+        SQLite file on first launch after this ships just means one extra Firestore re-sync via
+        the existing `startListening` snapshot listener, not lost data.
+      - `ColumnAdapters.kt` (commonMain) replaces the old `Converters.kt` — `List<String>`,
+        `List<Exercise>`, `List<PerformedSet>` as JSON via `kotlinx.serialization`, same encoding
+        Room used. (Boolean columns turned out to need no adapter at all once the `.sq` files'
+        imports were correct — SQLDelight handles `INTEGER AS Boolean` natively.)
+      - `DatabaseDriverFactory` `expect`/`actual` is the one genuinely platform-specific piece
+        (`AndroidSqliteDriver` vs `NativeSqliteDriver`) — schema, queries, and adapters are all
+        shared, matching the original plan's spirit even though the library changed.
+      - New `AppDao` (commonMain, plain class wrapping SQLDelight's generated `Queries` objects)
+        keeps the **exact same method names/signatures** the old Room `@Dao` interface had —
+        `TrainerRepository`/`StudentRepository` in `:app` needed **zero changes** at the call
+        site, the whole point of designing it this way.
+      - `UserEntity`/`BiometricEntity`/`WorkoutEntity`/`HistoryEntity`/`ScheduleEntity`/
+        `WorkoutLogEntity` lose their Room annotations, otherwise byte-identical — every other
+        call site across the app (ViewModels, screens, `FirestoreMappers`) is unaffected.
+      - `AppDaoTest.kt` (§9's instrumented test) updated to construct `AppDao` via
+        `DatabaseDriverFactory(context, databaseName = null)` for an in-memory test database
+        instead of Room's `inMemoryDatabaseBuilder` — every test *body* (the actual assertions)
+        is unchanged, since `AppDao`'s method signatures didn't change.
+      - `androidx.room3` and KSP removed entirely from the project — no longer used anywhere.
+      - Verified: `./gradlew verify assembleDebug compileDebugAndroidTestKotlin
+        :shared:testAndroidHostTest` all green. iOS-side compile verification (CI) still pending
+        as of this checkbox — confirm before considering 18d fully closed.
 
 **18e. Settings/preferences: DataStore → DataStore Multiplatform**
 - [x] DataStore Preferences (not DataStore Proto) has official multiplatform support already —

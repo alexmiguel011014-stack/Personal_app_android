@@ -1551,7 +1551,10 @@ flowchart TD
       Windows/x86_64 host's QEMU2 emulator refuses to run (`CPU Architecture 'arm' is not
       supported`) — not run on-device yet, needs either an x86_64/arm64 AVD or a physical device.
       iOS-side compile verification happens via the existing `ios-ci.yml` GitHub Actions workflow
-      on push.
+      on push — confirmed green (run 32773333650: iOS targets compile, shared module tests pass
+      on the iOS simulator). §18e is closed except for actually running
+      `SettingsRepositoryTest` on a real Android device/emulator, which needs an x86_64 or
+      arm64 AVD (or a physical phone) — not available on this machine right now.
 - [x] **Re-verified §8's backup-exclusion fix**: `data_extraction_rules.xml`/`backup_rules.xml`
       already updated to exclude `settings.preferences_pb` (no `datastore/` prefix — the new
       `OkioStorage` setup writes straight to that filename under `filesDir`, unlike the old

@@ -1521,8 +1521,11 @@ flowchart TD
         is unchanged, since `AppDao`'s method signatures didn't change.
       - `androidx.room3` and KSP removed entirely from the project — no longer used anywhere.
       - Verified: `./gradlew verify assembleDebug compileDebugAndroidTestKotlin
-        :shared:testAndroidHostTest` all green. iOS-side compile verification (CI) still pending
-        as of this checkbox — confirm before considering 18d fully closed.
+        :shared:testAndroidHostTest` all green locally, plus `ios-ci.yml` green on CI (2m31s) —
+        both iOS Kotlin/Native targets actually compile against the SQLDelight-based `:shared`.
+        One iOS-only fix needed along the way: `Dispatchers.IO` is JVM/Android-only (internal on
+        Kotlin/Native) — `AppDao`'s `Flow` mapping calls now use `Dispatchers.Default`, available
+        on every KMP target. §18d is fully closed.
 
 **18e. Settings/preferences: DataStore → DataStore Multiplatform**
 - [x] DataStore Preferences (not DataStore Proto) has official multiplatform support already —

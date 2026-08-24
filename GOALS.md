@@ -1532,13 +1532,30 @@ flowchart TD
       confirmed via current Android Developers KMP setup docs. `SettingsRepository`'s existing
       `stringPreferencesKey`s (Gemini/OpenAI/DeepSeek/Claude API keys) move to `commonMain`
       largely unchanged.
-- [ ] Platform split needed only for the DataStore file location: `expect`/`actual` for the
-      preferences file path (Android: existing `Context.dataStore` delegate; iOS: a path under
-      `NSDocumentDirectory`, mirroring 18d's DB path split). Done when: a saved API key
-      round-trips correctly on both platforms.
-- [ ] **Re-verify §8's backup-exclusion fix** (`data_extraction_rules.xml`/`backup_rules.xml`
-      excluding the DataStore file from Android auto-backup) still applies at the new file
-      location after the module restructure — don't silently lose that protection in the move.
+- [x] Platform split done, but not the shape originally sketched above: both Android and iOS use
+      `OkioStorage` (not Android's `FileStorage`) — `FileStorage`'s `serializer` parameter expects
+      `androidx.datastore.core.Serializer<T>`, a different interface than the
+      `PreferencesSerializer` object (which implements Okio's `OkioSerializer<T>`), so `FileStorage`
+      + `PreferencesSerializer` is a real type mismatch, not a config issue. Using `OkioStorage` on
+      both platforms sidesteps it entirely and matches the common-factory shape
+      (`createDataStore(storage: Storage<Preferences>)` in `commonMain`) with only `producePath`
+      differing per platform (`context.filesDir` vs. `NSDocumentDirectory`). `SettingsRepository`
+      moved to `shared/commonMain` unchanged; `shared`'s `datastore-core`/`datastore-preferences-core`
+      deps had to become `api` (not `implementation`) since `:app`'s Koin module (`AppModule.kt`)
+      references `DataStore<Preferences>` directly. Verified: `:app:compileDebugKotlin`,
+      `verify`, `assembleDebug`, `compileDebugAndroidTestKotlin` all green locally. A real
+      round-trip instrumented test was added
+      (`app/src/androidTest/.../data/repository/SettingsRepositoryTest.kt`) but — like
+      `AppDaoTest` — needs a real Android SQLite/filesystem environment; the two AVDs present on
+      this machine (`Medium_Phone`, `Pixel_10_Pro_XL`) are both arm system images, which this
+      Windows/x86_64 host's QEMU2 emulator refuses to run (`CPU Architecture 'arm' is not
+      supported`) — not run on-device yet, needs either an x86_64/arm64 AVD or a physical device.
+      iOS-side compile verification happens via the existing `ios-ci.yml` GitHub Actions workflow
+      on push.
+- [x] **Re-verified §8's backup-exclusion fix**: `data_extraction_rules.xml`/`backup_rules.xml`
+      already updated to exclude `settings.preferences_pb` (no `datastore/` prefix — the new
+      `OkioStorage` setup writes straight to that filename under `filesDir`, unlike the old
+      `Context.dataStore` delegate's `datastore/` subfolder convention).
 
 **18f. Backend access layer: Firebase via the GitLive Kotlin SDK**
 - [x] **Google ships no official Firebase KMP SDK** (confirmed current, mid-2026) — use the

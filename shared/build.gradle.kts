@@ -50,12 +50,19 @@ kotlin {
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.sqldelight.runtime)
             implementation(libs.sqldelight.coroutines.extensions)
+            // api, not implementation: :app's AppModule.kt (Koin) references DataStore<Preferences>
+            // directly (single { createDataStore(androidContext()) }), so these types must be
+            // visible on :app's compile classpath, not just :shared's internal one.
+            api(libs.androidx.datastore.core)
+            api(libs.androidx.datastore.preferences.core)
         }
         androidMain.dependencies {
             implementation(libs.sqldelight.android.driver)
+            implementation(libs.androidx.datastore.core.okio)
         }
         iosMain.dependencies {
             implementation(libs.sqldelight.native.driver)
+            implementation(libs.androidx.datastore.core.okio)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))

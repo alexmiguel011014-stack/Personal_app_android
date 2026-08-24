@@ -1,6 +1,7 @@
 package com.example.personalapp.di
 
 import com.example.personalapp.data.local.DatabaseDriverFactory
+import com.example.personalapp.data.local.createDataStore
 import com.example.personalapp.data.local.dao.AppDao
 import com.example.personalapp.data.repository.AuthRepository
 import com.example.personalapp.data.repository.SettingsRepository
@@ -33,9 +34,10 @@ val appModule = module {
     single<FirebaseFirestore> { Firebase.firestore }
     single { DatabaseDriverFactory(androidContext()) }
     single { AppDao(get()) }
+    single { createDataStore(androidContext()) }
 
     single { AuthRepository(get(), get()) }
-    single { SettingsRepository(androidContext()) }
+    single { SettingsRepository(get()) }
     single { TrainerRepository(get(), get(), get()) }
     single { StudentRepository(get(), get()) }
     single { GenerativeAiService(get(), androidContext()) }

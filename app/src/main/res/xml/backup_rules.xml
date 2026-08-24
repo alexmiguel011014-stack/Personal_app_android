@@ -6,6 +6,9 @@
    See https://developer.android.com/about/versions/12/backup-restore
 -->
 <full-backup-content>
-    <!-- Gemini/OpenAI API keys live here (SettingsRepository) — never include in backups. -->
-    <exclude domain="file" path="datastore/settings.preferences_pb"/>
+    <!-- Gemini/OpenAI/DeepSeek/Claude API keys live here (SettingsRepository) — never include in
+         backups. GOALS.md §18e: path changed from "datastore/settings.preferences_pb" (Android's
+         old Context.dataStore delegate convention) to "settings.preferences_pb" directly under
+         filesDir, since the KMP-safe DataStore setup writes straight to a file path we control. -->
+    <exclude domain="file" path="settings.preferences_pb"/>
 </full-backup-content>

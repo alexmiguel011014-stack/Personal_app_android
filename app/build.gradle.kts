@@ -57,8 +57,11 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        // Bumped from 11 → 17 for GOALS.md §18f: the GitLive Firebase SDK's Android artifacts
+        // ship inline reified functions compiled at JVM target 17 — inlining them into an 11
+        // target fails at compile time, not just a version-alignment nicety.
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
     buildFeatures {
         compose = true
@@ -92,17 +95,16 @@ dependencies {
     // Navigation
     implementation(libs.androidx.navigation.compose)
 
-    // Firebase
+    // Firebase — Auth/Firestore themselves moved to :shared via the GitLive KMP SDK (GOALS.md
+    // §18f); what's left here is Android-only surface GitLive doesn't cover (Crashlytics,
+    // App Check, AI Logic).
     implementation(platform(libs.firebase.bom))
-    implementation(libs.firebase.auth)
-    implementation(libs.firebase.firestore)
     implementation(libs.firebase.crashlytics)
     implementation(libs.firebase.appcheck.playintegrity)
     implementation(libs.firebase.appcheck.debug)
     // Firebase AI Logic (GOALS.md §3) — replaces the deprecated com.google.ai.client.generativeai
     // SDK for Gemini calls; free on the Spark plan via the Gemini Developer API backend.
     implementation(libs.firebase.ai)
-    implementation(libs.kotlinx.coroutines.play.services)
 
     testImplementation(libs.junit)
     testImplementation(libs.mockk)

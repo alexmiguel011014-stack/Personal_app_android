@@ -17,11 +17,11 @@ import com.example.personalapp.ui.viewmodel.StudentDetailsViewModel
 import com.example.personalapp.ui.viewmodel.StudentViewModel
 import com.example.personalapp.ui.viewmodel.TrainerViewModel
 import com.example.personalapp.ui.viewmodel.WorkoutViewModel
-import com.google.firebase.Firebase
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.auth.auth
-import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.firestore
+import dev.gitlive.firebase.Firebase
+import dev.gitlive.firebase.auth.FirebaseAuth
+import dev.gitlive.firebase.auth.auth
+import dev.gitlive.firebase.firestore.FirebaseFirestore
+import dev.gitlive.firebase.firestore.firestore
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.module.dsl.viewModel
 import org.koin.dsl.module

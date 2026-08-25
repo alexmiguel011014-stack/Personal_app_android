@@ -1567,15 +1567,53 @@ flowchart TD
       maintained, in production use by other teams. The newer `KFire` alternative is still beta
       as of this research — not a safe bet for an app already depending heavily on Firestore
       transactions (`AuthRepository.claimInvite`) and listeners.
-- [ ] Rewrite `TrainerRepository`/`StudentRepository`/`AuthRepository`'s direct
-      `com.google.firebase.firestore.*`/`com.google.firebase.auth.*` calls against GitLive's API
-      in `commonMain` — same snapshot-listener/transaction *shape* (GitLive's API deliberately
-      mirrors the Android Firebase SDK's), but a real rewrite, not a drop-in. Done when: the
-      existing `startListening(trainerId)` mirror-into-Room behavior and `claimInvite()`'s
-      transactional re-claim logic (§13d) both pass equivalent tests against GitLive on both
-      platforms.
-- [ ] `FirestoreMappers.kt`'s entity↔doc mapping moves to `commonMain` largely unchanged (it's
-      already plain-map-based, not tied to any Android-only Firestore API surface).
+- [x] Rewrote `TrainerRepository`/`StudentRepository`/`AuthRepository` against GitLive's API in
+      `shared/commonMain` (moved from `app/`, package unchanged so no caller imports needed to
+      change). Real API differences from the classic SDK, not a drop-in:
+      - `DocumentSnapshot` has no `getString`/`getBoolean`/`getLong` — one reified
+        `get<T?>(field)` instead. This is `inline`, which has a real consequence: **it can't be
+        stubbed with MockK** (inline functions have no vtable to intercept), unlike the old
+        per-type getters. That broke all 6 `AuthRepositoryTest` cases (including `claimInvite()`'s
+        transaction, the security-sensitive one). Discussed with the user directly — chosen path:
+        delete the tests now, note the gap here, revisit with the Firebase Local Emulator Suite
+        (free, runs locally, no billing plan needed) if/when this needs real coverage again. Not
+        done silently.
+      - Auth/Firestore calls are suspend-native (no `.await()`/Task wrapping) —
+        `kotlinx-coroutines-play-services` dependency dropped, now unused.
+      - Snapshot listeners are `Flow<QuerySnapshot>`-based (`query.snapshots`), no
+        `ListenerRegistration` — `TrainerRepository.startListening/stopListening` now tracks
+        `Job`s from `scope.launch { query.snapshots.catch { ... }.collect { ... } }` instead of
+        calling `.remove()`. `StudentRepository` no longer needs `callbackFlow` at all — GitLive's
+        Flow-native API replaces it directly.
+      - `.whereEqualTo(field, value)` → `.where { "field" equalTo value }` (a `FilterBuilder` DSL;
+        the flatter `.where(field, equalTo = value)` overload exists but is deprecated in this SDK
+        version in favor of the builder — used the builder from the start).
+      - GitLive's Android artifacts are compiled at JVM target 17; inlining their reified
+        functions into this project's JVM 11 target failed to compile. Bumped `:app` and
+        `:shared` to JVM 17 (`compileOptions`/`compilerOptions.jvmTarget`) — required, not a
+        version-hygiene nicety.
+      - GitLive's Android artifacts declare transitive `com.google.firebase:*` deps with no
+        pinned version (same convention as using those artifacts directly) — needed
+        `com.google.firebase:firebase-bom` applied in `:shared` too, not just `:app`. The
+        classic `platform()` call inside `kotlin.sourceSets.*.dependencies {}` is deprecated for
+        removal (KT-58759); used the project-level `dependencies { "androidMainImplementation"(
+        platform(...)) }` form instead.
+      - `java.util.UUID` (JVM-only) → `kotlin.uuid.Uuid` (stdlib, multiplatform since Kotlin
+        2.0.20, still behind `@OptIn(ExperimentalUuidApi::class)`) for `generateInvite()`'s code.
+      - `System.currentTimeMillis()` has no multiplatform stdlib equivalent
+        (`kotlin.system.getTimeMillis()` is Native-only and deprecated) — added a small
+        `expect`/`actual` `currentTimeMillis()` in `shared/util/TimeUtil.kt`.
+      Verified: `:app:compileDebugKotlin`, `verify`, `assembleDebug`,
+      `compileDebugAndroidTestKotlin` all green locally. iOS CI compile check still pending as of
+      this checkbox — GitLive's own docs note the iOS Firebase SDK needs linking separately
+      (not pulled in transitively the way Android's is), which this project can't fully verify
+      until an actual iOS app target exists (§18h+); confirm the `:shared` Kotlin/Native compile
+      itself is clean via CI before relying on this being iOS-safe.
+- [x] `FirestoreMappers.kt`'s entity↔doc mapping moved to `commonMain` largely unchanged — GitLive
+      auto-detects `Map<String, Any?>` at the call site (`FirebaseMapSerializer`, checked via a
+      runtime `is Map<*, *>` check, not the static type) and encodes it without needing
+      `@Serializable`, so the existing plain-map mapper functions needed only the
+      `DocumentSnapshot.get<T?>()` rewrite described above, not a structural rewrite.
 - [ ] **`GenerativeAiService`'s HTTP calls (OpenAI/DeepSeek/Claude via plain `HttpURLConnection`)
       need a multiplatform HTTP client** — `HttpURLConnection` is JVM/Android-only. Use Ktor
       Client (JetBrains' own multiplatform HTTP library, the standard pairing with KMP) with the

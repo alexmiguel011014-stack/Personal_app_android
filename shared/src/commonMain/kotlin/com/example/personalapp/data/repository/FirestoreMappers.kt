@@ -7,14 +7,15 @@ import com.example.personalapp.data.local.entity.WorkoutEntity
 import com.example.personalapp.data.local.entity.WorkoutLogEntity
 import com.example.personalapp.data.model.Exercise
 import com.example.personalapp.data.model.PerformedSet
-import com.google.firebase.firestore.DocumentSnapshot
+import dev.gitlive.firebase.firestore.DocumentSnapshot
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-// Entities are mirrored to/from Firestore as plain maps (not Firestore's POJO reflection) so the
-// same nullable-safe construction rules apply on both sides. Exercise/PerformedSet lists reuse the
-// exact JSON encoding Room's own Converters already use, instead of a second nested-map mapping.
+// Entities are mirrored to/from Firestore as plain maps (GitLive's Map<String, Any?> serializer
+// handles this natively — no @Serializable needed, see GOALS.md §18f) so the same nullable-safe
+// construction rules apply on both sides. Exercise/PerformedSet lists reuse the exact JSON
+// encoding SQLDelight's own ColumnAdapters already use, instead of a second nested-map mapping.
 private val json = Json { ignoreUnknownKeys = true }
 
 fun UserEntity.toFirestoreMap(trainerId: String): Map<String, Any?> = mapOf(
@@ -31,18 +32,18 @@ fun UserEntity.toFirestoreMap(trainerId: String): Map<String, Any?> = mapOf(
 )
 
 fun DocumentSnapshot.toUserEntity(): UserEntity? {
-    val name = getString("name") ?: return null
+    val name = get<String?>("name") ?: return null
     return UserEntity(
         id = id,
         name = name,
-        role = getString("role") ?: "student",
-        gender = getString("gender") ?: "Masculino",
-        phone = getString("phone") ?: "",
-        goal = getString("goal") ?: "",
-        experienceLevel = getString("experienceLevel") ?: "",
-        medicalNotes = getString("medicalNotes") ?: "",
-        trainingDays = (get("trainingDays") as? List<*>)?.filterIsInstance<String>() ?: emptyList(),
-        createdAt = getLong("createdAt") ?: 0L,
+        role = get<String?>("role") ?: "student",
+        gender = get<String?>("gender") ?: "Masculino",
+        phone = get<String?>("phone") ?: "",
+        goal = get<String?>("goal") ?: "",
+        experienceLevel = get<String?>("experienceLevel") ?: "",
+        medicalNotes = get<String?>("medicalNotes") ?: "",
+        trainingDays = get<List<String>?>("trainingDays") ?: emptyList(),
+        createdAt = get<Long?>("createdAt") ?: 0L,
     )
 }
 
@@ -50,19 +51,19 @@ fun DocumentSnapshot.toUserEntity(): UserEntity? {
 // convention) into the same UserEntity shape the trainer-side screens already read — role is
 // normalized to Room's lowercase convention so it still matches AppDao.getStudents()'s query.
 fun DocumentSnapshot.toLinkedUserEntity(): UserEntity? {
-    if (getString("role") != "STUDENT") return null
-    val name = getString("name") ?: return null
+    if (get<String?>("role") != "STUDENT") return null
+    val name = get<String?>("name") ?: return null
     return UserEntity(
         id = id,
         name = name,
         role = "student",
-        gender = getString("gender") ?: "Masculino",
-        phone = getString("phone") ?: "",
-        goal = getString("goal") ?: "",
-        experienceLevel = getString("experienceLevel") ?: "",
-        medicalNotes = getString("medicalNotes") ?: "",
-        trainingDays = (get("trainingDays") as? List<*>)?.filterIsInstance<String>() ?: emptyList(),
-        createdAt = getLong("createdAt") ?: 0L,
+        gender = get<String?>("gender") ?: "Masculino",
+        phone = get<String?>("phone") ?: "",
+        goal = get<String?>("goal") ?: "",
+        experienceLevel = get<String?>("experienceLevel") ?: "",
+        medicalNotes = get<String?>("medicalNotes") ?: "",
+        trainingDays = get<List<String>?>("trainingDays") ?: emptyList(),
+        createdAt = get<Long?>("createdAt") ?: 0L,
         linked = true,
     )
 }
@@ -91,10 +92,10 @@ fun WorkoutEntity.toFirestoreMap(trainerId: String): Map<String, Any?> = mapOf(
 )
 
 fun DocumentSnapshot.toWorkoutEntity(): WorkoutEntity? {
-    val studentId = getString("studentId") ?: return null
-    val name = getString("name") ?: return null
+    val studentId = get<String?>("studentId") ?: return null
+    val name = get<String?>("name") ?: return null
     val exercises = try {
-        json.decodeFromString<List<Exercise>>(getString("exercisesJson") ?: "[]")
+        json.decodeFromString<List<Exercise>>(get<String?>("exercisesJson") ?: "[]")
     } catch (e: Exception) {
         emptyList()
     }
@@ -102,11 +103,11 @@ fun DocumentSnapshot.toWorkoutEntity(): WorkoutEntity? {
         id = id,
         studentId = studentId,
         name = name,
-        isActive = getBoolean("isActive") ?: true,
+        isActive = get<Boolean?>("isActive") ?: true,
         exercises = exercises,
-        createdAt = getLong("createdAt") ?: 0L,
-        status = getString("status") ?: "draft",
-        assignedAt = getLong("assignedAt"),
+        createdAt = get<Long?>("createdAt") ?: 0L,
+        status = get<String?>("status") ?: "draft",
+        assignedAt = get<Long?>("assignedAt"),
     )
 }
 
@@ -120,14 +121,14 @@ fun BiometricEntity.toFirestoreMap(trainerId: String): Map<String, Any?> = mapOf
 )
 
 fun DocumentSnapshot.toBiometricEntity(): BiometricEntity? {
-    val studentId = getString("studentId") ?: return null
+    val studentId = get<String?>("studentId") ?: return null
     return BiometricEntity(
         id = id,
         userId = studentId,
-        weight = getDouble("weight") ?: 0.0,
-        height = getDouble("height") ?: 0.0,
-        bodyFat = getDouble("bodyFat") ?: 0.0,
-        date = getLong("date") ?: 0L,
+        weight = get<Double?>("weight") ?: 0.0,
+        height = get<Double?>("height") ?: 0.0,
+        bodyFat = get<Double?>("bodyFat") ?: 0.0,
+        date = get<Long?>("date") ?: 0L,
     )
 }
 
@@ -139,12 +140,12 @@ fun ScheduleEntity.toFirestoreMap(trainerId: String): Map<String, Any?> = mapOf(
 )
 
 fun DocumentSnapshot.toScheduleEntity(): ScheduleEntity? {
-    val studentId = getString("studentId") ?: return null
+    val studentId = get<String?>("studentId") ?: return null
     return ScheduleEntity(
         id = id,
         studentId = studentId,
-        dayOfWeek = getString("dayOfWeek") ?: "",
-        hour = getString("hour") ?: "",
+        dayOfWeek = get<String?>("dayOfWeek") ?: "",
+        hour = get<String?>("hour") ?: "",
     )
 }
 
@@ -159,11 +160,11 @@ fun WorkoutLogEntity.toFirestoreMap(trainerId: String): Map<String, Any?> = mapO
 )
 
 fun DocumentSnapshot.toWorkoutLogEntity(): WorkoutLogEntity? {
-    val studentId = getString("studentId") ?: return null
-    val workoutId = getString("workoutId") ?: return null
-    val exerciseName = getString("exerciseName") ?: return null
+    val studentId = get<String?>("studentId") ?: return null
+    val workoutId = get<String?>("workoutId") ?: return null
+    val exerciseName = get<String?>("exerciseName") ?: return null
     val performedSets = try {
-        json.decodeFromString<List<PerformedSet>>(getString("performedSetsJson") ?: "[]")
+        json.decodeFromString<List<PerformedSet>>(get<String?>("performedSetsJson") ?: "[]")
     } catch (e: Exception) {
         emptyList()
     }
@@ -172,8 +173,8 @@ fun DocumentSnapshot.toWorkoutLogEntity(): WorkoutLogEntity? {
         studentId = studentId,
         workoutId = workoutId,
         exerciseName = exerciseName,
-        date = getLong("date") ?: 0L,
+        date = get<Long?>("date") ?: 0L,
         performedSets = performedSets,
-        note = getString("note"),
+        note = get<String?>("note"),
     )
 }

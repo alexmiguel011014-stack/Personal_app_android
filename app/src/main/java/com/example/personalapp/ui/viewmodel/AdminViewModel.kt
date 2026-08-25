@@ -3,14 +3,11 @@ package com.example.personalapp.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.personalapp.data.repository.SettingsRepository
-import com.google.firebase.firestore.AggregateSource
-import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.SetOptions
+import dev.gitlive.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeout
 
 data class TrainerInfo(val uid: String, val name: String)
@@ -61,16 +58,16 @@ class AdminViewModel(
 
     fun loadUserStats() {
         viewModelScope.launch {
-            val trainersQuery = firestore.collection("users").whereEqualTo("role", "TRAINER")
+            val trainersQuery = firestore.collection("users").where { "role" equalTo "TRAINER" }
             _trainerCount.value = runCatching {
-                trainersQuery.count().get(AggregateSource.SERVER).await().count
+                trainersQuery.count()
             }.getOrNull()
             _totalUserCount.value = runCatching {
-                firestore.collection("users").count().get(AggregateSource.SERVER).await().count
+                firestore.collection("users").count()
             }.getOrNull()
             _activeTrainers.value = runCatching {
-                trainersQuery.get().await().documents.map { doc ->
-                    TrainerInfo(uid = doc.id, name = doc.getString("name") ?: doc.id)
+                trainersQuery.get().documents.map { doc ->
+                    TrainerInfo(uid = doc.id, name = doc.get<String?>("name") ?: doc.id)
                 }
             }.getOrDefault(emptyList())
         }
@@ -79,7 +76,7 @@ class AdminViewModel(
     private fun checkFirestore() {
         viewModelScope.launch {
             _firestoreStatus.value = try {
-                withTimeout(5_000) { firestore.collection("users").limit(1).get().await() }
+                withTimeout(5_000) { firestore.collection("users").limit(1).get() }
                 ApiStatus.ONLINE
             } catch (e: Exception) {
                 ApiStatus.OFFLINE
@@ -110,8 +107,8 @@ class AdminViewModel(
             try {
                 firestore.collection("users").document(trimmedUid).set(
                     mapOf("role" to "TRAINER", "name" to name.trim().ifBlank { trimmedUid }),
-                    SetOptions.merge()
-                ).await()
+                    merge = true,
+                )
                 _promoteResult.value = "Usuário promovido a Trainer."
                 loadUserStats()
             } catch (e: Exception) {
@@ -132,8 +129,8 @@ class AdminViewModel(
     fun loadTrainerRequests() {
         viewModelScope.launch {
             _pendingTrainerRequests.value = runCatching {
-                firestore.collection("trainerRequests").get().await().documents.map { doc ->
-                    TrainerRequest(uid = doc.id, email = doc.getString("email") ?: doc.id)
+                firestore.collection("trainerRequests").get().documents.map { doc ->
+                    TrainerRequest(uid = doc.id, email = doc.get<String?>("email") ?: doc.id)
                 }
             }.getOrDefault(emptyList())
         }
@@ -144,9 +141,9 @@ class AdminViewModel(
             try {
                 firestore.collection("users").document(request.uid).set(
                     mapOf("role" to "TRAINER", "name" to request.email.substringBefore("@")),
-                    SetOptions.merge()
-                ).await()
-                firestore.collection("trainerRequests").document(request.uid).delete().await()
+                    merge = true,
+                )
+                firestore.collection("trainerRequests").document(request.uid).delete()
                 _promoteResult.value = "${request.email} promovido a Trainer."
                 loadUserStats()
                 loadTrainerRequests()
@@ -159,7 +156,7 @@ class AdminViewModel(
     fun rejectTrainerRequest(request: TrainerRequest) {
         viewModelScope.launch {
             try {
-                firestore.collection("trainerRequests").document(request.uid).delete().await()
+                firestore.collection("trainerRequests").document(request.uid).delete()
                 loadTrainerRequests()
             } catch (e: Exception) {
                 _promoteError.value = e.message ?: "Falha ao recusar solicitação."

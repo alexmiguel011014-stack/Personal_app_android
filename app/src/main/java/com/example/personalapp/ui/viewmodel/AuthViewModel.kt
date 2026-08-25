@@ -136,7 +136,9 @@ class AuthViewModel(
 
     fun logout() {
         trainerRepository.stopListening()
-        repository.logout()
-        _authState.value = AuthState.Idle
+        viewModelScope.launch {
+            repository.logout()
+            _authState.value = AuthState.Idle
+        }
     }
 }

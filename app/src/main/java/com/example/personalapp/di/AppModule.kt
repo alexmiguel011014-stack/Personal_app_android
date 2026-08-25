@@ -7,6 +7,8 @@ import com.example.personalapp.data.repository.AuthRepository
 import com.example.personalapp.data.repository.SettingsRepository
 import com.example.personalapp.data.repository.StudentRepository
 import com.example.personalapp.data.repository.TrainerRepository
+import com.example.personalapp.data.service.AndroidGeminiProvider
+import com.example.personalapp.data.service.GeminiProvider
 import com.example.personalapp.data.service.GenerativeAiService
 import com.example.personalapp.ui.viewmodel.AIWorkoutViewModel
 import com.example.personalapp.ui.viewmodel.AdminViewModel
@@ -40,7 +42,15 @@ val appModule = module {
     single { SettingsRepository(get()) }
     single { TrainerRepository(get(), get(), get()) }
     single { StudentRepository(get(), get()) }
-    single { GenerativeAiService(get(), androidContext()) }
+    single<GeminiProvider> { AndroidGeminiProvider() }
+    single {
+        // GOALS.md §18f: read once here (Android's own asset system), passed as a plain String
+        // into the shared/commonMain service — see GenerativeAiService's doc for why this isn't
+        // read inside :shared itself (no cross-platform bundled-resource reading wired yet).
+        val volumeReference = androidContext().assets.open("hypertrophy_volume_reference.md")
+            .bufferedReader().use { it.readText() }
+        GenerativeAiService(get(), volumeReference, get())
+    }
 
     viewModel { AuthViewModel(get(), get()) }
     viewModel { WorkoutViewModel(get()) }

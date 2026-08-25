@@ -68,14 +68,25 @@ kotlin {
             // §18g's "no multiplatform Crashlytics exists yet" note, which predates this SDK
             // version; re-verify the rest of §18g against this when that item comes up.
             implementation(libs.gitlive.firebase.crashlytics)
+            // Ktor Client (GOALS.md §18f) — replaces GenerativeAiService's HttpURLConnection
+            // calls (JVM/Android-only) for the OpenAI/DeepSeek/Claude BYO-key providers.
+            implementation(libs.ktor.client.core)
+            implementation(libs.ktor.client.content.negotiation)
+            implementation(libs.ktor.serialization.kotlinx.json)
         }
         androidMain.dependencies {
             implementation(libs.sqldelight.android.driver)
             implementation(libs.androidx.datastore.core.okio)
+            implementation(libs.ktor.client.okhttp)
+            // Firebase AI Logic (GOALS.md §3) — Gemini calls, Android-only (see
+            // AndroidGeminiProvider/GeminiProvider's doc). Replaces the deprecated
+            // com.google.ai.client.generativeai SDK.
+            implementation(libs.firebase.ai)
         }
         iosMain.dependencies {
             implementation(libs.sqldelight.native.driver)
             implementation(libs.androidx.datastore.core.okio)
+            implementation(libs.ktor.client.darwin)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))

@@ -1626,15 +1626,33 @@ flowchart TD
       runtime `is Map<*, *>` check, not the static type) and encodes it without needing
       `@Serializable`, so the existing plain-map mapper functions needed only the
       `DocumentSnapshot.get<T?>()` rewrite described above, not a structural rewrite.
-- [ ] **`GenerativeAiService`'s HTTP calls (OpenAI/DeepSeek/Claude via plain `HttpURLConnection`)
-      need a multiplatform HTTP client** — `HttpURLConnection` is JVM/Android-only. Use Ktor
-      Client (JetBrains' own multiplatform HTTP library, the standard pairing with KMP) with the
-      `Darwin` engine on iOS and existing `OkHttp`/`CIO` engine on Android. Gemini's Firebase AI
-      Logic SDK call (`generateWithGemini()`) is Android-only today (`com.google.firebase:
-      firebase-ai`) — confirm whether it has an iOS equivalent before assuming Gemini stays
-      available on iOS; if not, either drop Gemini as an iOS-side provider option (the other
-      three BYO-key providers already work fine here since they're plain HTTP) or scope that as
-      a known iOS gap, not a silent omission.
+- [x] **`GenerativeAiService`'s HTTP calls (OpenAI/DeepSeek/Claude via plain `HttpURLConnection`)
+      moved to Ktor Client 3.5.2** (JetBrains' own multiplatform HTTP library) — `OkHttp` engine
+      on Android, `Darwin` on iOS, `ContentNegotiation` + `kotlinx.serialization.json` for
+      request/response bodies, `expectSuccess = false` + a manual `response.status.isSuccess()`
+      check to keep the old "return the error body as an error string" behavior instead of Ktor's
+      default throw-on-non-2xx. `HttpClient()` with no explicit engine works unchanged in
+      `commonMain` since each source set (androidMain/iosMain) only has one engine artifact on
+      its classpath — Ktor auto-selects it, no `expect`/`actual` needed for the client itself.
+      Confirmed (via GitHub's `GitLiveApp`-adjacent research, i.e. checking, not assuming): Firebase
+      AI Logic (Gemini) has **no official Kotlin Multiplatform/iOS SDK** — only community bridges
+      exist (`firebase-ai-kmp`), each needing its own native-framework linking, the same class of
+      problem just hit with GitLive's own Firebase Auth/Firestore (see the iOS CI note above).
+      Chose "scope as a known iOS gap" over chasing another native bridge right now: added a
+      `GeminiProvider` interface (`shared/commonMain`) with an `AndroidGeminiProvider` actual
+      (the real Firebase AI Logic call, moved from the old `GenerativeAiService`) and an
+      `IosGeminiProvider` stub that returns an honest "not available on iOS yet, use OpenAI/
+      DeepSeek/Claude" string — not a crash, not a silently missing case. `GenerativeAiService`
+      itself now lives fully in `shared/commonMain`, taking `GeminiProvider` and a
+      pre-read `volumeReference: String` as constructor params (the volume-reference `.md` asset
+      read stays in `:app`'s Koin module via `androidContext().assets` — no cross-platform bundled
+      resource reading wired up yet, not needed until an iOS DI graph exists in §18h+).
+      `libs.firebase.crashlytics`/`libs.firebase.ai` moved off `:app` entirely — Crashlytics calls
+      go through GitLive's wrapper now (`Firebase.crashlytics`, already added for
+      `TrainerRepository`), AI Logic's classic SDK dependency moved to `shared/androidMain`
+      alongside `AndroidGeminiProvider`. Verified: `:app:compileDebugKotlin`, `verify`,
+      `assembleDebug`, `compileDebugAndroidTestKotlin` all green locally. **§18f is fully closed**
+      except for the iOS native Firebase framework linking tracked as its own item above.
 
 **18g. Auth and Security — platform-specific pieces GitLive doesn't cover**
 - [ ] **App Check**: GitLive's SDK doesn't wrap App Check. Keep Android's existing

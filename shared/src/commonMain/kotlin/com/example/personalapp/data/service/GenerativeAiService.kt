@@ -1,38 +1,48 @@
 package com.example.personalapp.data.service
 
-import android.content.Context
 import com.example.personalapp.data.local.entity.UserEntity
 import com.example.personalapp.data.repository.SettingsRepository
-import com.google.firebase.Firebase
-import com.google.firebase.ai.ai
-import com.google.firebase.ai.type.GenerativeBackend
-import com.google.firebase.ai.type.content
-import com.google.firebase.crashlytics.FirebaseCrashlytics
-import kotlinx.coroutines.Dispatchers
+import dev.gitlive.firebase.Firebase
+import dev.gitlive.firebase.crashlytics.crashlytics
+import io.ktor.client.HttpClient
+import io.ktor.client.call.body
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
+import io.ktor.http.isSuccess
+import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import java.io.OutputStreamWriter
-import java.net.HttpURLConnection
-import java.net.URL
 
 enum class AiProvider { GEMINI, OPENAI, DEEPSEEK, CLAUDE }
 
+// GOALS.md §18f: OpenAI/DeepSeek/Claude are plain HTTP (via Ktor, replacing the old Android-only
+// HttpURLConnection calls) and work identically on both platforms. Gemini goes through
+// [GeminiProvider], injected per platform — see that interface's doc for why.
 class GenerativeAiService(
     private val settingsRepository: SettingsRepository,
-    private val context: Context,
+    private val volumeReference: String,
+    private val geminiProvider: GeminiProvider,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
-    companion object {
-        // Verify this is still current before relying on it — Google sunsets Gemini model ids on
-        // a rolling schedule (e.g. gemini-2.5-flash retires 2026-10-16). Check
-        // https://firebase.google.com/docs/ai-logic/models for the current list. Deliberately not
-        // "gemini-flash-latest" — that alias points at an experimental build, not the stable one.
-        private const val GEMINI_MODEL_ID = "gemini-3.7-flash"
+    private val httpClient = HttpClient {
+        expectSuccess = false
+        install(ContentNegotiation) { json(json) }
+        install(HttpTimeout) {
+            requestTimeoutMillis = 30_000
+            connectTimeoutMillis = 30_000
+        }
+    }
 
+    companion object {
         // DeepSeek's OpenAI-compatible general-purpose alias — verify against
         // https://api-docs.deepseek.com before relying long-term (deepseek-v4-flash/-pro also
         // exist as newer options, see GOALS.md §14b).
@@ -49,16 +59,10 @@ class GenerativeAiService(
         private const val CLAUDE_MAX_TOKENS = 4096
     }
 
-    // Read once per process (this service is @Singleton) instead of on every generateWorkout()
-    // call — see GOALS.md §5d for why this is embedded as text instead of sent as a raw PDF.
-    private val volumeReference: String by lazy {
-        context.assets.open("hypertrophy_volume_reference.md").bufferedReader().use { it.readText() }
-    }
-
     suspend fun generateWorkout(student: UserEntity, userPrompt: String, provider: AiProvider = AiProvider.GEMINI): String {
         val fullPrompt = buildPrompt(student, userPrompt)
         return when (provider) {
-            AiProvider.GEMINI -> generateWithGemini(fullPrompt)
+            AiProvider.GEMINI -> geminiProvider.generate(fullPrompt)
             AiProvider.OPENAI -> generateWithOpenAi(fullPrompt)
             AiProvider.DEEPSEEK -> generateWithDeepSeek(fullPrompt)
             AiProvider.CLAUDE -> generateWithClaude(fullPrompt)
@@ -100,24 +104,6 @@ class GenerativeAiService(
         $volumeReference
     """.trimIndent()
 
-    // Firebase AI Logic (Gemini Developer API backend): no client-side API key — the project's own
-    // Gemini access is configured once in the Firebase Console (Build → AI Logic) and calls are
-    // authenticated via App Check, not a key typed into Settings. Free on the Spark plan. Chosen
-    // over "trainer brings their own key" because that model needs either a raw client-held key
-    // (the security problem this migration fixes) or a Cloud Function proxy (needs the paid Blaze
-    // plan) — see GOALS.md §3.
-    private suspend fun generateWithGemini(fullPrompt: String): String {
-        val generativeModel = Firebase.ai(backend = GenerativeBackend.googleAI())
-            .generativeModel(GEMINI_MODEL_ID)
-        return try {
-            val response = generativeModel.generateContent(content { text(fullPrompt) })
-            response.text ?: "Erro: IA não retornou texto."
-        } catch (e: Exception) {
-            FirebaseCrashlytics.getInstance().recordException(e)
-            "Erro ao chamar a IA: ${e.message}"
-        }
-    }
-
     private suspend fun generateWithOpenAi(fullPrompt: String): String {
         val apiKey = settingsRepository.openaiApiKey.first()
         if (apiKey.isBlank()) return "Erro: Chave de API da OpenAI não configurada nas configurações."
@@ -134,36 +120,20 @@ class GenerativeAiService(
     }
 
     private suspend fun callOpenAiCompatible(url: String, apiKey: String, model: String, fullPrompt: String, providerLabel: String): String {
-        return withContext(Dispatchers.IO) {
-            try {
-                val requestBody = json.encodeToString(
-                    OpenAiChatRequest.serializer(),
-                    OpenAiChatRequest(
-                        model = model,
-                        messages = listOf(OpenAiMessage(role = "user", content = fullPrompt)),
-                    )
-                )
-                val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-                    requestMethod = "POST"
-                    doOutput = true
-                    setRequestProperty("Content-Type", "application/json")
-                    setRequestProperty("Authorization", "Bearer $apiKey")
-                    connectTimeout = 30_000
-                    readTimeout = 30_000
-                }
-                OutputStreamWriter(connection.outputStream).use { it.write(requestBody) }
-
-                val responseCode = connection.responseCode
-                val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
-                val responseBody = stream.bufferedReader().use { it.readText() }
-                if (responseCode !in 200..299) return@withContext "Erro ao chamar a IA ($providerLabel $responseCode): $responseBody"
-
-                val parsed = json.decodeFromString(OpenAiChatResponse.serializer(), responseBody)
-                parsed.choices.firstOrNull()?.message?.content ?: "Erro: IA não retornou texto."
-            } catch (e: Exception) {
-                FirebaseCrashlytics.getInstance().recordException(e)
-                "Erro ao chamar a IA: ${e.message}"
+        return try {
+            val response = httpClient.post(url) {
+                contentType(ContentType.Application.Json)
+                header("Authorization", "Bearer $apiKey")
+                setBody(OpenAiChatRequest(model = model, messages = listOf(OpenAiMessage(role = "user", content = fullPrompt))))
             }
+            if (!response.status.isSuccess()) {
+                return "Erro ao chamar a IA ($providerLabel ${response.status.value}): ${response.bodyAsText()}"
+            }
+            val parsed = response.body<OpenAiChatResponse>()
+            parsed.choices.firstOrNull()?.message?.content ?: "Erro: IA não retornou texto."
+        } catch (e: Exception) {
+            Firebase.crashlytics.recordException(e)
+            "Erro ao chamar a IA: ${e.message}"
         }
     }
 
@@ -174,38 +144,27 @@ class GenerativeAiService(
         val apiKey = settingsRepository.claudeApiKey.first()
         if (apiKey.isBlank()) return "Erro: Chave de API da Claude não configurada nas configurações."
 
-        return withContext(Dispatchers.IO) {
-            try {
-                val requestBody = json.encodeToString(
-                    ClaudeMessageRequest.serializer(),
+        return try {
+            val response = httpClient.post(CLAUDE_BASE_URL) {
+                contentType(ContentType.Application.Json)
+                header("x-api-key", apiKey)
+                header("anthropic-version", ANTHROPIC_VERSION)
+                setBody(
                     ClaudeMessageRequest(
                         model = CLAUDE_MODEL_ID,
                         maxTokens = CLAUDE_MAX_TOKENS,
                         messages = listOf(ClaudeMessage(role = "user", content = fullPrompt)),
                     )
                 )
-                val connection = (URL(CLAUDE_BASE_URL).openConnection() as HttpURLConnection).apply {
-                    requestMethod = "POST"
-                    doOutput = true
-                    setRequestProperty("Content-Type", "application/json")
-                    setRequestProperty("x-api-key", apiKey)
-                    setRequestProperty("anthropic-version", ANTHROPIC_VERSION)
-                    connectTimeout = 30_000
-                    readTimeout = 30_000
-                }
-                OutputStreamWriter(connection.outputStream).use { it.write(requestBody) }
-
-                val responseCode = connection.responseCode
-                val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
-                val responseBody = stream.bufferedReader().use { it.readText() }
-                if (responseCode !in 200..299) return@withContext "Erro ao chamar a IA (Claude $responseCode): $responseBody"
-
-                val parsed = json.decodeFromString(ClaudeResponse.serializer(), responseBody)
-                parsed.content.firstOrNull { it.type == "text" }?.text ?: "Erro: IA não retornou texto."
-            } catch (e: Exception) {
-                FirebaseCrashlytics.getInstance().recordException(e)
-                "Erro ao chamar a IA: ${e.message}"
             }
+            if (!response.status.isSuccess()) {
+                return "Erro ao chamar a IA (Claude ${response.status.value}): ${response.bodyAsText()}"
+            }
+            val parsed = response.body<ClaudeResponse>()
+            parsed.content.firstOrNull { it.type == "text" }?.text ?: "Erro: IA não retornou texto."
+        } catch (e: Exception) {
+            Firebase.crashlytics.recordException(e)
+            "Erro ao chamar a IA: ${e.message}"
         }
     }
 }

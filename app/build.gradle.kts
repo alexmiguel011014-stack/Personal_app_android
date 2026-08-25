@@ -95,16 +95,13 @@ dependencies {
     // Navigation
     implementation(libs.androidx.navigation.compose)
 
-    // Firebase — Auth/Firestore themselves moved to :shared via the GitLive KMP SDK (GOALS.md
-    // §18f); what's left here is Android-only surface GitLive doesn't cover (Crashlytics,
-    // App Check, AI Logic).
+    // Firebase — Auth/Firestore/Crashlytics/AI Logic themselves moved to :shared (Auth/Firestore/
+    // Crashlytics via the GitLive KMP SDK, AI Logic as shared/androidMain-only code — see
+    // AndroidGeminiProvider). What's left here is App Check, which GitLive doesn't cover at all
+    // (GOALS.md §18f/§18g).
     implementation(platform(libs.firebase.bom))
-    implementation(libs.firebase.crashlytics)
     implementation(libs.firebase.appcheck.playintegrity)
     implementation(libs.firebase.appcheck.debug)
-    // Firebase AI Logic (GOALS.md §3) — replaces the deprecated com.google.ai.client.generativeai
-    // SDK for Gemini calls; free on the Spark plan via the Gemini Developer API backend.
-    implementation(libs.firebase.ai)
 
     testImplementation(libs.junit)
     testImplementation(libs.mockk)

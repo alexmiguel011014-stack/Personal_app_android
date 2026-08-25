@@ -1,4 +1,8 @@
+@file:OptIn(kotlin.uuid.ExperimentalUuidApi::class)
+
 package com.example.personalapp.ui.screen
+import com.example.personalapp.util.currentTimeMillis
+import com.example.personalapp.util.formatDecimal1
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -16,13 +20,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
-import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.viewmodel.koinViewModel
 import com.example.personalapp.data.local.entity.WorkoutEntity
 import com.example.personalapp.data.model.Exercise
 import com.example.personalapp.ui.viewmodel.PromptFichaViewModel
 import com.example.personalapp.util.WorkoutParser
 import kotlinx.coroutines.launch
-import java.util.UUID
+import kotlin.uuid.Uuid
 
 // The provider-agnostic half of GOALS.md §15: instead of calling an AI API in-app, hand the
 // trainer a ready-to-run prompt for whichever AI app they already have, then reuse the existing
@@ -74,12 +78,12 @@ fun PromptFichaScreen(
                     showValidation = true
                     if (workoutName.isNotBlank() && exercises.isNotEmpty()) {
                         val workout = WorkoutEntity(
-                            id = UUID.randomUUID().toString(),
+                            id = Uuid.random().toString(),
                             studentId = studentId,
                             name = workoutName,
                             isActive = true,
                             exercises = exercises.toList(),
-                            createdAt = System.currentTimeMillis()
+                            createdAt = currentTimeMillis()
                         )
                         viewModel.insertWorkout(workout)
                         onBack()
@@ -223,7 +227,7 @@ fun EffectiveVolumeSummary(effectiveVolume: Map<String, Double>) {
                 ) {
                     Text(muscle, style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        "%.1f séries efetivas".format(volume),
+                        "${formatDecimal1(volume)} séries efetivas",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.primary
                     )

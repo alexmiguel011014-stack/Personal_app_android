@@ -9,8 +9,9 @@ plugins {
     alias(libs.plugins.android.kotlin.multiplatform.library)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.sqldelight)
-    // Compose Multiplatform / compose-compiler intentionally NOT applied yet — no Compose code
-    // lives in :shared until §18h. Add both back then, together with the compose.* dependencies.
+    // GOALS.md §18h: screens/ViewModels move here from :app.
+    alias(libs.plugins.compose.multiplatform)
+    alias(libs.plugins.compose.compiler)
 }
 
 kotlin {
@@ -50,6 +51,7 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             implementation(libs.kotlinx.serialization.json)
+            implementation(libs.kotlinx.datetime)
             implementation(libs.sqldelight.runtime)
             implementation(libs.sqldelight.coroutines.extensions)
             // api, not implementation: :app's AppModule.kt (Koin) references DataStore<Preferences>
@@ -73,6 +75,30 @@ kotlin {
             implementation(libs.ktor.client.core)
             implementation(libs.ktor.client.content.negotiation)
             implementation(libs.ktor.serialization.kotlinx.json)
+            // GOALS.md §18h: screens/ViewModels move here from :app. api, not implementation —
+            // :app's screen call sites (until they move too) and any future iOS app entry point
+            // both need these visible, not just :shared's own internals.
+            api(compose.runtime)
+            api(compose.foundation)
+            api(compose.material3)
+            api(compose.materialIconsExtended)
+            api(compose.ui)
+            // compose.components.resources deliberately NOT added: this app has no images/strings
+            // worth migrating to Compose Resources yet (strings.xml is nearly empty, text is
+            // inline Portuguese literals), and its resource-ID codegen breaks the Android dex
+            // step on this exact machine — the generated class name embeds the project's own
+            // folder path, which contains a space ("Personal APP"), and DEX rejects space
+            // characters in class names. Revisit if real resource migration is ever needed
+            // (rename the folder, or find a Compose Resources config that avoids path-derived
+            // names) — not a blocker for §18h otherwise.
+            // JetBrains' own multiplatform-published mirror, not androidx.lifecycle directly —
+            // the raw androidx.lifecycle:lifecycle-viewmodel-compose has no iOS/Native variant
+            // (confirmed: :shared:compileKotlinIosSimulatorArm64 failed dependency resolution
+            // with it). Compose Multiplatform's own `ui` artifact depends on this same JetBrains
+            // group transitively, so this is the actually-supported coordinate, not a workaround.
+            api(libs.jetbrains.lifecycle.viewmodel.compose)
+            api(libs.koin.compose.viewmodel)
+            api(libs.jetbrains.navigation.compose)
         }
         androidMain.dependencies {
             implementation(libs.sqldelight.android.driver)

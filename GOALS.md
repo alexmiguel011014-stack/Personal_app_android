@@ -1678,25 +1678,83 @@ flowchart TD
       process repeated once per iOS test device, not a new mechanism.
 
 **18h. UI: Jetpack Compose → Compose Multiplatform, Navigation**
-- [ ] Move every screen composable with no Android-only API calls (`ContentType`/autofill
-      semantics, `LocalConfiguration`, Android-specific icons) into `commonMain` — per current
-      migration reports for exactly this move (existing Jetpack Compose app → Compose
-      Multiplatform), most Composables are reported to work unchanged; the real work is
-      resources (no generated Android `R` class in common code — move string/icon resources to
-      Compose Multiplatform's resource system) and anything directly touching
-      `android.content.Context`/`ClipboardManager`/Android permissions APIs (`expect`/`actual`
-      those specifically, e.g. `PromptFichaScreen`'s clipboard copy from §15e).
-- [ ] Adopt the official Compose Multiplatform Navigation library (stable since 1.10.0) as a
-      drop-in for the existing Navigation Compose usage (`AppNavigation.kt`'s `Screen` sealed
-      class/`NavHost` already maps closely to the multiplatform API). iOS-specific: swipe-back
-      gesture needs an explicit `iosMain` UIKit gesture recognizer or Compose Cupertino — native
-      back-swipe isn't automatic, confirm current guidance at implementation time (this is an
-      area still actively evolving per the research).
-- [ ] **Explicitly re-verify each Android-only UI fix already shipped this project** doesn't
-      silently regress on iOS: the `NonObservableLocale` fix (§10, `LocalConfiguration.current
-      .locales[0]`), the R8/lint sweep (§8/§10, Android-build-only, doesn't apply to iOS but
-      shouldn't be assumed equivalent-safe without checking), and `Icons.AutoMirrored.*` usage
-      (already correctly multiplatform-safe per §13's fix this session).
+- [x] Moved all 19 screen composables + 4 component files + 9 ViewModels + 3 navigation files
+      (28 files total) from `app/src/main/java/.../ui` into `shared/src/commonMain/kotlin/.../ui`
+      (package names unchanged, so no caller imports needed touching). Confirmed the migration
+      reports were right: only 4 files actually touched Android-only APIs — everything else moved
+      byte-for-byte. What needed real fixes, all resolved with a small `PlatformActions`
+      interface (`shareText`/`openUrl`, `expect`/`actual` android+ios) plus JVM-only-API swaps:
+      - `StudentDetailsScreen`'s share-invite `Intent`/`LocalContext` → `PlatformActions.shareText`.
+      - `AdminDashboardScreen`'s "open Firebase Console" `Intent`/`LocalContext` →
+        `PlatformActions.openUrl` (the dynamic `FirebaseApp.getInstance().options.projectId`
+        lookup became a hardcoded constant — one Firebase project, not worth a whole
+        cross-platform project-introspection API for a debug-console convenience link).
+      - `PromptFichaViewModel`'s `Context.assets` reads → moved to Android's Koin module (same
+        precedent as `GenerativeAiService`'s `volumeReference` in §18f), passed in as a plain
+        `String`.
+      - `java.text.SimpleDateFormat`/`java.util.Date` (JVM-only, not on Kotlin/Native at all) →
+        `formatDate`/`formatDateTime` in a new `shared/commonMain` `DateFormat.kt`, using
+        kotlinx-datetime. The old code passed `LocalConfiguration.current.locales[0]` into
+        `SimpleDateFormat` (the `NonObservableLocale` fix from §10) — moot now: every call site
+        used a fixed numeric pattern (`dd/MM/yyyy`), which doesn't vary by locale at all, so the
+        locale parameter was doing nothing. Removing it entirely is strictly correct, not a
+        compromise.
+      - `"%.1f".format(value)` (needs `java.util.Formatter`, JVM-only) → a small manual
+        `formatDecimal1()` in a new `NumberFormat.kt`.
+      - `java.util.UUID` (5 files, JVM-only) → `kotlin.uuid.Uuid` (stdlib, multiplatform since
+        Kotlin 2.0.20), same pattern already used in `TrainerRepository` (§18f).
+      - `System.currentTimeMillis()` (5 more files) → the `currentTimeMillis()` `expect`/`actual`
+        already added in §18f.
+      - A leftover Android Studio-generated `@Preview` function in `WorkoutBuilderScreen.kt`
+        (`androidx.compose.ui.tooling.preview.Preview`, no Compose Multiplatform equivalent
+        wired up) — deleted, dev-tooling-only, not used anywhere at runtime.
+      Toolchain setup along the way: applied `compose-multiplatform`/`compose-compiler` to
+      `:shared` (previously deliberately not applied, per the §18b note); Compose Multiplatform's
+      own `androidx.lifecycle:lifecycle-viewmodel-compose` has **no iOS/Native variant published**
+      — confirmed by a real dependency-resolution failure, not assumed — the fix is JetBrains'
+      own multiplatform-published mirror, `org.jetbrains.androidx.lifecycle:
+      lifecycle-viewmodel-compose` (same package name, different Maven coordinate); GitLive's
+      Android artifacts need JVM target 17 (already bumped in §18f) and that requirement turned
+      out to also gate whether Compose Multiplatform's own artifacts link cleanly. Deliberately
+      did **not** add `compose.components.resources` (Compose Multiplatform's resource-ID
+      codegen) — this app has no images/strings worth migrating yet (`strings.xml` is nearly
+      empty), and that codegen's generated class name embeds `rootProject.name` verbatim
+      (`"Personal APP"`, this repo's actual name) — DEX rejects the resulting space character in
+      a class name (`mergeLibDexDebug` failed with exactly that error before removing it).
+      `:app`'s own `build.gradle.kts` also got substantially thinner — the classic
+      `androidx.compose.*`/`androidx.navigation.compose`/`androidx.lifecycle.viewmodel.compose`/
+      `koin-androidx-compose` dependencies are all gone, superseded by what `:shared` now exposes
+      as `api` and gets transitively via `implementation(project(":shared"))`.
+      Verified: `:app:compileDebugKotlin`, `verify`, `assembleDebug`,
+      `compileDebugAndroidTestKotlin` all green locally; `:shared:compileKotlinIosSimulatorArm64`
+      and `:shared:compileKotlinIosArm64` both green. Not verified: actually running the app on a
+      device/emulator — this machine's two local AVDs are both arm system images incompatible
+      with this Windows/x86_64 host's QEMU2 (same blocker recorded in §18e), and there's still no
+      real iOS app target to run on (§18h's own scope is the KMP UI code, not the iOS app shell —
+      that's §18j). Compile+lint+unit-test verification is real signal but isn't a substitute for
+      seeing the golden path tap through on an actual screen; flag this honestly rather than
+      claim more than was checked.
+- [x] Adopted `org.jetbrains.androidx.navigation:navigation-compose` 2.9.2 (latest stable; 2.10.x
+      is alpha-only, not used) — genuinely a drop-in: same `androidx.navigation.*` package name as
+      the classic Android-only artifact (JetBrains republishes under a different Maven coordinate,
+      not a different API), so `AppNavigation.kt`/`StudentNavigation.kt` needed zero import
+      changes for `NavHost`/`composable`/`navArgument`/`rememberNavController`. One real API
+      change, unrelated to the multiplatform move itself — Navigation 2.9 replaced
+      `NavBackStackEntry.arguments`'s type from `Bundle` to the new multiplatform `SavedState`,
+      so `.getString("id")` became `.read { getStringOrNull("id") }` (`androidx.savedstate.read`)
+      everywhere a route argument was read; this is the same change any 2.8→2.9 Android-only
+      upgrade would have needed too, not iOS-specific. **Not done**: the iOS swipe-back gesture
+      (native back-swipe isn't automatic under Compose Multiplatform Navigation) — genuinely
+      deferred, needs a real device/simulator to iterate on and design guidance in this space is
+      still actively evolving; tracked as open, not silently dropped.
+- [x] **Re-verified each Android-only UI fix already shipped**: the `NonObservableLocale` fix is
+      now moot (see above — replaced by a locale-independent formatter, not just carried over);
+      the R8/lint sweep is Android-build-only by construction (R8/ProGuard don't run for
+      Kotlin/Native targets at all — there's no equivalent step to "not apply" on iOS, so nothing
+      to regress); `Icons.AutoMirrored.*` usage was already correct everywhere it existed
+      (`ArrowBack`, `TrendingUp`) and needed no changes — `Icons.Filled.Logout` (not
+      AutoMirrored) is a pre-existing cosmetic deprecation warning, unrelated to multiplatform
+      safety, left alone.
 
 **18i. In-app update checker — both platforms (user's explicit ask)**
 - [ ] New `commonMain` `UpdateChecker`: reads a small `latest.json` manifest (version code,

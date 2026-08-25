@@ -12,10 +12,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.viewmodel.koinViewModel
+import com.example.personalapp.ui.platform.rememberPlatformActions
 import com.example.personalapp.ui.viewmodel.AdminViewModel
 import com.example.personalapp.ui.viewmodel.ApiStatus
 import com.example.personalapp.ui.viewmodel.AuthViewModel
+
+// Fixed, not looked up at runtime — this app has exactly one Firebase project, and there's no
+// cross-platform equivalent of com.google.firebase.FirebaseApp.getInstance().options.projectId
+// worth building just for a debug-console convenience link (GOALS.md §18h).
+private const val FIREBASE_PROJECT_ID = "personalapp-88129"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -70,10 +76,7 @@ fun AdminDashboardScreen(
 
 @Composable
 fun LogsTab() {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val projectId = remember {
-        runCatching { com.google.firebase.FirebaseApp.getInstance().options.projectId }.getOrNull()
-    }
+    val platformActions = rememberPlatformActions()
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Text("Logs de Erro", style = MaterialTheme.typography.titleMedium)
@@ -88,12 +91,7 @@ fun LogsTab() {
                 Spacer(modifier = Modifier.height(12.dp))
                 Button(
                     onClick = {
-                        val url = if (projectId != null) {
-                            "https://console.firebase.google.com/project/$projectId/crashlytics"
-                        } else {
-                            "https://console.firebase.google.com"
-                        }
-                        context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)))
+                        platformActions.openUrl("https://console.firebase.google.com/project/$FIREBASE_PROJECT_ID/crashlytics")
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {

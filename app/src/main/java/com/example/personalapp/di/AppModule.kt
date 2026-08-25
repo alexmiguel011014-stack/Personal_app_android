@@ -51,6 +51,12 @@ val appModule = module {
             .bufferedReader().use { it.readText() }
         GenerativeAiService(get(), volumeReference, get())
     }
+    single(qualifier = org.koin.core.qualifier.named("fichaTemplate")) {
+        // Same rationale as GenerativeAiService's volumeReference above — GOALS.md §18h.
+        val template = androidContext().assets.open("ficha_prompt_template.md").bufferedReader().use { it.readText() }
+        val table = androidContext().assets.open("hypertrophy_volume_reference.md").bufferedReader().use { it.readText() }
+        template.replace("\$TABLE_PLACEHOLDER\$", table)
+    }
 
     viewModel { AuthViewModel(get(), get()) }
     viewModel { WorkoutViewModel(get()) }
@@ -59,6 +65,6 @@ val appModule = module {
     viewModel { SettingsViewModel(get()) }
     viewModel { StudentViewModel(get()) }
     viewModel { StudentDetailsViewModel(get()) }
-    viewModel { PromptFichaViewModel(get(), androidContext()) }
+    viewModel { PromptFichaViewModel(get(), get(qualifier = org.koin.core.qualifier.named("fichaTemplate"))) }
     viewModel { AdminViewModel(get(), get()) }
 }

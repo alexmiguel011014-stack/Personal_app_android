@@ -1,4 +1,7 @@
+@file:OptIn(kotlin.uuid.ExperimentalUuidApi::class)
+
 package com.example.personalapp.ui.viewmodel
+import com.example.personalapp.util.currentTimeMillis
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -10,7 +13,7 @@ import com.example.personalapp.data.repository.StudentRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import java.util.UUID
+import kotlin.uuid.Uuid
 
 class StudentViewModel(
     private val repository: StudentRepository,
@@ -46,11 +49,11 @@ class StudentViewModel(
             entries.filterValues { it.isNotEmpty() }.forEach { (exerciseName, sets) ->
                 repository.logSession(
                     WorkoutLogEntity(
-                        id = UUID.randomUUID().toString(),
+                        id = Uuid.random().toString(),
                         studentId = studentId,
                         workoutId = workoutId,
                         exerciseName = exerciseName,
-                        date = System.currentTimeMillis(),
+                        date = currentTimeMillis(),
                         performedSets = sets,
                     ),
                     trainerId,

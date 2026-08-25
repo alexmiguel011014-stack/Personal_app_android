@@ -1,4 +1,7 @@
+@file:OptIn(kotlin.uuid.ExperimentalUuidApi::class)
+
 package com.example.personalapp.ui.viewmodel
+import com.example.personalapp.util.currentTimeMillis
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -47,12 +50,12 @@ class StudentDetailsViewModel(
     fun addBiometric(studentId: String, weight: Double, bodyFat: Double) {
         viewModelScope.launch {
             val biometric = BiometricEntity(
-                id = java.util.UUID.randomUUID().toString(),
+                id = kotlin.uuid.Uuid.random().toString(),
                 userId = studentId,
                 weight = weight,
                 height = _student.value?.medicalNotes?.toDoubleOrNull() ?: 0.0, // Height is tricky if not stored separately, I should probably add height to UserEntity or keep it in Biometric correctly.
                 bodyFat = bodyFat,
-                date = System.currentTimeMillis()
+                date = currentTimeMillis()
             )
             repository.insertBiometric(biometric)
         }

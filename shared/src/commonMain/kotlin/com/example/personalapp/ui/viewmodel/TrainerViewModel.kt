@@ -1,4 +1,7 @@
+@file:OptIn(kotlin.uuid.ExperimentalUuidApi::class)
+
 package com.example.personalapp.ui.viewmodel
+import com.example.personalapp.util.currentTimeMillis
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -11,7 +14,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import java.util.UUID
+import kotlin.uuid.Uuid
 
 class TrainerViewModel(
     private val repository: TrainerRepository
@@ -52,8 +55,8 @@ class TrainerViewModel(
         height: Double
     ) {
         viewModelScope.launch {
-            val studentId = UUID.randomUUID().toString()
-            val now = System.currentTimeMillis()
+            val studentId = Uuid.random().toString()
+            val now = currentTimeMillis()
             
             val newUser = UserEntity(
                 id = studentId,
@@ -73,7 +76,7 @@ class TrainerViewModel(
             // Initial biometric entry
             if (weight > 0 || height > 0) {
                 val biometric = BiometricEntity(
-                    id = UUID.randomUUID().toString(),
+                    id = Uuid.random().toString(),
                     userId = studentId,
                     weight = weight,
                     height = height,
@@ -89,7 +92,7 @@ class TrainerViewModel(
         val studentId = _selectedStudentId.value ?: return
         viewModelScope.launch {
             val schedule = ScheduleEntity(
-                id = UUID.randomUUID().toString(),
+                id = Uuid.random().toString(),
                 studentId = studentId,
                 dayOfWeek = day,
                 hour = hour

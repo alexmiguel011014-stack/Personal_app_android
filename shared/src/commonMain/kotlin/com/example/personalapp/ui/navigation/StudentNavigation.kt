@@ -9,13 +9,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
-import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.viewmodel.koinViewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import androidx.savedstate.read
 import com.example.personalapp.ui.screen.StudentEvolutionScreen
 import com.example.personalapp.ui.screen.StudentLogSessionScreen
 import com.example.personalapp.ui.screen.StudentWorkoutsScreen
@@ -87,7 +88,7 @@ fun StudentNavigation(studentId: String, trainerId: String, onLogout: () -> Unit
                 route = StudentScreen.LogSession.route,
                 arguments = listOf(navArgument("workoutId") { type = NavType.StringType })
             ) { backStackEntry ->
-                val workoutId = backStackEntry.arguments?.getString("workoutId") ?: ""
+                val workoutId = backStackEntry.arguments?.read { getStringOrNull("workoutId") } ?: ""
                 StudentLogSessionScreen(
                     workoutId = workoutId,
                     onBack = { navController.popBackStack() },

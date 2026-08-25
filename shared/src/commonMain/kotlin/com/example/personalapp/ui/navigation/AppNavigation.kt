@@ -6,6 +6,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import androidx.savedstate.read
 import com.example.personalapp.ui.screen.*
 
 sealed class Screen(val route: String) {
@@ -64,7 +65,7 @@ fun AppNavigation(onLogout: () -> Unit = {}) {
             route = Screen.StudentDetails.route,
             arguments = listOf(navArgument("studentId") { type = NavType.StringType })
         ) { backStackEntry ->
-            val studentId = backStackEntry.arguments?.getString("studentId") ?: ""
+            val studentId = backStackEntry.arguments?.read { getStringOrNull("studentId") } ?: ""
             StudentDetailsScreen(
                 studentId = studentId,
                 onBack = { navController.popBackStack() },
@@ -89,7 +90,7 @@ fun AppNavigation(onLogout: () -> Unit = {}) {
             route = Screen.EditStudent.route,
             arguments = listOf(navArgument("studentId") { type = NavType.StringType })
         ) { backStackEntry ->
-            val studentId = backStackEntry.arguments?.getString("studentId") ?: ""
+            val studentId = backStackEntry.arguments?.read { getStringOrNull("studentId") } ?: ""
             EditStudentScreen(
                 studentId = studentId,
                 onBack = { navController.popBackStack() }
@@ -99,7 +100,7 @@ fun AppNavigation(onLogout: () -> Unit = {}) {
             route = Screen.ManualWorkout.route,
             arguments = listOf(navArgument("studentId") { type = NavType.StringType })
         ) { backStackEntry ->
-            val studentId = backStackEntry.arguments?.getString("studentId") ?: ""
+            val studentId = backStackEntry.arguments?.read { getStringOrNull("studentId") } ?: ""
             ManualWorkoutScreen(
                 studentId = studentId,
                 onBack = { navController.popBackStack() }
@@ -109,7 +110,7 @@ fun AppNavigation(onLogout: () -> Unit = {}) {
             route = Screen.AIWorkout.route,
             arguments = listOf(navArgument("studentId") { type = NavType.StringType })
         ) { backStackEntry ->
-            val studentId = backStackEntry.arguments?.getString("studentId") ?: ""
+            val studentId = backStackEntry.arguments?.read { getStringOrNull("studentId") } ?: ""
             AIWorkoutScreen(
                 studentId = studentId,
                 onBack = { navController.popBackStack() }
@@ -119,7 +120,7 @@ fun AppNavigation(onLogout: () -> Unit = {}) {
             route = Screen.WorkoutBuilder.route,
             arguments = listOf(navArgument("studentId") { type = NavType.StringType })
         ) { backStackEntry ->
-            val studentId = backStackEntry.arguments?.getString("studentId") ?: ""
+            val studentId = backStackEntry.arguments?.read { getStringOrNull("studentId") } ?: ""
             WorkoutBuilderScreen(
                 studentId = studentId,
                 onBack = { navController.popBackStack() },
@@ -138,7 +139,7 @@ fun AppNavigation(onLogout: () -> Unit = {}) {
             route = Screen.PromptFicha.route,
             arguments = listOf(navArgument("studentId") { type = NavType.StringType })
         ) { backStackEntry ->
-            val studentId = backStackEntry.arguments?.getString("studentId") ?: ""
+            val studentId = backStackEntry.arguments?.read { getStringOrNull("studentId") } ?: ""
             PromptFichaScreen(
                 studentId = studentId,
                 onBack = { navController.popBackStack() }

@@ -1,6 +1,5 @@
 package com.example.personalapp.ui.viewmodel
 
-import android.content.Context
 import com.example.personalapp.data.local.entity.UserEntity
 import com.example.personalapp.data.local.entity.WorkoutEntity
 import com.example.personalapp.data.repository.TrainerRepository
@@ -18,7 +17,11 @@ import kotlinx.coroutines.launch
 // annotations this same template asks the AI to produce.
 class PromptFichaViewModel(
     private val trainerRepository: TrainerRepository,
-    private val context: Context,
+    // GOALS.md §18h: the template's $TABLE_PLACEHOLDER$ substitution is pure string work with no
+    // dependency on runtime state, so it happens once at DI-wiring time (Android's Koin module,
+    // which has the asset-reading Context) instead of needing Context here — same precedent as
+    // GenerativeAiService's volumeReference (§18f).
+    private val fichaTemplate: String,
 ) : ViewModel() {
 
     private val _student = MutableStateFlow<UserEntity?>(null)
@@ -31,9 +34,7 @@ class PromptFichaViewModel(
     }
 
     fun buildPrompt(userRequest: String): String {
-        val template = context.assets.open("ficha_prompt_template.md").bufferedReader().use { it.readText() }
-        val table = context.assets.open("hypertrophy_volume_reference.md").bufferedReader().use { it.readText() }
-        val fullTemplate = template.replace("\$TABLE_PLACEHOLDER\$", table)
+        val fullTemplate = fichaTemplate
 
         val student = _student.value
         val profile = if (student != null) {

@@ -1,6 +1,5 @@
 package com.example.personalapp.ui.viewmodel
 
-import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.personalapp.data.local.entity.UserEntity
@@ -10,10 +9,14 @@ import com.example.personalapp.data.model.Exercise
 import com.example.personalapp.data.repository.TrainerRepository
 import com.example.personalapp.data.service.AiProvider
 import com.example.personalapp.data.service.GenerativeAiService
+import com.example.personalapp.util.currentTimeMillis
+import dev.gitlive.firebase.Firebase
+import dev.gitlive.firebase.crashlytics.crashlytics
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
-import java.util.UUID
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 data class ChatMessage(
     val text: String,
@@ -62,18 +65,19 @@ class AIWorkoutViewModel(
                         suggestedWorkouts = suggestedWorkouts
                     )
                 } else {
-                    Log.d("AIWorkoutViewModel", "AI Raw Response: $aiRawResponse")
+                    Firebase.crashlytics.log("AIWorkoutViewModel: unparsed AI response: $aiRawResponse")
                     _messages.value = _messages.value + ChatMessage(aiRawResponse, false)
                 }
             } catch (e: Exception) {
-                Log.e("AIWorkoutViewModel", "Error generating workout", e)
-                _messages.value = _messages.value + ChatMessage("Erro técnico: ${e.localizedMessage ?: "Falha na comunicação com a IA"}", false)
+                Firebase.crashlytics.recordException(e)
+                _messages.value = _messages.value + ChatMessage("Erro técnico: ${e.message ?: "Falha na comunicação com a IA"}", false)
             } finally {
                 _isGenerating.value = false
             }
         }
     }
 
+    @OptIn(ExperimentalUuidApi::class)
     private fun tryParseWorkouts(raw: String, studentId: String): List<WorkoutEntity>? {
         return try {
             // Find JSON block if AI added conversational text
@@ -86,14 +90,14 @@ class AIWorkoutViewModel(
             
             parsed.workouts.map { aiWorkout ->
                 WorkoutEntity(
-                    id = UUID.randomUUID().toString(),
+                    id = Uuid.random().toString(),
                     studentId = studentId,
                     name = aiWorkout.name,
                     isActive = true,
-                    exercises = aiWorkout.exercises.map { 
+                    exercises = aiWorkout.exercises.map {
                         Exercise(it.name, it.sets, it.reps, it.weight, null, it.notes)
                     },
-                    createdAt = System.currentTimeMillis()
+                    createdAt = currentTimeMillis()
                 )
             }
         } catch (e: Exception) {

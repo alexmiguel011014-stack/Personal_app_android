@@ -18,7 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.viewmodel.koinViewModel
 import com.example.personalapp.data.local.entity.WorkoutEntity
 import com.example.personalapp.data.service.AiProvider
 import com.example.personalapp.ui.viewmodel.AIWorkoutViewModel

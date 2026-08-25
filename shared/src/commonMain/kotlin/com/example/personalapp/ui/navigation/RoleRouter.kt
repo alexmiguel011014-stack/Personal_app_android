@@ -3,7 +3,7 @@ package com.example.personalapp.ui.navigation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.viewmodel.koinViewModel
 import com.example.personalapp.data.repository.UserRole
 import com.example.personalapp.ui.screen.AdminDashboardScreen
 import com.example.personalapp.ui.screen.LoginScreen

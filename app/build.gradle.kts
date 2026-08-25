@@ -69,36 +69,26 @@ android {
 }
 
 dependencies {
+    // GOALS.md §18h: screens/ViewModels/navigation all moved into :shared/commonMain, which
+    // exposes Compose Multiplatform (runtime/foundation/material3/materialIconsExtended/ui),
+    // Koin Compose (koin-compose-viewmodel), the JetBrains multiplatform navigation-compose, and
+    // JetBrains' multiplatform lifecycle-viewmodel-compose as `api` dependencies — all of that
+    // now flows to :app transitively instead of needing its own (and possibly
+    // version-conflicting) classic androidx.compose.*/androidx.navigation.* copies. What's left
+    // here is genuinely Android-only: the Activity host itself and Android-only DI wiring.
     implementation(project(":shared"))
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.core.ktx)
     implementation(libs.material)
-
-    // Compose
-    implementation(platform(libs.androidx.compose.bom))
-    implementation(libs.androidx.ui)
-    implementation(libs.androidx.ui.graphics)
-    implementation(libs.androidx.ui.tooling.preview)
-    implementation(libs.androidx.material3)
-    implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.activity.compose)
     implementation(libs.kotlinx.serialization.json)
 
     // Koin (GOALS.md §18c — replaces Hilt, which has no Kotlin Multiplatform support)
     implementation(platform(libs.koin.bom))
     implementation(libs.koin.android)
-    implementation(libs.koin.androidx.compose)
 
-    // Lifecycle
-    implementation(libs.androidx.lifecycle.viewmodel.compose)
-
-    // Navigation
-    implementation(libs.androidx.navigation.compose)
-
-    // Firebase — Auth/Firestore/Crashlytics/AI Logic themselves moved to :shared (Auth/Firestore/
-    // Crashlytics via the GitLive KMP SDK, AI Logic as shared/androidMain-only code — see
-    // AndroidGeminiProvider). What's left here is App Check, which GitLive doesn't cover at all
-    // (GOALS.md §18f/§18g).
+    // Firebase App Check — GitLive doesn't cover this at all (GOALS.md §18f/§18g), stays
+    // Android-only here.
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.appcheck.playintegrity)
     implementation(libs.firebase.appcheck.debug)

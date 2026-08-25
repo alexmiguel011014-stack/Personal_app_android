@@ -15,18 +15,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.tooling.preview.Preview
-import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.viewmodel.koinViewModel
 import com.example.personalapp.data.local.entity.WorkoutEntity
 import com.example.personalapp.ui.viewmodel.WorkoutViewModel
-
-@Preview(showBackground = true)
-@Composable
-fun WorkoutBuilderPreview() {
-    MaterialTheme {
-        WorkoutBuilderScreen("1", onBack = {})
-    }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

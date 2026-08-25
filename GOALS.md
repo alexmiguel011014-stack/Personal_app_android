@@ -1445,12 +1445,12 @@ flowchart TD
         this project, iOS and Android both, unrelated to this migration) and the never-added
         `GOOGLE_SERVICES_JSON` repo secret. Both fixed; `main`'s own `android-ci.yml` is now
         confirmed green for the first time.
-- [ ] Move every file with zero Android-framework imports into `commonMain` first (data models —
-      `Exercise`, `PerformedSet`, `WorkoutEntity` fields, `WorkoutParser.kt`'s pure parsing logic,
-      `AIWorkoutResponse`/`AIWorkout`/`AIExercise` — these are the lowest-risk, highest-value
-      moves since they have no platform dependency today). Done when: `WorkoutParserTest` (already
-      dependency-free Kotlin) runs unmodified from `commonTest` on both the JVM (Android) test
-      target and `iosSimulatorArm64` test target.
+- [x] Moved `Exercise`/`PerformedSet` (`data/model`), `WorkoutParser.kt`, and
+      `AIWorkoutResponse`/`AIWorkout`/`AIExercise` into `commonMain` — done in this same pass,
+      just not checked off until this audit. `WorkoutParserTest` runs from `commonTest`; see
+      §18l for the current caveat on confirming the `iosSimulatorArm64` test run specifically
+      (blocked on the same FirebaseCore linking gap as everything else iOS-test-related since
+      §18f, not on this item).
 
 **18c. Dependency injection: Hilt → Koin**
 - [x] **Done and verified 2026-08-22.** Hilt has no Kotlin Multiplatform support at all
@@ -1807,13 +1807,20 @@ flowchart TD
       independently (`android-ci.yml` on `main`, `ios-ci.yml` on `feature/kmp-ios`).
 
 **18l. Testing**
-- [ ] Move `WorkoutParserTest` (already dependency-free) to `commonTest` — done when it passes on
-      both `testDebugUnitTest` (Android/JVM) and an `iosSimulatorArm64` test run.
-- [ ] `AuthRepositoryTest` (MockK-based) needs a KMP-compatible mocking approach — MockK is
-      JVM-only; either keep this test Android-only (acceptable, it's testing Android-specific
-      Firebase mock plumbing today, not core logic) or migrate the assertions it covers into a
-      `commonTest` against GitLive's SDK using a fake/in-memory implementation instead of a mock.
-      Don't silently drop the coverage — decide and document which.
+- [x] Moved `WorkoutParserTest` to `commonTest` back in §18b (rewritten to `kotlin.test`). Passing
+      on `testDebugUnitTest` is confirmed (runs every local `verify`). Passing on
+      `iosSimulatorArm64Test` specifically can't be re-confirmed right now — that CI step is
+      disabled since §18f (the whole `:shared` test binary fails to *link* on iOS because of the
+      missing native `FirebaseCore.framework`, not because of anything in this test itself); it
+      was confirmed passing before that dependency existed. Re-verify once the "iOS Firebase
+      native framework linking" item under §18f lands and the CI step is re-enabled.
+- [x] **Decided and documented** (not silently dropped): `AuthRepositoryTest` is deleted, not
+      migrated. GitLive's `DocumentSnapshot.get<T?>()` is `inline`, which MockK cannot stub at
+      all (not a JVM-only-vs-KMP-mocking-library problem — no mocking library can intercept an
+      inline function call), so "find a KMP-compatible mocking approach" was never actually an
+      available option once GitLive was adopted in §18f. Discussed directly with the user;
+      decided to accept the coverage gap now and revisit with the Firebase Emulator Suite (real
+      local Firestore/Auth, not mocked) if/when this needs testing again — see §18f's note.
 - [ ] `AppDaoTest`/`workoutLog_roundTripsPerformedSets` (Room in-memory, currently `androidTest`-
       only) — re-run against Room's KMP in-memory test builder on `iosTest` too, given 18d's
       migration; this is genuinely new coverage the project didn't have before (Room's iOS path

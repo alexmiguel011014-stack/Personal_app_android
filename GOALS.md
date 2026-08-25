@@ -1661,12 +1661,17 @@ flowchart TD
       App Check (App Attest provider for release, debug provider for local iOS testing) — a
       real native-bridge implementation, not optional, since `firestore.rules`'/Auth's security
       posture assumes App Check is active on every client.
-- [ ] **Crashlytics**: no drop-in multiplatform equivalent exists yet (confirmed current
-      research). Options, pick one rather than defaulting silently: (a) **CrashKiOS**
-      (Touchlab's KMM crash-reporting bridge, explicitly built for this exact gap, forwards
-      crashes to the existing Firebase Crashlytics project) — closest to today's behavior,
-      recommended; (b) drop Crashlytics on iOS specifically and rely on manual bug reports during
-      the free/test phase — acceptable given the small current user count, revisit once paid.
+- [x] **Crashlytics**: resolved as a side effect of §18f, not via either option originally
+      listed here (both predate this finding). `dev.gitlive:firebase-crashlytics` — the *same*
+      GitLive SDK already adopted for Auth/Firestore — ships a real, verified `commonMain` API
+      (`recordException`, `log`, `setUserId`, `setCustomKey(s)`, `setCrashlyticsCollectionEnabled`,
+      confirmed by reading the actual GitHub source, not assumed from docs) that covers everything
+      this app calls. `TrainerRepository`/`GenerativeAiService` already use
+      `Firebase.crashlytics.recordException(e)` from `commonMain`. No CrashKiOS, no
+      Android-only fallback needed. Same caveat as the rest of §18f applies: this compiles for
+      iOS, but *linking* a real iOS binary still needs the native `FirebaseCrashlytics.framework`
+      wired up — tracked under the "iOS Firebase native framework linking" item above, not a
+      separate Crashlytics-specific gap.
 - [ ] Re-verify §8's App Check debug-token registration flow (§13a) still applies correctly once
       requests can come from either platform's debug provider — the Firebase Console's debug
       token allow-list is per-install, not per-platform, so this should be mechanically the same

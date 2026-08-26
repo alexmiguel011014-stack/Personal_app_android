@@ -1819,6 +1819,12 @@ flowchart TD
       need a second, higher `versionCode` published to `latest.json`) — the comparison logic has
       unit-testable shape (`UpdateChecker.check()`) but no test was added for it in this pass;
       flagging rather than silently skipping.
+- [ ] **Known bug, reported by the user on a real device (2026-08-26), deliberately deferred** —
+      tapping "Verificar atualização" in Settings errors out. Not yet diagnosed (the device
+      disconnected before the log could be pulled) — likely candidates to check first next time:
+      the raw GitHub URL 404ing/redirecting unexpectedly, a JSON parse mismatch against
+      `latest.json`'s actual shape, or a Ktor/OkHttp config issue specific to a real device
+      (network security config, TLS). Re-test with logcat already attached before touching code.
 
 **18j. iOS distribution: SideStore free path (now) → Apple Developer Program (later, when paid)**
 

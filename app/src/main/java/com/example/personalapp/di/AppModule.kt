@@ -73,7 +73,7 @@ val appModule = module {
         UpdateChecker(currentVersionCode = code, currentVersionName = name)
     }
 
-    viewModel { AuthViewModel(get(), get()) }
+    viewModel { AuthViewModel(get(), get(), get()) }
     viewModel { WorkoutViewModel(get()) }
     viewModel { AIWorkoutViewModel(get(), get()) }
     viewModel { TrainerViewModel(get()) }

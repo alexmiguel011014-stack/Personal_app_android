@@ -49,6 +49,16 @@ Role comes from `Firestore: users/{uid}.role`, resolved once at login time
 (`AuthRepository.login`). A user can never change their own `role` or `trainerId` field —
 `firestore.rules` blocks it; only an ADM (or a future Cloud Function, see §7) can write it.
 
+**"Manter conectado" (stay logged in)**: Firebase itself always persists its own session across
+app restarts, independent of anything this app does — `auth.currentUser` comes back non-null on
+a fresh launch whether or not the person asked to stay signed in. This app's own opt-in
+preference (`SettingsRepository.stayLoggedIn`, a `DataStore` boolean defaulting to `false`)
+controls whether `AuthViewModel.checkCurrentUser()` *acts* on that persisted session: if true, it
+re-resolves the role via `AuthRepository.resolveCurrentSession()` and routes straight in; if
+false, it calls `repository.logout()` — a real `auth.signOut()` — so the two don't silently
+disagree. Don't "simplify" this by skipping the sign-out call on the false path; that would leave
+Firebase's session alive while the UI pretends there isn't one.
+
 ## Data layer: Firestore is the source of truth, SQLDelight is the offline cache
 
 This is **not** a local-only app. `TrainerRepository` writes to Firestore first (via

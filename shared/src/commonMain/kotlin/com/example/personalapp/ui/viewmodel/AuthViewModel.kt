@@ -3,10 +3,14 @@ package com.example.personalapp.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.personalapp.data.repository.AuthRepository
+import com.example.personalapp.data.repository.SettingsRepository
 import com.example.personalapp.data.repository.TrainerRepository
 import com.example.personalapp.data.repository.UserRole
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 sealed class AuthState {
@@ -41,6 +45,7 @@ sealed class TrainerRequestState {
 class AuthViewModel(
     private val repository: AuthRepository,
     private val trainerRepository: TrainerRepository,
+    private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
 
     private val _authState = MutableStateFlow<AuthState>(AuthState.Idle)
@@ -55,16 +60,36 @@ class AuthViewModel(
     private val _trainerRequestState = MutableStateFlow<TrainerRequestState>(TrainerRequestState.Idle)
     val trainerRequestState: StateFlow<TrainerRequestState> = _trainerRequestState
 
-    init {
-        checkCurrentUser()
+    // "Manter conectado?" checkbox on LoginScreen — persisted via DataStore, defaults to false
+    // (discussed with the user 2026-08-26): a fresh install never auto-resumes a session unless
+    // asked to.
+    val stayLoggedIn: StateFlow<Boolean> = settingsRepository.stayLoggedIn
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    fun setStayLoggedIn(value: Boolean) {
+        viewModelScope.launch { settingsRepository.saveStayLoggedIn(value) }
     }
 
-    private fun checkCurrentUser() {
-        val user = repository.getCurrentUser()
-        if (user != null) {
-            // Se já está logado, precisaríamos buscar o role de novo ou persistir localmente.
-            // Para simplificar agora, vamos forçar login ou assumir TRAINER se logado (ideal buscar no repo).
-            // Mas para o Router decidir, o Repository deve expor o role atual.
+    init {
+        viewModelScope.launch { checkCurrentUser() }
+    }
+
+    // Firebase itself persists its own session across app restarts regardless of this app's
+    // "manter conectado" preference — that preference controls whether THIS app *acts* on it.
+    // If not, sign out for real so the two don't silently disagree (discussed with the user).
+    private suspend fun checkCurrentUser() {
+        val user = repository.getCurrentUser() ?: return
+        if (settingsRepository.stayLoggedIn.first()) {
+            repository.resolveCurrentSession().onSuccess { auth ->
+                if (auth.role == UserRole.TRAINER) {
+                    trainerRepository.startListening(user.uid)
+                }
+                _authState.value = AuthState.Authenticated(auth.role, auth.trainerId)
+            }
+            // On failure (e.g. offline, Firestore unreachable) stay Idle -> LoginScreen rather
+            // than forcing a sign-out over a transient error.
+        } else {
+            repository.logout()
         }
     }
 

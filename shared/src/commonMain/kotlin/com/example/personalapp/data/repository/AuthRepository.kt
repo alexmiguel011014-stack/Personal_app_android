@@ -23,21 +23,33 @@ class AuthRepository(
         return try {
             val result = auth.signInWithEmailAndPassword(email, pass)
             val uid = result.user?.uid ?: return Result.failure(Exception("UID não encontrado"))
-
-            // Buscar role no Firestore
-            val doc = firestore.collection("users").document(uid).get()
-            val roleStr = doc.get<String?>("role")?.uppercase() ?: "STUDENT"
-
-            val role = try {
-                UserRole.valueOf(roleStr)
-            } catch (e: Exception) {
-                UserRole.STUDENT
-            }
-
-            Result.success(AuthResult(role, doc.get<String?>("trainerId")))
+            Result.success(resolveRole(uid))
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    // Re-resolves role/trainerId for a user Firebase already considers signed in (its own local
+    // session persisted across app restarts) — used for the "manter conectado" flow (GOALS.md,
+    // discussed 2026-08-26), not called during a fresh email/password login.
+    suspend fun resolveCurrentSession(): Result<AuthResult> {
+        val uid = auth.currentUser?.uid ?: return Result.failure(Exception("Não autenticado"))
+        return try {
+            Result.success(resolveRole(uid))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    private suspend fun resolveRole(uid: String): AuthResult {
+        val doc = firestore.collection("users").document(uid).get()
+        val roleStr = doc.get<String?>("role")?.uppercase() ?: "STUDENT"
+        val role = try {
+            UserRole.valueOf(roleStr)
+        } catch (e: Exception) {
+            UserRole.STUDENT
+        }
+        return AuthResult(role, doc.get<String?>("trainerId"))
     }
 
     // Self-registration only ever produces an account with no Firestore role doc — `role`/

@@ -1,5 +1,6 @@
 package com.example.personalapp.ui.screen
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Email
@@ -32,6 +33,7 @@ fun LoginScreen(
     var isRegisterMode by remember { mutableStateOf(false) }
 
     val authState by viewModel.authState.collectAsState()
+    val stayLoggedIn by viewModel.stayLoggedIn.collectAsState()
     val authenticated = authState as? AuthState.Authenticated
     val authenticatedRole = authenticated?.role
     var inviteCode by remember { mutableStateOf("") }
@@ -106,7 +108,19 @@ fun LoginScreen(
                 leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) }
             )
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { viewModel.setStayLoggedIn(!stayLoggedIn) },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(checked = stayLoggedIn, onCheckedChange = viewModel::setStayLoggedIn)
+                Text("Manter conectado")
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
 
             Button(
                 onClick = {

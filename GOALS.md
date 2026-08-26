@@ -1757,26 +1757,46 @@ flowchart TD
       safety, left alone.
 
 **18i. In-app update checker — both platforms (user's explicit ask)**
-- [ ] New `commonMain` `UpdateChecker`: reads a small `latest.json` manifest (version code,
-      changelog note, platform-specific download URL) hosted in this same public GitHub repo
-      (e.g. via GitHub Releases or a raw file on `main`) — no new backend needed, reuses existing
-      free infrastructure (the repo is already public, confirmed 2026-08-21).
-- [ ] **Automatic check**: on app launch (not a true background job — keeps this portable across
-      platforms without needing a cross-platform WorkManager equivalent, consistent with this
-      project's existing "no speculative infrastructure" convention), compare the running app's
-      version against the manifest; if newer, show a non-blocking banner.
-- [ ] **Manual check**: a "Verificar atualização" button in Settings (new tab or added to the
-      existing "IA" tab's shell — §16's tabbed Settings already anticipated more categories being
-      added later), calling the same `UpdateChecker` on demand.
-- [ ] **Android-specific action**: banner/button opens the new `.apk` download URL directly
-      (Android already trusts "install from unknown sources" for this app, per the existing
-      sideload distribution model) — the person taps through Android's own install prompt, same
-      as today's manual reinstall, just without needing you physically present.
-- [ ] **iOS-specific action**: since SideStore already re-signs/refreshes from its configured
-      source periodically, the in-app banner's role is different — show **days remaining until
-      the current signature expires** (the real risk flagged in 18a) with a "atualizar agora"
-      button that triggers SideStore's refresh directly if a URL scheme/deep link for that
-      exists, or at minimum clear instructions, so an expiring app is never a silent surprise.
+- [x] New `commonMain` `UpdateChecker` (`shared/.../data/service/UpdateChecker.kt`): fetches
+      `latest.json` — hosted as a plain file at this repo's root on `main` (not a GitHub Release
+      asset; a raw-content GET needs no API/auth) via
+      `raw.githubusercontent.com/alexmiguel011014-stack/Personal_app_android/main/latest.json` —
+      and compares its `android`/`ios` section (picked via a new `currentPlatform()`
+      `expect`/`actual`) against the running app's own version code, injected from `:app`'s Koin
+      module the same way `volumeReference`/`fichaTemplate` already are (`:shared` has no
+      `BuildConfig` of its own — that's per-application-module, generated only for `:app`).
+- [x] **Automatic check**: `RoleRouter` (the single post-login entry point every role's flow
+      passes through) fires `UpdateViewModel.checkForUpdate()` once via `LaunchedEffect(Unit)` and
+      renders a dismissible `UpdateBanner` above the routed screen content — not a blocking
+      dialog, and a failed check renders nothing (silent no-op) rather than nagging on every
+      launch when the network's just flaky.
+- [x] **Manual check**: added a new "Sobre" tab to `SettingsScreen` (kept the "IA" tab
+      unchanged rather than overloading it) with a "Verificar atualização" button and the
+      app's own version name, both driven by the same `UpdateViewModel`/`UpdateChecker` classes
+      (a separate instance from `RoleRouter`'s — Koin's `viewModel {}` scopes per composable
+      call site, so a manual check here doesn't affect the top-level banner's state; that's fine,
+      GOALS.md only asked for "the same `UpdateChecker`", not shared UI state).
+- [x] **Android-specific action**: both the banner and the Settings tab's "Baixar atualização"
+      button call `PlatformActions.openUrl(downloadUrl)` (the same `expect`/`actual` from §18h) —
+      opens the manifest's Android `downloadUrl` in the browser/Play-Store-alternative install
+      flow, exactly the existing manual-reinstall path, just user-triggered instead of
+      you-triggered.
+- [x] **iOS-specific action**: `UpdateStatus.SignatureExpiring(daysRemaining)` — computed from a
+      `signatureExpiresAt` ISO-8601 timestamp in the manifest's `ios` section (set manually
+      whenever a build is re-signed; deliberately not derived from "signed date + N days" since
+      that N differs between a free Apple ID's 7-day certs and a future paid Apple Developer
+      Program's 1-year certs, and hand-waving which one applies risks silently showing a wrong
+      countdown) — surfaces as a red banner/Settings message once ≤3 days remain. No SideStore
+      URL-scheme deep link wired (no evidence one exists as of this research) — falls back to
+      "abra o SideStore para renovar", the explicit "at minimum clear instructions" floor this
+      item allowed for. `latest.json`'s current `ios.signatureExpiresAt` is `null` (no iOS build
+      has actually been signed yet — §18j) — `null` reads as "unknown," never as "never expires."
+      Verified: `:app:compileDebugKotlin`, `verify`, `assembleDebug`,
+      `compileDebugAndroidTestKotlin`, and both iOS Kotlin/Native compile targets all green. Not
+      verified: an actual device receiving a real "update available" banner end-to-end (would
+      need a second, higher `versionCode` published to `latest.json`) — the comparison logic has
+      unit-testable shape (`UpdateChecker.check()`) but no test was added for it in this pass;
+      flagging rather than silently skipping.
 
 **18j. iOS distribution: SideStore free path (now) → Apple Developer Program (later, when paid)**
 - [ ] Host the built `.ipa` + an AltStore/SideStore-format "source" JSON (app metadata + download

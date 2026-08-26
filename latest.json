@@ -1,0 +1,14 @@
+{
+  "android": {
+    "versionCode": 1,
+    "versionName": "1.0",
+    "changelog": "Versão inicial.",
+    "downloadUrl": "https://github.com/alexmiguel011014-stack/Personal_app_android/releases/latest/download/app-release.apk"
+  },
+  "ios": {
+    "versionCode": 1,
+    "versionName": "1.0",
+    "changelog": "Versão inicial.",
+    "signatureExpiresAt": null
+  }
+}

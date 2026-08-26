@@ -2,9 +2,7 @@ package com.example.personalapp
 
 import android.app.Application
 import android.content.pm.ApplicationInfo
-import android.util.Log
 import com.example.personalapp.di.appModule
-import com.example.personalapp.shared.sharedModulePlatformName
 import com.google.firebase.Firebase
 import com.google.firebase.appcheck.appCheck
 import com.google.firebase.appcheck.debug.DebugAppCheckProviderFactory
@@ -20,9 +18,6 @@ class MainApplication : Application() {
             androidContext(this@MainApplication)
             modules(appModule)
         }
-        // GOALS.md §18b toolchain checkpoint: confirms :app actually links against :shared,
-        // not just that both modules happen to compile independently.
-        Log.d("MainApplication", "Loaded ${sharedModulePlatformName()}")
         // Attests that Firestore/Auth/AI Logic requests come from this real app build, not a
         // script replaying the public API key — see GOALS.md §8. Play Integrity only passes for
         // builds installed through a verified channel (e.g. Play Store); a sideloaded debug build

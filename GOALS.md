@@ -1445,6 +1445,11 @@ flowchart TD
         this project, iOS and Android both, unrelated to this migration) and the never-added
         `GOOGLE_SERVICES_JSON` repo secret. Both fixed; `main`'s own `android-ci.yml` is now
         confirmed green for the first time.
+      - **2026-08-26 cleanup**: deleted this checkpoint's own scaffold (`shared/.../shared/
+        Greeting.kt`, `GreetingTest.kt`, and `MainApplication.kt`'s `Log.d` proving `:app` links
+        against `:shared`) — real logic has long since proven the toolchain works; keeping a
+        "does it even compile" placeholder around after §18f/§18h/§18i actually landed was dead
+        weight, not a safety net. Found during the §18m cutover audit.
 - [x] Moved `Exercise`/`PerformedSet` (`data/model`), `WorkoutParser.kt`, and
       `AIWorkoutResponse`/`AIWorkout`/`AIExercise` into `commonMain` — done in this same pass,
       just not checked off until this audit. `WorkoutParserTest` runs from `commonTest`; see
@@ -1660,7 +1665,10 @@ flowchart TD
       `androidMain` unchanged; add a thin `iosMain` `actual` bridging to Firebase iOS SDK's own
       App Check (App Attest provider for release, debug provider for local iOS testing) — a
       real native-bridge implementation, not optional, since `firestore.rules`'/Auth's security
-      posture assumes App Check is active on every client.
+      posture assumes App Check is active on every client. **Blocked** on the same thing as
+      §18f's "iOS Firebase native framework linking" item (needs `FirebaseAppCheck.framework` on
+      the Kotlin/Native linker path) *and* on §18j's deferred iOS app scaffold — there's no real
+      iOS app yet to install this provider into. Deferred alongside §18j, not forgotten.
 - [x] **Crashlytics**: resolved as a side effect of §18f, not via either option originally
       listed here (both predate this finding). `dev.gitlive:firebase-crashlytics` — the *same*
       GitLive SDK already adopted for Auth/Firestore — ships a real, verified `commonMain` API
@@ -1799,6 +1807,17 @@ flowchart TD
       flagging rather than silently skipping.
 
 **18j. iOS distribution: SideStore free path (now) → Apple Developer Program (later, when paid)**
+
+**Deliberately deferred (2026-08-26), discussed directly with the user, not silently skipped.**
+A real signed `.ipa` needs two things this project doesn't have yet and can't manufacture from
+here: an actual Xcode/iOS app project (the `:shared` Kotlin/Native framework compiled so far is a
+library, not a runnable app shell) and real Apple signing credentials (a free Apple ID's 7-day
+cert, or a paid Apple Developer Program membership). Both are exactly the "needs a Mac/real
+credentials, wait until it's actually needed" category the user already flagged earlier this
+session (rented cloud Mac only when required, not preemptively). Everything else in `§18` that
+doesn't depend on this — `§18g`'s Android-side pieces, `§18l`'s testing, `§18m`'s cutover —
+continues normally; only the items below stay blocked on this decision.
+
 - [ ] Host the built `.ipa` + an AltStore/SideStore-format "source" JSON (app metadata + download
       URL + version) somewhere stable and free — a GitHub Release asset on this same public repo
       is the natural choice, consistent with 18i's update-manifest hosting.
@@ -1841,25 +1860,38 @@ flowchart TD
       available option once GitLive was adopted in §18f. Discussed directly with the user;
       decided to accept the coverage gap now and revisit with the Firebase Emulator Suite (real
       local Firestore/Auth, not mocked) if/when this needs testing again — see §18f's note.
-- [ ] `AppDaoTest`/`workoutLog_roundTripsPerformedSets` (Room in-memory, currently `androidTest`-
-      only) — re-run against Room's KMP in-memory test builder on `iosTest` too, given 18d's
-      migration; this is genuinely new coverage the project didn't have before (Room's iOS path
-      was untested until this move).
+- [ ] `AppDaoTest`/`SettingsRepositoryTest` (real-driver instrumented tests, `androidTest`-only,
+      using SQLDelight's `AndroidSqliteDriver`/`OkioStorage` since §18d/§18e — not Room, that
+      plan changed) — re-run against SQLDelight's `NativeSqliteDriver`/DataStore's `OkioStorage`
+      on `iosTest` too; genuinely new coverage the project didn't have before (the iOS path was
+      untested until §18d/§18e moved these). Currently blocked on **two separate things**, not
+      one: Android-side, this machine's two AVDs are both the wrong CPU architecture for its
+      QEMU2 emulator (§18e's finding); iOS-side, the same "iOS Firebase native framework linking"
+      gap tracked under §18f (the whole `:shared` test binary needs that to link at all, whether
+      or not a given test touches Firebase).
 - [ ] `TrainerGoldenPathTest.kt` (Compose UI test) — Compose Multiplatform's iOS UI-testing
       tooling is comparatively less mature than Android's `ui-test-junit4`; confirm current
       support at implementation time. If iOS Compose UI testing isn't practical yet, keep this
       test Android-only and say so explicitly rather than silently losing golden-path coverage
-      with no note.
+      with no note. Also blocked on there being an actual iOS app to run a UI test against
+      (§18j) — moot until that exists regardless of tooling maturity.
 
 **18m. Registration/cutover**
-- [ ] Once 18a–18l are green on both platforms, cut the existing `app` module over to depend on
-      `shared` as its only source of truth (no dead duplicate Android-only copies of anything
-      that moved to `commonMain`) — verified via a full `./gradlew verify assembleDebug` pass
-      identical in spirit to every other verification gate this project already uses, plus the
-      equivalent iOS build succeeding in CI (18k).
-- [ ] Update `CLAUDE.md` and `README.md` to describe the new KMP module shape — this is exactly
-      the kind of cross-cutting convention change CLAUDE.md exists to document (per its own
-      existing "Module documentation strategy" note, §1).
+- [x] **Cutover audit done (2026-08-26)**: `app/src/main/java/` is down to exactly 3 files —
+      `MainActivity.kt`, `MainApplication.kt`, `di/AppModule.kt` — all genuinely Android-only
+      (need `androidContext()`/`ComponentActivity`/`Application`), no dead duplicate copies of
+      anything that moved to `commonMain` left behind. `./gradlew verify assembleDebug
+      compileDebugAndroidTestKotlin` green, both iOS Kotlin/Native compile targets green. **Not**
+      claiming the full "18a–18l green on both platforms" bar this item originally set — several
+      iOS-native items are honestly tracked as still open (§18f/§18g's native framework linking,
+      §18j's app scaffold, §18l's two test items) — but nothing about *this* audit's own scope
+      (dead code, module boundaries) is blocked by those; re-run this specific check again once
+      they land, don't assume it silently still holds.
+- [x] Updated `CLAUDE.md` (new "Module shape" section describing `:shared`/`:app`'s split, plus
+      fixed several claims that had gone stale over the course of §18 and would otherwise mislead
+      a future reader: the Room→SQLDelight and Hilt→Koin migrations, the Student role no longer
+      being a placeholder, `GenerativeAiService`'s real multi-provider shape) and `README.md`
+      (stack list, prerequisites, architecture section) to describe the KMP module shape.
 
 ---
 

@@ -1341,24 +1341,40 @@ migration; the shape below is what actually landed, not what was originally sket
       green); actually *running* still needs a real device/emulator — same pre-existing caveat
       as the rest of this file's `androidTest` suite (§18e's finding: this dev machine's AVDs are
       the wrong CPU architecture).
-- [ ] **(manual, still open)** `firestore.rules` was edited but **not published** — this session
-      has no Firebase Console access. Before relying on any of 17c's new rules: publish, then
-      live-verify (a) the trainer can request/toggle permissions, (b) the student can submit an
-      assessment only when `canSelfAssess == true` and is genuinely rejected (not just
-      UI-hidden) when `false`, (c) the student can log their own biometric entry only when
-      `canLogBiometrics == true`, (d) a student cannot set their own `canSelfAssess`/
-      `canLogBiometrics`, and (e) a student cannot set their own `pendingAssessmentRequest` to
-      `true` (only a trainer can request; only the student's own submit can clear it).
+- [x] **Published by the user (2026-08-27) and live-verified for the trainer side**, on the same
+      real device (`SM-S926B`) that caught the two bugs below: toggled `canSelfAssess` on for a
+      real linked student (`leandro`) — Firestore write succeeded, no permission error in
+      Logcat, UI updated to reflect it — then tapped "Solicitar Autoavaliação" — same result,
+      button correctly flips to a disabled "Autoavaliação solicitada" state. Confirms the new
+      `isOwningTrainer` branch on `users/{uid}` actually works as published, not just as written.
+      **Not yet live-verified**: the student-submission side (b–e above) — needs a second,
+      student-role test account, which this pass didn't have set up; still open.
+  - **Two more real-device bugs found and fixed during this verification pass** (same device,
+    same session, neither caught by any local/CI check since both need pre-existing on-device
+    data that a fresh CI run never has):
+    1. The SQLite crash this file's §18d/§18f section already found and fixed once
+       (`personal_app_database` → `_v2`) **happened again, same root cause, one version later**:
+       §17 added 3 columns to `users` via `Users.sq`'s `CREATE TABLE`, but SQLDelight has no
+       migration verification wired up at all (confirmed, not assumed — see CLAUDE.md), so the
+       already-existing `_v2` file on this device didn't get the new columns and crashed with
+       `SQLiteException: table users has no column named canSelfAssess`. Fixed the same way
+       again: bumped to `_v3` (`DatabaseDriverFactory` android+ios actuals). **This will keep
+       happening on every future schema change** until real `.sqm` migrations are set up —
+       deliberately not done now (no real user data to lose yet), but don't be surprised by a
+       third occurrence; the fix each time is the same one-line filename bump.
+    2. (Not part of §17 itself, found while testing it, tracked as its own separate GitHub
+       item/session — see the "found while writing this" note under 17c above.)
 
 **17g. Registration**
 - [x] Both wired into their existing screens/nav graphs as scoped — no new top-level screens
       outside what 17d/17e already describe.
 
 Verified: `:app:compileDebugKotlin`, `verify`, `assembleDebug`, `compileDebugAndroidTestKotlin`
-all green locally; both iOS Kotlin/Native compile targets green. **Not verified**: the actual UI
-flows on a real device/simulator (request → banner → submit → history-shows-up end to end) —
-compiling is real signal but isn't a substitute for tapping through it; do that once the
-firestore.rules publish above lands, in the same session, since both gate real end-to-end use.
+all green locally; both iOS Kotlin/Native compile targets green; **and now real-device
+confirmation of the trainer-side permission/request flow against the actually-published
+firestore.rules** (see 17f above) — not just compiling. Still open: the student-submission side
+of the flow (needs a student test account) and the assessment-history/banner UI actually
+appearing once one exists.
 
 ---
 

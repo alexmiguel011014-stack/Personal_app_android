@@ -96,6 +96,20 @@ service cloud.firestore {
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['canSelfAssess', 'canLogBiometrics', 'pendingAssessmentRequest']) &&
         (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['pendingAssessmentRequest']) ||
           request.resource.data.pendingAssessmentRequest == true)
+      ) || (
+        // Fix (found while writing §17c, applied 2026-08-27): TrainerRepository.updateUser()'s
+        // write of a linked student's general profile fields (toLinkedStudentUpdateMap()) had no
+        // matching branch here at all — the trainer's own uid is never equal to the student's
+        // uid, so every EditStudentScreen save on an already-linked student was silently
+        // rejected by Firestore. Narrow: matches toLinkedStudentUpdateMap()'s exact field list,
+        // excludes role/trainerId (no self-promotion/re-parenting) and excludes §17c's own three
+        // fields above (this branch is profile-only, that one is permissions-only — kept
+        // separate rather than merged, so neither write can accidentally touch the other's
+        // fields).
+        isOwningTrainer(field(resource.data, 'trainerId')) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+          ['name', 'gender', 'phone', 'goal', 'experienceLevel', 'medicalNotes', 'trainingDays']
+        )
       );
       // The owning trainer may also remove a linked student's account (symmetric with every
       // other collection here); non-STUDENT docs have no trainerId field so this never matches them.

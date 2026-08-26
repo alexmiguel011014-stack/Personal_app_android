@@ -72,8 +72,10 @@ fun DocumentSnapshot.toLinkedUserEntity(): UserEntity? {
     )
 }
 
-// Update-only payload for a linked student's users/{uid} doc: never includes role/trainerId, so a
-// trainer edit can't trip the immutability check in firestore.rules' users/{uid} update rule.
+// Update-only payload for a linked student's users/{uid} doc: exactly the field set
+// firestore.rules' users/{uid} update rule's owning-trainer branch allows — never includes
+// role/trainerId, both so a trainer edit can't trip the self-update immutability check and so
+// the write actually matches that branch's diff().affectedKeys().hasOnly([...]) restriction.
 fun UserEntity.toLinkedStudentUpdateMap(): Map<String, Any?> = mapOf(
     "name" to name,
     "gender" to gender,

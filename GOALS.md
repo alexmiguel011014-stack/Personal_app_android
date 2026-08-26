@@ -1304,13 +1304,21 @@ migration; the shape below is what actually landed, not what was originally sket
 - [x] `biometrics/{entryId}` `allow create`: additive student exception, gated on the student's
       own `canLogBiometrics == true` and their `trainerId` matching their own profile — same
       shape as `workoutLogs`' existing student-write rule.
-- **Found while writing this, out of scope for this task, flagged separately (spawned as a
-  background task, not fixed here)**: `TrainerRepository.updateUser()`'s existing write to a
-  *linked* student's general profile fields (`toLinkedStudentUpdateMap()`) has no matching
-  `isOwningTrainer` branch in the **pre-existing** `users/{uid}` update rule at all — the code
-  assumes it works (a comment says so), but as read, only the document's own owner or an ADM can
-  update it, and a trainer's UID is never equal to a linked student's UID. Real, but unrelated to
-  §17's own new fields; don't confuse it with the two branches this section actually added above.
+- [x] **Fixed 2026-08-27** (found while writing this, flagged separately as a background task,
+  fixed by the user running it in a separate worktree — branch `claude/heuristic-wiles-c0fee9`,
+  commit `d334a6d` — then ported onto this branch's own current rules structure, since that
+  commit was based on `main` and predates every §17 change here):
+  `TrainerRepository.updateUser()`'s existing write to a *linked* student's general profile
+  fields (`toLinkedStudentUpdateMap()`) had no matching `isOwningTrainer` branch in the
+  `users/{uid}` update rule at all — a comment claimed it worked, but only the document's own
+  owner or an ADM could actually update it, and a trainer's UID is never equal to a linked
+  student's UID. Added a third `isOwningTrainer` branch, parallel to (not merged with) §17c's own
+  permissions branch — restricted to exactly `toLinkedStudentUpdateMap()`'s field list
+  (name/gender/phone/goal/experienceLevel/medicalNotes/trainingDays), excluding role/trainerId
+  and excluding §17c's canSelfAssess/canLogBiometrics/pendingAssessmentRequest, so the two writes
+  can never bleed into each other's allowed fields. **Needs the same manual publish + live
+  verification as the rest of 17c** (edit a linked student's profile as the trainer, confirm the
+  Firestore doc actually changes) — not done as part of this note.
 
 **17d. Trainer-side UI**
 - [x] Badge — see 17a.

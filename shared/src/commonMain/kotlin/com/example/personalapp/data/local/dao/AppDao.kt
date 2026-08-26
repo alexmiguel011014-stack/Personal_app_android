@@ -4,6 +4,7 @@ import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import com.example.personalapp.data.local.AppDatabase
 import com.example.personalapp.data.local.DatabaseDriverFactory
+import com.example.personalapp.data.local.entity.AssessmentEntity
 import com.example.personalapp.data.local.entity.BiometricEntity
 import com.example.personalapp.data.local.entity.HistoryEntity
 import com.example.personalapp.data.local.entity.ScheduleEntity
@@ -12,6 +13,7 @@ import com.example.personalapp.data.local.entity.WorkoutEntity
 import com.example.personalapp.data.local.entity.WorkoutLogEntity
 import com.example.personalapp.data.local.exerciseListAdapter
 import com.example.personalapp.data.local.performedSetListAdapter
+import com.example.personalapp.data.local.stringBooleanMapAdapter
 import com.example.personalapp.data.local.stringListAdapter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -30,6 +32,10 @@ class AppDao(driverFactory: DatabaseDriverFactory) {
         usersAdapter = com.example.personalapp.data.local.Users.Adapter(
             trainingDaysAdapter = stringListAdapter,
         ),
+        assessmentsAdapter = com.example.personalapp.data.local.Assessments.Adapter(
+            parQAnswersAdapter = stringBooleanMapAdapter,
+            trainingDaysAdapter = stringListAdapter,
+        ),
     )
 
     fun close() = driver.close()
@@ -41,6 +47,8 @@ class AppDao(driverFactory: DatabaseDriverFactory) {
             phone = user.phone, goal = user.goal, experienceLevel = user.experienceLevel,
             medicalNotes = user.medicalNotes, trainingDays = user.trainingDays,
             createdAt = user.createdAt, linked = user.linked,
+            canSelfAssess = user.canSelfAssess, canLogBiometrics = user.canLogBiometrics,
+            pendingAssessmentRequest = user.pendingAssessmentRequest,
         )
     }
 
@@ -50,6 +58,8 @@ class AppDao(driverFactory: DatabaseDriverFactory) {
             goal = user.goal, experienceLevel = user.experienceLevel,
             medicalNotes = user.medicalNotes, trainingDays = user.trainingDays,
             createdAt = user.createdAt, linked = user.linked, id = user.id,
+            canSelfAssess = user.canSelfAssess, canLogBiometrics = user.canLogBiometrics,
+            pendingAssessmentRequest = user.pendingAssessmentRequest,
         )
     }
 
@@ -65,11 +75,41 @@ class AppDao(driverFactory: DatabaseDriverFactory) {
         database.usersQueries.deleteUser(id)
     }
 
+    suspend fun setStudentPermissions(id: String, canSelfAssess: Boolean, canLogBiometrics: Boolean) {
+        database.usersQueries.setStudentPermissions(canSelfAssess, canLogBiometrics, id)
+    }
+
+    suspend fun setPendingAssessmentRequest(id: String, pending: Boolean) {
+        database.usersQueries.setPendingAssessmentRequest(pending, id)
+    }
+
     private fun toUserEntity(
         id: String, name: String, role: String, gender: String, phone: String, goal: String,
         experienceLevel: String, medicalNotes: String, trainingDays: List<String>,
-        createdAt: Long, linked: Boolean,
-    ) = UserEntity(id, name, role, gender, phone, goal, experienceLevel, medicalNotes, trainingDays, createdAt, linked)
+        createdAt: Long, linked: Boolean, canSelfAssess: Boolean, canLogBiometrics: Boolean,
+        pendingAssessmentRequest: Boolean,
+    ) = UserEntity(
+        id, name, role, gender, phone, goal, experienceLevel, medicalNotes, trainingDays,
+        createdAt, linked, canSelfAssess, canLogBiometrics, pendingAssessmentRequest,
+    )
+
+    // --- Assessments ---
+    suspend fun insertAssessment(assessment: AssessmentEntity) {
+        database.assessmentsQueries.insertAssessment(
+            id = assessment.id, studentId = assessment.studentId, trainerId = assessment.trainerId,
+            requestedAt = assessment.requestedAt, submittedAt = assessment.submittedAt,
+            parQAnswers = assessment.parQAnswers, goal = assessment.goal,
+            experienceLevel = assessment.experienceLevel, trainingDays = assessment.trainingDays,
+        )
+    }
+
+    fun getAssessmentsByStudent(studentId: String): Flow<List<AssessmentEntity>> =
+        database.assessmentsQueries.getAssessmentsByStudent(studentId, ::AssessmentEntity)
+            .asFlow().mapToList(Dispatchers.Default)
+
+    suspend fun deleteAssessmentById(id: String) {
+        database.assessmentsQueries.deleteAssessmentById(id)
+    }
 
     // --- Biometrics ---
     suspend fun insertBiometric(biometric: BiometricEntity) {

@@ -13,9 +13,13 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -23,6 +27,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -36,6 +41,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.personalapp.data.local.entity.AssessmentEntity
+import com.example.personalapp.data.model.PAR_Q_QUESTIONS
+import com.example.personalapp.util.formatDate
 
 /**
  * Supporting composables for [StudentDetailsScreen] — dialogs, the top bar's overflow menu, and
@@ -211,6 +219,98 @@ fun AddBiometricDialog(onDismiss: () -> Unit, onSave: (Double, Double) -> Unit) 
             TextButton(onClick = onDismiss) { Text("Cancelar") }
         }
     )
+}
+
+// GOALS.md §17d: two named, trainer-controlled toggles — not a generic feature-flag framework,
+// see GOALS.md §17a for why. Only shown for a linked student (StudentDetailsScreen's caller
+// checks this) — a draft has no Firebase Auth account to grant anything to.
+@Composable
+fun PermissionsSection(
+    canSelfAssess: Boolean,
+    canLogBiometrics: Boolean,
+    pendingAssessmentRequest: Boolean,
+    onPermissionsChange: (canSelfAssess: Boolean, canLogBiometrics: Boolean) -> Unit,
+    onRequestAssessment: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Permissões", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Aluno pode se autoavaliar")
+            Switch(checked = canSelfAssess, onCheckedChange = { onPermissionsChange(it, canLogBiometrics) })
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Aluno pode registrar biometria")
+            Switch(checked = canLogBiometrics, onCheckedChange = { onPermissionsChange(canSelfAssess, it) })
+        }
+        Button(
+            onClick = onRequestAssessment,
+            enabled = canSelfAssess && !pendingAssessmentRequest,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(if (pendingAssessmentRequest) "Autoavaliação solicitada" else "Solicitar Autoavaliação")
+        }
+    }
+}
+
+// Newest first, any "yes" PAR-Q answer flagged visibly (GOALS.md §17a/§17d — a "yes" is a
+// liability/safety-relevant signal the trainer must see, not just log).
+@Composable
+fun AssessmentHistorySection(assessments: List<AssessmentEntity>) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Histórico de Autoavaliação", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        if (assessments.isEmpty()) {
+            Text(
+                "Nenhuma autoavaliação enviada ainda.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        assessments.forEach { assessment ->
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = if (assessment.hasHealthRiskFlag) {
+                    CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+                } else {
+                    CardDefaults.cardColors()
+                }
+            ) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(formatDate(assessment.submittedAt), fontWeight = FontWeight.Bold)
+                        if (assessment.hasHealthRiskFlag) {
+                            Icon(
+                                Icons.Default.Warning,
+                                contentDescription = "Resposta de risco à saúde",
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                    Text("Objetivo: ${assessment.goal}", style = MaterialTheme.typography.bodySmall)
+                    Text("Nível: ${assessment.experienceLevel}", style = MaterialTheme.typography.bodySmall)
+                    assessment.parQAnswers.filterValues { it }.keys.forEach { key ->
+                        val questionText = PAR_Q_QUESTIONS.firstOrNull { it.first == key }?.second ?: key
+                        Text(
+                            "⚠ $questionText",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (assessment.hasHealthRiskFlag) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable

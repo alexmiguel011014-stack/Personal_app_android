@@ -186,6 +186,16 @@ fun StudentCard(student: UserEntity, onClick: () -> Unit) {
                     color = onBackgroundColor
                 )
             }
+
+            // GOALS.md §17d: "Meus Alunos" already merges drafts (students/{id}, no account yet)
+            // and linked accounts (users/{uid}) into one list — the actual gap was never the data
+            // model, just this missing visual distinction between the two.
+            Text(
+                text = if (student.linked) "Conectado" else "Cadastrado (aguardando conexão)",
+                style = MaterialTheme.typography.labelSmall,
+                color = onBackgroundColor,
+                modifier = Modifier.align(Alignment.BottomStart).padding(8.dp)
+            )
         }
     }
 }

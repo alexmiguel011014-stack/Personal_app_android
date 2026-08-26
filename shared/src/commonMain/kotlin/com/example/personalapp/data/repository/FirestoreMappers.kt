@@ -1,5 +1,6 @@
 package com.example.personalapp.data.repository
 
+import com.example.personalapp.data.local.entity.AssessmentEntity
 import com.example.personalapp.data.local.entity.BiometricEntity
 import com.example.personalapp.data.local.entity.ScheduleEntity
 import com.example.personalapp.data.local.entity.UserEntity
@@ -65,6 +66,9 @@ fun DocumentSnapshot.toLinkedUserEntity(): UserEntity? {
         trainingDays = get<List<String>?>("trainingDays") ?: emptyList(),
         createdAt = get<Long?>("createdAt") ?: 0L,
         linked = true,
+        canSelfAssess = get<Boolean?>("canSelfAssess") ?: false,
+        canLogBiometrics = get<Boolean?>("canLogBiometrics") ?: false,
+        pendingAssessmentRequest = get<Boolean?>("pendingAssessmentRequest") ?: false,
     )
 }
 
@@ -79,6 +83,46 @@ fun UserEntity.toLinkedStudentUpdateMap(): Map<String, Any?> = mapOf(
     "medicalNotes" to medicalNotes,
     "trainingDays" to trainingDays,
 )
+
+// GOALS.md §17: a separate, narrower payload from toLinkedStudentUpdateMap() above — firestore.rules
+// restricts the trainer's write to *only* these two fields (a diff().affectedKeys().hasOnly(...)
+// check), so this must never be merged into the general profile-update map.
+fun UserEntity.toPermissionsUpdateMap(): Map<String, Any?> = mapOf(
+    "canSelfAssess" to canSelfAssess,
+    "canLogBiometrics" to canLogBiometrics,
+)
+
+fun AssessmentEntity.toFirestoreMap(): Map<String, Any?> = mapOf(
+    "studentId" to studentId,
+    "trainerId" to trainerId,
+    "requestedAt" to requestedAt,
+    "submittedAt" to submittedAt,
+    "parQAnswersJson" to json.encodeToString(parQAnswers),
+    "goal" to goal,
+    "experienceLevel" to experienceLevel,
+    "trainingDays" to trainingDays,
+)
+
+fun DocumentSnapshot.toAssessmentEntity(): AssessmentEntity? {
+    val studentId = get<String?>("studentId") ?: return null
+    val trainerId = get<String?>("trainerId") ?: return null
+    val parQAnswers = try {
+        json.decodeFromString<Map<String, Boolean>>(get<String?>("parQAnswersJson") ?: "{}")
+    } catch (e: Exception) {
+        emptyMap()
+    }
+    return AssessmentEntity(
+        id = id,
+        studentId = studentId,
+        trainerId = trainerId,
+        requestedAt = get<Long?>("requestedAt") ?: 0L,
+        submittedAt = get<Long?>("submittedAt") ?: 0L,
+        parQAnswers = parQAnswers,
+        goal = get<String?>("goal") ?: "",
+        experienceLevel = get<String?>("experienceLevel") ?: "",
+        trainingDays = get<List<String>?>("trainingDays") ?: emptyList(),
+    )
+}
 
 fun WorkoutEntity.toFirestoreMap(trainerId: String): Map<String, Any?> = mapOf(
     "trainerId" to trainerId,

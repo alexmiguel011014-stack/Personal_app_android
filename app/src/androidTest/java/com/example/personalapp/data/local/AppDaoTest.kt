@@ -3,6 +3,7 @@ package com.example.personalapp.data.local
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.example.personalapp.data.local.dao.AppDao
+import com.example.personalapp.data.local.entity.AssessmentEntity
 import com.example.personalapp.data.local.entity.BiometricEntity
 import com.example.personalapp.data.local.entity.ScheduleEntity
 import com.example.personalapp.data.local.entity.UserEntity
@@ -126,5 +127,47 @@ class AppDaoTest {
 
         dao.deleteWorkoutLogById("log1")
         assertTrue(dao.getWorkoutLogsByStudent("s1").first().isEmpty())
+    }
+
+    // GOALS.md §17f
+    @Test
+    fun userPermissionFields_roundTripAndUpdate() = runBlocking {
+        val student = UserEntity(id = "s3", name = "Carla", role = "student", createdAt = 0L, linked = true)
+        dao.insertUser(student)
+        assertEquals(false, dao.getUserById("s3")?.canSelfAssess)
+        assertEquals(false, dao.getUserById("s3")?.canLogBiometrics)
+        assertEquals(false, dao.getUserById("s3")?.pendingAssessmentRequest)
+
+        dao.setStudentPermissions("s3", canSelfAssess = true, canLogBiometrics = true)
+        assertEquals(true, dao.getUserById("s3")?.canSelfAssess)
+        assertEquals(true, dao.getUserById("s3")?.canLogBiometrics)
+
+        dao.setPendingAssessmentRequest("s3", true)
+        assertEquals(true, dao.getUserById("s3")?.pendingAssessmentRequest)
+        dao.setPendingAssessmentRequest("s3", false)
+        assertEquals(false, dao.getUserById("s3")?.pendingAssessmentRequest)
+    }
+
+    @Test
+    fun assessment_roundTripsParQAnswersAndAppearsInFlow() = runBlocking {
+        val assessment = AssessmentEntity(
+            id = "a1",
+            studentId = "s1",
+            trainerId = "t1",
+            requestedAt = 0L,
+            submittedAt = 100L,
+            parQAnswers = mapOf("heart_condition" to true, "dizziness" to false),
+            goal = "Hipertrofia",
+            experienceLevel = "Iniciante",
+            trainingDays = listOf("Segunda", "Quarta"),
+        )
+        dao.insertAssessment(assessment)
+
+        val stored = dao.getAssessmentsByStudent("s1").first().single()
+        assertEquals(assessment, stored)
+        assertTrue(stored.hasHealthRiskFlag)
+
+        dao.deleteAssessmentById("a1")
+        assertTrue(dao.getAssessmentsByStudent("s1").first().isEmpty())
     }
 }

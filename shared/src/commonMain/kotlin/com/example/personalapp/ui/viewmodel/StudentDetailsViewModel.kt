@@ -5,6 +5,7 @@ import com.example.personalapp.util.currentTimeMillis
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.personalapp.data.local.entity.AssessmentEntity
 import com.example.personalapp.data.local.entity.BiometricEntity
 import com.example.personalapp.data.local.entity.UserEntity
 import com.example.personalapp.data.local.entity.WorkoutEntity
@@ -38,6 +39,9 @@ class StudentDetailsViewModel(
     private val _inviteError = MutableStateFlow<String?>(null)
     val inviteError: StateFlow<String?> = _inviteError
 
+    private val _assessments = MutableStateFlow<List<AssessmentEntity>>(emptyList())
+    val assessments: StateFlow<List<AssessmentEntity>> = _assessments
+
     fun loadStudent(studentId: String) {
         viewModelScope.launch {
             _student.value = repository.getUserById(studentId)
@@ -45,6 +49,26 @@ class StudentDetailsViewModel(
         repository.getBiometricsByUser(studentId).onEach { _biometrics.value = it }.launchIn(viewModelScope)
         repository.getActiveWorkoutsByStudent(studentId).onEach { _workouts.value = it }.launchIn(viewModelScope)
         repository.getWorkoutLogsByStudent(studentId).onEach { _workoutLogs.value = it }.launchIn(viewModelScope)
+        repository.getAssessmentsForStudent(studentId).onEach { _assessments.value = it }.launchIn(viewModelScope)
+    }
+
+    // GOALS.md §17d: "Permissões" section — optimistic local update (matches this ViewModel's
+    // existing one-shot-fetch _student pattern, there's no reactive single-user query to lean on
+    // instead) so the two switches reflect the change immediately, not after a manual reload.
+    fun setPermissions(canSelfAssess: Boolean, canLogBiometrics: Boolean) {
+        val current = _student.value ?: return
+        viewModelScope.launch {
+            repository.setStudentPermission(current.id, canSelfAssess, canLogBiometrics)
+            _student.value = current.copy(canSelfAssess = canSelfAssess, canLogBiometrics = canLogBiometrics)
+        }
+    }
+
+    fun requestAssessment() {
+        val current = _student.value ?: return
+        viewModelScope.launch {
+            repository.requestAssessment(current.id)
+            _student.value = current.copy(pendingAssessmentRequest = true)
+        }
     }
 
     fun addBiometric(studentId: String, weight: Double, bodyFat: Double) {

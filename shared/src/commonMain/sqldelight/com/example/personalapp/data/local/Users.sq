@@ -13,18 +13,24 @@ CREATE TABLE users (
     medicalNotes TEXT NOT NULL,
     trainingDays TEXT AS List<String> NOT NULL,
     createdAt INTEGER NOT NULL,
-    linked INTEGER AS Boolean NOT NULL
+    linked INTEGER AS Boolean NOT NULL,
+    -- GOALS.md §17: trainer-granted, default-off permissions + a pull-based request flag.
+    canSelfAssess INTEGER AS Boolean NOT NULL DEFAULT 0,
+    canLogBiometrics INTEGER AS Boolean NOT NULL DEFAULT 0,
+    pendingAssessmentRequest INTEGER AS Boolean NOT NULL DEFAULT 0
 );
 
 insertUser:
-INSERT OR REPLACE INTO users(id, name, role, gender, phone, goal, experienceLevel, medicalNotes, trainingDays, createdAt, linked)
-VALUES (:id, :name, :role, :gender, :phone, :goal, :experienceLevel, :medicalNotes, :trainingDays, :createdAt, :linked);
+INSERT OR REPLACE INTO users(id, name, role, gender, phone, goal, experienceLevel, medicalNotes, trainingDays, createdAt, linked, canSelfAssess, canLogBiometrics, pendingAssessmentRequest)
+VALUES (:id, :name, :role, :gender, :phone, :goal, :experienceLevel, :medicalNotes, :trainingDays, :createdAt, :linked, :canSelfAssess, :canLogBiometrics, :pendingAssessmentRequest);
 
 updateUser:
 UPDATE users SET
     name = :name, role = :role, gender = :gender, phone = :phone, goal = :goal,
     experienceLevel = :experienceLevel, medicalNotes = :medicalNotes,
-    trainingDays = :trainingDays, createdAt = :createdAt, linked = :linked
+    trainingDays = :trainingDays, createdAt = :createdAt, linked = :linked,
+    canSelfAssess = :canSelfAssess, canLogBiometrics = :canLogBiometrics,
+    pendingAssessmentRequest = :pendingAssessmentRequest
 WHERE id = :id;
 
 deleteUser:
@@ -35,3 +41,9 @@ SELECT * FROM users WHERE role = 'student';
 
 getUserById:
 SELECT * FROM users WHERE id = :id;
+
+setStudentPermissions:
+UPDATE users SET canSelfAssess = :canSelfAssess, canLogBiometrics = :canLogBiometrics WHERE id = :id;
+
+setPendingAssessmentRequest:
+UPDATE users SET pendingAssessmentRequest = :pending WHERE id = :id;

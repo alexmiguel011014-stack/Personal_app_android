@@ -38,6 +38,7 @@ fun StudentDetailsScreen(
     val workoutLogs by viewModel.workoutLogs.collectAsState()
     val inviteCode by viewModel.inviteCode.collectAsState()
     val inviteError by viewModel.inviteError.collectAsState()
+    val assessments by viewModel.assessments.collectAsState()
     var showFichaDialog by remember { mutableStateOf(false) }
     var showBiometricDialog by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
@@ -124,6 +125,21 @@ fun StudentDetailsScreen(
                                 }
                             }
                         }
+                    }
+                }
+
+                if (s.linked) {
+                    item {
+                        PermissionsSection(
+                            canSelfAssess = s.canSelfAssess,
+                            canLogBiometrics = s.canLogBiometrics,
+                            pendingAssessmentRequest = s.pendingAssessmentRequest,
+                            onPermissionsChange = { selfAssess, logBiometrics -> viewModel.setPermissions(selfAssess, logBiometrics) },
+                            onRequestAssessment = { viewModel.requestAssessment() },
+                        )
+                    }
+                    item {
+                        AssessmentHistorySection(assessments)
                     }
                 }
 

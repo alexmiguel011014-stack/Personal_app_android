@@ -1,6 +1,7 @@
 package com.example.personalapp.data.repository
 
 import com.example.personalapp.data.local.dao.AppDao
+import com.example.personalapp.data.local.entity.AssessmentEntity
 import com.example.personalapp.data.local.entity.BiometricEntity
 import com.example.personalapp.data.local.entity.HistoryEntity
 import com.example.personalapp.data.local.entity.ScheduleEntity
@@ -49,6 +50,7 @@ class TrainerRepository(
             mirror("biometrics", trainerId, DocumentSnapshot::toBiometricEntity, appDao::insertBiometric, appDao::deleteBiometricById),
             mirror("schedules", trainerId, DocumentSnapshot::toScheduleEntity, appDao::insertSchedule, appDao::deleteScheduleById),
             mirror("workoutLogs", trainerId, DocumentSnapshot::toWorkoutLogEntity, appDao::insertWorkoutLog, appDao::deleteWorkoutLogById),
+            mirror("assessments", trainerId, DocumentSnapshot::toAssessmentEntity, appDao::insertAssessment, appDao::deleteAssessmentById),
             // Linked students live in users/{uid}, not students/{id} — see GOALS.md §7 "unify".
             mirrorQuery(
                 firestore.collection("users").where { ("trainerId" equalTo trainerId) and ("role" equalTo "STUDENT") },
@@ -118,6 +120,27 @@ class TrainerRepository(
 
     fun getStudents(): Flow<List<UserEntity>> = appDao.getStudents()
     suspend fun getUserById(id: String) = appDao.getUserById(id)
+
+    // GOALS.md §17: trainer-granted, default-off permissions on a *linked* student. Meaningless
+    // for a draft (students/{id} has no Firebase Auth account to grant anything to) — callers are
+    // expected to only offer this for `linked == true` students (StudentDetailsScreen already
+    // only shows the section then).
+    suspend fun setStudentPermission(studentId: String, canSelfAssess: Boolean, canLogBiometrics: Boolean) {
+        appDao.setStudentPermissions(studentId, canSelfAssess, canLogBiometrics)
+        firestore.collection("users").document(studentId)
+            .set(mapOf("canSelfAssess" to canSelfAssess, "canLogBiometrics" to canLogBiometrics), merge = true)
+    }
+
+    // Pull-based request (GOALS.md §17a): just flips a flag the student sees next time they open
+    // the app — no push infrastructure. Written directly with .update(), not toFirestoreMap(),
+    // since firestore.rules restricts this write to *only* this one field.
+    suspend fun requestAssessment(studentId: String) {
+        appDao.setPendingAssessmentRequest(studentId, true)
+        firestore.collection("users").document(studentId).updateFields { "pendingAssessmentRequest" to true }
+    }
+
+    fun getAssessmentsForStudent(studentId: String): Flow<List<AssessmentEntity>> =
+        appDao.getAssessmentsByStudent(studentId)
 
     // Trainer-initiated Student invite (GOALS.md §7). Snapshots the draft's fields onto the invite
     // doc so claiming doesn't need a second read of the (soon-to-be-archived) students/{id} draft.

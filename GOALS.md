@@ -1238,107 +1238,127 @@ flowchart TD
     F --> G[17g. Registration]
 ```
 
+**Implemented 2026-08-27, via `/execgoals` after the user's explicit go-ahead** (this section's
+own gate — "not sure if now is the right time" — was resolved by asking again at the start of
+that session; see the conversation, not repeated here). Written against the original KMP-era
+plan below, translated from the stale pre-§18 assumptions (Room, `app/schemas/`) to this
+project's actual current stack (SQLDelight, GitLive Firestore) — noted inline per item.
+
 **17a. Design rationale**
-- [ ] **Draft vs. connected badge**: purely visual, uses the existing `UserEntity.linked` field
-      already returned by the merged query — no new data needed. Closes the actual confusion the
-      user flagged without touching the data model.
-- [ ] **Permission set stays small and named, not a generic feature-flag framework**: exactly two
-      toggles, both trainer-controlled and default OFF (per "que o personal libera... quando
-      personal autorizar"):
-      - `canSelfAssess` — student may fill out a self-assessment when the trainer requests one.
-      - `canLogBiometrics` — student may log their own weight/measurements (distinct from the
-        trainer's own biometric entries on `StudentDetailsScreen`).
-      A third or fourth toggle can be added later the same way if a real need shows up — building
-      a generic per-feature permission engine now for two known toggles is speculative flexibility
-      this project's own conventions already avoid elsewhere.
-- [ ] **Self-assessment is a time-series collection (`assessments/{id}`), not a single overwritable
-      profile field** — mirrors the existing `biometrics`/`workoutLogs` pattern (Firestore source
-      of truth + Room mirror), giving the trainer a real history instead of only ever seeing the
-      latest answers. Content grounded in the **PAR-Q+** (Physical Activity Readiness
-      Questionnaire), the international-standard pre-exercise health screening tool used
-      industry-wide before a new client starts training — 7 general yes/no health-risk questions
-      (heart condition needing medical clearance, chest pain during/at rest, dizziness or loss of
-      consciousness, a bone/joint problem, current blood-pressure/heart medication, any other
-      medical reason) — plus the profile fields `UserEntity` already has (`goal`,
-      `experienceLevel`, `trainingDays`), not an invented bespoke form. A "yes" answer should be
-      flagged visibly to the trainer (liability/safety relevance), not just logged silently.
-- [ ] **Request is pull-based, not push** — the trainer "requesting" an assessment just flips
-      `pendingAssessmentRequest = true` on the student's own doc; the student sees it next time
-      they open the app (same pattern already used for role-promotion — GOALS.md explicitly keeps
-      push notifications/FCM out of scope project-wide). No new messaging infrastructure needed.
+- [x] **Draft vs. connected badge**: implemented exactly as scoped — `StudentCard`
+      (`shared/.../ui/screen/Components.kt`) shows "Conectado"/"Cadastrado (aguardando conexão)"
+      driven by the existing `linked` field, no data model change needed.
+- [x] **Permission set**: exactly the two named toggles, both default `false` —
+      `UserEntity.canSelfAssess`/`canLogBiometrics`. No generic flag framework added.
+- [x] **Self-assessment as a time-series collection**: `assessments/{id}` (Firestore) +
+      `assessments` table (SQLDelight, not Room — see 17b), the same source-of-truth/local-mirror
+      shape as `biometrics`/`workoutLogs`. PAR-Q content is the real, standard 7-question
+      questionnaire (not paraphrased/invented) in a new shared `PAR_Q_QUESTIONS` list
+      (`shared/.../data/model/ParQQuestions.kt`) — stable string keys, editable Portuguese text,
+      so `parQAnswers` map keys never need to change once real answers exist under them. A "yes"
+      answer surfaces as a visible warning icon + highlighted card
+      (`AssessmentHistorySection`), not just a logged value.
+- [x] **Pull-based request**: `TrainerRepository.requestAssessment()` only flips
+      `pendingAssessmentRequest = true`; the student sees a banner next time they open
+      `StudentNavigation`. No push/FCM infrastructure added.
 
-**17b. Data model**
-- [ ] New Room entity `AssessmentEntity` + Firestore collection `assessments/{id}`:
-      `studentId`, `trainerId`, `requestedAt`, `submittedAt` (null until answered), `parQAnswers`
-      (map of question key → boolean), `goal`/`experienceLevel`/`trainingDays` snapshot at
-      submission time (so history reflects what was true *then*, not the current live profile).
-      Room migration (schema version bump, exported schema committed under `app/schemas/`, per
-      CLAUDE.md's own convention — no `fallbackToDestructiveMigration` reliance).
-- [ ] New fields on `UserEntity`/`users/{uid}`: `canSelfAssess: Boolean = false`,
-      `canLogBiometrics: Boolean = false`, `pendingAssessmentRequest: Boolean = false`. Extend
-      `FirestoreMappers.kt` (`toFirestoreMap()`/`toUserEntity()`) — same three-places-in-lockstep
-      rule CLAUDE.md already documents for this data layer.
-- [ ] `TrainerRepository`: `requestAssessment(studentId)` (sets the pending flag),
-      `getAssessmentsForStudent(studentId): Flow<List<AssessmentEntity>>`,
-      `setStudentPermission(studentId, canSelfAssess, canLogBiometrics)`.
-- [ ] `StudentRepository`: `submitAssessment(answers, profileSnapshot)` (writes the doc, clears
-      the pending flag), `logOwnBiometric(entry)` (only meaningful when `canLogBiometrics` is
-      true — the rule in 17c is the real gate, this is just the write path).
+**17b. Data model** — built on SQLDelight, not Room (this plan predates §18d's Room→SQLDelight
+migration; the shape below is what actually landed, not what was originally sketched).
+- [x] New `AssessmentEntity` (`shared/.../data/local/entity/AssessmentEntity.kt`) +
+      SQLDelight table (`shared/.../sqldelight/.../Assessments.sq`): `studentId`, `trainerId`,
+      `requestedAt`, `submittedAt`, `parQAnswers` (`Map<String, Boolean>` via a new
+      `stringBooleanMapAdapter` `ColumnAdapter`), `goal`/`experienceLevel`/`trainingDays`
+      snapshotted at submission time. No migration-version bump needed — SQLDelight has no
+      migration-verification wired up at all yet (see CLAUDE.md's data-layer section), so adding
+      a table is just adding a `CREATE TABLE`, unlike Room's `exportSchema`/`Migration` ceremony
+      this item originally assumed.
+- [x] `UserEntity`/`users/{uid}` gained `canSelfAssess`/`canLogBiometrics`/
+      `pendingAssessmentRequest` (all default `false`). Updated in lockstep: `Users.sq` (3 new
+      columns + `setStudentPermissions`/`setPendingAssessmentRequest` narrow queries),
+      `FirestoreMappers.kt` (`toLinkedUserEntity()`, plus a new, deliberately narrow
+      `toPermissionsUpdateMap()` — kept separate from the existing `toLinkedStudentUpdateMap()`
+      so a trainer's permission-toggle write can never accidentally include profile fields
+      firestore.rules doesn't expect there).
+- [x] `TrainerRepository`: `setStudentPermission()`, `requestAssessment()`,
+      `getAssessmentsForStudent()` — plus a new `assessments` mirror registered in
+      `startListening()` (same snapshot-listener pattern every other trainer-scoped collection
+      already uses).
+- [x] `StudentRepository`: `submitAssessment()`, `logOwnBiometric()`, and a new `getMyProfile()`
+      live listener on the student's own `users/{uid}` doc (GitLive `DocumentReference.snapshots`)
+      — `StudentViewModel`/`StudentNavigation` didn't have a reactive way to read the student's
+      own permission flags before this.
 
-**17c. `firestore.rules`**
-- [ ] `assessments/{id}`: `allow create` if `isOwningTrainer(request.resource.data.trainerId)`
-      (the request) **or** if the caller is the student themselves, `request.resource.data.studentId
-      == request.auth.uid`, and their own `users/{uid}.canSelfAssess == true` (the submission —
-      same `get()`-a-related-doc pattern already used for invite validation). `allow read` if
-      owning trainer or the student themselves (same shape as `workoutLogs`).
-- [ ] `users/{uid}` self-`update`: add one more narrow, additive exception (same style as §13d's
-      re-claim exception) permitting `pendingAssessmentRequest` to change **only** `true → false`
-      and **only** as part of the same write that creates an `assessments/{id}` doc for that
-      student — this is the "submitting an assessment clears its own pending flag" self-write,
-      distinct from `canSelfAssess`/`canLogBiometrics` themselves, which stay trainer-only
-      (`isAdmin() || isOwningTrainer(...)`), never student-settable.
-- [ ] `biometrics/{entryId}` `allow create`: add a narrow exception permitting a student to create
-      their own entry (`request.resource.data.studentId == request.auth.uid`) only when their own
-      `users/{uid}.canLogBiometrics == true` — additive to the existing `isOwningTrainer`-only
-      create rule, not a replacement.
+**17c. `firestore.rules`** — **published state unverified, needs a manual step (see 17f).**
+- [x] `assessments/{id}`: `allow create` requires the caller be the student
+      (`studentId == request.auth.uid`), their `trainerId` match their own profile's, and their
+      own `canSelfAssess == true`. `allow read` for the owning trainer or the student themselves.
+      `allow update, delete: if false` — append-only history, a resubmission is a new doc.
+- [x] `users/{uid}` gained **two** new `allow update` branches (not one) — the plan didn't
+      distinguish trainer-side vs. student-side writes clearly enough to implement as a single
+      exception: (1) the student's own narrow `pendingAssessmentRequest: true -> false` flip
+      (`diff().affectedKeys().hasOnly([...])`, mirroring §13d's re-claim exception style), and
+      (2) a **new**, separate `isOwningTrainer(...)` branch letting the trainer toggle
+      `canSelfAssess`/`canLogBiometrics`/set `pendingAssessmentRequest = true` — restricted to
+      exactly those three keys, and `pendingAssessmentRequest` may only be set `true` from this
+      branch, never `false` (only the student's own write can clear it).
+- [x] `biometrics/{entryId}` `allow create`: additive student exception, gated on the student's
+      own `canLogBiometrics == true` and their `trainerId` matching their own profile — same
+      shape as `workoutLogs`' existing student-write rule.
+- **Found while writing this, out of scope for this task, flagged separately (spawned as a
+  background task, not fixed here)**: `TrainerRepository.updateUser()`'s existing write to a
+  *linked* student's general profile fields (`toLinkedStudentUpdateMap()`) has no matching
+  `isOwningTrainer` branch in the **pre-existing** `users/{uid}` update rule at all — the code
+  assumes it works (a comment says so), but as read, only the document's own owner or an ADM can
+  update it, and a trainer's UID is never equal to a linked student's UID. Real, but unrelated to
+  §17's own new fields; don't confuse it with the two branches this section actually added above.
 
 **17d. Trainer-side UI**
-- [ ] Student list/card (`StudentsScreen`/`MainScreen`): a small badge — "Conectado" vs
-      "Cadastrado (aguardando conexão)" — driven by the existing `linked` field.
-- [ ] `StudentDetailsScreen`: new "Permissões" section with two switches
-      (`canSelfAssess`/`canLogBiometrics`), a "Solicitar Autoavaliação" button (enabled only when
-      `canSelfAssess` is already on — request presupposes permission, not the other way around),
-      and an assessment-history list (newest first, flags any "yes" PAR-Q answer visibly).
+- [x] Badge — see 17a.
+- [x] `StudentDetailsScreen`: new `PermissionsSection` (two switches + "Solicitar Autoavaliação",
+      disabled once already pending) and `AssessmentHistorySection` (newest first via the SQL
+      query's own `ORDER BY submittedAt DESC`, "yes" answers shown with their real question text
+      via `PAR_Q_QUESTIONS`, whole card highlighted red if any answer is "yes") — both shown only
+      when `student.linked == true`, per 17a's own scoping rationale.
 
 **17e. Student-side UI**
-- [ ] `StudentNavigation`: reads the student's own `canSelfAssess`/`canLogBiometrics` from their
-      already-synced profile (via `StudentRepository`'s existing listener, no new sync mechanism)
-      and conditionally shows the corresponding tab/action — hidden entirely, not just disabled,
-      when the trainer hasn't granted it.
-- [ ] Pending-assessment banner/screen: when `pendingAssessmentRequest == true`, show the PAR-Q
-      questions (pre-filled `goal`/`experienceLevel`/`trainingDays` from the current profile,
-      editable) → submit writes `assessments/{id}` + clears the pending flag in the same logical
-      action (17c's rule requires this).
-- [ ] Self-log biometrics screen: reuses the existing `WeightChart`/biometric-entry UI pattern
-      already built for the trainer side (`StudentDetailsScreen`/`Components.kt`) rather than
-      building a second one — same component, a student-facing write path gated by 17c's rule.
+- [x] `StudentNavigation` collects the student's own live profile (`StudentViewModel.profile`,
+      backed by `getMyProfile()`) and conditionally shows: a pending-assessment banner (only
+      when `pendingAssessmentRequest == true`) routing to a new `StudentAssessmentScreen`; a
+      "Nova Medida" action inside `StudentEvolutionScreen` (only when `canLogBiometrics == true`)
+      reusing the exact same `AddBiometricDialog` the trainer side already uses — hidden
+      entirely when not granted, not just disabled, per the plan's own wording.
+- [x] `StudentAssessmentScreen` — the real 7-question PAR-Q, pre-filled
+      `goal`/`experienceLevel`/`trainingDays` (editable), submit calls
+      `StudentRepository.submitAssessment()` which writes the doc and clears the pending flag.
+- [x] Self-log biometrics — see above; deliberately not a separate top-level screen, since
+      `StudentEvolutionScreen` already shows this student's own `WeightChart` and the plan's own
+      instruction was to reuse the component, not add a second view of the same data.
 
 **17f. Tests**
-- [ ] Room DAO test for `AssessmentEntity` CRUD + the new migration (same in-memory-DB pattern
-      `AppDaoTest` already uses — note the existing caveat: written and compiling is verifiable
-      here, actually *running* needs a device/emulator, same as every other `androidTest` in this
-      project).
-- [ ] **(manual)** `firestore.rules` changes always need live verification after publishing — this
-      is no different from every other rules change this session: publish, then confirm both the
-      trainer-request path and the student-submit path actually work, and that a `canSelfAssess ==
-      false` student is genuinely blocked (not just hidden in the UI) from creating an
-      `assessments/{id}` doc directly.
+- [x] `AppDaoTest` gained `userPermissionFields_roundTripAndUpdate` and
+      `assessment_roundTripsParQAnswersAndAppearsInFlow` (SQLDelight in-memory driver, same
+      pattern as every other test in that file). Compiles (`compileDebugAndroidTestKotlin`
+      green); actually *running* still needs a real device/emulator — same pre-existing caveat
+      as the rest of this file's `androidTest` suite (§18e's finding: this dev machine's AVDs are
+      the wrong CPU architecture).
+- [ ] **(manual, still open)** `firestore.rules` was edited but **not published** — this session
+      has no Firebase Console access. Before relying on any of 17c's new rules: publish, then
+      live-verify (a) the trainer can request/toggle permissions, (b) the student can submit an
+      assessment only when `canSelfAssess == true` and is genuinely rejected (not just
+      UI-hidden) when `false`, (c) the student can log their own biometric entry only when
+      `canLogBiometrics == true`, (d) a student cannot set their own `canSelfAssess`/
+      `canLogBiometrics`, and (e) a student cannot set their own `pendingAssessmentRequest` to
+      `true` (only a trainer can request; only the student's own submit can clear it).
 
 **17g. Registration**
-- [ ] Wire the new "Permissões"/assessment-history section into `StudentDetailsScreen`'s existing
-      layout (not a new top-level screen — it belongs alongside the other per-student management
-      already there). Wire the new student-side screens into `StudentNavigation`'s existing tab
-      list, conditionally per 17e.
+- [x] Both wired into their existing screens/nav graphs as scoped — no new top-level screens
+      outside what 17d/17e already describe.
+
+Verified: `:app:compileDebugKotlin`, `verify`, `assembleDebug`, `compileDebugAndroidTestKotlin`
+all green locally; both iOS Kotlin/Native compile targets green. **Not verified**: the actual UI
+flows on a real device/simulator (request → banner → submit → history-shows-up end to end) —
+compiling is real signal but isn't a substitute for tapping through it; do that once the
+firestore.rules publish above lands, in the same session, since both gate real end-to-end use.
 
 ---
 

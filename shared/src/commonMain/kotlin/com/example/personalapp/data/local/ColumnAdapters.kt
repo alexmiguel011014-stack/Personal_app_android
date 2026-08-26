@@ -30,3 +30,11 @@ val performedSetListAdapter = object : ColumnAdapter<List<PerformedSet>, String>
 
     override fun encode(value: List<PerformedSet>): String = json.encodeToString(value)
 }
+
+// GOALS.md §17: PAR-Q answers (question key -> yes/no).
+val stringBooleanMapAdapter = object : ColumnAdapter<Map<String, Boolean>, String> {
+    override fun decode(databaseValue: String): Map<String, Boolean> =
+        if (databaseValue.isEmpty()) emptyMap() else json.decodeFromString(databaseValue)
+
+    override fun encode(value: Map<String, Boolean>): String = json.encodeToString(value)
+}

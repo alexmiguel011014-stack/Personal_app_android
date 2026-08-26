@@ -1,0 +1,26 @@
+import kotlin.Boolean;
+import kotlin.String;
+import kotlin.collections.List;
+import kotlin.collections.Map;
+
+CREATE TABLE assessments (
+    id TEXT NOT NULL PRIMARY KEY,
+    studentId TEXT NOT NULL,
+    trainerId TEXT NOT NULL,
+    requestedAt INTEGER NOT NULL,
+    submittedAt INTEGER NOT NULL,
+    parQAnswers TEXT AS Map<String, Boolean> NOT NULL,
+    goal TEXT NOT NULL,
+    experienceLevel TEXT NOT NULL,
+    trainingDays TEXT AS List<String> NOT NULL
+);
+
+insertAssessment:
+INSERT OR REPLACE INTO assessments(id, studentId, trainerId, requestedAt, submittedAt, parQAnswers, goal, experienceLevel, trainingDays)
+VALUES (:id, :studentId, :trainerId, :requestedAt, :submittedAt, :parQAnswers, :goal, :experienceLevel, :trainingDays);
+
+deleteAssessmentById:
+DELETE FROM assessments WHERE id = :id;
+
+getAssessmentsByStudent:
+SELECT * FROM assessments WHERE studentId = :studentId ORDER BY submittedAt DESC;

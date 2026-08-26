@@ -1531,6 +1531,20 @@ flowchart TD
         One iOS-only fix needed along the way: `Dispatchers.IO` is JVM/Android-only (internal on
         Kotlin/Native) — `AppDao`'s `Flow` mapping calls now use `Dispatchers.Default`, available
         on every KMP target. §18d is fully closed.
+      - **Real-device finding (2026-08-26)**, only surfaced once an actual physical Android
+        device with the old Room-based app already installed was available (not something CI or
+        a fresh emulator/local build could ever catch — both always start from an empty
+        filesystem): SQLDelight's `AppDatabase.Schema` starts its own version numbering at 1,
+        independent of Room's; a device with the old Room app has a SQLite file at
+        `PRAGMA user_version=7`, and Android's `SQLiteOpenHelper` refuses to open a
+        higher-versioned file as a "downgrade" to 1 — `SQLiteException: Can't downgrade database
+        from version 7 to 1`, crashing on every launch. Fixed by renaming the on-disk database
+        file (`DatabaseDriverFactory`, both `androidMain`/`iosMain` actuals, `_v2` suffix) —
+        safe specifically because this local database is a disposable Firestore-mirror cache,
+        not a source of truth; a new file just starts empty and
+        `TrainerRepository.startListening()` repopulates it. Confirmed fixed on the same
+        physical device (a Samsung Galaxy, `SM-S926B`) that reproduced it — no crash on
+        relaunch, session resume and Firestore sync both visibly worked.
 
 **18e. Settings/preferences: DataStore → DataStore Multiplatform**
 - [x] DataStore Preferences (not DataStore Proto) has official multiplatform support already —

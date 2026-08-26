@@ -1819,12 +1819,17 @@ flowchart TD
       need a second, higher `versionCode` published to `latest.json`) — the comparison logic has
       unit-testable shape (`UpdateChecker.check()`) but no test was added for it in this pass;
       flagging rather than silently skipping.
-- [ ] **Known bug, reported by the user on a real device (2026-08-26), deliberately deferred** —
-      tapping "Verificar atualização" in Settings errors out. Not yet diagnosed (the device
-      disconnected before the log could be pulled) — likely candidates to check first next time:
-      the raw GitHub URL 404ing/redirecting unexpectedly, a JSON parse mismatch against
-      `latest.json`'s actual shape, or a Ktor/OkHttp config issue specific to a real device
-      (network security config, TLS). Re-test with logcat already attached before touching code.
+- [x] **Fixed (2026-08-27)**: root cause was simpler than any of the candidates guessed the day
+      before — `UpdateChecker`'s hardcoded manifest URL points at
+      `raw.githubusercontent.com/.../main/latest.json`, but `latest.json` only ever existed on
+      `feature/kmp-ios` (this whole branch never merged to `main`), so the URL 404'd for real,
+      confirmed directly with `curl` before touching any code. Fixed by adding `latest.json` to
+      `main` on its own (`git checkout feature/kmp-ios -- latest.json` from `main`, one file, no
+      migration code) — same precedent as cherry-picking the `gradlew` permission fix onto `main`
+      earlier in §18b. `curl` confirms the URL now returns 200 with the right JSON. Not yet
+      re-verified on the physical device that reported the original error (not connected at
+      fix time) — confirm the Settings "Verificar atualização" button actually succeeds next
+      time it's available.
 
 **18j. iOS distribution: SideStore free path (now) → Apple Developer Program (later, when paid)**
 

@@ -27,6 +27,7 @@ fun WorkoutBuilderScreen(
     onNavigateToManual: (String) -> Unit = {},
     onNavigateToAI: (String) -> Unit = {},
     onNavigateToPromptFicha: (String) -> Unit = {},
+    onNavigateToEditWorkout: (String, String) -> Unit = { _, _ -> },
     viewModel: WorkoutViewModel = koinViewModel(),
 ) {
     val workouts by viewModel.workouts.collectAsState()
@@ -109,7 +110,8 @@ fun WorkoutBuilderScreen(
                     items(workouts) { workout ->
                         WorkoutCard(
                             workout = workout,
-                            onDelete = { viewModel.deleteWorkout(workout) }
+                            onDelete = { viewModel.deleteWorkout(workout) },
+                            onEdit = { onNavigateToEditWorkout(studentId, workout.id) }
                         ) { viewModel.toggleWorkoutStatus(workout) }
                     }
                 }
@@ -122,6 +124,7 @@ fun WorkoutBuilderScreen(
 fun WorkoutCard(
     workout: WorkoutEntity,
     onDelete: () -> Unit,
+    onEdit: () -> Unit = {},
     onToggleStatus: () -> Unit
 ) {
     Card(
@@ -149,7 +152,7 @@ fun WorkoutCard(
             }
 
             Row {
-                IconButton(onClick = { /* Editar */ }) {
+                IconButton(onClick = onEdit) {
                     Icon(Icons.Default.Edit, contentDescription = "Editar", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 IconButton(onClick = onToggleStatus) {

@@ -218,10 +218,19 @@ depends on it.
       decision: keep both, link it — added a "Gerenciar" button next to `StudentDetailsScreen`'s
       "Fichas de Treino" header navigating to `Screen.WorkoutBuilder.createRoute(studentId)`.
       Verified via `./gradlew assembleDebug`.
-      - [ ] "Editar" (`WorkoutCard`'s edit icon inside `WorkoutBuilderScreen`) still has no
-        destination — no edit-existing-workout screen exists anywhere in the app. Out of scope for
-        this pass; build one later (reuse `ManualWorkoutScreen`'s exercise-list UI, prefilled,
-        calling `updateWorkout` instead of `insertWorkout`) or remove the dead icon — not decided.
+      - [x] **Done 2026-08-26**: built exactly the option this note favored — reused
+        `ManualWorkoutScreen`, prefilled, calling `updateWorkout` instead of `insertWorkout`, not a
+        new screen. New `Workouts.sq` query `getWorkoutById`, `AppDao`/`TrainerRepository`
+        `getWorkoutById()`, and `WorkoutViewModel.editingWorkout`/`loadWorkoutForEdit()`/
+        `updateWorkout()`. `ManualWorkoutScreen` takes an optional `workoutId: String? = null`;
+        when present it loads and prefills name/exercises, retitles to "Editar Treino"/"Salvar
+        Alterações", and saves via `existing.copy(...)` + `updateWorkout` (keeping the original
+        `id`/`isActive`/`createdAt`/`status`/`assignedAt`) instead of building a new entity. New
+        route `Screen.EditWorkout("edit_workout/{studentId}/{workoutId}")` in `AppNavigation.kt`;
+        `WorkoutCard`'s edit `IconButton` now calls a real `onEdit` callback instead of the empty
+        `/* Editar */` lambda. Verified via `:app:compileDebugKotlin` + `verify` + `assembleDebug`
+        + `compileDebugAndroidTestKotlin`, all green locally. Not yet live-verified on a real
+        device (no device connected this pass).
 
 - [x] **AI ficha generation — ground it in the hypertrophy volume reference table (researched
       2026-08-17 via `/newgoal`, user supplied the actual PDF this session:
@@ -986,10 +995,17 @@ flowchart TD
       evaluation. The evaluation itself is still worth doing eventually (which provider actually
       follows the volume-budget math best), just informally, whenever real usage accumulates —
       not a blocker for shipping the choice.
-- [ ] Keep Gemini wired as an optional fallback (§3's existing code), but stop treating it as the
-      default/primary path in any UI copy until Google's free-tier reliability changes — still
-      accurate advice, unaffected by the §16 expansion (Gemini stays one of four choices, just
-      not the one to lead with in copy/defaults).
+- [x] **Done 2026-08-26**: Gemini stays wired as a fallback but is no longer presented as the
+      default/primary path anywhere. Code defaults changed from `AiProvider.GEMINI` to
+      `AiProvider.OPENAI` (`GenerativeAiService.generateWorkout`, `AIWorkoutViewModel.sendMessage`,
+      `AIWorkoutScreen`'s initial selected chip); the Gemini chip moved from first to last in
+      `AIWorkoutScreen`'s row; `SettingsScreen`'s `AiSettingsTab` no longer opens with a
+      highlighted "Gemini já está pronto" card followed by the other three providers marked
+      "opcional" — that card is gone, the three key fields come first, and a single plain
+      (non-highlighted) line about Gemini's no-key availability comes last. `AdminDashboardScreen`'s
+      `ApiStatusTab` was left as-is (a factual status readout, not a choice/default nudge — out of
+      scope for this note). Verified via `:app:compileDebugKotlin` + `verify` + `assembleDebug` +
+      `compileDebugAndroidTestKotlin`, all green locally.
 
 ---
 

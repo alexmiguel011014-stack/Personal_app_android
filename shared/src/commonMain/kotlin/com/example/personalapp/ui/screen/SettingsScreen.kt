@@ -148,23 +148,6 @@ private fun AiSettingsTab(viewModel: SettingsViewModel) {
                 style = MaterialTheme.typography.titleMedium
             )
 
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "Google Gemini já está pronto para uso — não precisa de chave.",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "O acesso ao Gemini é gerenciado centralmente pelo app via Firebase, sem custo. " +
-                            "Os provedores abaixo são opcionais — cada um exige sua própria chave.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer
-                    )
-                }
-            }
-
             OutlinedTextField(
                 value = tempOpenaiKey,
                 onValueChange = { tempOpenaiKey = it },
@@ -190,6 +173,15 @@ private fun AiSettingsTab(viewModel: SettingsViewModel) {
                 modifier = Modifier.fillMaxWidth(),
                 visualTransformation = PasswordVisualTransformation(),
                 placeholder = { Text("Insira sua chave aqui...") }
+            )
+
+            // GOALS.md §14c: Gemini stays available (no key needed, managed via Firebase) but is
+            // deliberately not the highlighted/lead option here anymore — plain text, not a card.
+            Text(
+                text = "Google Gemini também está disponível, sem precisar de chave (gerenciado " +
+                    "centralmente pelo app via Firebase).",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }

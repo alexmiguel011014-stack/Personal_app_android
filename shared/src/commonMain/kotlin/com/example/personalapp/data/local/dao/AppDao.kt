@@ -154,6 +154,9 @@ class AppDao(driverFactory: DatabaseDriverFactory) {
         database.workoutsQueries.getActiveWorkoutsByStudent(studentId, ::toWorkoutEntity)
             .asFlow().mapToList(Dispatchers.Default)
 
+    suspend fun getWorkoutById(id: String): WorkoutEntity? =
+        database.workoutsQueries.getWorkoutById(id, ::toWorkoutEntity).executeAsOneOrNull()
+
     private fun toWorkoutEntity(
         id: String, studentId: String, name: String, isActive: Boolean,
         exercises: List<com.example.personalapp.data.model.Exercise>, createdAt: Long,

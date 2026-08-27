@@ -39,7 +39,7 @@ class AIWorkoutViewModel(
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    fun sendMessage(text: String, studentId: String, provider: AiProvider = AiProvider.GEMINI) {
+    fun sendMessage(text: String, studentId: String, provider: AiProvider = AiProvider.OPENAI) {
         if (text.isBlank()) return
 
         viewModelScope.launch {

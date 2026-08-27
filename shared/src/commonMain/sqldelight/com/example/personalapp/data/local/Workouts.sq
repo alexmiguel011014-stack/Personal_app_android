@@ -29,3 +29,6 @@ DELETE FROM workouts WHERE id = :id;
 
 getActiveWorkoutsByStudent:
 SELECT * FROM workouts WHERE studentId = :studentId AND isActive = 1;
+
+getWorkoutById:
+SELECT * FROM workouts WHERE id = :id;

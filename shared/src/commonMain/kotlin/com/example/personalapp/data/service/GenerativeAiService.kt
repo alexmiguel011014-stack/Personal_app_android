@@ -59,7 +59,9 @@ class GenerativeAiService(
         private const val CLAUDE_MAX_TOKENS = 4096
     }
 
-    suspend fun generateWorkout(student: UserEntity, userPrompt: String, provider: AiProvider = AiProvider.GEMINI): String {
+    // Default is OpenAI, not Gemini — GOALS.md §14c: Gemini stays available but isn't the
+    // primary/default path until Google's free-tier reliability changes.
+    suspend fun generateWorkout(student: UserEntity, userPrompt: String, provider: AiProvider = AiProvider.OPENAI): String {
         val fullPrompt = buildPrompt(student, userPrompt)
         return when (provider) {
             AiProvider.GEMINI -> geminiProvider.generate(fullPrompt)

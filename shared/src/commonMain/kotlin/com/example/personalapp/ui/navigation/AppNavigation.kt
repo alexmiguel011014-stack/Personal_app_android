@@ -25,6 +25,9 @@ sealed class Screen(val route: String) {
     object ManualWorkout : Screen("manual_workout/{studentId}") {
         fun createRoute(studentId: String) = "manual_workout/$studentId"
     }
+    object EditWorkout : Screen("edit_workout/{studentId}/{workoutId}") {
+        fun createRoute(studentId: String, workoutId: String) = "edit_workout/$studentId/$workoutId"
+    }
     object AIWorkout : Screen("ai_workout/{studentId}") {
         fun createRoute(studentId: String) = "ai_workout/$studentId"
     }
@@ -132,7 +135,25 @@ fun AppNavigation(onLogout: () -> Unit = {}) {
                 },
                 onNavigateToPromptFicha = { id ->
                     navController.navigate(Screen.PromptFicha.createRoute(id))
+                },
+                onNavigateToEditWorkout = { id, workoutId ->
+                    navController.navigate(Screen.EditWorkout.createRoute(id, workoutId))
                 }
+            )
+        }
+        composable(
+            route = Screen.EditWorkout.route,
+            arguments = listOf(
+                navArgument("studentId") { type = NavType.StringType },
+                navArgument("workoutId") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val studentId = backStackEntry.arguments?.read { getStringOrNull("studentId") } ?: ""
+            val workoutId = backStackEntry.arguments?.read { getStringOrNull("workoutId") } ?: ""
+            ManualWorkoutScreen(
+                studentId = studentId,
+                workoutId = workoutId,
+                onBack = { navController.popBackStack() }
             )
         }
         composable(

@@ -211,6 +211,8 @@ class TrainerRepository(
 
     fun getActiveWorkoutsByStudent(studentId: String): Flow<List<WorkoutEntity>> = appDao.getActiveWorkoutsByStudent(studentId)
 
+    suspend fun getWorkoutById(id: String): WorkoutEntity? = appDao.getWorkoutById(id)
+
     // History — local-only, superseded by workoutLogs (see GOALS.md §4a Product goal #3)
     suspend fun insertHistory(history: HistoryEntity) = appDao.insertHistory(history)
 

@@ -17,13 +17,28 @@ class WorkoutViewModel(
     private val _workouts = MutableStateFlow<List<WorkoutEntity>>(emptyList())
     val workouts: StateFlow<List<WorkoutEntity>> = _workouts
 
+    private val _editingWorkout = MutableStateFlow<WorkoutEntity?>(null)
+    val editingWorkout: StateFlow<WorkoutEntity?> = _editingWorkout
+
     fun loadWorkouts(studentId: String) {
         repository.getActiveWorkoutsByStudent(studentId).onEach { _workouts.value = it }.launchIn(viewModelScope)
+    }
+
+    fun loadWorkoutForEdit(workoutId: String) {
+        viewModelScope.launch {
+            _editingWorkout.value = repository.getWorkoutById(workoutId)
+        }
     }
 
     fun insertWorkout(workout: WorkoutEntity) {
         viewModelScope.launch {
             repository.insertWorkout(workout)
+        }
+    }
+
+    fun updateWorkout(workout: WorkoutEntity) {
+        viewModelScope.launch {
+            repository.updateWorkout(workout)
         }
     }
 

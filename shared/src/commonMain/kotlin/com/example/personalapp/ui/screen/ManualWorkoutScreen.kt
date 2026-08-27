@@ -29,6 +29,7 @@ import kotlin.uuid.Uuid
 fun ManualWorkoutScreen(
     studentId: String,
     onBack: () -> Unit,
+    workoutId: String? = null,
     viewModel: WorkoutViewModel = koinViewModel()
 ) {
     var workoutName by remember { mutableStateOf("") }
@@ -37,6 +38,21 @@ fun ManualWorkoutScreen(
     var showValidation by remember { mutableStateOf(false) }
     val nameError = showValidation && workoutName.isBlank()
     val exercisesError = showValidation && exercises.isEmpty()
+
+    // Edit mode: prefill from the existing workout once it loads (see WorkoutBuilderScreen's
+    // "Editar" icon — GOALS.md's own note said reuse this screen prefilled, so it's the same
+    // form, just seeded with the workout being edited instead of starting blank).
+    val editingWorkout by viewModel.editingWorkout.collectAsState()
+    LaunchedEffect(workoutId) {
+        if (workoutId != null) viewModel.loadWorkoutForEdit(workoutId)
+    }
+    LaunchedEffect(editingWorkout) {
+        editingWorkout?.let { workout ->
+            workoutName = workout.name
+            exercises.clear()
+            exercises.addAll(workout.exercises)
+        }
+    }
 
     // Smart Paste state
     var rawText by remember { mutableStateOf("") }
@@ -55,7 +71,7 @@ fun ManualWorkoutScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Novo Treino") },
+                title = { Text(if (workoutId != null) "Editar Treino" else "Novo Treino") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar")
@@ -68,20 +84,25 @@ fun ManualWorkoutScreen(
                 onClick = {
                     showValidation = true
                     if (workoutName.isNotBlank() && exercises.isNotEmpty()) {
-                        val workout = WorkoutEntity(
-                            id = Uuid.random().toString(),
-                            studentId = studentId,
-                            name = workoutName,
-                            isActive = true,
-                            exercises = exercises.toList(),
-                            createdAt = currentTimeMillis()
-                        )
-                        viewModel.insertWorkout(workout)
+                        val existing = editingWorkout
+                        val workout = if (existing != null) {
+                            existing.copy(name = workoutName, exercises = exercises.toList())
+                        } else {
+                            WorkoutEntity(
+                                id = Uuid.random().toString(),
+                                studentId = studentId,
+                                name = workoutName,
+                                isActive = true,
+                                exercises = exercises.toList(),
+                                createdAt = currentTimeMillis()
+                            )
+                        }
+                        if (existing != null) viewModel.updateWorkout(workout) else viewModel.insertWorkout(workout)
                         onBack()
                     }
                 },
                 icon = { Icon(Icons.Default.Save, contentDescription = null) },
-                text = { Text("Salvar Ficha") }
+                text = { Text(if (workoutId != null) "Salvar Alterações" else "Salvar Ficha") }
             )
         }
     ) { padding ->

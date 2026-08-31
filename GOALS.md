@@ -229,8 +229,11 @@ depends on it.
         route `Screen.EditWorkout("edit_workout/{studentId}/{workoutId}")` in `AppNavigation.kt`;
         `WorkoutCard`'s edit `IconButton` now calls a real `onEdit` callback instead of the empty
         `/* Editar */` lambda. Verified via `:app:compileDebugKotlin` + `verify` + `assembleDebug`
-        + `compileDebugAndroidTestKotlin`, all green locally. Not yet live-verified on a real
-        device (no device connected this pass).
+        + `compileDebugAndroidTestKotlin`, all green locally. **Live-verified 2026-08-27**: on
+        the real device, created a workout, opened it via the edit icon (title/FAB correctly read
+        "Editar Treino"/"Salvar Alterações", name and exercise list prefilled), changed the name,
+        saved — the list showed one updated entry, not two, confirming `updateWorkout` replaced
+        the existing row instead of inserting a second one.
 
 - [x] **AI ficha generation — ground it in the hypertrophy volume reference table (researched
       2026-08-17 via `/newgoal`, user supplied the actual PDF this session:
@@ -1092,8 +1095,12 @@ flowchart TD
 - [x] New unit test for the effective-volume calculator: multiple exercises contributing
       fractional credit to the same muscle sum correctly; a muscle with zero contributing
       exercises reports 0, not a crash.
-- [ ] **(manual)** confirm "Copiar Prompt" actually populates the system clipboard on a real
-      device — Compose clipboard interaction isn't meaningfully covered by a JVM/Robolectric test.
+- [x] **Confirmed 2026-08-27** on the real device: tapped "Copiar Prompt" (both the app's own
+      Snackbar and Android's own system "Copiado." toast appeared — the latter only fires when
+      `ClipboardManager.setPrimaryClip()` actually runs), then pasted into a plain text field to
+      verify the actual content, not just that *something* copied: the full generated prompt
+      came through correctly ("Você é um Personal Trainer especialista em hipertrofia baseada em
+      evidências. Vou te passar o perfil de um aluno e o que eu quero na ficha de treino...").
 
 **15g. Registration — rewire the two existing AI entry points**
 - [x] `StudentDetailsScreen`'s "Ficha Personal" dialog ("Manual" vs. "Com IA") and
@@ -1304,7 +1311,7 @@ migration; the shape below is what actually landed, not what was originally sket
       — `StudentViewModel`/`StudentNavigation` didn't have a reactive way to read the student's
       own permission flags before this.
 
-**17c. `firestore.rules`** — **published state unverified, needs a manual step (see 17f).**
+**17c. `firestore.rules`** — **published and live-verified 2026-08-27 (see 17f).**
 - [x] `assessments/{id}`: `allow create` requires the caller be the student
       (`studentId == request.auth.uid`), their `trainerId` match their own profile's, and their
       own `canSelfAssess == true`. `allow read` for the owning trainer or the student themselves.
@@ -1332,9 +1339,45 @@ migration; the shape below is what actually landed, not what was originally sket
   permissions branch — restricted to exactly `toLinkedStudentUpdateMap()`'s field list
   (name/gender/phone/goal/experienceLevel/medicalNotes/trainingDays), excluding role/trainerId
   and excluding §17c's canSelfAssess/canLogBiometrics/pendingAssessmentRequest, so the two writes
-  can never bleed into each other's allowed fields. **Needs the same manual publish + live
-  verification as the rest of 17c** (edit a linked student's profile as the trainer, confirm the
-  Firestore doc actually changes) — not done as part of this note.
+  can never bleed into each other's allowed fields. **Live-verified 2026-08-27** on the real
+  device: edited `leandro`'s phone/goal/training-day fields via `EditStudentScreen` as the
+  trainer, saved, force-stopped and relaunched the app (ruling out an optimistic local-only
+  write) — the fields were still there, confirming the write actually landed in Firestore, not
+  just the local cache.
+  - **First attempt failed with a real finding, not just "rules not published yet".** The
+    Console's publish history showed the *previous* rules version (without this branch) was
+    still live — the earlier "already published" confirmation was for an older version of the
+    file, sent before this fix existed. Republishing the current file fixed it. But the failure
+    mode itself is a separate, real bug, tracked below.
+  - **New bug found, fixed same day**: when Firestore rejects a write (e.g. `PERMISSION_DENIED`
+    from a rules mismatch), the GitLive SDK's write-rejection surfaced as an **uncaught exception
+    on the main thread that crashed the whole app** (`FirebaseFirestoreException:
+    PERMISSION_DENIED` → `SyncEngine.handleRejectedWrite` → uncaught `FATAL EXCEPTION`), not a
+    catchable error the UI could show a message for. Reproduced live: editing `leandro`'s profile
+    while the stale rules were still published force-closed the app back to the Android home
+    screen. No data corruption resulted — the next Firestore snapshot resynced the local cache
+    back to the server's (unedited) state.
+    - **Fix**: `TrainerRepository` gained a private `safeFirestoreWrite { ... }` helper
+      (catch-and-log via `Firebase.crashlytics.recordException`, rethrowing
+      `CancellationException` so structured concurrency still cancels correctly — same shape as
+      the `.catch { }` already used on the `mirror()` listener side for read errors). Applied to
+      every write method that already applies to the local DB first
+      (`insertUser`/`updateUser`/`deleteUser`, `setStudentPermission`, `requestAssessment`,
+      `insertBiometric`, `insertWorkout`/`updateWorkout`/`deleteWorkout`,
+      `insertSchedule`/`deleteSchedule`, `insertWorkoutLog`) — for those, local already gives the
+      UI its optimistic update and the listener resyncs on failure, so swallowing-and-logging is
+      safe, matching what was actually observed live.
+    - **Deliberately left unwrapped**: `TrainerRepository.generateInvite()` (no local fallback,
+      and its return value — the invite code — would be actively misleading if the write silently
+      failed) and `StudentRepository`'s own direct writes (`submitAssessment`, `logOwnBiometric` —
+      that repository has no local DB at all, per its own file comment, so there's nothing to
+      resync from). Those need real ViewModel-level error UI, not a catch-and-log — a different,
+      larger fix than this pass, tracked here as a known gap rather than papered over.
+    - Verified: `:app:compileDebugKotlin` green; real-device sanity check confirms the
+      success path (a normal profile edit) still works unchanged after the wrap. Deliberately
+      **not** re-reproduced against a live rejected write this time (would've meant temporarily
+      un-publishing the just-fixed rules again) — the fix's correctness rests on the pattern
+      already proven live by the identical `.catch{}` on the listener side, not a fresh repro.
 
 **17d. Trainer-side UI**
 - [x] Badge — see 17a.
@@ -1388,6 +1431,11 @@ migration; the shape below is what actually landed, not what was originally sket
        third occurrence; the fix each time is the same one-line filename bump.
     2. (Not part of §17 itself, found while testing it, tracked as its own separate GitHub
        item/session — see the "found while writing this" note under 17c above.)
+  - **Second real-device pass, 2026-08-27**: live-verified the trainer-profile-edit rules branch
+    (see 17c) and the edit-existing-workout screen (see the `[x]` under §15's "Editar" note) —
+    both work end to end against the actually-published rules. Also surfaced the
+    write-rejection-crashes-the-app finding recorded under 17c; not a §17-specific bug, tracked
+    there since that's where it was found.
 
 **17g. Registration**
 - [x] Both wired into their existing screens/nav graphs as scoped — no new top-level screens
@@ -1945,21 +1993,40 @@ continues normally; only the items below stay blocked on this decision.
       available option once GitLive was adopted in §18f. Discussed directly with the user;
       decided to accept the coverage gap now and revisit with the Firebase Emulator Suite (real
       local Firestore/Auth, not mocked) if/when this needs testing again — see §18f's note.
-- [ ] `AppDaoTest`/`SettingsRepositoryTest` (real-driver instrumented tests, `androidTest`-only,
-      using SQLDelight's `AndroidSqliteDriver`/`OkioStorage` since §18d/§18e — not Room, that
-      plan changed) — re-run against SQLDelight's `NativeSqliteDriver`/DataStore's `OkioStorage`
-      on `iosTest` too; genuinely new coverage the project didn't have before (the iOS path was
-      untested until §18d/§18e moved these). Currently blocked on **two separate things**, not
-      one: Android-side, this machine's two AVDs are both the wrong CPU architecture for its
-      QEMU2 emulator (§18e's finding); iOS-side, the same "iOS Firebase native framework linking"
-      gap tracked under §18f (the whole `:shared` test binary needs that to link at all, whether
-      or not a given test touches Firebase).
-- [ ] `TrainerGoldenPathTest.kt` (Compose UI test) — Compose Multiplatform's iOS UI-testing
-      tooling is comparatively less mature than Android's `ui-test-junit4`; confirm current
-      support at implementation time. If iOS Compose UI testing isn't practical yet, keep this
-      test Android-only and say so explicitly rather than silently losing golden-path coverage
-      with no note. Also blocked on there being an actual iOS app to run a UI test against
-      (§18j) — moot until that exists regardless of tooling maturity.
+- [x] **`AppDaoTest`/`SettingsRepositoryTest`/`TrainerGoldenPathTest` — actually run for the first
+      time, 2026-08-27**, against the real Android device (`SM-S926B`), not an emulator: the
+      "wrong CPU architecture AVD" blocker only ever applied to this machine's emulators, not to
+      real hardware, and a real device happened to be connected. All 12 instrumented tests pass
+      (`./gradlew connectedDebugAndroidTest`). iOS side (`iosTest`, `TrainerGoldenPathTest` on
+      iOS) is still blocked exactly as before — the "iOS Firebase native framework linking" gap
+      under §18f and, for the UI test specifically, needing an actual iOS app to run it against
+      (§18j) — neither of those changed.
+  - **Three real bugs found and fixed getting to a green run — this suite had never actually
+    compiled+run before, so none of these were previously catchable**:
+    1. **Build config**: `:app:mergeDebugAndroidTestJavaResource` failed with 6 duplicate
+       `META-INF/LICENSE.md` (and sibling NOTICE/DEPENDENCIES) files from `mockk-android`'s
+       transitive JUnit Jupiter dependency colliding with the rest of the androidTest classpath.
+       Fixed with a `packaging { resources { excludes += [...] } }` block in `app/build.gradle.kts`
+       — standard fix for this class of AGP resource-merge conflict.
+    2. **Test bug**: `TrainerGoldenPathTest` called `composeTestRule.setContent { }` twice in one
+       test (once per screen) — Compose only allows one `setContent` call per Activity per test;
+       the second call threw `IllegalStateException: ... has already set content`. Fixed by
+       hoisting a `mutableIntStateOf` screen-step flag read inside a single `setContent` block,
+       flipped mid-test instead of calling `setContent` again.
+    3. **Stale mocks**: the same test's MockK stubs for `TrainerRepository`/`StudentRepository`
+       only covered the methods that existed when the test was first written — every method
+       either ViewModel gained since (`StudentRepository.getMyWorkouts`/`getMyBiometrics`/
+       `getMyWorkoutLogs`/`getMyProfile` from §17e's `StudentViewModel.start()`,
+       `TrainerRepository.getAssessmentsForStudent` from §17d's `StudentDetailsViewModel
+       .loadStudent()`) had no stub, so MockK threw `MockKException: no answer found` the moment
+       either ViewModel called it. Silent test debt: nothing caught this drift because the test
+       never actually executed on this project before today. Added the missing stubs.
+  - Device connection had its own two-connections-to-one-physical-device wrinkle worth noting for
+    next time: `adb devices` showed the same phone twice (USB `RXGYA03W4MK` +
+    `adb-RXGYA03W4MK-...` wireless), and Gradle tried to install/run on both, producing
+    "Process crashed"/uninstall failures on the redundant one. `adb disconnect
+    <wireless-serial>` to leave just the USB connection fixed it — not a code bug, just a
+    same-device-two-transports gotcha.
 
 **18m. Registration/cutover**
 - [x] **Cutover audit done (2026-08-26)**: `app/src/main/java/` is down to exactly 3 files —

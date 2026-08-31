@@ -1,6 +1,9 @@
 package com.example.personalapp.ui.screen
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -64,6 +67,7 @@ class TrainerGoldenPathTest {
         every { trainerRepository.getActiveWorkoutsByStudent(studentId) } returns workoutsFlow
         every { trainerRepository.getWorkoutLogsByStudent(studentId) } returns logsFlow
         every { trainerRepository.getBiometricsByUser(studentId) } returns MutableStateFlow<List<BiometricEntity>>(emptyList())
+        every { trainerRepository.getAssessmentsForStudent(studentId) } returns MutableStateFlow(emptyList())
         coEvery { trainerRepository.getUserById(studentId) } returns
             UserEntity(id = studentId, name = "Ana", role = "student", createdAt = 0L)
         coEvery { trainerRepository.updateWorkout(any()) } answers {
@@ -84,15 +88,39 @@ class TrainerGoldenPathTest {
         coEvery { studentRepository.logSession(any(), any()) } coAnswers {
             trainerRepository.insertWorkoutLog(firstArg(), secondArg())
         }
+        // StudentViewModel.start() also collects these — unstubbed MockK calls throw, so every
+        // flow it reads needs a stub even though this test doesn't assert on them directly.
+        every { studentRepository.getMyWorkouts(studentId) } returns MutableStateFlow(emptyList())
+        every { studentRepository.getMyBiometrics(studentId) } returns MutableStateFlow(emptyList())
+        every { studentRepository.getMyWorkoutLogs(studentId) } returns logsFlow
+        every { studentRepository.getMyProfile(studentId) } returns MutableStateFlow(null)
 
         val workoutViewModel = WorkoutViewModel(trainerRepository)
         val studentDetailsViewModel = StudentDetailsViewModel(trainerRepository)
         val studentViewModel = StudentViewModel(studentRepository)
 
+        // A single Activity can only have `setContent` called on it once (a second call throws
+        // "has already set content"), so switching screens mid-test drives a state flag inside
+        // one `setContent` block instead of calling `setContent` again for step 3.
+        var screenStep by mutableIntStateOf(1)
+
         // Step 1: trainer opens the workout builder and assigns the (currently draft) workout.
         composeTestRule.setContent {
             MaterialTheme {
-                WorkoutBuilderScreen(studentId = studentId, onBack = {}, viewModel = workoutViewModel)
+                if (screenStep == 1) {
+                    WorkoutBuilderScreen(studentId = studentId, onBack = {}, viewModel = workoutViewModel)
+                } else {
+                    StudentDetailsScreen(
+                        studentId = studentId,
+                        onBack = {},
+                        onNavigateToManual = {},
+                        onNavigateToAI = {},
+                        onNavigateToEdit = {},
+                        onNavigateToWorkoutBuilder = {},
+                        onNavigateToPromptFicha = {},
+                        viewModel = studentDetailsViewModel,
+                    )
+                }
             }
         }
         composeTestRule.runOnIdle { workoutViewModel.loadWorkouts(studentId) }
@@ -114,20 +142,7 @@ class TrainerGoldenPathTest {
         assertEquals(1, logsFlow.value.size)
 
         // Step 3: the trainer reopens the student's screen and sees the logged session.
-        composeTestRule.setContent {
-            MaterialTheme {
-                StudentDetailsScreen(
-                    studentId = studentId,
-                    onBack = {},
-                    onNavigateToManual = {},
-                    onNavigateToAI = {},
-                    onNavigateToEdit = {},
-                    onNavigateToWorkoutBuilder = {},
-                    onNavigateToPromptFicha = {},
-                    viewModel = studentDetailsViewModel,
-                )
-            }
-        }
+        composeTestRule.runOnIdle { screenStep = 2 }
         composeTestRule.runOnIdle { studentDetailsViewModel.loadStudent(studentId) }
         composeTestRule.waitForIdle()
 

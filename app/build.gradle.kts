@@ -66,6 +66,22 @@ android {
     buildFeatures {
         compose = true
     }
+    packaging {
+        resources {
+            // mockk-android pulls in JUnit Jupiter transitively, which ships duplicate META-INF
+            // license/notice files that collide with the rest of the androidTest classpath —
+            // only surfaces when actually building the androidTest APK (connectedAndroidTest),
+            // which is why this went unnoticed until a real device made that runnable.
+            excludes += setOf(
+                "META-INF/LICENSE.md",
+                "META-INF/LICENSE-notice.md",
+                "META-INF/NOTICE.md",
+                "META-INF/LICENSE.txt",
+                "META-INF/NOTICE.txt",
+                "META-INF/DEPENDENCIES",
+            )
+        }
+    }
 }
 
 dependencies {

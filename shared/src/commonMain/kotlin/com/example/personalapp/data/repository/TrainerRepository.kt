@@ -16,6 +16,7 @@ import dev.gitlive.firebase.firestore.ChangeType
 import dev.gitlive.firebase.firestore.DocumentSnapshot
 import dev.gitlive.firebase.firestore.FirebaseFirestore
 import dev.gitlive.firebase.firestore.Query
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -41,6 +42,22 @@ class TrainerRepository(
     private var listenerJobs: List<Job> = emptyList()
 
     private fun currentTrainerId(): String? = auth.currentUser?.uid
+
+    // A rejected Firestore write (e.g. a rules mismatch) otherwise surfaces as an uncaught
+    // exception that crashes the whole app — confirmed live, GOALS.md §17c. Every write here
+    // already applies to the local DB first, so the UI already has its (optimistic) update;
+    // if the Firestore half fails, the next snapshot from `mirror`'s listener resyncs local back
+    // to the server's real state (also confirmed live), so logging and swallowing here is safe —
+    // there's no user-facing action to retry, just a doc that'll catch back up on its own.
+    private suspend fun safeFirestoreWrite(block: suspend () -> Unit) {
+        try {
+            block()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Firebase.crashlytics.recordException(e)
+        }
+    }
 
     fun startListening(trainerId: String) {
         stopListening()
@@ -95,19 +112,23 @@ class TrainerRepository(
     // Users / Students
     suspend fun insertUser(user: UserEntity) {
         appDao.insertUser(user)
-        currentTrainerId()?.let {
-            firestore.collection("students").document(user.id).set(user.toFirestoreMap(it))
+        currentTrainerId()?.let { trainerId ->
+            safeFirestoreWrite {
+                firestore.collection("students").document(user.id).set(user.toFirestoreMap(trainerId))
+            }
         }
     }
 
     suspend fun updateUser(user: UserEntity) {
         appDao.updateUser(user)
-        if (user.linked) {
-            firestore.collection("users").document(user.id)
-                .set(user.toLinkedStudentUpdateMap(), merge = true)
-        } else {
-            currentTrainerId()?.let {
-                firestore.collection("students").document(user.id).set(user.toFirestoreMap(it))
+        safeFirestoreWrite {
+            if (user.linked) {
+                firestore.collection("users").document(user.id)
+                    .set(user.toLinkedStudentUpdateMap(), merge = true)
+            } else {
+                currentTrainerId()?.let {
+                    firestore.collection("students").document(user.id).set(user.toFirestoreMap(it))
+                }
             }
         }
     }
@@ -115,7 +136,9 @@ class TrainerRepository(
     suspend fun deleteUser(user: UserEntity) {
         appDao.deleteUser(user)
         val collection = if (user.linked) "users" else "students"
-        firestore.collection(collection).document(user.id).delete()
+        safeFirestoreWrite {
+            firestore.collection(collection).document(user.id).delete()
+        }
     }
 
     fun getStudents(): Flow<List<UserEntity>> = appDao.getStudents()
@@ -127,8 +150,10 @@ class TrainerRepository(
     // only shows the section then).
     suspend fun setStudentPermission(studentId: String, canSelfAssess: Boolean, canLogBiometrics: Boolean) {
         appDao.setStudentPermissions(studentId, canSelfAssess, canLogBiometrics)
-        firestore.collection("users").document(studentId)
-            .set(mapOf("canSelfAssess" to canSelfAssess, "canLogBiometrics" to canLogBiometrics), merge = true)
+        safeFirestoreWrite {
+            firestore.collection("users").document(studentId)
+                .set(mapOf("canSelfAssess" to canSelfAssess, "canLogBiometrics" to canLogBiometrics), merge = true)
+        }
     }
 
     // Pull-based request (GOALS.md §17a): just flips a flag the student sees next time they open
@@ -136,7 +161,9 @@ class TrainerRepository(
     // since firestore.rules restricts this write to *only* this one field.
     suspend fun requestAssessment(studentId: String) {
         appDao.setPendingAssessmentRequest(studentId, true)
-        firestore.collection("users").document(studentId).updateFields { "pendingAssessmentRequest" to true }
+        safeFirestoreWrite {
+            firestore.collection("users").document(studentId).updateFields { "pendingAssessmentRequest" to true }
+        }
     }
 
     fun getAssessmentsForStudent(studentId: String): Flow<List<AssessmentEntity>> =
@@ -169,8 +196,10 @@ class TrainerRepository(
     // Biometrics
     suspend fun insertBiometric(biometric: BiometricEntity) {
         appDao.insertBiometric(biometric)
-        currentTrainerId()?.let {
-            firestore.collection("biometrics").document(biometric.id).set(biometric.toFirestoreMap(it))
+        currentTrainerId()?.let { trainerId ->
+            safeFirestoreWrite {
+                firestore.collection("biometrics").document(biometric.id).set(biometric.toFirestoreMap(trainerId))
+            }
         }
     }
 
@@ -191,22 +220,28 @@ class TrainerRepository(
     suspend fun insertWorkout(workout: WorkoutEntity) {
         val toSave = workout.withDerivedStatus()
         appDao.insertWorkout(toSave)
-        currentTrainerId()?.let {
-            firestore.collection("workouts").document(toSave.id).set(toSave.toFirestoreMap(it))
+        currentTrainerId()?.let { trainerId ->
+            safeFirestoreWrite {
+                firestore.collection("workouts").document(toSave.id).set(toSave.toFirestoreMap(trainerId))
+            }
         }
     }
 
     suspend fun updateWorkout(workout: WorkoutEntity) {
         val toSave = workout.withDerivedStatus()
         appDao.updateWorkout(toSave)
-        currentTrainerId()?.let {
-            firestore.collection("workouts").document(toSave.id).set(toSave.toFirestoreMap(it))
+        currentTrainerId()?.let { trainerId ->
+            safeFirestoreWrite {
+                firestore.collection("workouts").document(toSave.id).set(toSave.toFirestoreMap(trainerId))
+            }
         }
     }
 
     suspend fun deleteWorkout(workout: WorkoutEntity) {
         appDao.deleteWorkout(workout)
-        firestore.collection("workouts").document(workout.id).delete()
+        safeFirestoreWrite {
+            firestore.collection("workouts").document(workout.id).delete()
+        }
     }
 
     fun getActiveWorkoutsByStudent(studentId: String): Flow<List<WorkoutEntity>> = appDao.getActiveWorkoutsByStudent(studentId)
@@ -219,14 +254,18 @@ class TrainerRepository(
     // Schedules
     suspend fun insertSchedule(schedule: ScheduleEntity) {
         appDao.insertSchedule(schedule)
-        currentTrainerId()?.let {
-            firestore.collection("schedules").document(schedule.id).set(schedule.toFirestoreMap(it))
+        currentTrainerId()?.let { trainerId ->
+            safeFirestoreWrite {
+                firestore.collection("schedules").document(schedule.id).set(schedule.toFirestoreMap(trainerId))
+            }
         }
     }
 
     suspend fun deleteSchedule(schedule: ScheduleEntity) {
         appDao.deleteSchedule(schedule)
-        firestore.collection("schedules").document(schedule.id).delete()
+        safeFirestoreWrite {
+            firestore.collection("schedules").document(schedule.id).delete()
+        }
     }
 
     suspend fun getAllSchedules() = appDao.getAllSchedules()
@@ -235,7 +274,9 @@ class TrainerRepository(
     // profile, not from auth.currentUser, since the writer here is the student, not the trainer).
     suspend fun insertWorkoutLog(log: WorkoutLogEntity, trainerId: String) {
         appDao.insertWorkoutLog(log)
-        firestore.collection("workoutLogs").document(log.id).set(log.toFirestoreMap(trainerId))
+        safeFirestoreWrite {
+            firestore.collection("workoutLogs").document(log.id).set(log.toFirestoreMap(trainerId))
+        }
     }
 
     fun getWorkoutLogsByStudent(studentId: String): Flow<List<WorkoutLogEntity>> = appDao.getWorkoutLogsByStudent(studentId)

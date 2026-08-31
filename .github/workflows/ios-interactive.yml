@@ -1,12 +1,17 @@
 name: iOS Interactive Debug Session
 
 # On-demand, manually-triggered only (never on push/PR): opens a live SSH shell on a real
-# GitHub-hosted macOS runner via tmate, free on this public repo. Exists because §18f/§18j's iOS
+# GitHub-hosted macOS runner via upterm, free on this public repo. Exists because §18f/§18j's iOS
 # native work (CocoaPods/SPM Firebase framework linking, Xcode project setup) needs a real Mac and
 # this project has no budget for a rented one — see GOALS.md. The session is terminal-only (no
 # Xcode GUI) but that's sufficient for CocoaPods/build-config work, which is what's actually
 # blocked. Capped at 45 minutes so it can't burn the free macOS-runner quota indefinitely; re-run
 # this workflow again for another session once it closes.
+#
+# Uses lhotari/action-upterm, not mxschmitt/action-tmate: tried tmate first, but its Homebrew
+# install completed and the step then hung indefinitely with zero further output — its own log
+# banner says "tmate has been deprecated because it is not maintained upstream" and its free relay
+# has gotten unreliable, which matches. upterm.dev's relay is the actively-maintained alternative.
 on:
   workflow_dispatch:
 
@@ -32,6 +37,5 @@ jobs:
           pod --version || echo "CocoaPods not found"
           xcrun simctl list runtimes
 
-      - name: Open interactive SSH session (tmate)
-        uses: mxschmitt/action-tmate@v3
-        timeout-minutes: 45
+      - name: Open interactive SSH session (upterm)
+        uses: lhotari/action-upterm@v1

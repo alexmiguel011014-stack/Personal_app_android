@@ -9,6 +9,11 @@ targets:
     platform: iOS
     sources:
       - path: iosApp
+    dependencies:
+      # SQLDelight's native driver (co.touchlab:sqliter) cinterops against the C sqlite3 API but
+      # doesn't bundle its own implementation — the app target has to link the system's SQLite,
+      # or the build fails at link time with "Undefined symbols ... _sqlite3_open_v2" etc.
+      - sdk: libsqlite3.tbd
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.personalapp.ios

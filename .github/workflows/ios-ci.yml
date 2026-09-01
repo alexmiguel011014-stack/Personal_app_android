@@ -39,3 +39,29 @@ jobs:
       # has these artifacts.
       - name: Run shared module tests on iOS simulator
         run: ./gradlew :shared:iosSimulatorArm64Test
+
+      # GOALS.md §18j: builds the minimal iOS app shell (iosApp/) added 2026-09-01 — proves the
+      # whole chain (XcodeGen project generation -> CocoaPods -> Xcode build) works end to end on
+      # a real macOS runner, not just that :shared's Kotlin/Native framework compiles. Run as a
+      # normal CI step (not the interactive ios-interactive.yml debug session) because the
+      # interactive SSH-over-tmux channel proved too unreliable for a multi-minute pod install +
+      # xcodebuild sequence — this gets the same free macOS runner with reliable logs instead.
+      - name: Generate shared.podspec and dummy framework
+        run: ./gradlew :shared:podspec :shared:generateDummyFramework --console=plain
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: iosApp
+        run: xcodegen generate
+
+      - name: Install CocoaPods dependencies
+        working-directory: iosApp
+        run: pod install
+
+      - name: Build iOS app shell for simulator
+        working-directory: iosApp
+        run: |
+          xcodebuild -workspace iosApp.xcworkspace -scheme iosApp -sdk iphonesimulator \
+            -configuration Debug CODE_SIGNING_ALLOWED=NO build

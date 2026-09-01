@@ -12,6 +12,17 @@ plugins {
     // GOALS.md §18h: screens/ViewModels move here from :app.
     alias(libs.plugins.compose.multiplatform)
     alias(libs.plugins.compose.compiler)
+    // GOALS.md §18f: "iOS Firebase native framework linking" — GitLive's iOS artifacts are
+    // cinterop bindings against Apple's real Firebase iOS SDK .frameworks; those binaries have
+    // to come from somewhere, and CocoaPods (via this plugin) is the standard way to get them
+    // wired into a Kotlin/Native link. Without this, :shared:iosSimulatorArm64Test fails with
+    // `ld: framework 'FirebaseCore' not found` (confirmed, see ios-ci.yml's disabled test step).
+    // No version here (not via the version catalog like the others) — this subplugin ships
+    // inside the same artifact as org.jetbrains.kotlin.multiplatform above, so it's already on
+    // the classpath at that plugin's version; giving it an explicit version here makes Gradle
+    // treat it as a second, separately-resolved copy and fail with "already on the classpath
+    // with an unknown version, so compatibility cannot be checked" (confirmed locally).
+    id("org.jetbrains.kotlin.native.cocoapods")
 }
 
 kotlin {
@@ -38,14 +49,27 @@ kotlin {
     // iosX64 (Intel simulator) deliberately excluded — every real device/CI target here is
     // Apple Silicon (confirmed during the Room investigation that some androidx multiplatform
     // artifacts don't even publish an iosX64 variant; keeping the exclusion for consistency).
-    listOf(
-        iosArm64(),
-        iosSimulatorArm64()
-    ).forEach { iosTarget ->
-        iosTarget.binaries.framework {
+    iosArm64()
+    iosSimulatorArm64()
+
+    // GOALS.md §18f: the framework{} block here (baseName/isStatic) replaces the old manual
+    // `iosTarget.binaries.framework {}` loop — the cocoapods plugin owns framework config once
+    // it's applied, since it also has to inject each pod's headers/link flags into the same
+    // framework build. One `pod(...)` per Firebase product actually used (see gitlive-firebase-*
+    // in commonMain.dependencies above) — each pulls in FirebaseCore transitively, so it isn't
+    // listed separately.
+    cocoapods {
+        summary = "Personal Tracker shared KMP module"
+        homepage = "https://github.com/alexmiguel011014-stack/Personal_app_android"
+        version = "1.0"
+        ios.deploymentTarget = "15.0"
+        framework {
             baseName = "Shared"
             isStatic = true
         }
+        pod("FirebaseAuth")
+        pod("FirebaseFirestore")
+        pod("FirebaseCrashlytics")
     }
 
     sourceSets {

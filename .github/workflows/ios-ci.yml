@@ -63,5 +63,10 @@ jobs:
       - name: Build iOS app shell for simulator
         working-directory: iosApp
         run: |
+          # ARCHS=arm64 is required: without an explicit -destination, xcodebuild's default
+          # multi-arch simulator build also requests x86_64, but :shared only declares
+          # iosArm64()/iosSimulatorArm64() targets (Apple Silicon, matching this runner) — no
+          # iosX64() target exists, so the CocoaPods "Build shared" script phase's Gradle
+          # invocation fails with "Unknown iOS simulator arch: 'x86_64'".
           xcodebuild -workspace iosApp.xcworkspace -scheme iosApp -sdk iphonesimulator \
-            -configuration Debug CODE_SIGNING_ALLOWED=NO build
+            -configuration Debug CODE_SIGNING_ALLOWED=NO ARCHS=arm64 ONLY_ACTIVE_ARCH=YES build

@@ -1740,14 +1740,47 @@ flowchart TD
       does — and this project has no CocoaPods/SPM iOS Firebase setup yet. Disabled that CI step
       for now (`ios-ci.yml`, commented out with an explanation) rather than leave CI red; tracked
       as real follow-up work, not silently dropped — see the new item below.
-- [ ] **iOS Firebase native framework linking**: add CocoaPods (or SPM) integration so
-      `FirebaseCore`/`FirebaseAuth`/`FirebaseFirestore`/`FirebaseCrashlytics` `.framework`
-      binaries are on the Kotlin/Native linker path, so `:shared:iosSimulatorArm64Test` (and,
-      later, the real iOS app) can actually link. Can be done entirely via GitHub's macOS CI
-      runner (CocoaPods is preinstalled) — doesn't need a personal Mac — but is real toolchain
-      work (Kotlin's `native.cocoapods` Gradle plugin, a `Podfile`, `pod install` in CI) that
-      belongs with the iOS app scaffold (§18h+) rather than this repository-layer rewrite.
-      Re-enable the commented-out CI test step in `ios-ci.yml` once this lands.
+- [x] **iOS Firebase native framework linking — resolved 2026-09-01.** Added Kotlin's
+      `native.cocoapods` Gradle plugin to `shared/build.gradle.kts` (applied via plain `id(...)`,
+      no version — it ships inside the same artifact as `org.jetbrains.kotlin.multiplatform`, so
+      giving it a version from the catalog makes Gradle treat it as a second copy and fail with
+      "already on the classpath with an unknown version"; confirmed locally before finding the
+      fix). Replaced the old manual `iosTarget.binaries.framework {}` loop with a `cocoapods {}`
+      block (`framework { baseName = "Shared"; isStatic = true }` plus
+      `pod("FirebaseAuth")`/`pod("FirebaseFirestore")`/`pod("FirebaseCrashlytics")` — each pulls
+      in `FirebaseCore` transitively, matching the three GitLive products actually used).
+      **Proved on a real Mac, not just locally**: this dev machine can't compile Apple targets at
+      all, so verification ran on an actual GitHub-hosted macOS runner via a new on-demand
+      `ios-interactive.yml` workflow (see below) — `./gradlew :shared:iosSimulatorArm64Test`
+      reached `podBuildFirebaseAuth/Firestore/CrashlyticsIosSimulator` →
+      `cinteropFirebase*IosSimulatorArm64` (the three real cinterop bindings against the actual
+      compiled pods) → `compileKotlinIosSimulatorArm64` → `linkDebugTestIosSimulatorArm64` (the
+      exact step that used to fail with `ld: framework 'FirebaseCore' not found`) →
+      `iosSimulatorArm64Test`, ending in **`BUILD SUCCESSFUL in 31m 59s`, 31/31 tasks executed**.
+      That ~32 minutes is a one-time cost (downloading the Kotlin/Native LLVM toolchain +
+      compiling all three Firebase pods from source, nothing cached yet) — re-enabled the
+      previously-disabled CI test step in `ios-ci.yml` on that basis; expect it much faster once
+      Gradle's own cache (already wired via `gradle/actions/setup-gradle`) has these artifacts.
+  - **New reusable capability, worth recording on its own**: this project had no way to run
+    anything interactively on a real Mac (no budget for a rented one — see the "no fomento"
+    discussion). `.github/workflows/ios-interactive.yml` (manually triggered, `workflow_dispatch`
+    only, 45-minute cap) opens a live SSH terminal on a genuine GitHub-hosted macOS runner via
+    `owenthereal/action-upterm`, free on this public repo — the same mechanism that makes
+    `ios-ci.yml` possible, just interactive instead of scripted. Two dead ends on the way there,
+    both fixed and left as comments in the workflow file: `mxschmitt/action-tmate` (the more
+    commonly-referenced action) installed cleanly via Homebrew but then hung indefinitely with
+    zero further output — its own log banner says it's deprecated/unmaintained, which tracks;
+    `lhotari/action-upterm` (a fork) failed outright with "Permission denied (publickey)" then
+    "no server running". `owenthereal/action-upterm` (the upstream repo the fork came from)
+    worked. **Known real limitation, not a one-time fluke**: reconnecting to an already-open
+    session is unreliable — most reconnect attempts during this session silently failed (SSH
+    authenticates fine per `-v` output, but the far end closes in ~0.5s without attaching to the
+    tmux session), and it got worse the more reconnects were attempted, to the point of needing a
+    full fresh `workflow_dispatch` run more than once. The one pattern that reliably works: kick
+    off a long task in the background on the runner (`nohup ... & disown`) from the *first*
+    connection of a fresh session, then reconnect sparingly (not repeatedly) to check a log file,
+    accepting that any individual reconnect attempt might just fail and need a retry — never rely
+    on a single connection staying open for the full duration of a long build.
 - [x] `FirestoreMappers.kt`'s entity↔doc mapping moved to `commonMain` largely unchanged — GitLive
       auto-detects `Map<String, Any?>` at the call site (`FirebaseMapSerializer`, checked via a
       runtime `is Map<*, *>` check, not the static type) and encodes it without needing
@@ -1778,8 +1811,8 @@ flowchart TD
       go through GitLive's wrapper now (`Firebase.crashlytics`, already added for
       `TrainerRepository`), AI Logic's classic SDK dependency moved to `shared/androidMain`
       alongside `AndroidGeminiProvider`. Verified: `:app:compileDebugKotlin`, `verify`,
-      `assembleDebug`, `compileDebugAndroidTestKotlin` all green locally. **§18f is fully closed**
-      except for the iOS native Firebase framework linking tracked as its own item above.
+      `assembleDebug`, `compileDebugAndroidTestKotlin` all green locally. **§18f is now fully
+      closed, including iOS** — the native framework linking item above was the last open piece.
 
 **18g. Auth and Security — platform-specific pieces GitLive doesn't cover**
 - [ ] **App Check**: GitLive's SDK doesn't wrap App Check. Keep Android's existing
@@ -1787,10 +1820,12 @@ flowchart TD
       `androidMain` unchanged; add a thin `iosMain` `actual` bridging to Firebase iOS SDK's own
       App Check (App Attest provider for release, debug provider for local iOS testing) — a
       real native-bridge implementation, not optional, since `firestore.rules`'/Auth's security
-      posture assumes App Check is active on every client. **Blocked** on the same thing as
-      §18f's "iOS Firebase native framework linking" item (needs `FirebaseAppCheck.framework` on
-      the Kotlin/Native linker path) *and* on §18j's deferred iOS app scaffold — there's no real
-      iOS app yet to install this provider into. Deferred alongside §18j, not forgotten.
+      posture assumes App Check is active on every client. **Partially unblocked 2026-09-01**:
+      the general "no CocoaPods integration at all" blocker is gone (see §18f) — adding App Check
+      is now just one more `pod("FirebaseAppCheck")` line in `shared/build.gradle.kts`'s existing
+      `cocoapods {}` block, the same pattern already proven for Auth/Firestore/Crashlytics, not an
+      unknown. Still blocked on §18j's deferred iOS app scaffold, though — there's no real iOS app
+      yet to install the provider into, and that part hasn't changed. Deferred alongside §18j.
 - [x] **Crashlytics**: resolved as a side effect of §18f, not via either option originally
       listed here (both predate this finding). `dev.gitlive:firebase-crashlytics` — the *same*
       GitLive SDK already adopted for Auth/Firestore — ships a real, verified `commonMain` API
@@ -1798,10 +1833,9 @@ flowchart TD
       confirmed by reading the actual GitHub source, not assumed from docs) that covers everything
       this app calls. `TrainerRepository`/`GenerativeAiService` already use
       `Firebase.crashlytics.recordException(e)` from `commonMain`. No CrashKiOS, no
-      Android-only fallback needed. Same caveat as the rest of §18f applies: this compiles for
-      iOS, but *linking* a real iOS binary still needs the native `FirebaseCrashlytics.framework`
-      wired up — tracked under the "iOS Firebase native framework linking" item above, not a
-      separate Crashlytics-specific gap.
+      Android-only fallback needed. **iOS linking confirmed 2026-09-01** along with the rest of
+      §18f — `pod("FirebaseCrashlytics")` is in the `cocoapods {}` block and
+      `cinteropFirebaseCrashlyticsIosSimulatorArm64` ran successfully in the same verified build.
 - [ ] Re-verify §8's App Check debug-token registration flow (§13a) still applies correctly once
       requests can come from either platform's debug provider — the Firebase Console's debug
       token allow-list is per-install, not per-platform, so this should be mechanically the same
@@ -1980,12 +2014,10 @@ continues normally; only the items below stay blocked on this decision.
 
 **18l. Testing**
 - [x] Moved `WorkoutParserTest` to `commonTest` back in §18b (rewritten to `kotlin.test`). Passing
-      on `testDebugUnitTest` is confirmed (runs every local `verify`). Passing on
-      `iosSimulatorArm64Test` specifically can't be re-confirmed right now — that CI step is
-      disabled since §18f (the whole `:shared` test binary fails to *link* on iOS because of the
-      missing native `FirebaseCore.framework`, not because of anything in this test itself); it
-      was confirmed passing before that dependency existed. Re-verify once the "iOS Firebase
-      native framework linking" item under §18f lands and the CI step is re-enabled.
+      on `testDebugUnitTest` is confirmed (runs every local `verify`). **Passing on
+      `iosSimulatorArm64Test` too, confirmed 2026-09-01** — the whole `:shared` test binary (which
+      `WorkoutParserTest` is part of, via `commonTest`) now links and runs on iOS, now that §18f's
+      native framework linking is resolved; see that section for the full verified build log.
 - [x] **Decided and documented** (not silently dropped): `AuthRepositoryTest` is deleted, not
       migrated. GitLive's `DocumentSnapshot.get<T?>()` is `inline`, which MockK cannot stub at
       all (not a JVM-only-vs-KMP-mocking-library problem — no mocking library can intercept an
@@ -1997,10 +2029,13 @@ continues normally; only the items below stay blocked on this decision.
       time, 2026-08-27**, against the real Android device (`SM-S926B`), not an emulator: the
       "wrong CPU architecture AVD" blocker only ever applied to this machine's emulators, not to
       real hardware, and a real device happened to be connected. All 12 instrumented tests pass
-      (`./gradlew connectedDebugAndroidTest`). iOS side (`iosTest`, `TrainerGoldenPathTest` on
-      iOS) is still blocked exactly as before — the "iOS Firebase native framework linking" gap
-      under §18f and, for the UI test specifically, needing an actual iOS app to run it against
-      (§18j) — neither of those changed.
+      (`./gradlew connectedDebugAndroidTest`). iOS side: `:shared:iosSimulatorArm64Test` itself
+      (covering `AppDaoTest`-equivalent commonTest coverage, i.e. `WorkoutParserTest`) now runs —
+      §18f's native framework linking gap that used to block it is resolved (2026-09-01, see that
+      section). `TrainerGoldenPathTest` specifically is Android-`androidTest`-only, not
+      `commonTest` (it uses `androidx.test`/`AndroidComposeTestRule`), so it was never going to
+      run via `iosSimulatorArm64Test` regardless — it still needs an actual iOS app to run a
+      Compose UI test against (§18j), unrelated to the linking fix.
   - **Three real bugs found and fixed getting to a green run — this suite had never actually
     compiled+run before, so none of these were previously catchable**:
     1. **Build config**: `:app:mergeDebugAndroidTestJavaResource` failed with 6 duplicate

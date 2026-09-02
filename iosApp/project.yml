@@ -17,8 +17,10 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.personalapp.ios
-        INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        # A real Info.plist file instead of GENERATE_INFOPLIST_FILE's synthesized one — the
+        # synthesized version raced with a CocoaPods script phase reading it before it existed,
+        # failing with "Build input file cannot be found: .../Info.plist".
+        INFOPLIST_FILE: iosApp/Info.plist
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "1"
         # No paid Apple Developer account yet (GOALS.md §18j) — simulator builds don't need

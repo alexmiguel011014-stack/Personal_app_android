@@ -52,6 +52,19 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
+      # GoogleService-Info.plist is gitignored, same convention as google-services.json on the
+      # Android side (see android-ci.yml) — the real file must be added as a repo secret
+      # (Settings -> Secrets and variables -> Actions -> GOOGLE_SERVICE_INFO_PLIST, paste the
+      # file's raw XML contents) for Firebase to actually initialize at runtime. Missing/empty
+      # secret still lets the build succeed (it's just a bundled resource, not build-time
+      # validated) — only FirebaseApp.configure() at app launch would fail without a real one.
+      # Must run before "Generate Xcode project": XcodeGen only picks up files that already
+      # exist under iosApp/iosApp/ at generate time.
+      - name: Write GoogleService-Info.plist
+        env:
+          GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}
+        run: echo "$GOOGLE_SERVICE_INFO_PLIST" > iosApp/iosApp/GoogleService-Info.plist
+
       - name: Generate Xcode project
         working-directory: iosApp
         run: xcodegen generate

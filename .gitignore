@@ -17,6 +17,7 @@ local.properties
 
 # Firebase
 google-services.json
+/iosApp/iosApp/GoogleService-Info.plist
 
 # Release signing (GOALS.md §11) — never commit the keystore or its passwords
 *.jks

@@ -40,27 +40,6 @@ jobs:
       - name: Run shared module tests on iOS simulator
         run: ./gradlew :shared:iosSimulatorArm64Test
 
-      # TEMPORARY diagnostic (GOALS.md §18j) — remove once the initKoin() export mystery is
-      # solved. Two full pod-install+xcodebuild cycles (~1h each) both failed at the same Swift
-      # compile step with "type 'KoinBootstrapKt' has no member 'initKoin'", even after moving
-      # initKoin() to the same root package MainViewController.kt is in (whose MainViewControllerKt
-      # facade IS reachable from Swift, in the same framework, same build). Rather than guess a
-      # fourth time at ~1h/attempt, inspect the actual generated Objective-C header directly —
-      # this task alone is fast once the Kotlin/Native toolchain is warm (previous step), no need
-      # for the slow XcodeGen/pod install/xcodebuild chain to see it.
-      - name: DIAGNOSTIC - dump generated Shared.h
-        run: |
-          ./gradlew :shared:linkDebugFrameworkIosSimulatorArm64 --console=plain || \
-            (./gradlew :shared:tasks --all --console=plain | grep -i framework; exit 1)
-          HEADER=$(find shared/build -name "Shared.h" | head -1)
-          echo "=== header path: $HEADER ==="
-          echo "=== lines mentioning Koin or initKoin ==="
-          grep -n -i "koin" "$HEADER" || echo "(no matches)"
-          echo "=== lines mentioning MainViewController ==="
-          grep -n "MainViewController" "$HEADER" || echo "(no matches)"
-          echo "=== all top-level Kt-facade class declarations ==="
-          grep -n "^@interface.*Kt\b" "$HEADER" || echo "(no matches)"
-
       # GOALS.md §18j: builds the minimal iOS app shell (iosApp/) added 2026-09-01 — proves the
       # whole chain (XcodeGen project generation -> CocoaPods -> Xcode build) works end to end on
       # a real macOS runner, not just that :shared's Kotlin/Native framework compiles. Run as a

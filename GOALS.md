@@ -2012,6 +2012,41 @@ flowchart TD
     and its full log is retrievable via `gh run view --log-failed`, unlike the interactive
     session's unreliable live output.
 
+- [x] **Wired to RoleRouter/Koin/Firebase for real, verified green in CI, 2026-09-02.** The
+      placeholder screen above is gone: `MainViewController()` now renders `RoleRouter()` (the
+      exact same shared Composable `MainActivity` uses on Android), Koin is bootstrapped from
+      `iOSApp.swift`'s `init()`, and `FirebaseApp.configure()` is called there too.
+      `shared/src/iosMain/.../di/AppModule.ios.kt` is the iOS counterpart to `:app/di/AppModule.kt`
+      — same repository/viewModel graph, iOS actuals swapped in
+      (`DatabaseDriverFactory()`/`createDataStore()`/`IosGeminiProvider()`) and NSBundle+okio
+      reads replacing `Context.assets` for the two bundled `.md` template/reference files (now
+      duplicated into `iosApp/iosApp/Resources/` — no cross-platform resource system exists yet,
+      same tradeoff as the DI module split itself) and the app's own version
+      (`CFBundleVersion`/`CFBundleShortVersionString`).
+  - **One real bug, and it was a genuinely obscure one**: `iOSApp.swift`'s
+    `KoinBootstrapKt.initKoin()` call failed to compile — "type 'KoinBootstrapKt' has no member
+    'initKoin'" — even though the function plainly existed. First guess (wrong): package
+    placement, since `initKoin()` lived in `com.example.personalapp.di` unlike
+    `MainViewController.kt`'s root package; moved it to match and the *exact same error*
+    reappeared, proving that theory wrong. Rather than guess a third time at ~1h/CI-run cost,
+    added a temporary CI step running `:shared:linkDebugFrameworkIosSimulatorArm64` directly and
+    dumping the generated `Shared.h` (fast — no XcodeGen/pod install/xcodebuild needed to see
+    it). That revealed the real cause: Kotlin/Native's Objective-C export silently renames any
+    top-level function starting with `init` (also `new`/`copy`/`mutableCopy`) to avoid colliding
+    with Cocoa's init-family selector convention (NSObject initializers carry special ARC
+    semantics) — the header showed `+ (void)doInitKoin
+    __attribute__((swift_name("doInitKoin()")))`, not `initKoin()`. Renamed the function to
+    `bootstrapKoin()` (removed the diagnostic step once it had done its job) rather than switch
+    Swift to call the auto-generated `doInitKoin()` name, which would have been unexplainable to
+    a future reader without this exact story.
+  - **Still pending, tracked separately, not part of this milestone**: a real
+    `GoogleService-Info.plist`. `ios-ci.yml` writes one from a `GOOGLE_SERVICE_INFO_PLIST` repo
+    secret (currently unset), mirroring `google-services.json`/`GOOGLE_SERVICES_JSON` on Android
+    exactly — the build succeeds either way (it's a bundled resource, not build-time validated),
+    but `FirebaseApp.configure()` needs the real file to actually connect at runtime, and that
+    requires registering an iOS app for this project in Firebase Console (bundle ID
+    `com.example.personalapp.ios`) — a step only the project owner can do (their Google account).
+
 **Still deferred (2026-08-26), discussed directly with the user, not silently skipped**: real
 Apple signing credentials (a free Apple ID's 7-day cert, or a paid Apple Developer Program
 membership) — the "needs real credentials, wait until it's actually needed" category the user

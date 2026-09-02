@@ -1975,15 +1975,49 @@ flowchart TD
 
 **18j. iOS distribution: SideStore free path (now) → Apple Developer Program (later, when paid)**
 
-**Deliberately deferred (2026-08-26), discussed directly with the user, not silently skipped.**
-A real signed `.ipa` needs two things this project doesn't have yet and can't manufacture from
-here: an actual Xcode/iOS app project (the `:shared` Kotlin/Native framework compiled so far is a
-library, not a runnable app shell) and real Apple signing credentials (a free Apple ID's 7-day
-cert, or a paid Apple Developer Program membership). Both are exactly the "needs a Mac/real
-credentials, wait until it's actually needed" category the user already flagged earlier this
-session (rented cloud Mac only when required, not preemptively). Everything else in `§18` that
-doesn't depend on this — `§18g`'s Android-side pieces, `§18l`'s testing, `§18m`'s cutover —
-continues normally; only the items below stay blocked on this decision.
+- [x] **Minimal runnable iOS app shell built and verified green in CI, 2026-09-01.** The
+      "actual Xcode/iOS app project" gap noted below (library, not a runnable app shell) is
+      closed: `iosApp/` (XcodeGen `project.yml` + `Podfile` + `iOSApp.swift`/`ComposeView.swift`,
+      `shared/src/iosMain/.../MainViewController.kt`) now builds end to end —
+      `./gradlew :shared:podspec :shared:generateDummyFramework` → `xcodegen generate` →
+      `pod install` → `xcodebuild ... -sdk iphonesimulator ... build` — added as steps in
+      `ios-ci.yml` (not the flaky interactive SSH session, see that section's note) and confirmed
+      **BUILD SUCCEEDED** on a real GitHub-hosted macOS runner. Deliberately a standalone
+      placeholder screen (`Text("Personal Tracker — iOS shell ok")`), not yet wired to
+      RoleRouter/Koin/Firebase.initialize() — that's the next milestone, not this one, same as
+      the comments already in `iOSApp.swift`/`MainViewController.kt` say.
+  - Three real build failures hit and fixed getting to green, each one revealing the next
+    (interactive-session debugging proved too unreliable to work through these — see below):
+    1. **`Unknown iOS simulator arch: 'x86_64'`**: `xcodebuild` without an explicit `-destination`
+       defaults to a multi-arch simulator build request (arm64 + x86_64), but `:shared` only
+       declares `iosArm64()`/`iosSimulatorArm64()` (Apple Silicon) — no `iosX64()` target exists.
+       Fixed by pinning `ARCHS=arm64 ONLY_ACTIVE_ARCH=YES` on the `xcodebuild` invocation.
+    2. **Undefined symbols for every `sqlite3_*` function at link time**: SQLDelight's native
+       driver (`co.touchlab:sqliter`) cinterops against the C `sqlite3` API but doesn't bundle an
+       implementation — the linking app target has to supply it. Fixed by adding
+       `dependencies: [{sdk: libsqlite3.tbd}]` to the `iosApp` target in `project.yml`.
+    3. **`Build input file cannot be found: .../iosApp.app/Info.plist`**: a known ordering issue
+       between the New Build System's synthesized Info.plist (`GENERATE_INFOPLIST_FILE`, driven
+       by `INFOPLIST_KEY_*` settings) and a CocoaPods script phase that reads it before it's
+       generated. Fixed by switching to a real static `iosApp/iosApp/Info.plist` file
+       (`INFOPLIST_FILE` setting) instead — a file that already exists has no generation race.
+  - **Verification mechanism itself changed mid-milestone**: the `ios-interactive.yml`
+    SSH-over-tmux/upterm debug session (documented in §18f) proved too unreliable for this
+    multi-minute `pod install` + `xcodebuild` sequence — commands intermittently got silently
+    dropped or corrupted mid-transmission by tmux's terminal-capability-query handshake,
+    sometimes leaving the remote shell permanently stuck in an open-quote continuation requiring
+    a full session restart (happened repeatedly). Switched to running the same steps as normal
+    `ios-ci.yml` steps instead — slower to iterate (each fix needs a fresh ~50min+ full CI run,
+    since a fresh runner has no toolchain/Gradle cache) but every run's outcome is unambiguous
+    and its full log is retrievable via `gh run view --log-failed`, unlike the interactive
+    session's unreliable live output.
+
+**Still deferred (2026-08-26), discussed directly with the user, not silently skipped**: real
+Apple signing credentials (a free Apple ID's 7-day cert, or a paid Apple Developer Program
+membership) — the "needs real credentials, wait until it's actually needed" category the user
+already flagged earlier this session. Everything else in `§18` that doesn't depend on this —
+`§18g`'s Android-side pieces, `§18l`'s testing, `§18m`'s cutover — continues normally; only the
+items below stay blocked on this decision.
 
 - [ ] Host the built `.ipa` + an AltStore/SideStore-format "source" JSON (app metadata + download
       URL + version) somewhere stable and free — a GitHub Release asset on this same public repo

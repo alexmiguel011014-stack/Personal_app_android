@@ -2190,11 +2190,15 @@ items below stay blocked on this decision.
       (need `androidContext()`/`ComponentActivity`/`Application`), no dead duplicate copies of
       anything that moved to `commonMain` left behind. `./gradlew verify assembleDebug
       compileDebugAndroidTestKotlin` green, both iOS Kotlin/Native compile targets green. **Not**
-      claiming the full "18a–18l green on both platforms" bar this item originally set — several
-      iOS-native items are honestly tracked as still open (§18f/§18g's native framework linking,
-      §18j's app scaffold, §18l's two test items) — but nothing about *this* audit's own scope
-      (dead code, module boundaries) is blocked by those; re-run this specific check again once
-      they land, don't assume it silently still holds.
+      claiming the full "18a–18l green on both platforms" bar this item originally set at the
+      time — several iOS-native items were honestly tracked as still open then (§18f/§18g's
+      native framework linking, §18j's app scaffold, §18l's two test items). **Update
+      2026-09-03: all of those have since landed and gone green in CI** — §18f (framework
+      linking + tests, 2026-09-01), §18j (app shell + RoleRouter/Koin/Firebase wiring,
+      2026-09-01/02), §18g (App Check, 2026-09-03), §18l (both test items resolved alongside
+      §18f). The only iOS-side items still genuinely open project-wide are the three under
+      §18j's "still deferred" banner (real Apple signing credentials and what depends on them)
+      — everything else this audit's original caveat was hedging against is now closed.
 - [x] Updated `CLAUDE.md` (new "Module shape" section describing `:shared`/`:app`'s split, plus
       fixed several claims that had gone stale over the course of §18 and would otherwise mislead
       a future reader: the Room→SQLDelight and Hilt→Koin migrations, the Student role no longer

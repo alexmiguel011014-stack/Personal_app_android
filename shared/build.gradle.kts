@@ -70,6 +70,10 @@ kotlin {
         pod("FirebaseAuth")
         pod("FirebaseFirestore")
         pod("FirebaseCrashlytics")
+        // GOALS.md §18g: GitLive has no App Check wrapper, so the actual provider wiring is
+        // native Swift (iosApp/iosApp/AppCheckProviderFactory.swift), not Kotlin — this pod line
+        // just makes the FirebaseAppCheck framework available to link against.
+        pod("FirebaseAppCheck")
     }
 
     sourceSets {

@@ -258,3 +258,99 @@ squarely in the first category, not the second.
 - [Is Kotlin Multiplatform production ready in 2026?](https://www.kmpship.app/blog/is-kotlin-multiplatform-production-ready-2026)
 - [Flutter vs. React Native: Which is Better in 2026? – Scaler](https://www.scaler.com/blog/flutter-vs-react-native/)
 - [Flutter vs React Native (2026): The Honest Comparison from 30+ Production Apps](https://www.instabizweb.com/blogs/flutter-vs-react-native-2026)
+
+---
+
+# Part 3 — AI workout-generation API options (2026-09-03, via `/repertoire`)
+
+Scope: this app's `GenerativeAiService` dispatches to one of four BYO-key providers
+(`AiProvider`: Gemini via Firebase AI Logic, OpenAI, DeepSeek, Claude — see `CLAUDE.md`) for
+generating a workout ficha from a student's profile. The user asked which APIs for this are
+currently the best/free, and if none are free, the cheapest — with each provider's status
+actively confirmed against its own current docs, not assumed from training data (pricing and
+free-tier terms change often enough that stale knowledge here would be actively misleading).
+Lens judged to apply, confirmed with the user before researching: **competitive/landscape**
+(what exists, at what price, does it still work), with a light **media/discourse** touch (recent
+pricing changes) and a light **regulatory/legal** touch (usage-restriction fine print). Scientific
+and cultural lenses don't apply — this is a vendor/pricing survey, not a claims- or
+audience-sensitive question.
+
+## 5. Status of the four already-integrated providers — verified against each vendor's current docs
+
+| Provider | Free tier? | Confirmed via | Cheapest paid model (per 1M tokens, in/out) |
+|---|---|---|---|
+| **Gemini** (Flash) | **Yes, still free** — confirmed on Google's own pricing page: Flash shows "Free of charge" for both input and output under the free-tier column | [ai.google.dev/gemini-api/docs/pricing](https://ai.google.dev/gemini-api/docs/pricing) | n/a (free tier sufficient for this use case) |
+| **OpenAI** | **No free tier** — nothing found on OpenAI's own site or any 2026 pricing roundup describing an ongoing free allowance, only paid usage | multiple 2026 pricing roundups (below); OpenAI's own pricing page returned 403 to automated fetch, so cross-checked against several independent trackers instead | **gpt-5-nano: $0.05 in / $0.40 out** — the single cheapest model of all four providers |
+| **DeepSeek** | **No free tier currently** — DeepSeek's own API docs list no complimentary allowance for new accounts (only a time-limited signup credit some trackers still mention, not a standing free tier) | [api-docs.deepseek.com/quick_start/pricing](https://api-docs.deepseek.com/quick_start/pricing) | deepseek-v4-pro: $0.66 in / $1.98 out (off-peak), $1.32 in / $3.96 out (peak) — still cheap, just not free |
+| **Claude** | **No free tier** — same as OpenAI, paid-only | [finout.io/blog/anthropic-api-pricing](https://www.finout.io/blog/anthropic-api-pricing) and other 2026 trackers | Haiku 4.5: **$1.00 in / $5.00 out** — the most expensive of the four, by a wide margin (20× GPT-5-nano's input price) |
+
+**Net: Gemini is correctly the free option among the four already integrated, and that's still
+true today** — nothing broken or deprecated here, the existing default is sound. Of the three paid
+ones, **OpenAI's gpt-5-nano is now the cheapest by far** (DeepSeek was likely cheaper when it was
+first integrated into this app; that's no longer the case — GPT-5-nano's July 2026 price cuts
+moved it ahead). Claude Haiku remains the most expensive of the four for this
+generate-one-ficha-at-a-time workload.
+
+## 6. Free/cheap alternatives worth knowing about, not currently integrated
+
+Surveyed the broader free-LLM-API landscape (2026) beyond the four already in the app, filtering
+for providers that plausibly support a JSON-generation workload (this app needs structured
+output, not chat):
+
+- **Groq — the strongest free candidate not yet integrated.** Confirmed via Groq's own docs:
+  genuinely free, **no credit card required to sign up**, and **structured JSON output is
+  supported and enabled by default** on its newer models (e.g. `moonshotai/kimi-k2-instruct`) via
+  a `json_schema` response format — exactly the shape this app's `tryParseWorkouts()` JSON
+  extraction needs, arguably better-suited than free-text parsing since Groq's structured mode
+  can enforce the schema directly instead of relying on regex-extracting a `{...}` block from
+  prose. Runs on Groq's own LPU hardware, reported around 320 tokens/second — much faster
+  round-trip than any of the four current providers. Free-tier limits (~30 requests/min, ~1,000/day
+  on Llama 3.3 70B per third-party trackers, Groq's own docs don't publish exact numbers outside a
+  logged-in dashboard) are comfortably above what one trainer generating fichas needs.
+- **Mistral** — free tier reported around 1B tokens/month across Small/Large/Codestral, no card
+  required per third-party trackers; one source notes the full free quota requires opting into
+  data-training use (an "Experiment tier" condition) — a real tradeoff to weigh against Gemini's
+  own similar opt-out-by-region caveat below, not a reason to avoid Mistral outright.
+- **OpenRouter** — an aggregator, not its own model: routes to ~20+ free models (including some
+  DeepSeek and Llama variants) through one API key, free tier around 20 requests/min / 50 requests/
+  day (or 1,000/day after a one-time $10 top-up unlocks the higher free limit) per its own blog
+  post. Useful mainly as a single integration point if the app ever wanted to expose more than
+  four provider choices without adding a new SDK per provider.
+- **Cerebras / Cloudflare Workers AI / GitHub Models / Hugging Face / NVIDIA NIM** — all have some
+  free allowance per the same survey, but each has a caveat that makes it a weaker fit than Groq
+  for this specific use case: Cloudflare's context windows are small (2K–8K tokens, likely too
+  small for a full student-profile-plus-volume-table prompt), Cohere's free tier is explicitly
+  **"strictly non-commercial use only"** (this app is used by a paying/working trainer, even at
+  small scale — that caveat likely disqualifies it, worth being deliberate about rather than
+  reaching for the biggest free-token number without reading the terms), and the rest are less
+  well-documented / more oriented at coding-assistant workloads than general JSON generation.
+
+**Recommendation, if this ever gets revisited**: Groq is the one genuinely worth adding as a
+fifth `AiProvider` option — free, fast, structured-output-native, no non-commercial restriction
+found. Not implemented here; per `/repertoire`'s own scope this is a finding for `/newgoal` or a
+separate explicit ask to act on, not something this pass changes.
+
+## 7. Regulatory/legal note — data usage terms worth knowing, not a blocker
+
+Google's own Gemini API pricing page states prompts on the **free** tier are used to improve
+Google's models **unless the caller is in the EU, UK, or EEA** — Brazil isn't in that carve-out,
+so free-tier Gemini calls from this app (student names, biometric data, training profiles) are
+currently eligible to be used for Google's model training unless a trainer switches to a paid
+Gemini tier or a different provider. This isn't new risk introduced by this research — it's how
+the already-shipped default has worked since Gemini was first integrated — but it's the kind of
+fact worth having on record given the app's own `store-listing/listing-copy.md` privacy section
+already promises data protection to end users. Worth a deliberate decision (accept it, default to
+a paid-tier/non-training provider, or add a disclosure), not an oversight to silently carry
+forward.
+
+**Sources consulted:**
+- [Free LLM API in 2026: 13 Options Ranked and Compared — OpenRouter Blog](https://openrouter.ai/blog/tutorials/free-llm-apis-compared/)
+- [Gemini Developer API Pricing](https://ai.google.dev/gemini-api/docs/pricing)
+- [Gemini API Rate Limits](https://ai.google.dev/gemini-api/docs/rate-limits)
+- [DeepSeek API Pricing](https://api-docs.deepseek.com/quick_start/pricing)
+- [OpenAI API pricing in 2026: every model after the July price cuts – CloudZero](https://www.cloudzero.com/blog/openai-pricing/)
+- [$0.15 to $15/M Tokens — OpenAI API Pricing 2026 – ValueAdd VC](https://valueaddvc.com/blog/openai-api-pricing-2026-gpt-4o-o3-and-gpt-5-cost-breakdown-for-developers)
+- [Anthropic API Pricing in 2026 – Finout](https://www.finout.io/blog/anthropic-api-pricing)
+- [Groq Rate Limits Documentation](https://console.groq.com/docs/rate-limits)
+- [Groq Structured Outputs Documentation](https://console.groq.com/docs/structured-outputs)
+- [Best Free LLM APIs in 2026 — Compare Free Inference Tiers, Rate Limits & Limits](https://agentdeals.dev/free-llm-apis)

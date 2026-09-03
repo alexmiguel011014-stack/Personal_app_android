@@ -1815,17 +1815,22 @@ flowchart TD
       closed, including iOS** — the native framework linking item above was the last open piece.
 
 **18g. Auth and Security — platform-specific pieces GitLive doesn't cover**
-- [ ] **App Check**: GitLive's SDK doesn't wrap App Check. Keep Android's existing
+- [x] **App Check — implemented and verified green in CI, 2026-09-03.** GitLive's SDK doesn't
+      wrap App Check, so unlike Auth/Firestore/Crashlytics this is native Swift, not Kotlin:
+      `pod("FirebaseAppCheck")` added to `shared/build.gradle.kts`'s `cocoapods {}` block (same
+      pattern as the other three pods), a new `PersonalAppCheckProviderFactory`
+      (`iosApp/iosApp/AppCheckProviderFactory.swift`) branches `#if DEBUG` between
+      `AppCheckDebugProvider` and `AppAttestProvider` — mirroring `MainApplication.kt`'s
+      `ApplicationInfo.FLAG_DEBUGGABLE` check exactly — and `iOSApp.swift` registers it via
+      `AppCheck.setAppCheckProviderFactory(...)` *before* `FirebaseApp.configure()` (App Check
+      installs itself as part of Firebase's own setup, so ordering matters, same reason Android's
+      `MainApplication.onCreate()` installs its provider immediately). One real fix needed along
+      the way: the first attempt used the wrong Swift method name
+      (`AppCheck.setProviderFactory`, which doesn't exist) — `xcodebuild` caught it immediately
+      as a compile error, fixed to the correct `setAppCheckProviderFactory`, confirmed BUILD
+      SUCCEEDED on the next run. Android's existing
       `DebugAppCheckProviderFactory`/`PlayIntegrityAppCheckProviderFactory` wiring in
-      `androidMain` unchanged; add a thin `iosMain` `actual` bridging to Firebase iOS SDK's own
-      App Check (App Attest provider for release, debug provider for local iOS testing) — a
-      real native-bridge implementation, not optional, since `firestore.rules`'/Auth's security
-      posture assumes App Check is active on every client. **Partially unblocked 2026-09-01**:
-      the general "no CocoaPods integration at all" blocker is gone (see §18f) — adding App Check
-      is now just one more `pod("FirebaseAppCheck")` line in `shared/build.gradle.kts`'s existing
-      `cocoapods {}` block, the same pattern already proven for Auth/Firestore/Crashlytics, not an
-      unknown. Still blocked on §18j's deferred iOS app scaffold, though — there's no real iOS app
-      yet to install the provider into, and that part hasn't changed. Deferred alongside §18j.
+      `androidMain` is unchanged.
 - [x] **Crashlytics**: resolved as a side effect of §18f, not via either option originally
       listed here (both predate this finding). `dev.gitlive:firebase-crashlytics` — the *same*
       GitLive SDK already adopted for Auth/Firestore — ships a real, verified `commonMain` API
@@ -1839,7 +1844,15 @@ flowchart TD
 - [ ] Re-verify §8's App Check debug-token registration flow (§13a) still applies correctly once
       requests can come from either platform's debug provider — the Firebase Console's debug
       token allow-list is per-install, not per-platform, so this should be mechanically the same
-      process repeated once per iOS test device, not a new mechanism.
+      process repeated once per iOS test device, not a new mechanism. **Clarified 2026-09-03: not
+      a CI task.** `AppCheckDebugProvider` prints its token to the Xcode console the first time
+      the app actually *runs* on a specific install — a fresh CI simulator instance would produce
+      a real token, but a throwaway one, tied to an ephemeral simulator that won't exist on the
+      next run, so registering it in the Console would have zero lasting value. This step
+      inherently needs whoever ends up with a persistent iOS test install (a real device via
+      SideStore once §18j's distribution items land, or at minimum a simulator someone keeps
+      reusing) to run the app once themselves and register *that* token — deferred alongside the
+      rest of real-device iOS testing, not attempted here.
 
 **18h. UI: Jetpack Compose → Compose Multiplatform, Navigation**
 - [x] Moved all 19 screen composables + 4 component files + 9 ViewModels + 3 navigation files

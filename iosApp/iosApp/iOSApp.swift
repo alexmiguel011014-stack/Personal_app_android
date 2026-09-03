@@ -16,7 +16,7 @@ struct iOSApp: App {
         // Must run before configure() — App Check installs itself as part of FirebaseApp's own
         // setup, same reason Android's MainApplication.kt installs its provider factory
         // immediately in onCreate(), before any Firestore/Auth call could happen.
-        AppCheck.setProviderFactory(PersonalAppCheckProviderFactory())
+        AppCheck.setAppCheckProviderFactory(PersonalAppCheckProviderFactory())
         FirebaseApp.configure()
         KoinBootstrapKt.bootstrapKoin()
     }

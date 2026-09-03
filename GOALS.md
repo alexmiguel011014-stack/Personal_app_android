@@ -2056,10 +2056,49 @@ items below stay blocked on this decision.
 
 - [ ] Host the built `.ipa` + an AltStore/SideStore-format "source" JSON (app metadata + download
       URL + version) somewhere stable and free — a GitHub Release asset on this same public repo
-      is the natural choice, consistent with 18i's update-manifest hosting.
-- [ ] Document (in this file, not just in chat) the one-time per-iPhone SideStore setup steps —
-      this becomes the "dev setup note" the project has flagged needing before (§13a already
-      noted the same need for App Check debug tokens once more than one test device exists).
+      is the natural choice, consistent with 18i's update-manifest hosting. **Template prepared
+      2026-09-03**: `store-listing/sidestore-source.json`, matching the real AltStore source
+      schema (verified against the official spec at
+      [faq.altstore.io/developers/make-a-source](https://faq.altstore.io/developers/make-a-source),
+      not guessed) — `bundleIdentifier`/`minOSVersion` are already correct
+      (`com.example.personalapp.ios` / iOS 15.0, matching `project.yml`), but `downloadURL`,
+      `size`, `date`, and `iconURL` are placeholder `PREENCHER:` markers since none of those exist
+      until a real signed `.ipa` does — this item stays open until then, the template only saves
+      time once it's unblocked.
+- [x] **Documented the one-time per-iPhone SideStore setup steps, 2026-09-03** — this was the
+      "dev setup note" the project had flagged needing before (§13a already noted the same need
+      for App Check debug tokens once more than one test device exists). Verified against
+      SideStore's own current docs (not memory — the toolchain changed since older guides:
+      AltServer/WireGuard/JitterbugPair are the *outdated* instructions per
+      [docs.sidestore.io/docs/advanced/alternative](https://docs.sidestore.io/docs/advanced/alternative);
+      the current tool is **iloader** + **LocalDevVPN**):
+  - **Prerequisites** ([docs.sidestore.io/docs/installation/prerequisites](https://docs.sidestore.io/docs/installation/prerequisites)):
+    iPhone/iPad on iOS/iPadOS 15.0+ with a passcode set, Wi-Fi (not cellular), any computer
+    (Windows 8+, macOS High Sierra+, current Linux, or an un-enrolled Chromebook — needed only
+    once, not kept running afterward), the **LocalDevVPN** app (App Store or the AltStore PAL
+    source), and **iloader** on the computer.
+  - **One-time computer step**: connect the iPhone by USB and trust the computer; open `iloader`;
+    sign in with any Apple Account (free is fine — doesn't need to match the device's own Apple
+    ID); select the device; choose "Install SideStore (Stable)".
+  - **On-device step** (varies slightly by iOS version, see
+    [docs.sidestore.io/docs/installation/install](https://docs.sidestore.io/docs/installation/install)
+    for the exact per-version branching): trust the developer app in Settings → General → VPN &
+    Device Management; on iOS 16+ also enable Developer Mode in Settings → Privacy & Security
+    (requires a restart); open LocalDevVPN and connect; sign into SideStore with the *same* Apple
+    Account used in `iloader`; in My Apps, tap the "7 DAYS" counter once to finish setup.
+  - **Free-account limits** (from
+    [docs.sidestore.io/docs/faq](https://docs.sidestore.io/docs/faq)): 3 active apps at a time
+    *including SideStore itself*, 10 different app IDs per week — both fine for one trainer's own
+    device installing just this one app. A paid Apple Developer Program account removes these
+    limits and extends the signature expiry from 7 to 365 days, but per §18j's already-deferred
+    decision that's not needed for the free path.
+  - **Ongoing maintenance, not one-time**: the free Apple ID's signature expires every 7 days —
+    SideStore refreshes it automatically as long as LocalDevVPN's connected, but if it lapses the
+    same "tap the 7 DAYS counter" step above fixes it, no computer needed again unless the
+    pairing file itself expires (rare — device reset/major iOS update).
+  - **Installing this app specifically**, once the source JSON above is actually hosted: add its
+    URL as a custom source inside SideStore (Sources tab → add source URL), then install "Personal
+    Tracker" from there like any other SideStore-listed app — no separate per-app pairing step.
 - [ ] **(manual, deferred)** When the trainer starts charging students: enroll in the Apple
       Developer Program ($99/yr), switch distribution to TestFlight (up to 10,000 testers, no
       per-device technical setup for the end user), and revisit whether the Play Store's one-time

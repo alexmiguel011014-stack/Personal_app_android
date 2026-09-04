@@ -104,6 +104,12 @@ fun DayAgendaItem(
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp)
             .clickable { expanded = !expanded },
+        colors = CardDefaults.cardColors(
+            containerColor = if (schedules.isNotEmpty())
+                MaterialTheme.colorScheme.primaryContainer
+            else
+                MaterialTheme.colorScheme.surfaceVariant
+        ),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {

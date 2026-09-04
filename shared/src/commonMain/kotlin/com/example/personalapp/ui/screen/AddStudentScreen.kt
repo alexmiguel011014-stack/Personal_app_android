@@ -53,28 +53,35 @@ fun AddStudentScreen(
                 }
             )
         },
-        floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = {
-                    showValidation = true
-                    if (name.isNotBlank() && selectedDays.isNotEmpty()) {
-                        viewModel.addStudent(
-                            name = name,
-                            phone = phone,
-                            gender = gender,
-                            goal = goal,
-                            level = level,
-                            notes = notes,
-                            trainingDays = selectedDays.toList(),
-                            weight = weight.replace(",", ".").toDoubleOrNull() ?: 0.0,
-                            height = height.replace(",", ".").toDoubleOrNull() ?: 0.0
-                        )
-                        onBack()
-                    }
-                },
-                icon = { Icon(Icons.Default.Save, contentDescription = null) },
-                text = { Text("Cadastrar") }
-            )
+        bottomBar = {
+            Surface(tonalElevation = 3.dp) {
+                Button(
+                    onClick = {
+                        showValidation = true
+                        if (name.isNotBlank() && selectedDays.isNotEmpty()) {
+                            viewModel.addStudent(
+                                name = name,
+                                phone = phone,
+                                gender = gender,
+                                goal = goal,
+                                level = level,
+                                notes = notes,
+                                trainingDays = selectedDays.toList(),
+                                weight = weight.replace(",", ".").toDoubleOrNull() ?: 0.0,
+                                height = height.replace(",", ".").toDoubleOrNull() ?: 0.0
+                            )
+                            onBack()
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Icon(Icons.Default.Save, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Cadastrar")
+                }
+            }
         }
     ) { padding ->
         Column(
@@ -199,8 +206,6 @@ fun AddStudentScreen(
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() })
             )
-            
-            Spacer(modifier = Modifier.height(100.dp))
         }
     }
 }

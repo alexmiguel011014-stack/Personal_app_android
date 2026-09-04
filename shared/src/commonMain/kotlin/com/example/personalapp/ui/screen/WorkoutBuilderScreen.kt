@@ -73,10 +73,9 @@ fun WorkoutBuilderScreen(
                 ) {
                     Text("Criar Manual")
                 }
-                Button(
+                FilledTonalButton(
                     onClick = { onNavigateToAI(studentId) },
                     modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
                 ) {
                     Text("Criar com IA no App")
                 }

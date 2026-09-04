@@ -93,11 +93,20 @@ jobs:
       # itself at install time via AltSign, using the free Apple ID already paired to the device
       # (see GOALS.md §18j's 2026-09-04 research note) — Apple's real signature was never going to
       # be the one that ends up on the installed app either way.
+      #
+      # -configuration Debug, not Release: a first attempt with Release hit
+      # `java.lang.OutOfMemoryError: Java heap space` inside Kotlin/Native's link-time
+      # devirtualization analysis (:shared:linkPodReleaseFrameworkIosArm64) — Release enables
+      # LTO/devirtualization passes that are memory-hungry on a framework this size (4 Firebase
+      # pods + gRPC + BoringSSL + leveldb), and the GitHub-hosted macOS runner's RAM wasn't enough.
+      # Debug skips that optimization pass entirely (same reason the simulator step above already
+      # uses Debug, successfully). No real downside here: this app never goes through App Store
+      # review, and SideStore re-signs/repackages it on-device regardless of build configuration.
       - name: Build unsigned .app for a real device
         working-directory: iosApp
         run: |
           xcodebuild -workspace iosApp.xcworkspace -scheme iosApp -sdk iphoneos \
-            -configuration Release CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            -configuration Debug CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
             ARCHS=arm64 ONLY_ACTIVE_ARCH=YES -derivedDataPath build build
 
       # Hand-assembled .ipa: the standard `Payload/<Name>.app/` zip structure every iOS installer
@@ -107,7 +116,7 @@ jobs:
         working-directory: iosApp
         run: |
           mkdir -p Payload
-          cp -R "build/Build/Products/Release-iphoneos/Personal Tracker.app" Payload/
+          cp -R "build/Build/Products/Debug-iphoneos/Personal Tracker.app" Payload/
           zip -r -y PersonalTracker.ipa Payload
 
       - name: Upload .ipa build artifact

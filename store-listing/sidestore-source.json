@@ -1,0 +1,31 @@
+{
+  "name": "Personal Tracker",
+  "subtitle": "Gestão de alunos e fichas de treino",
+  "description": "App para personal trainers organizarem alunos, fichas de treino e evolução — versão iOS.",
+  "nsfw": false,
+  "apps": [
+    {
+      "name": "Personal Tracker",
+      "bundleIdentifier": "com.example.personalapp.ios",
+      "developerName": "Alex Miguel",
+      "localizedDescription": "Gestão de alunos, fichas de treino e evolução para personal trainers — mesma conta/dados do app Android.",
+      "iconURL": "PREENCHER: URL de um ícone 1024x1024px PNG (nenhum foi gerado ainda — ver store-listing/listing-copy.md)",
+      "category": "lifestyle",
+      "versions": [
+        {
+          "version": "1.0",
+          "buildVersion": "1",
+          "date": "2026-09-04T22:18:43Z",
+          "localizedDescription": "Versão inicial.",
+          "downloadURL": "https://github.com/alexmiguel011014-stack/Personal_app_android/releases/download/ios-v1.0-1/PersonalTracker.ipa",
+          "size": 39543549,
+          "minOSVersion": "15.0"
+        }
+      ],
+      "appPermissions": {
+        "entitlements": [],
+        "privacy": {}
+      }
+    }
+  ]
+}

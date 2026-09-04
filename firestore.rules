@@ -11,6 +11,8 @@ rules_version = '2';
 //   workoutLogs/{logId}  - trainerId, studentId (written by the student, read by their trainer)
 //   trainerRequests/{uid} - email, createdAt. Self-written "please promote me" mailbox, doc ID is
 //                           the requester's own uid; only an ADM can read/act on it (GOALS.md §5e).
+//   assessments/{id}     - studentId, trainerId. Self-assessment history (GOALS.md §17) — the
+//                           student submits, the trainer reads; append-only, no update/delete.
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -75,7 +77,38 @@ service cloud.firestore {
             request.resource.data.trainerId ==
               get(/databases/$(database)/documents/invites/$(request.resource.data.inviteCode)).data.trainerId &&
             get(/databases/$(database)/documents/invites/$(request.resource.data.inviteCode)).data.used == false
+          ) ||
+          // GOALS.md §17c: submitting an assessment clears its own pending flag — the ONLY
+          // field a student may touch here, and only true -> false (the trainer sets it true,
+          // see the owning-trainer branch below; the student can never re-set it themselves).
+          (
+            field(resource.data, 'pendingAssessmentRequest') == true &&
+            field(request.resource.data, 'pendingAssessmentRequest') == false &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pendingAssessmentRequest'])
           )
+        )
+      ) || (
+        // GOALS.md §17c: the owning trainer may toggle canSelfAssess/canLogBiometrics and set
+        // pendingAssessmentRequest = true on a *linked* student's own doc — narrow, only these
+        // three fields, nothing else (role/trainerId/profile fields stay student-or-admin-only,
+        // matching toPermissionsUpdateMap()'s deliberately narrow payload).
+        isOwningTrainer(field(resource.data, 'trainerId')) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['canSelfAssess', 'canLogBiometrics', 'pendingAssessmentRequest']) &&
+        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['pendingAssessmentRequest']) ||
+          request.resource.data.pendingAssessmentRequest == true)
+      ) || (
+        // Fix (found while writing §17c, applied 2026-08-27): TrainerRepository.updateUser()'s
+        // write of a linked student's general profile fields (toLinkedStudentUpdateMap()) had no
+        // matching branch here at all — the trainer's own uid is never equal to the student's
+        // uid, so every EditStudentScreen save on an already-linked student was silently
+        // rejected by Firestore. Narrow: matches toLinkedStudentUpdateMap()'s exact field list,
+        // excludes role/trainerId (no self-promotion/re-parenting) and excludes §17c's own three
+        // fields above (this branch is profile-only, that one is permissions-only — kept
+        // separate rather than merged, so neither write can accidentally touch the other's
+        // fields).
+        isOwningTrainer(field(resource.data, 'trainerId')) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+          ['name', 'gender', 'phone', 'goal', 'experienceLevel', 'medicalNotes', 'trainingDays']
         )
       );
       // The owning trainer may also remove a linked student's account (symmetric with every
@@ -115,11 +148,19 @@ service cloud.firestore {
       allow update, delete: if isOwningTrainer(resource.data.trainerId);
     }
 
-    // biometrics/{entryId} — trainer manages; student reads their own entries.
+    // biometrics/{entryId} — trainer manages; student reads their own entries. GOALS.md §17c
+    // adds a narrow exception letting a student log their own entry, gated by their own
+    // canLogBiometrics flag (mirrors workoutLogs' trainerId-must-match-own-profile check).
     match /biometrics/{entryId} {
       allow read: if isOwningTrainer(resource.data.trainerId) ||
         (isSignedIn() && resource.data.studentId == request.auth.uid);
-      allow create: if isOwningTrainer(request.resource.data.trainerId);
+      allow create: if isOwningTrainer(request.resource.data.trainerId) || (
+        isSignedIn() &&
+        request.resource.data.studentId == request.auth.uid &&
+        request.resource.data.trainerId ==
+          field(get(/databases/$(database)/documents/users/$(request.auth.uid)).data, 'trainerId') &&
+        field(get(/databases/$(database)/documents/users/$(request.auth.uid)).data, 'canLogBiometrics') == true
+      );
       allow update, delete: if isOwningTrainer(resource.data.trainerId);
     }
 
@@ -143,6 +184,20 @@ service cloud.firestore {
         request.resource.data.trainerId ==
           field(get(/databases/$(database)/documents/users/$(request.auth.uid)).data, 'trainerId');
       allow delete: if isSignedIn() && resource.data.studentId == request.auth.uid;
+    }
+
+    // assessments/{id} — the student submits their own PAR-Q + profile snapshot when
+    // canSelfAssess is true; the owning trainer reads the history. Append-only: no update or
+    // delete, a resubmission is a new doc, not an edit of history (GOALS.md §17).
+    match /assessments/{id} {
+      allow read: if isOwningTrainer(resource.data.trainerId) ||
+        (isSignedIn() && resource.data.studentId == request.auth.uid);
+      allow create: if isSignedIn() &&
+        request.resource.data.studentId == request.auth.uid &&
+        request.resource.data.trainerId ==
+          field(get(/databases/$(database)/documents/users/$(request.auth.uid)).data, 'trainerId') &&
+        field(get(/databases/$(database)/documents/users/$(request.auth.uid)).data, 'canSelfAssess') == true;
+      allow update, delete: if false;
     }
 
     // trainerRequests/{uid} — a self-registered STUDENT asks to become a TRAINER; only the ADM

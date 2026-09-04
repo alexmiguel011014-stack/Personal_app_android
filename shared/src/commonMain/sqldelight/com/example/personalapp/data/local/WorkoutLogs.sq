@@ -1,0 +1,25 @@
+import kotlin.collections.List;
+import com.example.personalapp.data.model.PerformedSet;
+
+CREATE TABLE workout_logs (
+    id TEXT NOT NULL PRIMARY KEY,
+    studentId TEXT NOT NULL,
+    workoutId TEXT NOT NULL,
+    exerciseName TEXT NOT NULL,
+    date INTEGER NOT NULL,
+    performedSetsJson TEXT AS List<PerformedSet> NOT NULL,
+    note TEXT
+);
+
+insertWorkoutLog:
+INSERT OR REPLACE INTO workout_logs(id, studentId, workoutId, exerciseName, date, performedSetsJson, note)
+VALUES (:id, :studentId, :workoutId, :exerciseName, :date, :performedSetsJson, :note);
+
+deleteWorkoutLogById:
+DELETE FROM workout_logs WHERE id = :id;
+
+getWorkoutLogsByStudent:
+SELECT * FROM workout_logs WHERE studentId = :studentId ORDER BY date DESC;
+
+getWorkoutLogsByWorkout:
+SELECT * FROM workout_logs WHERE workoutId = :workoutId ORDER BY date DESC;

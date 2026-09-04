@@ -1,0 +1,18 @@
+CREATE TABLE biometrics (
+    id TEXT NOT NULL PRIMARY KEY,
+    userId TEXT NOT NULL,
+    weight REAL NOT NULL,
+    height REAL NOT NULL,
+    bodyFat REAL NOT NULL,
+    date INTEGER NOT NULL
+);
+
+insertBiometric:
+INSERT OR REPLACE INTO biometrics(id, userId, weight, height, bodyFat, date)
+VALUES (:id, :userId, :weight, :height, :bodyFat, :date);
+
+getBiometricsByUser:
+SELECT * FROM biometrics WHERE userId = :userId ORDER BY date DESC;
+
+deleteBiometricById:
+DELETE FROM biometrics WHERE id = :id;

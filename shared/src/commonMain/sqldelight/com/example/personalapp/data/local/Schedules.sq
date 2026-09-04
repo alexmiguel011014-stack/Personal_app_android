@@ -1,0 +1,16 @@
+CREATE TABLE schedules (
+    id TEXT NOT NULL PRIMARY KEY,
+    studentId TEXT NOT NULL,
+    dayOfWeek TEXT NOT NULL,
+    hour TEXT NOT NULL
+);
+
+insertSchedule:
+INSERT OR REPLACE INTO schedules(id, studentId, dayOfWeek, hour)
+VALUES (:id, :studentId, :dayOfWeek, :hour);
+
+deleteScheduleById:
+DELETE FROM schedules WHERE id = :id;
+
+getAllSchedules:
+SELECT * FROM schedules;

@@ -1,0 +1,11 @@
+CREATE TABLE history (
+    id TEXT NOT NULL PRIMARY KEY,
+    studentId TEXT NOT NULL,
+    workoutId TEXT NOT NULL,
+    intensity INTEGER NOT NULL,
+    date INTEGER NOT NULL
+);
+
+insertHistory:
+INSERT OR REPLACE INTO history(id, studentId, workoutId, intensity, date)
+VALUES (:id, :studentId, :workoutId, :intensity, :date);

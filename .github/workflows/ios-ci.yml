@@ -26,7 +26,102 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Compile iOS targets
-        run: ./gradlew :shared:compileKotlinIosSimulatorArm64 :shared:compileKotlinIosArm64 :shared:compileKotlinIosX64
+        run: ./gradlew :shared:compileKotlinIosSimulatorArm64 :shared:compileKotlinIosArm64
 
+      # GOALS.md §18f: re-enabled 2026-09-01 — the CocoaPods integration (see shared/build.gradle.kts's
+      # cocoapods {} block) fixed the `ld: framework 'FirebaseCore' not found` link failure that
+      # disabled this step. Verified live on a real GitHub-hosted macOS runner via the
+      # ios-interactive.yml debug session, not just locally: BUILD SUCCESSFUL, all the way through
+      # linkDebugTestIosSimulatorArm64 and the test itself. First run took ~32 minutes (downloading
+      # the Kotlin/Native LLVM toolchain + compiling FirebaseAuth/FirebaseFirestore/
+      # FirebaseCrashlytics from source via CocoaPods, all one-time costs) — expect it much faster
+      # on subsequent runs once Gradle's own cache (already wired via gradle/actions/setup-gradle)
+      # has these artifacts.
       - name: Run shared module tests on iOS simulator
         run: ./gradlew :shared:iosSimulatorArm64Test
+
+      # GOALS.md §18j: builds the minimal iOS app shell (iosApp/) added 2026-09-01 — proves the
+      # whole chain (XcodeGen project generation -> CocoaPods -> Xcode build) works end to end on
+      # a real macOS runner, not just that :shared's Kotlin/Native framework compiles. Run as a
+      # normal CI step (not the interactive ios-interactive.yml debug session) because the
+      # interactive SSH-over-tmux channel proved too unreliable for a multi-minute pod install +
+      # xcodebuild sequence — this gets the same free macOS runner with reliable logs instead.
+      - name: Generate shared.podspec and dummy framework
+        run: ./gradlew :shared:podspec :shared:generateDummyFramework --console=plain
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      # GoogleService-Info.plist is gitignored, same convention as google-services.json on the
+      # Android side (see android-ci.yml) — the real file must be added as a repo secret
+      # (Settings -> Secrets and variables -> Actions -> GOOGLE_SERVICE_INFO_PLIST, paste the
+      # file's raw XML contents) for Firebase to actually initialize at runtime. Missing/empty
+      # secret still lets the build succeed (it's just a bundled resource, not build-time
+      # validated) — only FirebaseApp.configure() at app launch would fail without a real one.
+      # Must run before "Generate Xcode project": XcodeGen only picks up files that already
+      # exist under iosApp/iosApp/ at generate time.
+      - name: Write GoogleService-Info.plist
+        env:
+          GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}
+        run: echo "$GOOGLE_SERVICE_INFO_PLIST" > iosApp/iosApp/GoogleService-Info.plist
+
+      - name: Generate Xcode project
+        working-directory: iosApp
+        run: xcodegen generate
+
+      - name: Install CocoaPods dependencies
+        working-directory: iosApp
+        run: pod install
+
+      - name: Build iOS app shell for simulator
+        working-directory: iosApp
+        run: |
+          # ARCHS=arm64 is required: without an explicit -destination, xcodebuild's default
+          # multi-arch simulator build also requests x86_64, but :shared only declares
+          # iosArm64()/iosSimulatorArm64() targets (Apple Silicon, matching this runner) — no
+          # iosX64() target exists, so the CocoaPods "Build shared" script phase's Gradle
+          # invocation fails with "Unknown iOS simulator arch: 'x86_64'".
+          xcodebuild -workspace iosApp.xcworkspace -scheme iosApp -sdk iphonesimulator \
+            -configuration Debug CODE_SIGNING_ALLOWED=NO ARCHS=arm64 ONLY_ACTIVE_ARCH=YES build
+
+      # GOALS.md §18j (2026-09-04): a real-device build, packaged into a distributable .ipa with
+      # code signing turned off entirely. This is deliberately NOT `xcodebuild archive` +
+      # `-exportArchive` — export enforces a real signing identity even for ad-hoc export methods,
+      # which this project doesn't have (no Apple Developer Program membership). A plain `build`
+      # against -sdk iphoneos with CODE_SIGNING_ALLOWED=NO/CODE_SIGNING_REQUIRED=NO produces an
+      # ordinary unsigned .app instead, which is all SideStore needs: it re-signs the whole thing
+      # itself at install time via AltSign, using the free Apple ID already paired to the device
+      # (see GOALS.md §18j's 2026-09-04 research note) — Apple's real signature was never going to
+      # be the one that ends up on the installed app either way.
+      #
+      # -configuration Debug, not Release: a first attempt with Release hit
+      # `java.lang.OutOfMemoryError: Java heap space` inside Kotlin/Native's link-time
+      # devirtualization analysis (:shared:linkPodReleaseFrameworkIosArm64) — Release enables
+      # LTO/devirtualization passes that are memory-hungry on a framework this size (4 Firebase
+      # pods + gRPC + BoringSSL + leveldb), and the GitHub-hosted macOS runner's RAM wasn't enough.
+      # Debug skips that optimization pass entirely (same reason the simulator step above already
+      # uses Debug, successfully). No real downside here: this app never goes through App Store
+      # review, and SideStore re-signs/repackages it on-device regardless of build configuration.
+      - name: Build unsigned .app for a real device
+        working-directory: iosApp
+        run: |
+          xcodebuild -workspace iosApp.xcworkspace -scheme iosApp -sdk iphoneos \
+            -configuration Debug CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES -derivedDataPath build build
+
+      # Hand-assembled .ipa: the standard `Payload/<Name>.app/` zip structure every iOS installer
+      # (SideStore included) expects — xcodebuild alone doesn't produce this for an unsigned build
+      # since that's normally -exportArchive's job, which we're skipping (see step above).
+      - name: Package .ipa
+        working-directory: iosApp
+        run: |
+          mkdir -p Payload
+          cp -R "build/Build/Products/Debug-iphoneos/Personal Tracker.app" Payload/
+          zip -r -y PersonalTracker.ipa Payload
+
+      - name: Upload .ipa build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PersonalTracker-ipa
+          path: iosApp/PersonalTracker.ipa
+          retention-days: 14

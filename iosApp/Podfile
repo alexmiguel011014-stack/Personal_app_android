@@ -1,0 +1,9 @@
+platform :ios, '15.0'
+use_frameworks!
+
+# GOALS.md §18j: the first real iOS app shell. `shared/build.gradle.kts`'s `cocoapods {}` block
+# (added for §18f) generates `../shared/shared.podspec` as a side effect of any Gradle task on
+# :shared — that's what makes this local pod path resolvable, not a manually-written podspec.
+target 'iosApp' do
+  pod 'shared', :path => '../shared'
+end

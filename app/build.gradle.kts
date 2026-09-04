@@ -5,8 +5,6 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.kotlin.serialization)
-    alias(libs.plugins.hilt)
-    alias(libs.plugins.googleKsp)
     alias(libs.plugins.googleServices)
     alias(libs.plugins.firebaseCrashlytics)
 }
@@ -59,64 +57,57 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        // Bumped from 11 → 17 for GOALS.md §18f: the GitLive Firebase SDK's Android artifacts
+        // ship inline reified functions compiled at JVM target 17 — inlining them into an 11
+        // target fails at compile time, not just a version-alignment nicety.
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
     buildFeatures {
         compose = true
     }
-}
-
-ksp {
-    arg("room.schemaLocation", "$projectDir/schemas")
+    packaging {
+        resources {
+            // mockk-android pulls in JUnit Jupiter transitively, which ships duplicate META-INF
+            // license/notice files that collide with the rest of the androidTest classpath —
+            // only surfaces when actually building the androidTest APK (connectedAndroidTest),
+            // which is why this went unnoticed until a real device made that runnable.
+            excludes += setOf(
+                "META-INF/LICENSE.md",
+                "META-INF/LICENSE-notice.md",
+                "META-INF/NOTICE.md",
+                "META-INF/LICENSE.txt",
+                "META-INF/NOTICE.txt",
+                "META-INF/DEPENDENCIES",
+            )
+        }
+    }
 }
 
 dependencies {
+    // GOALS.md §18h: screens/ViewModels/navigation all moved into :shared/commonMain, which
+    // exposes Compose Multiplatform (runtime/foundation/material3/materialIconsExtended/ui),
+    // Koin Compose (koin-compose-viewmodel), the JetBrains multiplatform navigation-compose, and
+    // JetBrains' multiplatform lifecycle-viewmodel-compose as `api` dependencies — all of that
+    // now flows to :app transitively instead of needing its own (and possibly
+    // version-conflicting) classic androidx.compose.*/androidx.navigation.* copies. What's left
+    // here is genuinely Android-only: the Activity host itself and Android-only DI wiring.
     implementation(project(":shared"))
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.core.ktx)
     implementation(libs.material)
-
-    // Room
-    implementation(libs.androidx.room.runtime)
-    implementation(libs.androidx.room.ktx)
-    ksp(libs.androidx.room.compiler)
-
-    // Compose
-    implementation(platform(libs.androidx.compose.bom))
-    implementation(libs.androidx.ui)
-    implementation(libs.androidx.ui.graphics)
-    implementation(libs.androidx.ui.tooling.preview)
-    implementation(libs.androidx.material3)
-    implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.activity.compose)
     implementation(libs.kotlinx.serialization.json)
 
-    // Hilt
-    implementation(libs.hilt.android)
-    ksp(libs.hilt.compiler)
-    implementation(libs.androidx.hilt.navigation.compose)
+    // Koin (GOALS.md §18c — replaces Hilt, which has no Kotlin Multiplatform support)
+    implementation(platform(libs.koin.bom))
+    implementation(libs.koin.android)
 
-    // Lifecycle
-    implementation(libs.androidx.lifecycle.viewmodel.compose)
-
-    // Navigation
-    implementation(libs.androidx.navigation.compose)
-
-    // DataStore
-    implementation(libs.androidx.datastore.preferences)
-
-    // Firebase
+    // Firebase App Check — GitLive doesn't cover this at all (GOALS.md §18f/§18g), stays
+    // Android-only here.
     implementation(platform(libs.firebase.bom))
-    implementation(libs.firebase.auth)
-    implementation(libs.firebase.firestore)
-    implementation(libs.firebase.crashlytics)
     implementation(libs.firebase.appcheck.playintegrity)
     implementation(libs.firebase.appcheck.debug)
-    // Firebase AI Logic (GOALS.md §3) — replaces the deprecated com.google.ai.client.generativeai
-    // SDK for Gemini calls; free on the Spark plan via the Gemini Developer API backend.
-    implementation(libs.firebase.ai)
-    implementation(libs.kotlinx.coroutines.play.services)
 
     testImplementation(libs.junit)
     testImplementation(libs.mockk)

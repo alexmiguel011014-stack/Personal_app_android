@@ -17,6 +17,7 @@ local.properties
 
 # Firebase
 google-services.json
+/iosApp/iosApp/GoogleService-Info.plist
 
 # Release signing (GOALS.md §11) — never commit the keystore or its passwords
 *.jks
@@ -31,3 +32,12 @@ google-services.json
 # graphify / repomix generated artifacts
 graphify-out/
 repomix-output.xml
+
+# iOS app shell (GOALS.md §18j) — XcodeGen-generated project, CocoaPods-installed pods, and
+# build output are all reproducible from project.yml/Podfile + :shared, never hand-edited.
+/iosApp/*.xcodeproj/
+/iosApp/*.xcworkspace/
+/iosApp/Pods/
+/iosApp/Podfile.lock
+/iosApp/build/
+/shared/*.podspec

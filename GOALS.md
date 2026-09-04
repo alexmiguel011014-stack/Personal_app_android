@@ -218,10 +218,22 @@ depends on it.
       decision: keep both, link it — added a "Gerenciar" button next to `StudentDetailsScreen`'s
       "Fichas de Treino" header navigating to `Screen.WorkoutBuilder.createRoute(studentId)`.
       Verified via `./gradlew assembleDebug`.
-      - [ ] "Editar" (`WorkoutCard`'s edit icon inside `WorkoutBuilderScreen`) still has no
-        destination — no edit-existing-workout screen exists anywhere in the app. Out of scope for
-        this pass; build one later (reuse `ManualWorkoutScreen`'s exercise-list UI, prefilled,
-        calling `updateWorkout` instead of `insertWorkout`) or remove the dead icon — not decided.
+      - [x] **Done 2026-08-26**: built exactly the option this note favored — reused
+        `ManualWorkoutScreen`, prefilled, calling `updateWorkout` instead of `insertWorkout`, not a
+        new screen. New `Workouts.sq` query `getWorkoutById`, `AppDao`/`TrainerRepository`
+        `getWorkoutById()`, and `WorkoutViewModel.editingWorkout`/`loadWorkoutForEdit()`/
+        `updateWorkout()`. `ManualWorkoutScreen` takes an optional `workoutId: String? = null`;
+        when present it loads and prefills name/exercises, retitles to "Editar Treino"/"Salvar
+        Alterações", and saves via `existing.copy(...)` + `updateWorkout` (keeping the original
+        `id`/`isActive`/`createdAt`/`status`/`assignedAt`) instead of building a new entity. New
+        route `Screen.EditWorkout("edit_workout/{studentId}/{workoutId}")` in `AppNavigation.kt`;
+        `WorkoutCard`'s edit `IconButton` now calls a real `onEdit` callback instead of the empty
+        `/* Editar */` lambda. Verified via `:app:compileDebugKotlin` + `verify` + `assembleDebug`
+        + `compileDebugAndroidTestKotlin`, all green locally. **Live-verified 2026-08-27**: on
+        the real device, created a workout, opened it via the edit icon (title/FAB correctly read
+        "Editar Treino"/"Salvar Alterações", name and exercise list prefilled), changed the name,
+        saved — the list showed one updated entry, not two, confirming `updateWorkout` replaced
+        the existing row instead of inserting a second one.
 
 - [x] **AI ficha generation — ground it in the hypertrophy volume reference table (researched
       2026-08-17 via `/newgoal`, user supplied the actual PDF this session:
@@ -986,10 +998,17 @@ flowchart TD
       evaluation. The evaluation itself is still worth doing eventually (which provider actually
       follows the volume-budget math best), just informally, whenever real usage accumulates —
       not a blocker for shipping the choice.
-- [ ] Keep Gemini wired as an optional fallback (§3's existing code), but stop treating it as the
-      default/primary path in any UI copy until Google's free-tier reliability changes — still
-      accurate advice, unaffected by the §16 expansion (Gemini stays one of four choices, just
-      not the one to lead with in copy/defaults).
+- [x] **Done 2026-08-26**: Gemini stays wired as a fallback but is no longer presented as the
+      default/primary path anywhere. Code defaults changed from `AiProvider.GEMINI` to
+      `AiProvider.OPENAI` (`GenerativeAiService.generateWorkout`, `AIWorkoutViewModel.sendMessage`,
+      `AIWorkoutScreen`'s initial selected chip); the Gemini chip moved from first to last in
+      `AIWorkoutScreen`'s row; `SettingsScreen`'s `AiSettingsTab` no longer opens with a
+      highlighted "Gemini já está pronto" card followed by the other three providers marked
+      "opcional" — that card is gone, the three key fields come first, and a single plain
+      (non-highlighted) line about Gemini's no-key availability comes last. `AdminDashboardScreen`'s
+      `ApiStatusTab` was left as-is (a factual status readout, not a choice/default nudge — out of
+      scope for this note). Verified via `:app:compileDebugKotlin` + `verify` + `assembleDebug` +
+      `compileDebugAndroidTestKotlin`, all green locally.
 
 ---
 
@@ -1076,8 +1095,12 @@ flowchart TD
 - [x] New unit test for the effective-volume calculator: multiple exercises contributing
       fractional credit to the same muscle sum correctly; a muscle with zero contributing
       exercises reports 0, not a crash.
-- [ ] **(manual)** confirm "Copiar Prompt" actually populates the system clipboard on a real
-      device — Compose clipboard interaction isn't meaningfully covered by a JVM/Robolectric test.
+- [x] **Confirmed 2026-08-27** on the real device: tapped "Copiar Prompt" (both the app's own
+      Snackbar and Android's own system "Copiado." toast appeared — the latter only fires when
+      `ClipboardManager.setPrimaryClip()` actually runs), then pasted into a plain text field to
+      verify the actual content, not just that *something* copied: the full generated prompt
+      came through correctly ("Você é um Personal Trainer especialista em hipertrofia baseada em
+      evidências. Vou te passar o perfil de um aluno e o que eu quero na ficha de treino...").
 
 **15g. Registration — rewire the two existing AI entry points**
 - [x] `StudentDetailsScreen`'s "Ficha Personal" dialog ("Manual" vs. "Com IA") and
@@ -1238,107 +1261,192 @@ flowchart TD
     F --> G[17g. Registration]
 ```
 
+**Implemented 2026-08-27, via `/execgoals` after the user's explicit go-ahead** (this section's
+own gate — "not sure if now is the right time" — was resolved by asking again at the start of
+that session; see the conversation, not repeated here). Written against the original KMP-era
+plan below, translated from the stale pre-§18 assumptions (Room, `app/schemas/`) to this
+project's actual current stack (SQLDelight, GitLive Firestore) — noted inline per item.
+
 **17a. Design rationale**
-- [ ] **Draft vs. connected badge**: purely visual, uses the existing `UserEntity.linked` field
-      already returned by the merged query — no new data needed. Closes the actual confusion the
-      user flagged without touching the data model.
-- [ ] **Permission set stays small and named, not a generic feature-flag framework**: exactly two
-      toggles, both trainer-controlled and default OFF (per "que o personal libera... quando
-      personal autorizar"):
-      - `canSelfAssess` — student may fill out a self-assessment when the trainer requests one.
-      - `canLogBiometrics` — student may log their own weight/measurements (distinct from the
-        trainer's own biometric entries on `StudentDetailsScreen`).
-      A third or fourth toggle can be added later the same way if a real need shows up — building
-      a generic per-feature permission engine now for two known toggles is speculative flexibility
-      this project's own conventions already avoid elsewhere.
-- [ ] **Self-assessment is a time-series collection (`assessments/{id}`), not a single overwritable
-      profile field** — mirrors the existing `biometrics`/`workoutLogs` pattern (Firestore source
-      of truth + Room mirror), giving the trainer a real history instead of only ever seeing the
-      latest answers. Content grounded in the **PAR-Q+** (Physical Activity Readiness
-      Questionnaire), the international-standard pre-exercise health screening tool used
-      industry-wide before a new client starts training — 7 general yes/no health-risk questions
-      (heart condition needing medical clearance, chest pain during/at rest, dizziness or loss of
-      consciousness, a bone/joint problem, current blood-pressure/heart medication, any other
-      medical reason) — plus the profile fields `UserEntity` already has (`goal`,
-      `experienceLevel`, `trainingDays`), not an invented bespoke form. A "yes" answer should be
-      flagged visibly to the trainer (liability/safety relevance), not just logged silently.
-- [ ] **Request is pull-based, not push** — the trainer "requesting" an assessment just flips
-      `pendingAssessmentRequest = true` on the student's own doc; the student sees it next time
-      they open the app (same pattern already used for role-promotion — GOALS.md explicitly keeps
-      push notifications/FCM out of scope project-wide). No new messaging infrastructure needed.
+- [x] **Draft vs. connected badge**: implemented exactly as scoped — `StudentCard`
+      (`shared/.../ui/screen/Components.kt`) shows "Conectado"/"Cadastrado (aguardando conexão)"
+      driven by the existing `linked` field, no data model change needed.
+- [x] **Permission set**: exactly the two named toggles, both default `false` —
+      `UserEntity.canSelfAssess`/`canLogBiometrics`. No generic flag framework added.
+- [x] **Self-assessment as a time-series collection**: `assessments/{id}` (Firestore) +
+      `assessments` table (SQLDelight, not Room — see 17b), the same source-of-truth/local-mirror
+      shape as `biometrics`/`workoutLogs`. PAR-Q content is the real, standard 7-question
+      questionnaire (not paraphrased/invented) in a new shared `PAR_Q_QUESTIONS` list
+      (`shared/.../data/model/ParQQuestions.kt`) — stable string keys, editable Portuguese text,
+      so `parQAnswers` map keys never need to change once real answers exist under them. A "yes"
+      answer surfaces as a visible warning icon + highlighted card
+      (`AssessmentHistorySection`), not just a logged value.
+- [x] **Pull-based request**: `TrainerRepository.requestAssessment()` only flips
+      `pendingAssessmentRequest = true`; the student sees a banner next time they open
+      `StudentNavigation`. No push/FCM infrastructure added.
 
-**17b. Data model**
-- [ ] New Room entity `AssessmentEntity` + Firestore collection `assessments/{id}`:
-      `studentId`, `trainerId`, `requestedAt`, `submittedAt` (null until answered), `parQAnswers`
-      (map of question key → boolean), `goal`/`experienceLevel`/`trainingDays` snapshot at
-      submission time (so history reflects what was true *then*, not the current live profile).
-      Room migration (schema version bump, exported schema committed under `app/schemas/`, per
-      CLAUDE.md's own convention — no `fallbackToDestructiveMigration` reliance).
-- [ ] New fields on `UserEntity`/`users/{uid}`: `canSelfAssess: Boolean = false`,
-      `canLogBiometrics: Boolean = false`, `pendingAssessmentRequest: Boolean = false`. Extend
-      `FirestoreMappers.kt` (`toFirestoreMap()`/`toUserEntity()`) — same three-places-in-lockstep
-      rule CLAUDE.md already documents for this data layer.
-- [ ] `TrainerRepository`: `requestAssessment(studentId)` (sets the pending flag),
-      `getAssessmentsForStudent(studentId): Flow<List<AssessmentEntity>>`,
-      `setStudentPermission(studentId, canSelfAssess, canLogBiometrics)`.
-- [ ] `StudentRepository`: `submitAssessment(answers, profileSnapshot)` (writes the doc, clears
-      the pending flag), `logOwnBiometric(entry)` (only meaningful when `canLogBiometrics` is
-      true — the rule in 17c is the real gate, this is just the write path).
+**17b. Data model** — built on SQLDelight, not Room (this plan predates §18d's Room→SQLDelight
+migration; the shape below is what actually landed, not what was originally sketched).
+- [x] New `AssessmentEntity` (`shared/.../data/local/entity/AssessmentEntity.kt`) +
+      SQLDelight table (`shared/.../sqldelight/.../Assessments.sq`): `studentId`, `trainerId`,
+      `requestedAt`, `submittedAt`, `parQAnswers` (`Map<String, Boolean>` via a new
+      `stringBooleanMapAdapter` `ColumnAdapter`), `goal`/`experienceLevel`/`trainingDays`
+      snapshotted at submission time. No migration-version bump needed — SQLDelight has no
+      migration-verification wired up at all yet (see CLAUDE.md's data-layer section), so adding
+      a table is just adding a `CREATE TABLE`, unlike Room's `exportSchema`/`Migration` ceremony
+      this item originally assumed.
+- [x] `UserEntity`/`users/{uid}` gained `canSelfAssess`/`canLogBiometrics`/
+      `pendingAssessmentRequest` (all default `false`). Updated in lockstep: `Users.sq` (3 new
+      columns + `setStudentPermissions`/`setPendingAssessmentRequest` narrow queries),
+      `FirestoreMappers.kt` (`toLinkedUserEntity()`, plus a new, deliberately narrow
+      `toPermissionsUpdateMap()` — kept separate from the existing `toLinkedStudentUpdateMap()`
+      so a trainer's permission-toggle write can never accidentally include profile fields
+      firestore.rules doesn't expect there).
+- [x] `TrainerRepository`: `setStudentPermission()`, `requestAssessment()`,
+      `getAssessmentsForStudent()` — plus a new `assessments` mirror registered in
+      `startListening()` (same snapshot-listener pattern every other trainer-scoped collection
+      already uses).
+- [x] `StudentRepository`: `submitAssessment()`, `logOwnBiometric()`, and a new `getMyProfile()`
+      live listener on the student's own `users/{uid}` doc (GitLive `DocumentReference.snapshots`)
+      — `StudentViewModel`/`StudentNavigation` didn't have a reactive way to read the student's
+      own permission flags before this.
 
-**17c. `firestore.rules`**
-- [ ] `assessments/{id}`: `allow create` if `isOwningTrainer(request.resource.data.trainerId)`
-      (the request) **or** if the caller is the student themselves, `request.resource.data.studentId
-      == request.auth.uid`, and their own `users/{uid}.canSelfAssess == true` (the submission —
-      same `get()`-a-related-doc pattern already used for invite validation). `allow read` if
-      owning trainer or the student themselves (same shape as `workoutLogs`).
-- [ ] `users/{uid}` self-`update`: add one more narrow, additive exception (same style as §13d's
-      re-claim exception) permitting `pendingAssessmentRequest` to change **only** `true → false`
-      and **only** as part of the same write that creates an `assessments/{id}` doc for that
-      student — this is the "submitting an assessment clears its own pending flag" self-write,
-      distinct from `canSelfAssess`/`canLogBiometrics` themselves, which stay trainer-only
-      (`isAdmin() || isOwningTrainer(...)`), never student-settable.
-- [ ] `biometrics/{entryId}` `allow create`: add a narrow exception permitting a student to create
-      their own entry (`request.resource.data.studentId == request.auth.uid`) only when their own
-      `users/{uid}.canLogBiometrics == true` — additive to the existing `isOwningTrainer`-only
-      create rule, not a replacement.
+**17c. `firestore.rules`** — **published and live-verified 2026-08-27 (see 17f).**
+- [x] `assessments/{id}`: `allow create` requires the caller be the student
+      (`studentId == request.auth.uid`), their `trainerId` match their own profile's, and their
+      own `canSelfAssess == true`. `allow read` for the owning trainer or the student themselves.
+      `allow update, delete: if false` — append-only history, a resubmission is a new doc.
+- [x] `users/{uid}` gained **two** new `allow update` branches (not one) — the plan didn't
+      distinguish trainer-side vs. student-side writes clearly enough to implement as a single
+      exception: (1) the student's own narrow `pendingAssessmentRequest: true -> false` flip
+      (`diff().affectedKeys().hasOnly([...])`, mirroring §13d's re-claim exception style), and
+      (2) a **new**, separate `isOwningTrainer(...)` branch letting the trainer toggle
+      `canSelfAssess`/`canLogBiometrics`/set `pendingAssessmentRequest = true` — restricted to
+      exactly those three keys, and `pendingAssessmentRequest` may only be set `true` from this
+      branch, never `false` (only the student's own write can clear it).
+- [x] `biometrics/{entryId}` `allow create`: additive student exception, gated on the student's
+      own `canLogBiometrics == true` and their `trainerId` matching their own profile — same
+      shape as `workoutLogs`' existing student-write rule.
+- [x] **Fixed 2026-08-27** (found while writing this, flagged separately as a background task,
+  fixed by the user running it in a separate worktree — branch `claude/heuristic-wiles-c0fee9`,
+  commit `d334a6d` — then ported onto this branch's own current rules structure, since that
+  commit was based on `main` and predates every §17 change here):
+  `TrainerRepository.updateUser()`'s existing write to a *linked* student's general profile
+  fields (`toLinkedStudentUpdateMap()`) had no matching `isOwningTrainer` branch in the
+  `users/{uid}` update rule at all — a comment claimed it worked, but only the document's own
+  owner or an ADM could actually update it, and a trainer's UID is never equal to a linked
+  student's UID. Added a third `isOwningTrainer` branch, parallel to (not merged with) §17c's own
+  permissions branch — restricted to exactly `toLinkedStudentUpdateMap()`'s field list
+  (name/gender/phone/goal/experienceLevel/medicalNotes/trainingDays), excluding role/trainerId
+  and excluding §17c's canSelfAssess/canLogBiometrics/pendingAssessmentRequest, so the two writes
+  can never bleed into each other's allowed fields. **Live-verified 2026-08-27** on the real
+  device: edited `leandro`'s phone/goal/training-day fields via `EditStudentScreen` as the
+  trainer, saved, force-stopped and relaunched the app (ruling out an optimistic local-only
+  write) — the fields were still there, confirming the write actually landed in Firestore, not
+  just the local cache.
+  - **First attempt failed with a real finding, not just "rules not published yet".** The
+    Console's publish history showed the *previous* rules version (without this branch) was
+    still live — the earlier "already published" confirmation was for an older version of the
+    file, sent before this fix existed. Republishing the current file fixed it. But the failure
+    mode itself is a separate, real bug, tracked below.
+  - **New bug found, fixed same day**: when Firestore rejects a write (e.g. `PERMISSION_DENIED`
+    from a rules mismatch), the GitLive SDK's write-rejection surfaced as an **uncaught exception
+    on the main thread that crashed the whole app** (`FirebaseFirestoreException:
+    PERMISSION_DENIED` → `SyncEngine.handleRejectedWrite` → uncaught `FATAL EXCEPTION`), not a
+    catchable error the UI could show a message for. Reproduced live: editing `leandro`'s profile
+    while the stale rules were still published force-closed the app back to the Android home
+    screen. No data corruption resulted — the next Firestore snapshot resynced the local cache
+    back to the server's (unedited) state.
+    - **Fix**: `TrainerRepository` gained a private `safeFirestoreWrite { ... }` helper
+      (catch-and-log via `Firebase.crashlytics.recordException`, rethrowing
+      `CancellationException` so structured concurrency still cancels correctly — same shape as
+      the `.catch { }` already used on the `mirror()` listener side for read errors). Applied to
+      every write method that already applies to the local DB first
+      (`insertUser`/`updateUser`/`deleteUser`, `setStudentPermission`, `requestAssessment`,
+      `insertBiometric`, `insertWorkout`/`updateWorkout`/`deleteWorkout`,
+      `insertSchedule`/`deleteSchedule`, `insertWorkoutLog`) — for those, local already gives the
+      UI its optimistic update and the listener resyncs on failure, so swallowing-and-logging is
+      safe, matching what was actually observed live.
+    - **Deliberately left unwrapped**: `TrainerRepository.generateInvite()` (no local fallback,
+      and its return value — the invite code — would be actively misleading if the write silently
+      failed) and `StudentRepository`'s own direct writes (`submitAssessment`, `logOwnBiometric` —
+      that repository has no local DB at all, per its own file comment, so there's nothing to
+      resync from). Those need real ViewModel-level error UI, not a catch-and-log — a different,
+      larger fix than this pass, tracked here as a known gap rather than papered over.
+    - Verified: `:app:compileDebugKotlin` green; real-device sanity check confirms the
+      success path (a normal profile edit) still works unchanged after the wrap. Deliberately
+      **not** re-reproduced against a live rejected write this time (would've meant temporarily
+      un-publishing the just-fixed rules again) — the fix's correctness rests on the pattern
+      already proven live by the identical `.catch{}` on the listener side, not a fresh repro.
 
 **17d. Trainer-side UI**
-- [ ] Student list/card (`StudentsScreen`/`MainScreen`): a small badge — "Conectado" vs
-      "Cadastrado (aguardando conexão)" — driven by the existing `linked` field.
-- [ ] `StudentDetailsScreen`: new "Permissões" section with two switches
-      (`canSelfAssess`/`canLogBiometrics`), a "Solicitar Autoavaliação" button (enabled only when
-      `canSelfAssess` is already on — request presupposes permission, not the other way around),
-      and an assessment-history list (newest first, flags any "yes" PAR-Q answer visibly).
+- [x] Badge — see 17a.
+- [x] `StudentDetailsScreen`: new `PermissionsSection` (two switches + "Solicitar Autoavaliação",
+      disabled once already pending) and `AssessmentHistorySection` (newest first via the SQL
+      query's own `ORDER BY submittedAt DESC`, "yes" answers shown with their real question text
+      via `PAR_Q_QUESTIONS`, whole card highlighted red if any answer is "yes") — both shown only
+      when `student.linked == true`, per 17a's own scoping rationale.
 
 **17e. Student-side UI**
-- [ ] `StudentNavigation`: reads the student's own `canSelfAssess`/`canLogBiometrics` from their
-      already-synced profile (via `StudentRepository`'s existing listener, no new sync mechanism)
-      and conditionally shows the corresponding tab/action — hidden entirely, not just disabled,
-      when the trainer hasn't granted it.
-- [ ] Pending-assessment banner/screen: when `pendingAssessmentRequest == true`, show the PAR-Q
-      questions (pre-filled `goal`/`experienceLevel`/`trainingDays` from the current profile,
-      editable) → submit writes `assessments/{id}` + clears the pending flag in the same logical
-      action (17c's rule requires this).
-- [ ] Self-log biometrics screen: reuses the existing `WeightChart`/biometric-entry UI pattern
-      already built for the trainer side (`StudentDetailsScreen`/`Components.kt`) rather than
-      building a second one — same component, a student-facing write path gated by 17c's rule.
+- [x] `StudentNavigation` collects the student's own live profile (`StudentViewModel.profile`,
+      backed by `getMyProfile()`) and conditionally shows: a pending-assessment banner (only
+      when `pendingAssessmentRequest == true`) routing to a new `StudentAssessmentScreen`; a
+      "Nova Medida" action inside `StudentEvolutionScreen` (only when `canLogBiometrics == true`)
+      reusing the exact same `AddBiometricDialog` the trainer side already uses — hidden
+      entirely when not granted, not just disabled, per the plan's own wording.
+- [x] `StudentAssessmentScreen` — the real 7-question PAR-Q, pre-filled
+      `goal`/`experienceLevel`/`trainingDays` (editable), submit calls
+      `StudentRepository.submitAssessment()` which writes the doc and clears the pending flag.
+- [x] Self-log biometrics — see above; deliberately not a separate top-level screen, since
+      `StudentEvolutionScreen` already shows this student's own `WeightChart` and the plan's own
+      instruction was to reuse the component, not add a second view of the same data.
 
 **17f. Tests**
-- [ ] Room DAO test for `AssessmentEntity` CRUD + the new migration (same in-memory-DB pattern
-      `AppDaoTest` already uses — note the existing caveat: written and compiling is verifiable
-      here, actually *running* needs a device/emulator, same as every other `androidTest` in this
-      project).
-- [ ] **(manual)** `firestore.rules` changes always need live verification after publishing — this
-      is no different from every other rules change this session: publish, then confirm both the
-      trainer-request path and the student-submit path actually work, and that a `canSelfAssess ==
-      false` student is genuinely blocked (not just hidden in the UI) from creating an
-      `assessments/{id}` doc directly.
+- [x] `AppDaoTest` gained `userPermissionFields_roundTripAndUpdate` and
+      `assessment_roundTripsParQAnswersAndAppearsInFlow` (SQLDelight in-memory driver, same
+      pattern as every other test in that file). Compiles (`compileDebugAndroidTestKotlin`
+      green); actually *running* still needs a real device/emulator — same pre-existing caveat
+      as the rest of this file's `androidTest` suite (§18e's finding: this dev machine's AVDs are
+      the wrong CPU architecture).
+- [x] **Published by the user (2026-08-27) and live-verified for the trainer side**, on the same
+      real device (`SM-S926B`) that caught the two bugs below: toggled `canSelfAssess` on for a
+      real linked student (`leandro`) — Firestore write succeeded, no permission error in
+      Logcat, UI updated to reflect it — then tapped "Solicitar Autoavaliação" — same result,
+      button correctly flips to a disabled "Autoavaliação solicitada" state. Confirms the new
+      `isOwningTrainer` branch on `users/{uid}` actually works as published, not just as written.
+      **Not yet live-verified**: the student-submission side (b–e above) — needs a second,
+      student-role test account, which this pass didn't have set up; still open.
+  - **Two more real-device bugs found and fixed during this verification pass** (same device,
+    same session, neither caught by any local/CI check since both need pre-existing on-device
+    data that a fresh CI run never has):
+    1. The SQLite crash this file's §18d/§18f section already found and fixed once
+       (`personal_app_database` → `_v2`) **happened again, same root cause, one version later**:
+       §17 added 3 columns to `users` via `Users.sq`'s `CREATE TABLE`, but SQLDelight has no
+       migration verification wired up at all (confirmed, not assumed — see CLAUDE.md), so the
+       already-existing `_v2` file on this device didn't get the new columns and crashed with
+       `SQLiteException: table users has no column named canSelfAssess`. Fixed the same way
+       again: bumped to `_v3` (`DatabaseDriverFactory` android+ios actuals). **This will keep
+       happening on every future schema change** until real `.sqm` migrations are set up —
+       deliberately not done now (no real user data to lose yet), but don't be surprised by a
+       third occurrence; the fix each time is the same one-line filename bump.
+    2. (Not part of §17 itself, found while testing it, tracked as its own separate GitHub
+       item/session — see the "found while writing this" note under 17c above.)
+  - **Second real-device pass, 2026-08-27**: live-verified the trainer-profile-edit rules branch
+    (see 17c) and the edit-existing-workout screen (see the `[x]` under §15's "Editar" note) —
+    both work end to end against the actually-published rules. Also surfaced the
+    write-rejection-crashes-the-app finding recorded under 17c; not a §17-specific bug, tracked
+    there since that's where it was found.
 
 **17g. Registration**
-- [ ] Wire the new "Permissões"/assessment-history section into `StudentDetailsScreen`'s existing
-      layout (not a new top-level screen — it belongs alongside the other per-student management
-      already there). Wire the new student-side screens into `StudentNavigation`'s existing tab
-      list, conditionally per 17e.
+- [x] Both wired into their existing screens/nav graphs as scoped — no new top-level screens
+      outside what 17d/17e already describe.
+
+Verified: `:app:compileDebugKotlin`, `verify`, `assembleDebug`, `compileDebugAndroidTestKotlin`
+all green locally; both iOS Kotlin/Native compile targets green; **and now real-device
+confirmation of the trainer-side permission/request flow against the actually-published
+firestore.rules** (see 17f above) — not just compiling. Still open: the student-submission side
+of the flow (needs a student test account) and the assessment-history/banner UI actually
+appearing once one exists.
 
 ---
 
@@ -1370,7 +1478,7 @@ that only round-trips correctly on one platform). Item 18h below is what actuall
 flowchart TD
     A[18a. Design: module split,\nopen resource decisions] --> B[18b. Project restructure\ninto KMP modules]
     B --> C[18c. DI: Hilt to Koin]
-    B --> D[18d. Database: Room KMP]
+    B --> D[18d. Database: Room to SQLDelight]
     B --> E[18e. Settings: DataStore KMP]
     C --> F[18f. Firebase access layer:\nGitLive SDK]
     D --> F
@@ -1412,6 +1520,27 @@ flowchart TD
       a licensing violation, unlike a local VM) only when 18h/18j's Xcode-only steps (initial
       signing certificate, SideStore source pairing) are actually reached. Not rented yet — no
       need until then.
+- [x] **Superseded 2026-09-04 — the Mac-rental fallback above is very likely unnecessary for
+      18j specifically, no rental attempted yet either way.** Researched how AltStore/SideStore
+      actually installs a third-party source's `.ipa`: **AltSign** (the signing library shared by
+      AltServer and SideStore — confirmed via AltStore's own GitHub org, `altstoreio/AltStore`,
+      and community docs referencing it) **re-signs the entire `.ipa` on install using the
+      free Apple ID already paired to that iPhone** — the file a source hosts does not need a
+      real Apple signature at all, only the standard `Payload/<Name>.app/` `.ipa` structure with
+      a valid `iphoneos` (device, not simulator) ARM64 binary inside. This means CI can produce
+      that `.ipa` with code signing turned off entirely (`xcodebuild build ... -sdk iphoneos
+      CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO`, then hand-zip `Payload/` into an `.ipa`
+      — `-exportArchive` is skipped since it enforces stricter signing than a plain `build`
+      does), needing zero Apple credentials and zero Mac time, rented or otherwise. Confirmed:
+      fastlane's `sigh`/`cert` (the usual CI-signing route) do **not** reliably support free
+      "personal team" accounts — an open, unresolved fastlane limitation since 2016
+      ([fastlane/fastlane#6022](https://github.com/fastlane/fastlane/issues/6022)), which is
+      exactly why AltSign exists as its own reimplementation instead of wrapping fastlane. **Not
+      yet empirically confirmed against this exact codesign-disabled build** (AltStore's public
+      docs describe the resign mechanism but don't explicitly state unsigned input is accepted)
+      — 18j tracks the one real-device install test that confirms it; if it fails, the fallback
+      is a throwaway self-signed (not Apple-issued) identity in the same CI job, still free and
+      still no Mac.
 - [x] **Module shape**: rename/restructure the existing single `app` Android module into a KMP
       layout — `shared/` (or `composeApp/`, matching current JetBrains project-template
       convention) holding `commonMain` (business logic, ViewModels, repositories, Compose UI,
@@ -1445,53 +1574,139 @@ flowchart TD
         this project, iOS and Android both, unrelated to this migration) and the never-added
         `GOOGLE_SERVICES_JSON` repo secret. Both fixed; `main`'s own `android-ci.yml` is now
         confirmed green for the first time.
-- [ ] Move every file with zero Android-framework imports into `commonMain` first (data models —
-      `Exercise`, `PerformedSet`, `WorkoutEntity` fields, `WorkoutParser.kt`'s pure parsing logic,
-      `AIWorkoutResponse`/`AIWorkout`/`AIExercise` — these are the lowest-risk, highest-value
-      moves since they have no platform dependency today). Done when: `WorkoutParserTest` (already
-      dependency-free Kotlin) runs unmodified from `commonTest` on both the JVM (Android) test
-      target and `iosSimulatorArm64` test target.
+      - **2026-08-26 cleanup**: deleted this checkpoint's own scaffold (`shared/.../shared/
+        Greeting.kt`, `GreetingTest.kt`, and `MainApplication.kt`'s `Log.d` proving `:app` links
+        against `:shared`) — real logic has long since proven the toolchain works; keeping a
+        "does it even compile" placeholder around after §18f/§18h/§18i actually landed was dead
+        weight, not a safety net. Found during the §18m cutover audit.
+- [x] Moved `Exercise`/`PerformedSet` (`data/model`), `WorkoutParser.kt`, and
+      `AIWorkoutResponse`/`AIWorkout`/`AIExercise` into `commonMain` — done in this same pass,
+      just not checked off until this audit. `WorkoutParserTest` runs from `commonTest`; see
+      §18l for the current caveat on confirming the `iosSimulatorArm64` test run specifically
+      (blocked on the same FirebaseCore linking gap as everything else iOS-test-related since
+      §18f, not on this item).
 
 **18c. Dependency injection: Hilt → Koin**
-- [ ] **Hilt has no Kotlin Multiplatform support at all** (confirmed current, `REPERTOIRE.md`
-      research) — this is a hard blocker, not a preference. Replace every `@HiltViewModel`/
-      `@Inject`/`@Module`/`@InstallIn` with Koin's `module { }`/`viewModel { }`/`get()` DSL,
-      declared in `commonMain` so the same DI graph serves both platforms. `androidApp` calls
-      `startKoin { androidContext(...) }` in `MainApplication.onCreate()`; the iOS entry point
-      calls the equivalent `initKoin()` from Swift/iosApp. Done when: every existing
-      `hiltViewModel()` call site in Compose screens compiles against Koin's `koinViewModel()`
-      instead, and `./gradlew :app:testDebugUnitTest` still passes (repository/ViewModel tests
-      updated to Koin's test-module-override pattern instead of Hilt's `@TestInstallIn`).
+- [x] **Done and verified 2026-08-22.** Hilt has no Kotlin Multiplatform support at all
+      (confirmed, `REPERTOIRE.md` research) — a hard blocker, not a preference. Every
+      `@HiltViewModel`/`@Inject`/`@Module`/`@InstallIn`/`@Singleton`/`@ApplicationContext`
+      removed across 5 repositories/services (`AuthRepository`, `SettingsRepository`,
+      `TrainerRepository`, `StudentRepository`, `GenerativeAiService`) and 9 ViewModels — plain
+      constructors now, wired from one new `di/AppModule.kt` (Koin `module { }`), replacing the
+      old `AuthModule.kt`/`DatabaseModule.kt`. `MainApplication`:
+      `@HiltAndroidApp` → `startKoin { androidContext(this@MainApplication); modules(appModule) }`.
+      `MainActivity`'s `@AndroidEntryPoint` removed (Koin has no per-Activity injection entry
+      point to replace it with — not needed). 14 Compose screens: `hiltViewModel()` →
+      `koinViewModel()` (`androidx.hilt.navigation.compose` → `org.koin.androidx.compose`).
+      **One deliberate deviation from the original phrasing above**: the Koin module lives in
+      `:app` for now, not `commonMain` — the repositories/ViewModels it wires haven't moved to
+      `:shared` yet (that's 18f/18g/18h's job), so there's nothing in `commonMain` to wire yet.
+      Moving `appModule` itself into `commonMain` happens naturally alongside those later items,
+      not as separate work. No iOS `initKoin()` entry point exists yet either, for the same
+      reason (no iOS UI to call it from until 18h). Verified: `./gradlew verify assembleDebug
+      compileDebugAndroidTestKotlin` all green, first full pass after the sweep — no test-file
+      changes were needed (`AuthRepositoryTest` already constructed `AuthRepository` directly
+      with MockK fakes, never went through Hilt's test DI). **Bonus fix found while verifying**:
+      `TrainerGoldenPathTest.kt` had been failing to compile since §15g added a parameter to
+      `StudentDetailsScreen` that the test was never updated to pass — invisible until now
+      because `verify` deliberately excludes `connectedAndroidTest` (§9) and never compiles that
+      source set. Fixed (added the missing `onNavigateToPromptFicha = {}`), unrelated to Koin.
 
-**18d. Database: Room → Room Kotlin Multiplatform**
-- [x] **No SQLDelight migration needed** — Room 2.7+ added official KMP support, and Room 3.0
-      (March 2026) makes iOS/JS/WASM first-class targets, per current Android Developers docs.
-      This is the single biggest research-confirmed cost-saver in this whole plan: the existing
-      `AppDatabase`, all entities (`UserEntity`, `WorkoutEntity`, `WorkoutLogEntity`, etc.), and
-      every `AppDao` query move into `commonMain` largely unchanged.
-- [ ] The **only** required platform split is the database builder/file-path function (Android
-      and iOS locate the SQLite file differently) — write one `expect fun getDatabaseBuilder(): 
-      RoomDatabase.Builder<AppDatabase>` in `commonMain`, `actual` implementations in
-      `androidMain` (existing `Context`-based path) and `iosMain` (`NSDocumentDirectory`-based
-      path, per Room's own current KMP setup guide). Done when: a round-trip insert/read against
-      the same `AppDao` query compiles and runs on both `androidUnitTest` and a real
-      `iosSimulatorArm64` test target.
-- [ ] **Re-verify all existing Room migrations** (`MIGRATION_5_6`, the `linked` flag migration
-      6→7, `app/schemas/`) still apply cleanly once the database class lives in `commonMain` —
-      schema export path may need updating in `build.gradle.kts` for the new module location.
+**18d. Database: Room → SQLDelight** (originally planned as Room → Room KMP; superseded, see below)
+- [x] **Done and verified 2026-08-22.** The original plan's premise — "no SQLDelight migration
+      needed, Room 3.0 has official KMP support" — was correct on paper but **hit a confirmed,
+      reproducible upstream tooling bug**, discovered only through hands-on implementation, not
+      something the original research could have caught: Room 3.0.1's KSP processor fails with a
+      `[MissingType]` error the instant `@TypeConverters` is used (isolated via direct testing —
+      reproduces with a trivial non-serialization converter, applied at either `@Database` or
+      `@Entity` level; a database with *zero* converters processes fine, same everything else).
+      Related to `github.com/google/ksp/issues/3053` but not an exact match (that issue is about
+      `@Parcelize`, not `@TypeConverters` — a different trigger, same symptom category). Not
+      fixable from this project — tried KSP 2.3.10 and 2.3.11, KSP1 vs KSP2, with/without
+      `@ConstructedBy`, with/without AGP 9's built-in-Kotlin opt-out (that path also cascaded into
+      breaking `:app`'s own task graph, worse than the original problem). **User decision:
+      pivot to SQLDelight** — mature, multi-year KMP support, no equivalent issue, confirmed by
+      actually building the whole database layer against it successfully on the first real attempt
+      once the API specifics were right.
+      - 6 tables + queries defined in `.sq` files (`shared/src/commonMain/sqldelight/...`),
+        mirroring the exact schema Room had exported (`shared/schemas/.../7.json`, moved from
+        `app/schemas/`) — same table/column names and types, so this isn't a schema redesign.
+      - **No data-loss risk beyond what already existed**: Room was always documented (CLAUDE.md,
+        this file) as an offline *cache* of Firestore, never authoritative storage — a fresh local
+        SQLite file on first launch after this ships just means one extra Firestore re-sync via
+        the existing `startListening` snapshot listener, not lost data.
+      - `ColumnAdapters.kt` (commonMain) replaces the old `Converters.kt` — `List<String>`,
+        `List<Exercise>`, `List<PerformedSet>` as JSON via `kotlinx.serialization`, same encoding
+        Room used. (Boolean columns turned out to need no adapter at all once the `.sq` files'
+        imports were correct — SQLDelight handles `INTEGER AS Boolean` natively.)
+      - `DatabaseDriverFactory` `expect`/`actual` is the one genuinely platform-specific piece
+        (`AndroidSqliteDriver` vs `NativeSqliteDriver`) — schema, queries, and adapters are all
+        shared, matching the original plan's spirit even though the library changed.
+      - New `AppDao` (commonMain, plain class wrapping SQLDelight's generated `Queries` objects)
+        keeps the **exact same method names/signatures** the old Room `@Dao` interface had —
+        `TrainerRepository`/`StudentRepository` in `:app` needed **zero changes** at the call
+        site, the whole point of designing it this way.
+      - `UserEntity`/`BiometricEntity`/`WorkoutEntity`/`HistoryEntity`/`ScheduleEntity`/
+        `WorkoutLogEntity` lose their Room annotations, otherwise byte-identical — every other
+        call site across the app (ViewModels, screens, `FirestoreMappers`) is unaffected.
+      - `AppDaoTest.kt` (§9's instrumented test) updated to construct `AppDao` via
+        `DatabaseDriverFactory(context, databaseName = null)` for an in-memory test database
+        instead of Room's `inMemoryDatabaseBuilder` — every test *body* (the actual assertions)
+        is unchanged, since `AppDao`'s method signatures didn't change.
+      - `androidx.room3` and KSP removed entirely from the project — no longer used anywhere.
+      - Verified: `./gradlew verify assembleDebug compileDebugAndroidTestKotlin
+        :shared:testAndroidHostTest` all green locally, plus `ios-ci.yml` green on CI (2m31s) —
+        both iOS Kotlin/Native targets actually compile against the SQLDelight-based `:shared`.
+        One iOS-only fix needed along the way: `Dispatchers.IO` is JVM/Android-only (internal on
+        Kotlin/Native) — `AppDao`'s `Flow` mapping calls now use `Dispatchers.Default`, available
+        on every KMP target. §18d is fully closed.
+      - **Real-device finding (2026-08-26)**, only surfaced once an actual physical Android
+        device with the old Room-based app already installed was available (not something CI or
+        a fresh emulator/local build could ever catch — both always start from an empty
+        filesystem): SQLDelight's `AppDatabase.Schema` starts its own version numbering at 1,
+        independent of Room's; a device with the old Room app has a SQLite file at
+        `PRAGMA user_version=7`, and Android's `SQLiteOpenHelper` refuses to open a
+        higher-versioned file as a "downgrade" to 1 — `SQLiteException: Can't downgrade database
+        from version 7 to 1`, crashing on every launch. Fixed by renaming the on-disk database
+        file (`DatabaseDriverFactory`, both `androidMain`/`iosMain` actuals, `_v2` suffix) —
+        safe specifically because this local database is a disposable Firestore-mirror cache,
+        not a source of truth; a new file just starts empty and
+        `TrainerRepository.startListening()` repopulates it. Confirmed fixed on the same
+        physical device (a Samsung Galaxy, `SM-S926B`) that reproduced it — no crash on
+        relaunch, session resume and Firestore sync both visibly worked.
 
 **18e. Settings/preferences: DataStore → DataStore Multiplatform**
 - [x] DataStore Preferences (not DataStore Proto) has official multiplatform support already —
       confirmed via current Android Developers KMP setup docs. `SettingsRepository`'s existing
       `stringPreferencesKey`s (Gemini/OpenAI/DeepSeek/Claude API keys) move to `commonMain`
       largely unchanged.
-- [ ] Platform split needed only for the DataStore file location: `expect`/`actual` for the
-      preferences file path (Android: existing `Context.dataStore` delegate; iOS: a path under
-      `NSDocumentDirectory`, mirroring 18d's DB path split). Done when: a saved API key
-      round-trips correctly on both platforms.
-- [ ] **Re-verify §8's backup-exclusion fix** (`data_extraction_rules.xml`/`backup_rules.xml`
-      excluding the DataStore file from Android auto-backup) still applies at the new file
-      location after the module restructure — don't silently lose that protection in the move.
+- [x] Platform split done, but not the shape originally sketched above: both Android and iOS use
+      `OkioStorage` (not Android's `FileStorage`) — `FileStorage`'s `serializer` parameter expects
+      `androidx.datastore.core.Serializer<T>`, a different interface than the
+      `PreferencesSerializer` object (which implements Okio's `OkioSerializer<T>`), so `FileStorage`
+      + `PreferencesSerializer` is a real type mismatch, not a config issue. Using `OkioStorage` on
+      both platforms sidesteps it entirely and matches the common-factory shape
+      (`createDataStore(storage: Storage<Preferences>)` in `commonMain`) with only `producePath`
+      differing per platform (`context.filesDir` vs. `NSDocumentDirectory`). `SettingsRepository`
+      moved to `shared/commonMain` unchanged; `shared`'s `datastore-core`/`datastore-preferences-core`
+      deps had to become `api` (not `implementation`) since `:app`'s Koin module (`AppModule.kt`)
+      references `DataStore<Preferences>` directly. Verified: `:app:compileDebugKotlin`,
+      `verify`, `assembleDebug`, `compileDebugAndroidTestKotlin` all green locally. A real
+      round-trip instrumented test was added
+      (`app/src/androidTest/.../data/repository/SettingsRepositoryTest.kt`) but — like
+      `AppDaoTest` — needs a real Android SQLite/filesystem environment; the two AVDs present on
+      this machine (`Medium_Phone`, `Pixel_10_Pro_XL`) are both arm system images, which this
+      Windows/x86_64 host's QEMU2 emulator refuses to run (`CPU Architecture 'arm' is not
+      supported`) — not run on-device yet, needs either an x86_64/arm64 AVD or a physical device.
+      iOS-side compile verification happens via the existing `ios-ci.yml` GitHub Actions workflow
+      on push — confirmed green (run 32773333650: iOS targets compile, shared module tests pass
+      on the iOS simulator). §18e is closed except for actually running
+      `SettingsRepositoryTest` on a real Android device/emulator, which needs an x86_64 or
+      arm64 AVD (or a physical phone) — not available on this machine right now.
+- [x] **Re-verified §8's backup-exclusion fix**: `data_extraction_rules.xml`/`backup_rules.xml`
+      already updated to exclude `settings.preferences_pb` (no `datastore/` prefix — the new
+      `OkioStorage` setup writes straight to that filename under `filesDir`, unlike the old
+      `Context.dataStore` delegate's `datastore/` subfolder convention).
 
 **18f. Backend access layer: Firebase via the GitLive Kotlin SDK**
 - [x] **Google ships no official Firebase KMP SDK** (confirmed current, mid-2026) — use the
@@ -1500,93 +1715,456 @@ flowchart TD
       maintained, in production use by other teams. The newer `KFire` alternative is still beta
       as of this research — not a safe bet for an app already depending heavily on Firestore
       transactions (`AuthRepository.claimInvite`) and listeners.
-- [ ] Rewrite `TrainerRepository`/`StudentRepository`/`AuthRepository`'s direct
-      `com.google.firebase.firestore.*`/`com.google.firebase.auth.*` calls against GitLive's API
-      in `commonMain` — same snapshot-listener/transaction *shape* (GitLive's API deliberately
-      mirrors the Android Firebase SDK's), but a real rewrite, not a drop-in. Done when: the
-      existing `startListening(trainerId)` mirror-into-Room behavior and `claimInvite()`'s
-      transactional re-claim logic (§13d) both pass equivalent tests against GitLive on both
-      platforms.
-- [ ] `FirestoreMappers.kt`'s entity↔doc mapping moves to `commonMain` largely unchanged (it's
-      already plain-map-based, not tied to any Android-only Firestore API surface).
-- [ ] **`GenerativeAiService`'s HTTP calls (OpenAI/DeepSeek/Claude via plain `HttpURLConnection`)
-      need a multiplatform HTTP client** — `HttpURLConnection` is JVM/Android-only. Use Ktor
-      Client (JetBrains' own multiplatform HTTP library, the standard pairing with KMP) with the
-      `Darwin` engine on iOS and existing `OkHttp`/`CIO` engine on Android. Gemini's Firebase AI
-      Logic SDK call (`generateWithGemini()`) is Android-only today (`com.google.firebase:
-      firebase-ai`) — confirm whether it has an iOS equivalent before assuming Gemini stays
-      available on iOS; if not, either drop Gemini as an iOS-side provider option (the other
-      three BYO-key providers already work fine here since they're plain HTTP) or scope that as
-      a known iOS gap, not a silent omission.
+- [x] Rewrote `TrainerRepository`/`StudentRepository`/`AuthRepository` against GitLive's API in
+      `shared/commonMain` (moved from `app/`, package unchanged so no caller imports needed to
+      change). Real API differences from the classic SDK, not a drop-in:
+      - `DocumentSnapshot` has no `getString`/`getBoolean`/`getLong` — one reified
+        `get<T?>(field)` instead. This is `inline`, which has a real consequence: **it can't be
+        stubbed with MockK** (inline functions have no vtable to intercept), unlike the old
+        per-type getters. That broke all 6 `AuthRepositoryTest` cases (including `claimInvite()`'s
+        transaction, the security-sensitive one). Discussed with the user directly — chosen path:
+        delete the tests now, note the gap here, revisit with the Firebase Local Emulator Suite
+        (free, runs locally, no billing plan needed) if/when this needs real coverage again. Not
+        done silently.
+      - Auth/Firestore calls are suspend-native (no `.await()`/Task wrapping) —
+        `kotlinx-coroutines-play-services` dependency dropped, now unused.
+      - Snapshot listeners are `Flow<QuerySnapshot>`-based (`query.snapshots`), no
+        `ListenerRegistration` — `TrainerRepository.startListening/stopListening` now tracks
+        `Job`s from `scope.launch { query.snapshots.catch { ... }.collect { ... } }` instead of
+        calling `.remove()`. `StudentRepository` no longer needs `callbackFlow` at all — GitLive's
+        Flow-native API replaces it directly.
+      - `.whereEqualTo(field, value)` → `.where { "field" equalTo value }` (a `FilterBuilder` DSL;
+        the flatter `.where(field, equalTo = value)` overload exists but is deprecated in this SDK
+        version in favor of the builder — used the builder from the start).
+      - GitLive's Android artifacts are compiled at JVM target 17; inlining their reified
+        functions into this project's JVM 11 target failed to compile. Bumped `:app` and
+        `:shared` to JVM 17 (`compileOptions`/`compilerOptions.jvmTarget`) — required, not a
+        version-hygiene nicety.
+      - GitLive's Android artifacts declare transitive `com.google.firebase:*` deps with no
+        pinned version (same convention as using those artifacts directly) — needed
+        `com.google.firebase:firebase-bom` applied in `:shared` too, not just `:app`. The
+        classic `platform()` call inside `kotlin.sourceSets.*.dependencies {}` is deprecated for
+        removal (KT-58759); used the project-level `dependencies { "androidMainImplementation"(
+        platform(...)) }` form instead.
+      - `java.util.UUID` (JVM-only) → `kotlin.uuid.Uuid` (stdlib, multiplatform since Kotlin
+        2.0.20, still behind `@OptIn(ExperimentalUuidApi::class)`) for `generateInvite()`'s code.
+      - `System.currentTimeMillis()` has no multiplatform stdlib equivalent
+        (`kotlin.system.getTimeMillis()` is Native-only and deprecated) — added a small
+        `expect`/`actual` `currentTimeMillis()` in `shared/util/TimeUtil.kt`.
+      Verified: `:app:compileDebugKotlin`, `verify`, `assembleDebug`,
+      `compileDebugAndroidTestKotlin` all green locally. iOS CI: `compileKotlinIosSimulatorArm64`/
+      `compileKotlinIosArm64` (pure Kotlin/Native compile) are green. `iosSimulatorArm64Test`
+      is NOT — confirmed exactly the risk flagged above: `commonTest` now links a runnable iOS
+      test binary that transitively pulls in GitLive's Firebase code, and that link step fails
+      with `ld: framework 'FirebaseCore' not found`. Kotlin/Native *compiling* against GitLive's
+      Firebase API doesn't need the native frameworks present, but *linking* an actual binary
+      does — and this project has no CocoaPods/SPM iOS Firebase setup yet. Disabled that CI step
+      for now (`ios-ci.yml`, commented out with an explanation) rather than leave CI red; tracked
+      as real follow-up work, not silently dropped — see the new item below.
+- [x] **iOS Firebase native framework linking — resolved 2026-09-01.** Added Kotlin's
+      `native.cocoapods` Gradle plugin to `shared/build.gradle.kts` (applied via plain `id(...)`,
+      no version — it ships inside the same artifact as `org.jetbrains.kotlin.multiplatform`, so
+      giving it a version from the catalog makes Gradle treat it as a second copy and fail with
+      "already on the classpath with an unknown version"; confirmed locally before finding the
+      fix). Replaced the old manual `iosTarget.binaries.framework {}` loop with a `cocoapods {}`
+      block (`framework { baseName = "Shared"; isStatic = true }` plus
+      `pod("FirebaseAuth")`/`pod("FirebaseFirestore")`/`pod("FirebaseCrashlytics")` — each pulls
+      in `FirebaseCore` transitively, matching the three GitLive products actually used).
+      **Proved on a real Mac, not just locally**: this dev machine can't compile Apple targets at
+      all, so verification ran on an actual GitHub-hosted macOS runner via a new on-demand
+      `ios-interactive.yml` workflow (see below) — `./gradlew :shared:iosSimulatorArm64Test`
+      reached `podBuildFirebaseAuth/Firestore/CrashlyticsIosSimulator` →
+      `cinteropFirebase*IosSimulatorArm64` (the three real cinterop bindings against the actual
+      compiled pods) → `compileKotlinIosSimulatorArm64` → `linkDebugTestIosSimulatorArm64` (the
+      exact step that used to fail with `ld: framework 'FirebaseCore' not found`) →
+      `iosSimulatorArm64Test`, ending in **`BUILD SUCCESSFUL in 31m 59s`, 31/31 tasks executed**.
+      That ~32 minutes is a one-time cost (downloading the Kotlin/Native LLVM toolchain +
+      compiling all three Firebase pods from source, nothing cached yet) — re-enabled the
+      previously-disabled CI test step in `ios-ci.yml` on that basis; expect it much faster once
+      Gradle's own cache (already wired via `gradle/actions/setup-gradle`) has these artifacts.
+  - **New reusable capability, worth recording on its own**: this project had no way to run
+    anything interactively on a real Mac (no budget for a rented one — see the "no fomento"
+    discussion). `.github/workflows/ios-interactive.yml` (manually triggered, `workflow_dispatch`
+    only, 45-minute cap) opens a live SSH terminal on a genuine GitHub-hosted macOS runner via
+    `owenthereal/action-upterm`, free on this public repo — the same mechanism that makes
+    `ios-ci.yml` possible, just interactive instead of scripted. Two dead ends on the way there,
+    both fixed and left as comments in the workflow file: `mxschmitt/action-tmate` (the more
+    commonly-referenced action) installed cleanly via Homebrew but then hung indefinitely with
+    zero further output — its own log banner says it's deprecated/unmaintained, which tracks;
+    `lhotari/action-upterm` (a fork) failed outright with "Permission denied (publickey)" then
+    "no server running". `owenthereal/action-upterm` (the upstream repo the fork came from)
+    worked. **Known real limitation, not a one-time fluke**: reconnecting to an already-open
+    session is unreliable — most reconnect attempts during this session silently failed (SSH
+    authenticates fine per `-v` output, but the far end closes in ~0.5s without attaching to the
+    tmux session), and it got worse the more reconnects were attempted, to the point of needing a
+    full fresh `workflow_dispatch` run more than once. The one pattern that reliably works: kick
+    off a long task in the background on the runner (`nohup ... & disown`) from the *first*
+    connection of a fresh session, then reconnect sparingly (not repeatedly) to check a log file,
+    accepting that any individual reconnect attempt might just fail and need a retry — never rely
+    on a single connection staying open for the full duration of a long build.
+- [x] `FirestoreMappers.kt`'s entity↔doc mapping moved to `commonMain` largely unchanged — GitLive
+      auto-detects `Map<String, Any?>` at the call site (`FirebaseMapSerializer`, checked via a
+      runtime `is Map<*, *>` check, not the static type) and encodes it without needing
+      `@Serializable`, so the existing plain-map mapper functions needed only the
+      `DocumentSnapshot.get<T?>()` rewrite described above, not a structural rewrite.
+- [x] **`GenerativeAiService`'s HTTP calls (OpenAI/DeepSeek/Claude via plain `HttpURLConnection`)
+      moved to Ktor Client 3.5.2** (JetBrains' own multiplatform HTTP library) — `OkHttp` engine
+      on Android, `Darwin` on iOS, `ContentNegotiation` + `kotlinx.serialization.json` for
+      request/response bodies, `expectSuccess = false` + a manual `response.status.isSuccess()`
+      check to keep the old "return the error body as an error string" behavior instead of Ktor's
+      default throw-on-non-2xx. `HttpClient()` with no explicit engine works unchanged in
+      `commonMain` since each source set (androidMain/iosMain) only has one engine artifact on
+      its classpath — Ktor auto-selects it, no `expect`/`actual` needed for the client itself.
+      Confirmed (via GitHub's `GitLiveApp`-adjacent research, i.e. checking, not assuming): Firebase
+      AI Logic (Gemini) has **no official Kotlin Multiplatform/iOS SDK** — only community bridges
+      exist (`firebase-ai-kmp`), each needing its own native-framework linking, the same class of
+      problem just hit with GitLive's own Firebase Auth/Firestore (see the iOS CI note above).
+      Chose "scope as a known iOS gap" over chasing another native bridge right now: added a
+      `GeminiProvider` interface (`shared/commonMain`) with an `AndroidGeminiProvider` actual
+      (the real Firebase AI Logic call, moved from the old `GenerativeAiService`) and an
+      `IosGeminiProvider` stub that returns an honest "not available on iOS yet, use OpenAI/
+      DeepSeek/Claude" string — not a crash, not a silently missing case. `GenerativeAiService`
+      itself now lives fully in `shared/commonMain`, taking `GeminiProvider` and a
+      pre-read `volumeReference: String` as constructor params (the volume-reference `.md` asset
+      read stays in `:app`'s Koin module via `androidContext().assets` — no cross-platform bundled
+      resource reading wired up yet, not needed until an iOS DI graph exists in §18h+).
+      `libs.firebase.crashlytics`/`libs.firebase.ai` moved off `:app` entirely — Crashlytics calls
+      go through GitLive's wrapper now (`Firebase.crashlytics`, already added for
+      `TrainerRepository`), AI Logic's classic SDK dependency moved to `shared/androidMain`
+      alongside `AndroidGeminiProvider`. Verified: `:app:compileDebugKotlin`, `verify`,
+      `assembleDebug`, `compileDebugAndroidTestKotlin` all green locally. **§18f is now fully
+      closed, including iOS** — the native framework linking item above was the last open piece.
 
 **18g. Auth and Security — platform-specific pieces GitLive doesn't cover**
-- [ ] **App Check**: GitLive's SDK doesn't wrap App Check. Keep Android's existing
+- [x] **App Check — implemented and verified green in CI, 2026-09-03.** GitLive's SDK doesn't
+      wrap App Check, so unlike Auth/Firestore/Crashlytics this is native Swift, not Kotlin:
+      `pod("FirebaseAppCheck")` added to `shared/build.gradle.kts`'s `cocoapods {}` block (same
+      pattern as the other three pods), a new `PersonalAppCheckProviderFactory`
+      (`iosApp/iosApp/AppCheckProviderFactory.swift`) branches `#if DEBUG` between
+      `AppCheckDebugProvider` and `AppAttestProvider` — mirroring `MainApplication.kt`'s
+      `ApplicationInfo.FLAG_DEBUGGABLE` check exactly — and `iOSApp.swift` registers it via
+      `AppCheck.setAppCheckProviderFactory(...)` *before* `FirebaseApp.configure()` (App Check
+      installs itself as part of Firebase's own setup, so ordering matters, same reason Android's
+      `MainApplication.onCreate()` installs its provider immediately). One real fix needed along
+      the way: the first attempt used the wrong Swift method name
+      (`AppCheck.setProviderFactory`, which doesn't exist) — `xcodebuild` caught it immediately
+      as a compile error, fixed to the correct `setAppCheckProviderFactory`, confirmed BUILD
+      SUCCEEDED on the next run. Android's existing
       `DebugAppCheckProviderFactory`/`PlayIntegrityAppCheckProviderFactory` wiring in
-      `androidMain` unchanged; add a thin `iosMain` `actual` bridging to Firebase iOS SDK's own
-      App Check (App Attest provider for release, debug provider for local iOS testing) — a
-      real native-bridge implementation, not optional, since `firestore.rules`'/Auth's security
-      posture assumes App Check is active on every client.
-- [ ] **Crashlytics**: no drop-in multiplatform equivalent exists yet (confirmed current
-      research). Options, pick one rather than defaulting silently: (a) **CrashKiOS**
-      (Touchlab's KMM crash-reporting bridge, explicitly built for this exact gap, forwards
-      crashes to the existing Firebase Crashlytics project) — closest to today's behavior,
-      recommended; (b) drop Crashlytics on iOS specifically and rely on manual bug reports during
-      the free/test phase — acceptable given the small current user count, revisit once paid.
+      `androidMain` is unchanged.
+- [x] **Crashlytics**: resolved as a side effect of §18f, not via either option originally
+      listed here (both predate this finding). `dev.gitlive:firebase-crashlytics` — the *same*
+      GitLive SDK already adopted for Auth/Firestore — ships a real, verified `commonMain` API
+      (`recordException`, `log`, `setUserId`, `setCustomKey(s)`, `setCrashlyticsCollectionEnabled`,
+      confirmed by reading the actual GitHub source, not assumed from docs) that covers everything
+      this app calls. `TrainerRepository`/`GenerativeAiService` already use
+      `Firebase.crashlytics.recordException(e)` from `commonMain`. No CrashKiOS, no
+      Android-only fallback needed. **iOS linking confirmed 2026-09-01** along with the rest of
+      §18f — `pod("FirebaseCrashlytics")` is in the `cocoapods {}` block and
+      `cinteropFirebaseCrashlyticsIosSimulatorArm64` ran successfully in the same verified build.
 - [ ] Re-verify §8's App Check debug-token registration flow (§13a) still applies correctly once
       requests can come from either platform's debug provider — the Firebase Console's debug
       token allow-list is per-install, not per-platform, so this should be mechanically the same
-      process repeated once per iOS test device, not a new mechanism.
+      process repeated once per iOS test device, not a new mechanism. **Clarified 2026-09-03: not
+      a CI task.** `AppCheckDebugProvider` prints its token to the Xcode console the first time
+      the app actually *runs* on a specific install — a fresh CI simulator instance would produce
+      a real token, but a throwaway one, tied to an ephemeral simulator that won't exist on the
+      next run, so registering it in the Console would have zero lasting value. This step
+      inherently needs whoever ends up with a persistent iOS test install (a real device via
+      SideStore once §18j's distribution items land, or at minimum a simulator someone keeps
+      reusing) to run the app once themselves and register *that* token — deferred alongside the
+      rest of real-device iOS testing, not attempted here.
 
 **18h. UI: Jetpack Compose → Compose Multiplatform, Navigation**
-- [ ] Move every screen composable with no Android-only API calls (`ContentType`/autofill
-      semantics, `LocalConfiguration`, Android-specific icons) into `commonMain` — per current
-      migration reports for exactly this move (existing Jetpack Compose app → Compose
-      Multiplatform), most Composables are reported to work unchanged; the real work is
-      resources (no generated Android `R` class in common code — move string/icon resources to
-      Compose Multiplatform's resource system) and anything directly touching
-      `android.content.Context`/`ClipboardManager`/Android permissions APIs (`expect`/`actual`
-      those specifically, e.g. `PromptFichaScreen`'s clipboard copy from §15e).
-- [ ] Adopt the official Compose Multiplatform Navigation library (stable since 1.10.0) as a
-      drop-in for the existing Navigation Compose usage (`AppNavigation.kt`'s `Screen` sealed
-      class/`NavHost` already maps closely to the multiplatform API). iOS-specific: swipe-back
-      gesture needs an explicit `iosMain` UIKit gesture recognizer or Compose Cupertino — native
-      back-swipe isn't automatic, confirm current guidance at implementation time (this is an
-      area still actively evolving per the research).
-- [ ] **Explicitly re-verify each Android-only UI fix already shipped this project** doesn't
-      silently regress on iOS: the `NonObservableLocale` fix (§10, `LocalConfiguration.current
-      .locales[0]`), the R8/lint sweep (§8/§10, Android-build-only, doesn't apply to iOS but
-      shouldn't be assumed equivalent-safe without checking), and `Icons.AutoMirrored.*` usage
-      (already correctly multiplatform-safe per §13's fix this session).
+- [x] Moved all 19 screen composables + 4 component files + 9 ViewModels + 3 navigation files
+      (28 files total) from `app/src/main/java/.../ui` into `shared/src/commonMain/kotlin/.../ui`
+      (package names unchanged, so no caller imports needed touching). Confirmed the migration
+      reports were right: only 4 files actually touched Android-only APIs — everything else moved
+      byte-for-byte. What needed real fixes, all resolved with a small `PlatformActions`
+      interface (`shareText`/`openUrl`, `expect`/`actual` android+ios) plus JVM-only-API swaps:
+      - `StudentDetailsScreen`'s share-invite `Intent`/`LocalContext` → `PlatformActions.shareText`.
+      - `AdminDashboardScreen`'s "open Firebase Console" `Intent`/`LocalContext` →
+        `PlatformActions.openUrl` (the dynamic `FirebaseApp.getInstance().options.projectId`
+        lookup became a hardcoded constant — one Firebase project, not worth a whole
+        cross-platform project-introspection API for a debug-console convenience link).
+      - `PromptFichaViewModel`'s `Context.assets` reads → moved to Android's Koin module (same
+        precedent as `GenerativeAiService`'s `volumeReference` in §18f), passed in as a plain
+        `String`.
+      - `java.text.SimpleDateFormat`/`java.util.Date` (JVM-only, not on Kotlin/Native at all) →
+        `formatDate`/`formatDateTime` in a new `shared/commonMain` `DateFormat.kt`, using
+        kotlinx-datetime. The old code passed `LocalConfiguration.current.locales[0]` into
+        `SimpleDateFormat` (the `NonObservableLocale` fix from §10) — moot now: every call site
+        used a fixed numeric pattern (`dd/MM/yyyy`), which doesn't vary by locale at all, so the
+        locale parameter was doing nothing. Removing it entirely is strictly correct, not a
+        compromise.
+      - `"%.1f".format(value)` (needs `java.util.Formatter`, JVM-only) → a small manual
+        `formatDecimal1()` in a new `NumberFormat.kt`.
+      - `java.util.UUID` (5 files, JVM-only) → `kotlin.uuid.Uuid` (stdlib, multiplatform since
+        Kotlin 2.0.20), same pattern already used in `TrainerRepository` (§18f).
+      - `System.currentTimeMillis()` (5 more files) → the `currentTimeMillis()` `expect`/`actual`
+        already added in §18f.
+      - A leftover Android Studio-generated `@Preview` function in `WorkoutBuilderScreen.kt`
+        (`androidx.compose.ui.tooling.preview.Preview`, no Compose Multiplatform equivalent
+        wired up) — deleted, dev-tooling-only, not used anywhere at runtime.
+      Toolchain setup along the way: applied `compose-multiplatform`/`compose-compiler` to
+      `:shared` (previously deliberately not applied, per the §18b note); Compose Multiplatform's
+      own `androidx.lifecycle:lifecycle-viewmodel-compose` has **no iOS/Native variant published**
+      — confirmed by a real dependency-resolution failure, not assumed — the fix is JetBrains'
+      own multiplatform-published mirror, `org.jetbrains.androidx.lifecycle:
+      lifecycle-viewmodel-compose` (same package name, different Maven coordinate); GitLive's
+      Android artifacts need JVM target 17 (already bumped in §18f) and that requirement turned
+      out to also gate whether Compose Multiplatform's own artifacts link cleanly. Deliberately
+      did **not** add `compose.components.resources` (Compose Multiplatform's resource-ID
+      codegen) — this app has no images/strings worth migrating yet (`strings.xml` is nearly
+      empty), and that codegen's generated class name embeds `rootProject.name` verbatim
+      (`"Personal APP"`, this repo's actual name) — DEX rejects the resulting space character in
+      a class name (`mergeLibDexDebug` failed with exactly that error before removing it).
+      `:app`'s own `build.gradle.kts` also got substantially thinner — the classic
+      `androidx.compose.*`/`androidx.navigation.compose`/`androidx.lifecycle.viewmodel.compose`/
+      `koin-androidx-compose` dependencies are all gone, superseded by what `:shared` now exposes
+      as `api` and gets transitively via `implementation(project(":shared"))`.
+      Verified: `:app:compileDebugKotlin`, `verify`, `assembleDebug`,
+      `compileDebugAndroidTestKotlin` all green locally; `:shared:compileKotlinIosSimulatorArm64`
+      and `:shared:compileKotlinIosArm64` both green. Not verified: actually running the app on a
+      device/emulator — this machine's two local AVDs are both arm system images incompatible
+      with this Windows/x86_64 host's QEMU2 (same blocker recorded in §18e), and there's still no
+      real iOS app target to run on (§18h's own scope is the KMP UI code, not the iOS app shell —
+      that's §18j). Compile+lint+unit-test verification is real signal but isn't a substitute for
+      seeing the golden path tap through on an actual screen; flag this honestly rather than
+      claim more than was checked.
+- [x] Adopted `org.jetbrains.androidx.navigation:navigation-compose` 2.9.2 (latest stable; 2.10.x
+      is alpha-only, not used) — genuinely a drop-in: same `androidx.navigation.*` package name as
+      the classic Android-only artifact (JetBrains republishes under a different Maven coordinate,
+      not a different API), so `AppNavigation.kt`/`StudentNavigation.kt` needed zero import
+      changes for `NavHost`/`composable`/`navArgument`/`rememberNavController`. One real API
+      change, unrelated to the multiplatform move itself — Navigation 2.9 replaced
+      `NavBackStackEntry.arguments`'s type from `Bundle` to the new multiplatform `SavedState`,
+      so `.getString("id")` became `.read { getStringOrNull("id") }` (`androidx.savedstate.read`)
+      everywhere a route argument was read; this is the same change any 2.8→2.9 Android-only
+      upgrade would have needed too, not iOS-specific. **Not done**: the iOS swipe-back gesture
+      (native back-swipe isn't automatic under Compose Multiplatform Navigation) — genuinely
+      deferred, needs a real device/simulator to iterate on and design guidance in this space is
+      still actively evolving; tracked as open, not silently dropped.
+- [x] **Re-verified each Android-only UI fix already shipped**: the `NonObservableLocale` fix is
+      now moot (see above — replaced by a locale-independent formatter, not just carried over);
+      the R8/lint sweep is Android-build-only by construction (R8/ProGuard don't run for
+      Kotlin/Native targets at all — there's no equivalent step to "not apply" on iOS, so nothing
+      to regress); `Icons.AutoMirrored.*` usage was already correct everywhere it existed
+      (`ArrowBack`, `TrendingUp`) and needed no changes — `Icons.Filled.Logout` (not
+      AutoMirrored) is a pre-existing cosmetic deprecation warning, unrelated to multiplatform
+      safety, left alone.
 
 **18i. In-app update checker — both platforms (user's explicit ask)**
-- [ ] New `commonMain` `UpdateChecker`: reads a small `latest.json` manifest (version code,
-      changelog note, platform-specific download URL) hosted in this same public GitHub repo
-      (e.g. via GitHub Releases or a raw file on `main`) — no new backend needed, reuses existing
-      free infrastructure (the repo is already public, confirmed 2026-08-21).
-- [ ] **Automatic check**: on app launch (not a true background job — keeps this portable across
-      platforms without needing a cross-platform WorkManager equivalent, consistent with this
-      project's existing "no speculative infrastructure" convention), compare the running app's
-      version against the manifest; if newer, show a non-blocking banner.
-- [ ] **Manual check**: a "Verificar atualização" button in Settings (new tab or added to the
-      existing "IA" tab's shell — §16's tabbed Settings already anticipated more categories being
-      added later), calling the same `UpdateChecker` on demand.
-- [ ] **Android-specific action**: banner/button opens the new `.apk` download URL directly
-      (Android already trusts "install from unknown sources" for this app, per the existing
-      sideload distribution model) — the person taps through Android's own install prompt, same
-      as today's manual reinstall, just without needing you physically present.
-- [ ] **iOS-specific action**: since SideStore already re-signs/refreshes from its configured
-      source periodically, the in-app banner's role is different — show **days remaining until
-      the current signature expires** (the real risk flagged in 18a) with a "atualizar agora"
-      button that triggers SideStore's refresh directly if a URL scheme/deep link for that
-      exists, or at minimum clear instructions, so an expiring app is never a silent surprise.
+- [x] New `commonMain` `UpdateChecker` (`shared/.../data/service/UpdateChecker.kt`): fetches
+      `latest.json` — hosted as a plain file at this repo's root on `main` (not a GitHub Release
+      asset; a raw-content GET needs no API/auth) via
+      `raw.githubusercontent.com/alexmiguel011014-stack/Personal_app_android/main/latest.json` —
+      and compares its `android`/`ios` section (picked via a new `currentPlatform()`
+      `expect`/`actual`) against the running app's own version code, injected from `:app`'s Koin
+      module the same way `volumeReference`/`fichaTemplate` already are (`:shared` has no
+      `BuildConfig` of its own — that's per-application-module, generated only for `:app`).
+- [x] **Automatic check**: `RoleRouter` (the single post-login entry point every role's flow
+      passes through) fires `UpdateViewModel.checkForUpdate()` once via `LaunchedEffect(Unit)` and
+      renders a dismissible `UpdateBanner` above the routed screen content — not a blocking
+      dialog, and a failed check renders nothing (silent no-op) rather than nagging on every
+      launch when the network's just flaky.
+- [x] **Manual check**: added a new "Sobre" tab to `SettingsScreen` (kept the "IA" tab
+      unchanged rather than overloading it) with a "Verificar atualização" button and the
+      app's own version name, both driven by the same `UpdateViewModel`/`UpdateChecker` classes
+      (a separate instance from `RoleRouter`'s — Koin's `viewModel {}` scopes per composable
+      call site, so a manual check here doesn't affect the top-level banner's state; that's fine,
+      GOALS.md only asked for "the same `UpdateChecker`", not shared UI state).
+- [x] **Android-specific action**: both the banner and the Settings tab's "Baixar atualização"
+      button call `PlatformActions.openUrl(downloadUrl)` (the same `expect`/`actual` from §18h) —
+      opens the manifest's Android `downloadUrl` in the browser/Play-Store-alternative install
+      flow, exactly the existing manual-reinstall path, just user-triggered instead of
+      you-triggered.
+- [x] **iOS-specific action**: `UpdateStatus.SignatureExpiring(daysRemaining)` — computed from a
+      `signatureExpiresAt` ISO-8601 timestamp in the manifest's `ios` section (set manually
+      whenever a build is re-signed; deliberately not derived from "signed date + N days" since
+      that N differs between a free Apple ID's 7-day certs and a future paid Apple Developer
+      Program's 1-year certs, and hand-waving which one applies risks silently showing a wrong
+      countdown) — surfaces as a red banner/Settings message once ≤3 days remain. No SideStore
+      URL-scheme deep link wired (no evidence one exists as of this research) — falls back to
+      "abra o SideStore para renovar", the explicit "at minimum clear instructions" floor this
+      item allowed for. `latest.json`'s current `ios.signatureExpiresAt` is `null` (no iOS build
+      has actually been signed yet — §18j) — `null` reads as "unknown," never as "never expires."
+      Verified: `:app:compileDebugKotlin`, `verify`, `assembleDebug`,
+      `compileDebugAndroidTestKotlin`, and both iOS Kotlin/Native compile targets all green. Not
+      verified: an actual device receiving a real "update available" banner end-to-end (would
+      need a second, higher `versionCode` published to `latest.json`) — the comparison logic has
+      unit-testable shape (`UpdateChecker.check()`) but no test was added for it in this pass;
+      flagging rather than silently skipping.
+- [x] **Fixed (2026-08-27)**: root cause was simpler than any of the candidates guessed the day
+      before — `UpdateChecker`'s hardcoded manifest URL points at
+      `raw.githubusercontent.com/.../main/latest.json`, but `latest.json` only ever existed on
+      `feature/kmp-ios` (this whole branch never merged to `main`), so the URL 404'd for real,
+      confirmed directly with `curl` before touching any code. Fixed by adding `latest.json` to
+      `main` on its own (`git checkout feature/kmp-ios -- latest.json` from `main`, one file, no
+      migration code) — same precedent as cherry-picking the `gradlew` permission fix onto `main`
+      earlier in §18b. `curl` confirms the URL now returns 200 with the right JSON. Not yet
+      re-verified on the physical device that reported the original error (not connected at
+      fix time) — confirm the Settings "Verificar atualização" button actually succeeds next
+      time it's available.
 
 **18j. iOS distribution: SideStore free path (now) → Apple Developer Program (later, when paid)**
-- [ ] Host the built `.ipa` + an AltStore/SideStore-format "source" JSON (app metadata + download
-      URL + version) somewhere stable and free — a GitHub Release asset on this same public repo
-      is the natural choice, consistent with 18i's update-manifest hosting.
-- [ ] Document (in this file, not just in chat) the one-time per-iPhone SideStore setup steps —
-      this becomes the "dev setup note" the project has flagged needing before (§13a already
-      noted the same need for App Check debug tokens once more than one test device exists).
+
+- [x] **Minimal runnable iOS app shell built and verified green in CI, 2026-09-01.** The
+      "actual Xcode/iOS app project" gap noted below (library, not a runnable app shell) is
+      closed: `iosApp/` (XcodeGen `project.yml` + `Podfile` + `iOSApp.swift`/`ComposeView.swift`,
+      `shared/src/iosMain/.../MainViewController.kt`) now builds end to end —
+      `./gradlew :shared:podspec :shared:generateDummyFramework` → `xcodegen generate` →
+      `pod install` → `xcodebuild ... -sdk iphonesimulator ... build` — added as steps in
+      `ios-ci.yml` (not the flaky interactive SSH session, see that section's note) and confirmed
+      **BUILD SUCCEEDED** on a real GitHub-hosted macOS runner. Deliberately a standalone
+      placeholder screen (`Text("Personal Tracker — iOS shell ok")`), not yet wired to
+      RoleRouter/Koin/Firebase.initialize() — that's the next milestone, not this one, same as
+      the comments already in `iOSApp.swift`/`MainViewController.kt` say.
+  - Three real build failures hit and fixed getting to green, each one revealing the next
+    (interactive-session debugging proved too unreliable to work through these — see below):
+    1. **`Unknown iOS simulator arch: 'x86_64'`**: `xcodebuild` without an explicit `-destination`
+       defaults to a multi-arch simulator build request (arm64 + x86_64), but `:shared` only
+       declares `iosArm64()`/`iosSimulatorArm64()` (Apple Silicon) — no `iosX64()` target exists.
+       Fixed by pinning `ARCHS=arm64 ONLY_ACTIVE_ARCH=YES` on the `xcodebuild` invocation.
+    2. **Undefined symbols for every `sqlite3_*` function at link time**: SQLDelight's native
+       driver (`co.touchlab:sqliter`) cinterops against the C `sqlite3` API but doesn't bundle an
+       implementation — the linking app target has to supply it. Fixed by adding
+       `dependencies: [{sdk: libsqlite3.tbd}]` to the `iosApp` target in `project.yml`.
+    3. **`Build input file cannot be found: .../iosApp.app/Info.plist`**: a known ordering issue
+       between the New Build System's synthesized Info.plist (`GENERATE_INFOPLIST_FILE`, driven
+       by `INFOPLIST_KEY_*` settings) and a CocoaPods script phase that reads it before it's
+       generated. Fixed by switching to a real static `iosApp/iosApp/Info.plist` file
+       (`INFOPLIST_FILE` setting) instead — a file that already exists has no generation race.
+  - **Verification mechanism itself changed mid-milestone**: the `ios-interactive.yml`
+    SSH-over-tmux/upterm debug session (documented in §18f) proved too unreliable for this
+    multi-minute `pod install` + `xcodebuild` sequence — commands intermittently got silently
+    dropped or corrupted mid-transmission by tmux's terminal-capability-query handshake,
+    sometimes leaving the remote shell permanently stuck in an open-quote continuation requiring
+    a full session restart (happened repeatedly). Switched to running the same steps as normal
+    `ios-ci.yml` steps instead — slower to iterate (each fix needs a fresh ~50min+ full CI run,
+    since a fresh runner has no toolchain/Gradle cache) but every run's outcome is unambiguous
+    and its full log is retrievable via `gh run view --log-failed`, unlike the interactive
+    session's unreliable live output.
+
+- [x] **Wired to RoleRouter/Koin/Firebase for real, verified green in CI, 2026-09-02.** The
+      placeholder screen above is gone: `MainViewController()` now renders `RoleRouter()` (the
+      exact same shared Composable `MainActivity` uses on Android), Koin is bootstrapped from
+      `iOSApp.swift`'s `init()`, and `FirebaseApp.configure()` is called there too.
+      `shared/src/iosMain/.../di/AppModule.ios.kt` is the iOS counterpart to `:app/di/AppModule.kt`
+      — same repository/viewModel graph, iOS actuals swapped in
+      (`DatabaseDriverFactory()`/`createDataStore()`/`IosGeminiProvider()`) and NSBundle+okio
+      reads replacing `Context.assets` for the two bundled `.md` template/reference files (now
+      duplicated into `iosApp/iosApp/Resources/` — no cross-platform resource system exists yet,
+      same tradeoff as the DI module split itself) and the app's own version
+      (`CFBundleVersion`/`CFBundleShortVersionString`).
+  - **One real bug, and it was a genuinely obscure one**: `iOSApp.swift`'s
+    `KoinBootstrapKt.initKoin()` call failed to compile — "type 'KoinBootstrapKt' has no member
+    'initKoin'" — even though the function plainly existed. First guess (wrong): package
+    placement, since `initKoin()` lived in `com.example.personalapp.di` unlike
+    `MainViewController.kt`'s root package; moved it to match and the *exact same error*
+    reappeared, proving that theory wrong. Rather than guess a third time at ~1h/CI-run cost,
+    added a temporary CI step running `:shared:linkDebugFrameworkIosSimulatorArm64` directly and
+    dumping the generated `Shared.h` (fast — no XcodeGen/pod install/xcodebuild needed to see
+    it). That revealed the real cause: Kotlin/Native's Objective-C export silently renames any
+    top-level function starting with `init` (also `new`/`copy`/`mutableCopy`) to avoid colliding
+    with Cocoa's init-family selector convention (NSObject initializers carry special ARC
+    semantics) — the header showed `+ (void)doInitKoin
+    __attribute__((swift_name("doInitKoin()")))`, not `initKoin()`. Renamed the function to
+    `bootstrapKoin()` (removed the diagnostic step once it had done its job) rather than switch
+    Swift to call the auto-generated `doInitKoin()` name, which would have been unexplainable to
+    a future reader without this exact story.
+  - **Still pending, tracked separately, not part of this milestone**: a real
+    `GoogleService-Info.plist`. `ios-ci.yml` writes one from a `GOOGLE_SERVICE_INFO_PLIST` repo
+    secret (currently unset), mirroring `google-services.json`/`GOOGLE_SERVICES_JSON` on Android
+    exactly — the build succeeds either way (it's a bundled resource, not build-time validated),
+    but `FirebaseApp.configure()` needs the real file to actually connect at runtime, and that
+    requires registering an iOS app for this project in Firebase Console (bundle ID
+    `com.example.personalapp.ios`) — a step only the project owner can do (their Google account).
+
+**No longer blocked on real Apple signing credentials, per 2026-09-04's research above** — the
+2026-08-26 deferral below was written on the assumption that producing a distributable `.ipa`
+needed a free Apple ID's own certificate (Xcode-only, needing Mac time) or a paid Apple Developer
+Program membership. That assumption doesn't hold for *this specific step*: SideStore's own
+AltSign-based resign — already relied on for the periodic 7-day refresh documented below — means
+CI can produce a codesign-disabled `.ipa` with no Apple account involved at all, and SideStore
+supplies the real signing entirely on-device at install time. The items below are now a concrete
+CI build, not a "wait for credentials" placeholder — the one real unknown is the end-to-end
+device install test, tracked explicitly as `(manual)`.
+
+- [x] **Build a distributable, codesign-disabled `.ipa` in `ios-ci.yml` — done and verified green
+      2026-09-04.** `xcodebuild build` (not `archive`/`-exportArchive`) against `-sdk iphoneos`
+      with `CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO`, hand-assembled into
+      `Payload/Personal Tracker.app/` and zipped to a `.ipa`. **One real build failure hit and
+      fixed**: a first attempt with `-configuration Release` failed with `java.lang.
+      OutOfMemoryError: Java heap space` inside Kotlin/Native's link-time devirtualization
+      analysis (`:shared:linkPodReleaseFrameworkIosArm64`) — Release's LTO/devirtualization
+      passes are memory-hungry on a framework this size (4 Firebase pods + gRPC + BoringSSL +
+      leveldb) and exceeded the GitHub-hosted macOS runner's RAM. Switched to `-configuration
+      Debug` (same as the simulator build step already uses) — no real downside, since this app
+      never goes through App Store review and SideStore re-signs it regardless of build
+      configuration. **Downloaded and inspected the resulting artifact directly** (not just
+      "CI went green"): a real `Payload/Personal Tracker.app/` with the compiled binary,
+      `Personal Tracker.debug.dylib` (~90MB, the Kotlin/Native framework), the real
+      `GoogleService-Info.plist`, and all linked Firebase/gRPC frameworks present — 39,543,549
+      bytes total, structurally correct.
+- [x] **Uploaded as a public GitHub Release, 2026-09-04** — confirmed with the user first (this
+      is external publication, not an auto-approved step): [`ios-v1.0-1`](https://github.com/alexmiguel011014-stack/Personal_app_android/releases/tag/ios-v1.0-1),
+      built from commit `105d73c` (the exact commit CI verified), asset
+      `PersonalTracker.ipa` at
+      `https://github.com/alexmiguel011014-stack/Personal_app_android/releases/download/ios-v1.0-1/PersonalTracker.ipa`.
+- [ ] Fill in `store-listing/sidestore-source.json`'s remaining `PREENCHER:` markers.
+      **`downloadURL`/`size`/`date` filled in 2026-09-04** from the real Release asset above
+      (`developerName` also filled, from the project's own git author). **`iconURL` still open**
+      — no 1024×1024px PNG app icon has been designed yet (the existing Android launcher icons
+      are adaptive-icon XML/small webp, not usable as-is); this is a separate icon-design task,
+      unrelated to the signing/CI work above, and doesn't block anything else in this section.
+- [ ] **(manual)** On the real iPhone with SideStore already installed (per the documented
+      per-iPhone setup steps below), add `sidestore-source.json`'s hosted URL
+      (`https://raw.githubusercontent.com/alexmiguel011014-stack/Personal_app_android/feature/kmp-ios/store-listing/sidestore-source.json`
+      — a branch-relative raw URL on purpose, not pinned to this one release tag, so it keeps
+      working as-is for every future version bump) as a custom source, and confirm "Personal
+      Tracker" actually installs and launches. This is the step that empirically settles the one
+      open research question: whether SideStore's AltSign resign accepts a fully
+      codesign-disabled `.ipa` as input — everything above this point is built and hosted, but
+      unverified against a real device. **User confirmed 2026-09-04: has the iPhone available
+      this weekend.** **If it fails**: fall back to generating a throwaway self-signed
+      (not Apple-issued) identity in the same CI job via `security create-keychain` + a
+      locally-generated cert — still free, still no Mac, just a slightly longer CI step; do not
+      fall back to the Mac-rental plan without checking this first.
+- [x] **Documented the one-time per-iPhone SideStore setup steps, 2026-09-03** — this was the
+      "dev setup note" the project had flagged needing before (§13a already noted the same need
+      for App Check debug tokens once more than one test device exists). Verified against
+      SideStore's own current docs (not memory — the toolchain changed since older guides:
+      AltServer/WireGuard/JitterbugPair are the *outdated* instructions per
+      [docs.sidestore.io/docs/advanced/alternative](https://docs.sidestore.io/docs/advanced/alternative);
+      the current tool is **iloader** + **LocalDevVPN**):
+  - **Prerequisites** ([docs.sidestore.io/docs/installation/prerequisites](https://docs.sidestore.io/docs/installation/prerequisites)):
+    iPhone/iPad on iOS/iPadOS 15.0+ with a passcode set, Wi-Fi (not cellular), any computer
+    (Windows 8+, macOS High Sierra+, current Linux, or an un-enrolled Chromebook — needed only
+    once, not kept running afterward), the **LocalDevVPN** app (App Store or the AltStore PAL
+    source), and **iloader** on the computer.
+  - **One-time computer step**: connect the iPhone by USB and trust the computer; open `iloader`;
+    sign in with any Apple Account (free is fine — doesn't need to match the device's own Apple
+    ID); select the device; choose "Install SideStore (Stable)".
+  - **On-device step** (varies slightly by iOS version, see
+    [docs.sidestore.io/docs/installation/install](https://docs.sidestore.io/docs/installation/install)
+    for the exact per-version branching): trust the developer app in Settings → General → VPN &
+    Device Management; on iOS 16+ also enable Developer Mode in Settings → Privacy & Security
+    (requires a restart); open LocalDevVPN and connect; sign into SideStore with the *same* Apple
+    Account used in `iloader`; in My Apps, tap the "7 DAYS" counter once to finish setup.
+  - **Free-account limits** (from
+    [docs.sidestore.io/docs/faq](https://docs.sidestore.io/docs/faq)): 3 active apps at a time
+    *including SideStore itself*, 10 different app IDs per week — both fine for one trainer's own
+    device installing just this one app. A paid Apple Developer Program account removes these
+    limits and extends the signature expiry from 7 to 365 days, but per §18j's already-deferred
+    decision that's not needed for the free path.
+  - **Ongoing maintenance, not one-time**: the free Apple ID's signature expires every 7 days —
+    SideStore refreshes it automatically as long as LocalDevVPN's connected, but if it lapses the
+    same "tap the 7 DAYS counter" step above fixes it, no computer needed again unless the
+    pairing file itself expires (rare — device reset/major iOS update).
+  - **Installing this app specifically**, once the source JSON above is actually hosted: add its
+    URL as a custom source inside SideStore (Sources tab → add source URL), then install "Personal
+    Tracker" from there like any other SideStore-listed app — no separate per-app pairing step.
 - [ ] **(manual, deferred)** When the trainer starts charging students: enroll in the Apple
       Developer Program ($99/yr), switch distribution to TestFlight (up to 10,000 testers, no
       per-device technical setup for the end user), and revisit whether the Play Store's one-time
@@ -1609,32 +2187,76 @@ flowchart TD
       independently (`android-ci.yml` on `main`, `ios-ci.yml` on `feature/kmp-ios`).
 
 **18l. Testing**
-- [ ] Move `WorkoutParserTest` (already dependency-free) to `commonTest` — done when it passes on
-      both `testDebugUnitTest` (Android/JVM) and an `iosSimulatorArm64` test run.
-- [ ] `AuthRepositoryTest` (MockK-based) needs a KMP-compatible mocking approach — MockK is
-      JVM-only; either keep this test Android-only (acceptable, it's testing Android-specific
-      Firebase mock plumbing today, not core logic) or migrate the assertions it covers into a
-      `commonTest` against GitLive's SDK using a fake/in-memory implementation instead of a mock.
-      Don't silently drop the coverage — decide and document which.
-- [ ] `AppDaoTest`/`workoutLog_roundTripsPerformedSets` (Room in-memory, currently `androidTest`-
-      only) — re-run against Room's KMP in-memory test builder on `iosTest` too, given 18d's
-      migration; this is genuinely new coverage the project didn't have before (Room's iOS path
-      was untested until this move).
-- [ ] `TrainerGoldenPathTest.kt` (Compose UI test) — Compose Multiplatform's iOS UI-testing
-      tooling is comparatively less mature than Android's `ui-test-junit4`; confirm current
-      support at implementation time. If iOS Compose UI testing isn't practical yet, keep this
-      test Android-only and say so explicitly rather than silently losing golden-path coverage
-      with no note.
+- [x] Moved `WorkoutParserTest` to `commonTest` back in §18b (rewritten to `kotlin.test`). Passing
+      on `testDebugUnitTest` is confirmed (runs every local `verify`). **Passing on
+      `iosSimulatorArm64Test` too, confirmed 2026-09-01** — the whole `:shared` test binary (which
+      `WorkoutParserTest` is part of, via `commonTest`) now links and runs on iOS, now that §18f's
+      native framework linking is resolved; see that section for the full verified build log.
+- [x] **Decided and documented** (not silently dropped): `AuthRepositoryTest` is deleted, not
+      migrated. GitLive's `DocumentSnapshot.get<T?>()` is `inline`, which MockK cannot stub at
+      all (not a JVM-only-vs-KMP-mocking-library problem — no mocking library can intercept an
+      inline function call), so "find a KMP-compatible mocking approach" was never actually an
+      available option once GitLive was adopted in §18f. Discussed directly with the user;
+      decided to accept the coverage gap now and revisit with the Firebase Emulator Suite (real
+      local Firestore/Auth, not mocked) if/when this needs testing again — see §18f's note.
+- [x] **`AppDaoTest`/`SettingsRepositoryTest`/`TrainerGoldenPathTest` — actually run for the first
+      time, 2026-08-27**, against the real Android device (`SM-S926B`), not an emulator: the
+      "wrong CPU architecture AVD" blocker only ever applied to this machine's emulators, not to
+      real hardware, and a real device happened to be connected. All 12 instrumented tests pass
+      (`./gradlew connectedDebugAndroidTest`). iOS side: `:shared:iosSimulatorArm64Test` itself
+      (covering `AppDaoTest`-equivalent commonTest coverage, i.e. `WorkoutParserTest`) now runs —
+      §18f's native framework linking gap that used to block it is resolved (2026-09-01, see that
+      section). `TrainerGoldenPathTest` specifically is Android-`androidTest`-only, not
+      `commonTest` (it uses `androidx.test`/`AndroidComposeTestRule`), so it was never going to
+      run via `iosSimulatorArm64Test` regardless — it still needs an actual iOS app to run a
+      Compose UI test against (§18j), unrelated to the linking fix.
+  - **Three real bugs found and fixed getting to a green run — this suite had never actually
+    compiled+run before, so none of these were previously catchable**:
+    1. **Build config**: `:app:mergeDebugAndroidTestJavaResource` failed with 6 duplicate
+       `META-INF/LICENSE.md` (and sibling NOTICE/DEPENDENCIES) files from `mockk-android`'s
+       transitive JUnit Jupiter dependency colliding with the rest of the androidTest classpath.
+       Fixed with a `packaging { resources { excludes += [...] } }` block in `app/build.gradle.kts`
+       — standard fix for this class of AGP resource-merge conflict.
+    2. **Test bug**: `TrainerGoldenPathTest` called `composeTestRule.setContent { }` twice in one
+       test (once per screen) — Compose only allows one `setContent` call per Activity per test;
+       the second call threw `IllegalStateException: ... has already set content`. Fixed by
+       hoisting a `mutableIntStateOf` screen-step flag read inside a single `setContent` block,
+       flipped mid-test instead of calling `setContent` again.
+    3. **Stale mocks**: the same test's MockK stubs for `TrainerRepository`/`StudentRepository`
+       only covered the methods that existed when the test was first written — every method
+       either ViewModel gained since (`StudentRepository.getMyWorkouts`/`getMyBiometrics`/
+       `getMyWorkoutLogs`/`getMyProfile` from §17e's `StudentViewModel.start()`,
+       `TrainerRepository.getAssessmentsForStudent` from §17d's `StudentDetailsViewModel
+       .loadStudent()`) had no stub, so MockK threw `MockKException: no answer found` the moment
+       either ViewModel called it. Silent test debt: nothing caught this drift because the test
+       never actually executed on this project before today. Added the missing stubs.
+  - Device connection had its own two-connections-to-one-physical-device wrinkle worth noting for
+    next time: `adb devices` showed the same phone twice (USB `RXGYA03W4MK` +
+    `adb-RXGYA03W4MK-...` wireless), and Gradle tried to install/run on both, producing
+    "Process crashed"/uninstall failures on the redundant one. `adb disconnect
+    <wireless-serial>` to leave just the USB connection fixed it — not a code bug, just a
+    same-device-two-transports gotcha.
 
 **18m. Registration/cutover**
-- [ ] Once 18a–18l are green on both platforms, cut the existing `app` module over to depend on
-      `shared` as its only source of truth (no dead duplicate Android-only copies of anything
-      that moved to `commonMain`) — verified via a full `./gradlew verify assembleDebug` pass
-      identical in spirit to every other verification gate this project already uses, plus the
-      equivalent iOS build succeeding in CI (18k).
-- [ ] Update `CLAUDE.md` and `README.md` to describe the new KMP module shape — this is exactly
-      the kind of cross-cutting convention change CLAUDE.md exists to document (per its own
-      existing "Module documentation strategy" note, §1).
+- [x] **Cutover audit done (2026-08-26)**: `app/src/main/java/` is down to exactly 3 files —
+      `MainActivity.kt`, `MainApplication.kt`, `di/AppModule.kt` — all genuinely Android-only
+      (need `androidContext()`/`ComponentActivity`/`Application`), no dead duplicate copies of
+      anything that moved to `commonMain` left behind. `./gradlew verify assembleDebug
+      compileDebugAndroidTestKotlin` green, both iOS Kotlin/Native compile targets green. **Not**
+      claiming the full "18a–18l green on both platforms" bar this item originally set at the
+      time — several iOS-native items were honestly tracked as still open then (§18f/§18g's
+      native framework linking, §18j's app scaffold, §18l's two test items). **Update
+      2026-09-03: all of those have since landed and gone green in CI** — §18f (framework
+      linking + tests, 2026-09-01), §18j (app shell + RoleRouter/Koin/Firebase wiring,
+      2026-09-01/02), §18g (App Check, 2026-09-03), §18l (both test items resolved alongside
+      §18f). The only iOS-side items still genuinely open project-wide are the three under
+      §18j's "still deferred" banner (real Apple signing credentials and what depends on them)
+      — everything else this audit's original caveat was hedging against is now closed.
+- [x] Updated `CLAUDE.md` (new "Module shape" section describing `:shared`/`:app`'s split, plus
+      fixed several claims that had gone stale over the course of §18 and would otherwise mislead
+      a future reader: the Room→SQLDelight and Hilt→Koin migrations, the Student role no longer
+      being a placeholder, `GenerativeAiService`'s real multi-provider shape) and `README.md`
+      (stack list, prerequisites, architecture section) to describe the KMP module shape.
 
 ---
 

@@ -1,0 +1,30 @@
+name: iosApp
+options:
+  bundleIdPrefix: com.example.personalapp
+  deploymentTarget:
+    iOS: "15.0"
+targets:
+  iosApp:
+    type: application
+    platform: iOS
+    sources:
+      - path: iosApp
+    dependencies:
+      # SQLDelight's native driver (co.touchlab:sqliter) cinterops against the C sqlite3 API but
+      # doesn't bundle its own implementation — the app target has to link the system's SQLite,
+      # or the build fails at link time with "Undefined symbols ... _sqlite3_open_v2" etc.
+      - sdk: libsqlite3.tbd
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.personalapp.ios
+        PRODUCT_NAME: "Personal Tracker"
+        # A real Info.plist file instead of GENERATE_INFOPLIST_FILE's synthesized one — the
+        # synthesized version raced with a CocoaPods script phase reading it before it existed,
+        # failing with "Build input file cannot be found: .../Info.plist".
+        INFOPLIST_FILE: iosApp/Info.plist
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        # No paid Apple Developer account yet (GOALS.md §18j) — simulator builds don't need
+        # real code signing, so this stays empty/automatic rather than requiring a team ID.
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGNING_ALLOWED: NO

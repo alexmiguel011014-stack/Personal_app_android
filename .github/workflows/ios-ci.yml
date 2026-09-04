@@ -83,3 +83,36 @@ jobs:
           # invocation fails with "Unknown iOS simulator arch: 'x86_64'".
           xcodebuild -workspace iosApp.xcworkspace -scheme iosApp -sdk iphonesimulator \
             -configuration Debug CODE_SIGNING_ALLOWED=NO ARCHS=arm64 ONLY_ACTIVE_ARCH=YES build
+
+      # GOALS.md §18j (2026-09-04): a real-device build, packaged into a distributable .ipa with
+      # code signing turned off entirely. This is deliberately NOT `xcodebuild archive` +
+      # `-exportArchive` — export enforces a real signing identity even for ad-hoc export methods,
+      # which this project doesn't have (no Apple Developer Program membership). A plain `build`
+      # against -sdk iphoneos with CODE_SIGNING_ALLOWED=NO/CODE_SIGNING_REQUIRED=NO produces an
+      # ordinary unsigned .app instead, which is all SideStore needs: it re-signs the whole thing
+      # itself at install time via AltSign, using the free Apple ID already paired to the device
+      # (see GOALS.md §18j's 2026-09-04 research note) — Apple's real signature was never going to
+      # be the one that ends up on the installed app either way.
+      - name: Build unsigned .app for a real device
+        working-directory: iosApp
+        run: |
+          xcodebuild -workspace iosApp.xcworkspace -scheme iosApp -sdk iphoneos \
+            -configuration Release CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES -derivedDataPath build build
+
+      # Hand-assembled .ipa: the standard `Payload/<Name>.app/` zip structure every iOS installer
+      # (SideStore included) expects — xcodebuild alone doesn't produce this for an unsigned build
+      # since that's normally -exportArchive's job, which we're skipping (see step above).
+      - name: Package .ipa
+        working-directory: iosApp
+        run: |
+          mkdir -p Payload
+          cp -R "build/Build/Products/Release-iphoneos/Personal Tracker.app" Payload/
+          zip -r -y PersonalTracker.ipa Payload
+
+      - name: Upload .ipa build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PersonalTracker-ipa
+          path: iosApp/PersonalTracker.ipa
+          retention-days: 14

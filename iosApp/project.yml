@@ -17,6 +17,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.personalapp.ios
+        PRODUCT_NAME: "Personal Tracker"
         # A real Info.plist file instead of GENERATE_INFOPLIST_FILE's synthesized one — the
         # synthesized version raced with a CocoaPods script phase reading it before it existed,
         # failing with "Build input file cannot be found: .../Info.plist".

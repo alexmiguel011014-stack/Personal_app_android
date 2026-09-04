@@ -1520,6 +1520,27 @@ flowchart TD
       a licensing violation, unlike a local VM) only when 18h/18j's Xcode-only steps (initial
       signing certificate, SideStore source pairing) are actually reached. Not rented yet — no
       need until then.
+- [x] **Superseded 2026-09-04 — the Mac-rental fallback above is very likely unnecessary for
+      18j specifically, no rental attempted yet either way.** Researched how AltStore/SideStore
+      actually installs a third-party source's `.ipa`: **AltSign** (the signing library shared by
+      AltServer and SideStore — confirmed via AltStore's own GitHub org, `altstoreio/AltStore`,
+      and community docs referencing it) **re-signs the entire `.ipa` on install using the
+      free Apple ID already paired to that iPhone** — the file a source hosts does not need a
+      real Apple signature at all, only the standard `Payload/<Name>.app/` `.ipa` structure with
+      a valid `iphoneos` (device, not simulator) ARM64 binary inside. This means CI can produce
+      that `.ipa` with code signing turned off entirely (`xcodebuild build ... -sdk iphoneos
+      CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO`, then hand-zip `Payload/` into an `.ipa`
+      — `-exportArchive` is skipped since it enforces stricter signing than a plain `build`
+      does), needing zero Apple credentials and zero Mac time, rented or otherwise. Confirmed:
+      fastlane's `sigh`/`cert` (the usual CI-signing route) do **not** reliably support free
+      "personal team" accounts — an open, unresolved fastlane limitation since 2016
+      ([fastlane/fastlane#6022](https://github.com/fastlane/fastlane/issues/6022)), which is
+      exactly why AltSign exists as its own reimplementation instead of wrapping fastlane. **Not
+      yet empirically confirmed against this exact codesign-disabled build** (AltStore's public
+      docs describe the resign mechanism but don't explicitly state unsigned input is accepted)
+      — 18j tracks the one real-device install test that confirms it; if it fails, the fallback
+      is a throwaway self-signed (not Apple-issued) identity in the same CI job, still free and
+      still no Mac.
 - [x] **Module shape**: rename/restructure the existing single `app` Android module into a KMP
       layout — `shared/` (or `composeApp/`, matching current JetBrains project-template
       convention) holding `commonMain` (business logic, ViewModels, repositories, Compose UI,
@@ -2060,24 +2081,44 @@ flowchart TD
     requires registering an iOS app for this project in Firebase Console (bundle ID
     `com.example.personalapp.ios`) — a step only the project owner can do (their Google account).
 
-**Still deferred (2026-08-26), discussed directly with the user, not silently skipped**: real
-Apple signing credentials (a free Apple ID's 7-day cert, or a paid Apple Developer Program
-membership) — the "needs real credentials, wait until it's actually needed" category the user
-already flagged earlier this session. Everything else in `§18` that doesn't depend on this —
-`§18g`'s Android-side pieces, `§18l`'s testing, `§18m`'s cutover — continues normally; only the
-items below stay blocked on this decision.
+**No longer blocked on real Apple signing credentials, per 2026-09-04's research above** — the
+2026-08-26 deferral below was written on the assumption that producing a distributable `.ipa`
+needed a free Apple ID's own certificate (Xcode-only, needing Mac time) or a paid Apple Developer
+Program membership. That assumption doesn't hold for *this specific step*: SideStore's own
+AltSign-based resign — already relied on for the periodic 7-day refresh documented below — means
+CI can produce a codesign-disabled `.ipa` with no Apple account involved at all, and SideStore
+supplies the real signing entirely on-device at install time. The items below are now a concrete
+CI build, not a "wait for credentials" placeholder — the one real unknown is the end-to-end
+device install test, tracked explicitly as `(manual)`.
 
-- [ ] Host the built `.ipa` + an AltStore/SideStore-format "source" JSON (app metadata + download
-      URL + version) somewhere stable and free — a GitHub Release asset on this same public repo
-      is the natural choice, consistent with 18i's update-manifest hosting. **Template prepared
-      2026-09-03**: `store-listing/sidestore-source.json`, matching the real AltStore source
-      schema (verified against the official spec at
-      [faq.altstore.io/developers/make-a-source](https://faq.altstore.io/developers/make-a-source),
-      not guessed) — `bundleIdentifier`/`minOSVersion` are already correct
-      (`com.example.personalapp.ios` / iOS 15.0, matching `project.yml`), but `downloadURL`,
-      `size`, `date`, and `iconURL` are placeholder `PREENCHER:` markers since none of those exist
-      until a real signed `.ipa` does — this item stays open until then, the template only saves
-      time once it's unblocked.
+- [ ] **Build a distributable, codesign-disabled `.ipa` in `ios-ci.yml`.** Add a job (or extend
+      the existing build steps) that runs `xcodebuild build` (not `archive`/`-exportArchive`,
+      which enforce stricter signing than a plain build) against `-sdk iphoneos` (real device
+      ARM64, not the simulator target the current CI already builds for tests) with
+      `CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO`, then hand-assemble the `.ipa` from the
+      resulting `.app`: `mkdir Payload && cp -r PersonalTracker.app Payload/ && zip -r
+      PersonalTracker.ipa Payload/`. Needs a real `GoogleService-Info.plist` to be meaningful at
+      runtime (§18j's already-tracked pending item just above) but can be built and structurally
+      verified before that's registered.
+- [ ] Upload that `.ipa` as a GitHub Release asset (reusing the same release-hosting mechanism
+      already decided for 18i's update manifest) tagged with the app's version, so
+      `downloadURL`/`size`/`date` are real values instead of placeholders.
+- [ ] Fill in `store-listing/sidestore-source.json`'s remaining `PREENCHER:` markers
+      (`downloadURL`, `size`, `date`, `iconURL`) from that Release's real asset — a small CI or
+      script step computing these from the actual uploaded file, not manual entry each release.
+      **Template already prepared 2026-09-03**, matching the official AltStore source schema
+      ([faq.altstore.io/developers/make-a-source](https://faq.altstore.io/developers/make-a-source));
+      `bundleIdentifier`/`minOSVersion` are already correct
+      (`com.example.personalapp.ios` / iOS 15.0, matching `project.yml`).
+- [ ] **(manual)** Host `sidestore-source.json` at a stable URL (the same GitHub Release, or
+      raw.githubusercontent.com against a tagged commit) and, on the real iPhone with SideStore
+      already installed (per the documented per-iPhone setup steps below), add it as a custom
+      source and confirm "Personal Tracker" actually installs and launches. This is the step that
+      empirically settles the one open research question: whether SideStore's AltSign resign
+      accepts a fully codesign-disabled `.ipa` as input. **If it fails**: fall back to generating
+      a throwaway self-signed (not Apple-issued) identity in the same CI job via `security
+      create-keychain` + a locally-generated cert — still free, still no Mac, just a slightly
+      longer CI step; do not fall back to the Mac-rental plan without checking this first.
 - [x] **Documented the one-time per-iPhone SideStore setup steps, 2026-09-03** — this was the
       "dev setup note" the project had flagged needing before (§13a already noted the same need
       for App Check debug tokens once more than one test device exists). Verified against

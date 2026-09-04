@@ -2091,34 +2091,46 @@ supplies the real signing entirely on-device at install time. The items below ar
 CI build, not a "wait for credentials" placeholder — the one real unknown is the end-to-end
 device install test, tracked explicitly as `(manual)`.
 
-- [ ] **Build a distributable, codesign-disabled `.ipa` in `ios-ci.yml`.** Add a job (or extend
-      the existing build steps) that runs `xcodebuild build` (not `archive`/`-exportArchive`,
-      which enforce stricter signing than a plain build) against `-sdk iphoneos` (real device
-      ARM64, not the simulator target the current CI already builds for tests) with
-      `CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO`, then hand-assemble the `.ipa` from the
-      resulting `.app`: `mkdir Payload && cp -r PersonalTracker.app Payload/ && zip -r
-      PersonalTracker.ipa Payload/`. Needs a real `GoogleService-Info.plist` to be meaningful at
-      runtime (§18j's already-tracked pending item just above) but can be built and structurally
-      verified before that's registered.
-- [ ] Upload that `.ipa` as a GitHub Release asset (reusing the same release-hosting mechanism
-      already decided for 18i's update manifest) tagged with the app's version, so
-      `downloadURL`/`size`/`date` are real values instead of placeholders.
-- [ ] Fill in `store-listing/sidestore-source.json`'s remaining `PREENCHER:` markers
-      (`downloadURL`, `size`, `date`, `iconURL`) from that Release's real asset — a small CI or
-      script step computing these from the actual uploaded file, not manual entry each release.
-      **Template already prepared 2026-09-03**, matching the official AltStore source schema
-      ([faq.altstore.io/developers/make-a-source](https://faq.altstore.io/developers/make-a-source));
-      `bundleIdentifier`/`minOSVersion` are already correct
-      (`com.example.personalapp.ios` / iOS 15.0, matching `project.yml`).
-- [ ] **(manual)** Host `sidestore-source.json` at a stable URL (the same GitHub Release, or
-      raw.githubusercontent.com against a tagged commit) and, on the real iPhone with SideStore
-      already installed (per the documented per-iPhone setup steps below), add it as a custom
-      source and confirm "Personal Tracker" actually installs and launches. This is the step that
-      empirically settles the one open research question: whether SideStore's AltSign resign
-      accepts a fully codesign-disabled `.ipa` as input. **If it fails**: fall back to generating
-      a throwaway self-signed (not Apple-issued) identity in the same CI job via `security
-      create-keychain` + a locally-generated cert — still free, still no Mac, just a slightly
-      longer CI step; do not fall back to the Mac-rental plan without checking this first.
+- [x] **Build a distributable, codesign-disabled `.ipa` in `ios-ci.yml` — done and verified green
+      2026-09-04.** `xcodebuild build` (not `archive`/`-exportArchive`) against `-sdk iphoneos`
+      with `CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO`, hand-assembled into
+      `Payload/Personal Tracker.app/` and zipped to a `.ipa`. **One real build failure hit and
+      fixed**: a first attempt with `-configuration Release` failed with `java.lang.
+      OutOfMemoryError: Java heap space` inside Kotlin/Native's link-time devirtualization
+      analysis (`:shared:linkPodReleaseFrameworkIosArm64`) — Release's LTO/devirtualization
+      passes are memory-hungry on a framework this size (4 Firebase pods + gRPC + BoringSSL +
+      leveldb) and exceeded the GitHub-hosted macOS runner's RAM. Switched to `-configuration
+      Debug` (same as the simulator build step already uses) — no real downside, since this app
+      never goes through App Store review and SideStore re-signs it regardless of build
+      configuration. **Downloaded and inspected the resulting artifact directly** (not just
+      "CI went green"): a real `Payload/Personal Tracker.app/` with the compiled binary,
+      `Personal Tracker.debug.dylib` (~90MB, the Kotlin/Native framework), the real
+      `GoogleService-Info.plist`, and all linked Firebase/gRPC frameworks present — 39,543,549
+      bytes total, structurally correct.
+- [x] **Uploaded as a public GitHub Release, 2026-09-04** — confirmed with the user first (this
+      is external publication, not an auto-approved step): [`ios-v1.0-1`](https://github.com/alexmiguel011014-stack/Personal_app_android/releases/tag/ios-v1.0-1),
+      built from commit `105d73c` (the exact commit CI verified), asset
+      `PersonalTracker.ipa` at
+      `https://github.com/alexmiguel011014-stack/Personal_app_android/releases/download/ios-v1.0-1/PersonalTracker.ipa`.
+- [ ] Fill in `store-listing/sidestore-source.json`'s remaining `PREENCHER:` markers.
+      **`downloadURL`/`size`/`date` filled in 2026-09-04** from the real Release asset above
+      (`developerName` also filled, from the project's own git author). **`iconURL` still open**
+      — no 1024×1024px PNG app icon has been designed yet (the existing Android launcher icons
+      are adaptive-icon XML/small webp, not usable as-is); this is a separate icon-design task,
+      unrelated to the signing/CI work above, and doesn't block anything else in this section.
+- [ ] **(manual)** On the real iPhone with SideStore already installed (per the documented
+      per-iPhone setup steps below), add `sidestore-source.json`'s hosted URL
+      (`https://raw.githubusercontent.com/alexmiguel011014-stack/Personal_app_android/feature/kmp-ios/store-listing/sidestore-source.json`
+      — a branch-relative raw URL on purpose, not pinned to this one release tag, so it keeps
+      working as-is for every future version bump) as a custom source, and confirm "Personal
+      Tracker" actually installs and launches. This is the step that empirically settles the one
+      open research question: whether SideStore's AltSign resign accepts a fully
+      codesign-disabled `.ipa` as input — everything above this point is built and hosted, but
+      unverified against a real device. **User confirmed 2026-09-04: has the iPhone available
+      this weekend.** **If it fails**: fall back to generating a throwaway self-signed
+      (not Apple-issued) identity in the same CI job via `security create-keychain` + a
+      locally-generated cert — still free, still no Mac, just a slightly longer CI step; do not
+      fall back to the Mac-rental plan without checking this first.
 - [x] **Documented the one-time per-iPhone SideStore setup steps, 2026-09-03** — this was the
       "dev setup note" the project had flagged needing before (§13a already noted the same need
       for App Check debug tokens once more than one test device exists). Verified against

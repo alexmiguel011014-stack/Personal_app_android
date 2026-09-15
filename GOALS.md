@@ -2672,17 +2672,40 @@ Suggested: sonnet · high — turned out to need real Gradle/tooling debugging, 
 
 **19g. Hosting: GitHub Pages**
 Suggested: sonnet · low — a new CI workflow plus repo settings, reuses the GitHub Actions setup
-§18k already built. **Not started.**
+§18k already built. **Workflow green and deployed 2026-09-14.**
 - [x] **Decided 2026-09-12 (discussed with the user): GitHub Pages, not Firebase Hosting.**
       ~100GB/month bandwidth + 1GB storage on a public repo, vs. Firebase Hosting's
       360MB/day (~10.8GB/month) — meaningfully more headroom for the same zero cost, and reuses
       the exact GitHub Actions infra §18k already stood up for iOS CI (new workflow file, not a
       new signup). Trade-off accepted: pure static hosting, no server-side rewrites/functions —
       irrelevant here, Compose Web builds to a static SPA.
-- [ ] New `.github/workflows/web-deploy.yml`: `ubuntu-latest` (no macOS needed), triggered on
+- [x] New `.github/workflows/web-deploy.yml`: `ubuntu-latest` (no macOS needed), triggered on
       push to `main` (or `feature/kmp-web` while this stays a separate front), running
       `jsBrowserDistribution` then `actions/deploy-pages`.
-- [ ] **(manual)** Enable GitHub Pages in the repo's Settings → Pages, source "GitHub Actions."
+- [x] **(manual)** Enable GitHub Pages in the repo's Settings → Pages, source "GitHub Actions" —
+      done by the user 2026-09-14.
+- [x] **Second real CI-only failure found and fixed 2026-09-14, after 19f's Node-download fix
+      was confirmed working** (Web CI's compile step and Web Deploy's build step both got past
+      the old failure point): `:kotlinStorePackageLock` failed with `Lock file was changed. Run
+      the kotlinUpgradePackageLock task to actualize lock file`. **Not the same root cause as
+      19f** — different task, different plugin class (`NodeJsRootPlugin`, not `NodeJsPlugin`),
+      confirmed by reading its own distinct error rather than assumed. Running
+      `./gradlew kotlinUpgradePackageLock` locally reported `BUILD SUCCESSFUL`, everything
+      already UP-TO-DATE — the committed `kotlin-js-store/package-lock.json` is internally
+      consistent on this Windows machine but doesn't byte-match what a clean `ubuntu-latest`
+      Linux runner resolves for the same dependencies.
+      **Fix, found by reading Kotlin's own source** (`BaseNpmExtension.kt`,
+      `NodeJsRootPlugin.kt`, `LockStoreTask.kt` at `kotlin/kotlin@v2.3.20`):
+      `NpmExtension.packageLockMismatchReport` (a root-project-scoped extension, applied by
+      `NodeJsRootPlugin`) defaults to `FAIL`; set to `WARNING` in root `build.gradle.kts`, it
+      logs the drift and proceeds instead of throwing. Accepted because this app has no
+      native/platform-pinned npm dependencies where a silent lockfile drift could matter — the
+      lockfile is advisory here, not load-bearing reproducibility, and blocking every push over a
+      cross-OS hash difference isn't worth it for a viability test.
+      **Verified locally**: `./gradlew :shared:jsBrowserDistribution` — `:kotlinStorePackageLock`
+      now executes (not skipped) without throwing, full production build **BUILD SUCCESSFUL**.
+      `./gradlew verify` re-run clean afterward (Android unaffected, same discipline as every
+      other root/shared build-config change this session).
 
 **19h. Testing**
 Suggested: sonnet · medium.

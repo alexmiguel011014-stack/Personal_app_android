@@ -7,10 +7,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Personal Tracker</title>
     <style>
-        html, body { margin: 0; padding: 0; height: 100%; }
+        html, body, #app { margin: 0; padding: 0; height: 100%; }
     </style>
 </head>
 <body>
+    <!-- Compose mounts here, not on <body>: ComposeViewport replaces its container's children
+         when Skiko finishes loading, which is async and network-timed. Anything else that
+         appends to <body> (App Check's reCAPTCHA placeholder div) must live outside it. -->
+    <div id="app"></div>
     <script src="shared.js"></script>
 </body>
 </html>

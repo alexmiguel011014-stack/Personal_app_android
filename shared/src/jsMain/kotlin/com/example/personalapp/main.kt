@@ -13,7 +13,6 @@ import dev.gitlive.firebase.Firebase
 import dev.gitlive.firebase.FirebaseOptions
 import dev.gitlive.firebase.initialize
 import kotlinx.browser.document
-import kotlinx.browser.window
 import org.koin.core.context.startKoin
 
 // GOALS.md §19f: web counterpart to :app/MainActivity.kt + MainApplication.kt — same
@@ -34,8 +33,16 @@ private val webFirebaseOptions = FirebaseOptions(
 @OptIn(ExperimentalComposeUiApi::class)
 fun main() {
     Firebase.initialize(context = null, options = webFirebaseOptions)
+    // GOALS.md §19e/§19g: App Check before Koin/Compose, same order as Android's
+    // MainApplication. Safe to run first now that Compose mounts on #app, not <body> — the
+    // reCAPTCHA placeholder <div> App Check appends to <body> is a sibling Compose never
+    // touches. The old post-mount double-requestAnimationFrame ordering only held on localhost;
+    // on the real GitHub Pages deploy the wasm load was slow enough that Compose's async
+    // container reset still wiped the div after both frames had fired (confirmed live, every
+    // reload).
+    initWebAppCheck()
     startKoin { modules(webAppModule) }
-    ComposeViewport(document.body!!) {
+    ComposeViewport(document.getElementById("app")!!) {
         MaterialTheme {
             // GOALS.md §20c: §19f clamped this to a centered 480dp column so the phone-shaped UI
             // wouldn't stretch edge to edge on desktop. That clamp is gone — it would cap the
@@ -48,18 +55,6 @@ fun main() {
             ) {
                 RoleRouter()
             }
-        }
-    }
-    // GOALS.md §19e/§19f: App Check's reCAPTCHA setup synchronously appends its own placeholder
-    // <div> to document.body, then (async, once its own script loads) looks that div back up by
-    // the id it just assigned. `ComposeViewport` returning doesn't guarantee its own DOM/canvas
-    // setup has actually finished painting yet (confirmed: calling this right after that line
-    // still raced and failed intermittently, not just guessed) — Compose's first paint happens
-    // on `requestAnimationFrame`, not synchronously. Double-rAF (wait two paint cycles) is the
-    // standard robust "wait until the browser has definitely painted at least once" pattern.
-    window.requestAnimationFrame {
-        window.requestAnimationFrame {
-            initWebAppCheck()
         }
     }
 }

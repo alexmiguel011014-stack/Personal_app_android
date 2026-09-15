@@ -31,14 +31,9 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      # gradle.properties sets kotlin.js.yarn=false and the root build.gradle.kts sets
-      # NodeJsEnvSpec.download = false (GOALS.md §19f) — both make the build use the system
-      # Node/npm instead of Kotlin's own downloads, which this repo's centralized
-      # FAIL_ON_PROJECT_REPOS setting rejects. So the runner's Node has to be a known one.
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
+      # No actions/setup-node: Kotlin downloads its own Node through the nodejs.org/dist ivy
+      # repository declared in settings.gradle.kts (GOALS.md §19f/§19g) — confirmed in this
+      # workflow's own log (:kotlinNodeJsSetup executes on every fresh runner).
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4

@@ -2260,6 +2260,863 @@ device install test, tracked explicitly as `(manual)`.
 
 ---
 
+## 19. Build — Cross-platform: bring the app to Web (Compose Multiplatform for Web)
+(2026-09-12, via `/newgoal`; implementation started same day via `/execgoals`)
+
+**Business framing (confirmed with the user):** a viability test, not a commitment — the trainer
+wants to know whether a browser build is good enough to show real students *before* paying
+Apple's $99/yr Developer fee that §18's iOS path eventually needs. **iOS is not paused or
+dropped** — it keeps evolving independently on `feature/kmp-ios`; this is explicitly a
+**separate front**, done on its own `feature/kmp-web` branch (forked from `feature/kmp-ios` to
+reuse its Koin/GitLive/SQLDelight/Compose-Multiplatform groundwork instead of re-doing it) so
+neither line of work blocks or interferes with the other.
+
+**The one fact that makes Web worth trying before/alongside iOS:** unlike iOS (§18a — no Mac, CI
+is the only verification gate), Kotlin/JS compiles and runs **locally on this Windows dev
+machine**, in a real browser, no cloud rental and no CI wait.
+
+```mermaid
+flowchart TD
+    A[19a. Design: js vs wasmJs,\nweb-specific scope cuts] --> B[19b. shared module: add js\ntarget, fix js-incompatible deps]
+    B --> C[19c. Data layer: skip SQLDelight\noffline cache, read Firestore direct]
+    B --> D[19d. Auth: GitLive on jsMain\nreused from 18f]
+    D --> E[19e. Security: App Check\nreCAPTCHA v3 web bridge]
+    C --> F[19f. UI: webApp entry point,\nKoin bootstrap, responsive layout]
+    E --> F
+    F --> G[19g. Hosting: GitHub Pages\nvia GitHub Actions]
+    G --> H[19h. Testing: Kotlin/JS\nbrowser test runner]
+    H --> I[19i. Registration/cutover\n+ docs]
+```
+
+**19a. Design rationale and scope cuts**
+Suggested: sonnet · high — architecture decision with real downstream cost if wrong, but
+already researched, not open-ended.
+- [x] **Target: Kotlin/JS (`js`), not `wasmJs`, for v1.** GitLive's `firebase-kotlin-sdk` (§18f's
+      Auth/Firestore layer) publishes no `wasmJs` variant, only `js` (confirmed via the published
+      Gradle module metadata, not guessed) — targeting `js` reuses that code as-is. `wasmJs`
+      (JetBrains' longer-term direction) is a documented future migration, not built now.
+- [x] **Branch: `feature/kmp-web`, forked from `origin/feature/kmp-ios`, not from `main`.**
+      Discovered mid-session that `main`'s `GOALS.md`/code was stale relative to real progress —
+      the actual Koin/GitLive/SQLDelight/Compose-Multiplatform migration lives on
+      `feature/kmp-ios` (54 commits ahead of `main` at the time), not on `main`. Confirmed with
+      the user: iOS keeps going on its own branch untouched; Web is a parallel front, not a
+      replacement.
+- [x] **Scope cut: no SQLDelight offline cache on Web v1** (see 19c) — SQLDelight's web driver
+      (`web-worker-driver`, Web Worker + OPFS-backed) exists and does publish a `js` target, but
+      its driver-creation is asynchronous (Worker spin-up), which doesn't match this project's
+      existing synchronous `expect fun createDriver(): SqlDriver` contract — adapting that is
+      real work with no viability-test payoff yet. The Student/Trainer screens read Firestore
+      directly instead, no local mirror — acceptable because a browser tab already assumes an
+      active connection.
+- [x] **Scope cut: no Crashlytics-equivalent on Web v1.** `dev.gitlive:firebase-crashlytics`
+      publishes no `js` variant either (confirmed via a real dependency-resolution failure while
+      implementing 19b, not guessed) — `util/CrashReporter.kt`'s web actual logs to the browser
+      console instead. Real Crashlytics-for-web wiring is additive polish, not
+      viability-blocking.
+- [x] **reCAPTCHA v3 vs Enterprise — decided 2026-09-13, reversed from the initial v3 default.**
+      First picked v3 (simpler, no GCP setup) per this item's own original reasoning. **Reversed
+      once actually reached in the Firebase Console**: the console itself shows "O reCAPTCHA foi
+      descontinuado. Use o reCAPTCHA Enterprise" on the classic v3 provider — confirmed live,
+      more current than the research this item was originally written from. Also found while
+      there: classic v3 needs a separate key pair created at google.com/recaptcha/admin first
+      (a secret key field App Check asks for), not just an auto-generated site key the way
+      Enterprise's flow works — one more reason Enterprise is the simpler path now, not just the
+      more current one. Still free up to 10k assessments/month (same research as this item's
+      original pass). Code updated accordingly (19e).
+
+**19b. Shared module: add the `js` target — done and verified 2026-09-12**
+Suggested: sonnet · high — spans multiple systems; ended up surfacing three real, previously-
+unknown dependency-compatibility blockers, not just "add a target line."
+- [x] **`js { browser() }` added to `:shared`'s `kotlin { }` block** (`shared/build.gradle.kts`),
+      alongside the existing `android`/`iosArm64`/`iosSimulatorArm64` targets — same module,
+      same `commonMain`, no parallel module created (per 19a/§18's own "don't duplicate the
+      shared work" framing).
+- [x] **Three real, previously-undiscovered `js`-target dependency gaps found and fixed** —
+      each confirmed via an actual `:shared:compileKotlinJs` failure, not predicted in advance:
+      1. **`androidx.datastore` (both `datastore-core` and `datastore-preferences-core`)
+         publishes no `js` variant** (only `wasmJs`) — `SettingsRepository` depended on
+         `DataStore<Preferences>` directly in `commonMain`, which would have broken dependency
+         resolution for the whole module the moment `js()` was added. Fixed by introducing
+         `data/local/SettingsStore.kt` (`expect class`, no declared constructor — same pattern
+         `DatabaseDriverFactory` already used): android/iOS actuals wrap the exact same
+         DataStore/OkioStorage code that existed before (same on-disk filename,
+         `settings.preferences_pb`, so existing installs' saved API keys aren't lost), and a new
+         `js` actual backs it with plain browser `localStorage` instead (single-tab scope, no
+         cross-tab sync — acceptable for a viability test). `SettingsRepository` now depends on
+         `SettingsStore`, not `DataStore<Preferences>`, directly. The old commonMain
+         `SettingsDataStore.kt` factory (and its android/iOS counterparts) were deleted, folded
+         into the new `SettingsStore.{android,ios}.kt` actuals directly.
+      2. **`dev.gitlive:firebase-crashlytics` publishes no `js` variant** either (unlike
+         `firebase-auth`/`firebase-firestore`, which do) — `GenerativeAiService`,
+         `AIWorkoutViewModel`, and `TrainerRepository` all called `Firebase.crashlytics.*`
+         directly from `commonMain`. Fixed with a small `util/CrashReporter.kt` expect/object
+         (android/iOS actuals still call the real GitLive Crashlytics, unchanged behavior; the
+         `js` actual logs to the browser console per 19a's scope cut).
+      3. **`ktor-client-content-negotiation` and `ktor-serialization-kotlinx-json` publish no
+         `js` variant** either (only `wasmJs`) — `GenerativeAiService`/`UpdateChecker`'s
+         `HttpClient` used the `ContentNegotiation` plugin for OpenAI/DeepSeek/Claude calls and
+         the update-manifest fetch. Fixed by dropping the plugin entirely and (de)serializing by
+         hand with the existing `kotlinx.serialization.json.Json` instance
+         (`json.encodeToString(...)`/`json.decodeFromString<T>(...)` around `setBody`/
+         `bodyAsText()`) — works identically on every target, needs nothing beyond
+         `ktor-client-core`. Added `ktor-client-js` (the `js` target's fetch/XHR-backed engine)
+         and `kotlinx-browser` (browser API bindings, `localStorage`/`window`/`navigator`) to a
+         new `jsMain.dependencies` block.
+      - `Platform` enum gained a `WEB` entry (`util/Platform.kt`) with a `js` actual
+        (`currentPlatform() = Platform.WEB`); `UpdateChecker`'s `when (currentPlatform())`
+        gained a `Platform.WEB -> UpdateStatus.UpToDate` branch (a web build has no separate
+        install to go stale — reloading the page always serves the latest GitHub Pages deploy,
+        per 19g).
+      - `util/TimeUtil.kt`'s `js` actual: `kotlin.js.Date().getTime().toLong()`.
+      - `ui/platform/PlatformActions.kt`'s `js` actual: `openUrl` via `kotlinx.browser.window.open`,
+        `shareText` via the Web Share API when available, clipboard-copy fallback otherwise (raw
+        `js("...")` interop — Navigator.share/clipboard aren't part of `kotlinx-browser`'s typed
+        bindings).
+      - `data/local/DatabaseDriverFactory.kt`'s `js` actual is an intentional `error(...)` stub
+        (satisfies the `expect class` contract; per 19c, nothing on web should ever call it — the
+        web Koin module, 19f, wires repositories without it).
+      - **Verified for real, not just "configured"**: `:shared:compileKotlinJs` — **BUILD
+        SUCCESSFUL**. Re-ran the existing Android verification bar to confirm no regression from
+        touching `SettingsRepository`/`TrainerRepository`/`GenerativeAiService`/
+        `AIWorkoutViewModel`/`UpdateChecker`/both `AppModule.kt`s:
+        `:shared:testAndroidHostTest`, `:app:compileDebugKotlin`, `:app:verify`
+        (lint + `testDebugUnitTest`), `:app:assembleDebug` — **all green**.
+      - **Not yet verified**: iOS. This Windows machine can't compile Kotlin/Native locally
+        (same confirmed limitation §18a already documents) — iOS CI (`ios-ci.yml`) is the real
+        gate, and it hasn't run against this branch's changes yet (nothing pushed). The
+        `SettingsStore.ios.kt`/`CrashReporter.ios.kt` changes are mechanical (same DataStore/
+        GitLive calls, just repackaged behind the new abstractions), but "mechanical" isn't
+        "confirmed" — don't skip this check once there's a reason to push.
+
+**19c. Data layer: read Firestore directly, no offline mirror — done and verified 2026-09-12**
+Suggested: sonnet · medium — mostly ViewModel/repository wiring, not new architecture, given
+19a's decision already made.
+- [x] **`TrainerRepository` extracted to an interface**, matching the exact method
+      signatures the concrete class already had — zero change needed in any ViewModel/screen
+      (they all reference the type name `TrainerRepository`, which now resolves to the
+      interface instead of a class). Two implementations:
+      `SqlDelightTrainerRepository` (the old class body, renamed, unchanged behavior —
+      Android/iOS) and `FirestoreTrainerRepository` (new, `commonMain`, no `AppDao`/
+      `DatabaseDriverFactory` — every read is a live Firestore query/listener via the exact same
+      `FirestoreMappers.kt` extension functions `StudentRepository` already used for this,
+      `getStudents()` combines the `students`-drafts and `users`-linked queries
+      `SqlDelightTrainerRepository.startListening`'s two separate mirrors used to feed into one
+      local table). `startListening`/`stopListening` are no-ops on the Firestore-direct side —
+      nothing to start, every read already listens directly.
+      `StudentRepository` needed **zero changes** — it already only depended on
+      `FirebaseFirestore` + the `TrainerRepository` interface type (for one delegated write,
+      `insertWorkoutLog`), never on `AppDao` directly, so it was already web-safe by
+      construction.
+      **Verified for real**: `:shared:compileKotlinJs` — **BUILD SUCCESSFUL**. Re-ran the full
+      Android verification bar again (`:shared:testAndroidHostTest`, `:app:verify`,
+      `:app:assembleDebug`, all green) since this touched the Koin wiring in both
+      `AppModule.kt`/`AppModule.ios.kt` (now bind `TrainerRepository` to
+      `SqlDelightTrainerRepository`, not construct it directly) — no regression.
+      **Not yet observed in a real browser** — that needs 19f's entry point to exist first; the
+      "workout created on web shows up on Android's own view" end-to-end check happens there,
+      not here.
+- [x] Writes go straight to Firestore in `FirestoreTrainerRepository`, same collection/field
+      shapes as `SqlDelightTrainerRepository`'s Firestore half, same swallow-and-`CrashReporter`
+      behavior on failure (kept for consistency with Android/iOS and to avoid reintroducing the
+      §17c crash class — documented trade-off: no optimistic local copy to fall back on if a
+      write fails, so the UI simply doesn't update rather than showing stale data).
+      `insertHistory` is a no-op on web (dead code today per `CLAUDE.md` — `HistoryEntity` was
+      never synced to Firestore on any platform, and nothing currently calls this method; only
+      exists to satisfy the interface).
+- [x] **Real bug found and fixed 2026-09-13, via the user's own first real-account login** —
+      opening a student's "Detalhes" screen failed with a live
+      `FirebaseFirestoreException: PERMISSION_DENIED`. Root cause, confirmed by direct comparison
+      against `SqlDelightTrainerRepository.startListening`'s already-proven-working query shapes,
+      not guessed: `firestore.rules` authorizes `biometrics`/`workouts`/`assessments`/
+      `workoutLogs` reads via `resource.data.trainerId` — a Firestore list query whose `where`
+      clause doesn't *also* constrain `trainerId` can't be proven safe by the rules engine and is
+      denied outright, independent of whether the actual matching documents would satisfy the
+      rule. `getBiometricsByUser`/`getActiveWorkoutsByStudent`/`getAssessmentsForStudent`/
+      `getWorkoutLogsByStudent`/`getWorkoutLogsByWorkout` all originally filtered by
+      `studentId`/`workoutId` only (no `trainerId`) — unlike every Android/iOS mirror query
+      (`SqlDelightTrainerRepository`), which has always filtered `where trainerId equalTo
+      trainerId` for exactly this reason. Fixed: every one of those five queries now also filters
+      `trainerId equalTo currentTrainerId()` (pure-equality compound `where`, same pattern
+      `getStudents()`'s linked-users query already used — needs no new Firestore composite index,
+      confirmed by that existing query's own production history). Re-verified:
+      `:shared:compileKotlinJs` + `:shared:testAndroidHostTest` + `:app:verify` all green (this
+      file is commonMain — compiled for every target even though only web constructs this class).
+      **Not yet re-confirmed against the real account that hit this** — the user was mid-test
+      when this was found; next real login should confirm "Detalhes" now opens clean.
+
+**19d. Auth: reuse GitLive on `jsMain` — done and verified 2026-09-12 (code); browser login not yet observed**
+Suggested: sonnet · medium — the SDK already resolves on this target (confirmed, 19b); work was
+wiring a web Koin module, not a new auth mechanism.
+- [x] New `di/AppModule.js.kt` (`webAppModule`), mirroring `AppModule.kt`/`AppModule.ios.kt`:
+      `AuthRepository`, `SettingsRepository(SettingsStore())`, `TrainerRepository` bound to
+      `FirestoreTrainerRepository` (19c), `StudentRepository`, every `viewModel { }` the other
+      two platforms register. New `WebGeminiProvider` (honest "not available" stub, same pattern
+      `IosGeminiProvider` already uses for the same underlying reason — Firebase AI Logic/Gemini
+      is Android-only).
+      **Known gap, not silently dropped**: `GenerativeAiService`'s `volumeReference` and
+      `PromptFichaViewModel`'s `fichaTemplate` (bundled `.md` files, read from Android assets/iOS
+      NSBundle on the other platforms) are passed as an empty string on web for now — AI
+      generation still works, just without the extra grounding table. Follow-up: serve those
+      files as static assets alongside the deployed JS bundle and fetch them at startup.
+      `UpdateChecker` gets placeholder version numbers (`0`/`"web"`) — harmless, since
+      `Platform.WEB`'s branch (19b) never reads them.
+      **Verified**: `:shared:compileKotlinJs` — **BUILD SUCCESSFUL**. Pure addition (no existing
+      file touched), so the Android verification bar wasn't re-run for this specific item — it
+      was already re-confirmed green immediately beforehand by 19c's changes.
+      **Not yet verified**: nothing calls `startKoin { modules(webAppModule) }` yet — that's
+      19f's entry point. "A real login reaches the correct role-routed screen" can't be observed
+      until then.
+
+**19e. Security: Firebase App Check on web — done and verified live 2026-09-13**
+Suggested: opus · high — security-relevant (`firestore.rules` assumes App Check is active on
+every client, per §18g), and the JS-interop bridge was genuinely fiddly.
+- [x] `util/externals/AppCheck.js.kt` + `util/externals/FirebaseAppExternals.js.kt` (new
+      `@JsModule("firebase/app-check")`/`@JsModule("firebase/app")` external bindings) +
+      `util/WebAppCheck.js.kt` (`initWebAppCheck()`, wired into 19f's entry point). Real,
+      previously-unknown snag found and fixed while writing this: GitLive's own `FirebaseApp.js`
+      accessor (meant to expose the underlying native JS app instance, per GitLive's documented
+      "every class has js/android/ios properties" design) is **not actually usable from outside
+      GitLive's module** — its backing constructor property is `internal`, and Kotlin resolves
+      the identically-named public top-level extension property to the (inaccessible) class
+      member first, so `Firebase.app.js` fails to compile ("it is internal in FirebaseApp"),
+      confirmed via a real compile error. Worked around by declaring `getApp()` directly against
+      the same `"firebase/app"` npm module GitLive's own externals bind — it returns the exact
+      same default-app singleton GitLive's `Firebase.initialize(...)` already registered, so
+      there's no duplicate app/config. The `firebase` npm package (v10.12.2) needs no new Gradle
+      `npm()` dependency — it's already transitive via GitLive's own
+      `firebase-auth`/`firebase-firestore` `api(npm("firebase", "10.12.2"))` declaration.
+      **Verified**: `:shared:compileKotlinJs` **and** a real browser run (19f) — App Check's real
+      failure mode is visible live in the console (`appCheck/recaptcha-error`, a real 400 from
+      Google's reCAPTCHA endpoint) once the site key is a well-formed-but-placeholder string, not
+      just a compile-time abstraction.
+- [x] **Register a Web app** for this Firebase project — done 2026-09-13 (Console → Project
+      settings → Add app → Web, "Personal Tracker Web"). Unlike Android's
+      `google-services.json`/iOS's `GoogleService-Info.plist`, there is **no auto-configuring
+      file for `js`** — the real config (`apiKey`/`authDomain`/`projectId`/`storageBucket`/
+      `messagingSenderId`/`appId`) is now in `main.kt`'s `webFirebaseOptions` (19f). Confirmed
+      live: the earlier `auth/api-key-not-valid` error is gone from the browser console now that
+      this is real, not a placeholder.
+- [x] **reCAPTCHA v3 → Enterprise, reversed 2026-09-13** (see 19a's item for why: Firebase
+      Console itself flags classic v3 as deprecated, discovered while actually registering it,
+      not from stale docs). `ReCaptchaV3Provider` → `ReCaptchaEnterpriseProvider` in
+      `AppCheck.js.kt`/`WebAppCheck.js.kt` — same `firebase/app-check` module, same call shape,
+      only the provider class differs. Re-verified: `:shared:compileKotlinJs` BUILD SUCCESSFUL.
+- [x] **Registered for real 2026-09-13** — reCAPTCHA Enterprise key created at
+      console.cloud.google.com (Security → reCAPTCHA Enterprise, domain `localhost`), registered
+      in Firebase App Check, site key pasted into `WebAppCheck.js.kt`'s
+      `RECAPTCHA_ENTERPRISE_SITE_KEY` (no longer a placeholder).
+- [x] **Real init-order bug found and fixed 2026-09-13, confirmed via `@firebase/app-check`'s
+      own source, not guessed.** `initWebAppCheck()` was called *before* `ComposeViewport`
+      mounted — App Check's `initializeEnterprise()` synchronously appends its own placeholder
+      `<div id="fire_app_check_[DEFAULT]">` to `document.body` immediately, then (async, once
+      reCAPTCHA's own remote script loads) looks that div back up by id to render into. Compose
+      taking over `document.body!!` in between removed it, so the later lookup failed —
+      `renderInvisibleWidget`/`grecaptcha.render(divId, ...)` in
+      `node_modules/@firebase/app-check/dist/index.cjs.js` (read directly to find this, not
+      trial-and-error) received an id with no matching element anymore. Fixed by moving
+      `initWebAppCheck()` in `main.kt` to run *after* the `ComposeViewport { ... }` call instead
+      of before it — Compose's DOM setup happens first, App Check's div survives.
+      **Verified live, not just compiled**: a genuinely fresh browser tab (not just a re-navigate
+      — webpack-dev-server's HMR reconnect cycle was muddying earlier checks) loads with **zero**
+      console errors — no `auth/api-key-not-valid`, no `appCheck/recaptcha-error`, no placeholder
+      error. `LoginScreen` renders correctly, centered at the 19f max-width. This is the first
+      point in §19 where the web build is actually clean end to end, not just "renders with a
+      known, documented error."
+- [x] **`jsBrowserDevelopmentRun` (webpack-dev-server/HMR) is measurably less reliable than the
+      real production build for this specific check — confirmed by comparing both, not assumed.**
+      The same fresh-tab App Check check above came back flaky on repeated dev-server runs (the
+      placeholder error reappeared intermittently even with the double-`requestAnimationFrame`
+      ordering fix below), while a real `:shared:jsBrowserDistribution` production bundle
+      (`jsBrowserProductionWebpack`, ~26 min on this machine — no incremental cache yet, size
+      limit warnings on the unsplit 5.95 MiB bundle are expected at this stage, not investigated)
+      served statically (`python -m http.server`, no HMR/dev-server client script at all) loaded
+      with zero console errors, consistently, every time. Treat the dev server as a fast
+      iteration tool, not the verification bar — 19g's actual GitHub Pages deploy serves a
+      production-style static bundle, matching the environment that's actually clean.
+
+**19f. UI: webApp entry point, Koin bootstrap, responsive layout — done and observed live in a
+real browser 2026-09-13**
+Suggested: sonnet · high — turned out to need real Gradle/tooling debugging, not just UI code.
+- [x] **Real browser verification, not just a compile.** `./gradlew :shared:jsBrowserDevelopmentRun`
+      (webpack-dev-server on `localhost:8080`) — `LoginScreen` renders correctly: Personal/Aluno
+      tabs, email/senha fields, "Manter conectado" checkbox, "Entrar" button, matching the exact
+      Android UI. Confirms the full pipeline end to end: `main()` → `Firebase.initialize` →
+      `initWebAppCheck()` → `startKoin` → `ComposeViewport` → `RoleRouter` → `LoginScreen`, all
+      real Compose rendering via Skiko/Wasm in an actual browser, not a simulated/headless
+      assumption. One found-and-fixed bug on the way: the custom `index.html` (19f) needs its
+      own explicit `<script src="shared.js"></script>` — Kotlin/JS's webpack-dev-server does
+      **not** auto-inject one into a user-supplied `index.html` the way html-webpack-plugin's
+      default template does; a bare custom `index.html` serves as pure static passthrough with no
+      bundle reference at all, confirmed by literally curling the served HTML and finding no
+      `<script>` tag. One console error appears, exactly as expected from 19e's TODO placeholder,
+      not a surprise: `initializeAppCheck`'s reCAPTCHA v3 provider fails to initialize
+      ("reCAPTCHA placeholder element must be an element or id") because the site key isn't real
+      yet — doesn't block rendering, blocks real login until the manual Console steps (19e) are
+      done.
+- [x] **No separate `webApp` module needed** — revised from the original plan: `:shared` already
+      declares the `js { browser() }` target itself (unlike Android, which needs its own
+      `androidApp` module for APK packaging), so the entry point is just
+      `shared/src/jsMain/kotlin/com/example/personalapp/main.kt` + `shared/src/jsMain/
+      resources/index.html`, directly in the same module. `main()`: `Firebase.initialize(...)` →
+      `initWebAppCheck()` (19e) → `startKoin { modules(webAppModule) }` (19d) →
+      `ComposeViewport(document.body!!) { MaterialTheme { Surface(...) { RoleRouter() } } }` —
+      same wrapping `MainActivity.kt` uses on Android, same ordering `MainApplication.kt` uses
+      (Koin + App Check before any UI). `index.html` has a `viewport` meta tag for the
+      phone-width-first render (the actual responsive-layout item below is deferred, not
+      dropped — needs to be judged against a real render first, see open item).
+      **`webFirebaseOptions` now holds the real registered Web app's config** (19e) — confirmed
+      live: the browser console's `auth/api-key-not-valid` error is gone since this landed.
+      **Found and fixed a second real bug getting the dev server to actually show anything**: a
+      custom `src/jsMain/resources/index.html` is served as pure static passthrough by
+      `jsBrowserDevelopmentRun` — Kotlin/JS does **not** auto-inject a `<script>` tag into a
+      user-supplied `index.html` the way html-webpack-plugin's own default template does.
+      Confirmed by literally `curl`-ing the served HTML and finding no `<script>` tag at all, not
+      guessed; fixed with an explicit `<script src="shared.js"></script>` (the real emitted
+      bundle filename, confirmed from the webpack build log).
+- [x] **Three real, previously-unknown local build-tooling blockers found and fixed while
+      getting this far** (none are code problems — all are this Gradle+Kotlin
+      2.3.20+Windows-specific plumbing, confirmed via actual failed builds):
+      1. `js { browser() }` needed `binaries.executable()` added (only a klib was produced
+         without it — no `main()`-invoking output, no browser-distribution tasks existed at
+         all).
+      2. `ComposeViewport` needs `@OptIn(ExperimentalComposeUiApi::class)`.
+      3. **Kotlin/JS's own Node.js/Yarn auto-download conflicts with this project's locked-down
+         `settings.gradle.kts` (`repositoriesMode = FAIL_ON_PROJECT_REPOS`)** — both tools try to
+         add their own download repository at evaluation time, which that policy correctly
+         rejects. Fixed by using what's already on this machine instead of downloading a second
+         copy: root `build.gradle.kts` sets `NodeJsEnvSpec.download = false` (reuses system
+         Node), `gradle.properties` sets `kotlin.js.yarn=false` (plain npm, bundled with Node,
+         instead of also needing Yarn).
+      4. **The root Gradle project name ("Personal APP") has a space**, which broke
+         `kotlinNpmInstall` (`EINVALIDPACKAGENAME` — npm package names must be URL-friendly,
+         confirmed via a real failed install, not guessed). This is the exact same root cause
+         `shared/build.gradle.kts`'s pre-existing comment already flagged for why
+         `compose.components.resources` was left out (Android dex step, different symptom, same
+         cause). Fixed narrowly for `js` only, without renaming the whole Gradle project:
+         `outputModuleName.set("personal-app-shared")` on the `js { }` target block (the
+         originally-tried `moduleName` property is deprecated-for-removal as of exactly Kotlin
+         2.3, this project's pinned version — confirmed via a real compile error pointing at
+         that).
+      **Verified**: `:shared:compileKotlinJs` and `:shared:compileProductionExecutableKotlinJs`
+      — both **BUILD SUCCESSFUL** (the full production-optimized js executable compiles clean,
+      not just the library klib) — this is real proof every file across 19b–19f's Kotlin code is
+      correct, not just individually-compiling pieces.
+      **Not yet fully verified**: the actual browser-ready bundle (`jsBrowserProductionWebpack`,
+      the last packaging step after compilation) hit a **fourth, still-unresolved local-only
+      issue**: the task tries to invoke a Node.js binary from a path
+      (`~/.gradle/nodejs/node-v24.10.0-win-x64/node.exe`) that the `download = false` setting
+      above should have prevented it from expecting — some path inside Kotlin Gradle Plugin
+      2.3.20 resolves this independently of the setting that (correctly) stopped the actual
+      download step. Confirmed this is Windows/local-tooling-specific, not a code issue, by the
+      same standard §18a already established for iOS (this machine can't fully verify
+      Kotlin/Native locally either) — worked around locally for this session by manually placing
+      a copy of the system Node binary at the expected path (harmless, `~/.gradle/` is a
+      machine-local cache, not part of the repo). **The real, repo-visible fix is for 19g's CI**:
+      a clean `ubuntu-latest` runner won't carry this exact stale-path inconsistency, so treat CI
+      as the verification gate for the actual bundle output, same precedent as `ios-ci.yml`
+      (§18k) — don't block on reproducing this exact local workaround for every future
+      contributor's machine.
+- [x] **Responsive layout pass — done 2026-09-13, judged against a real render, not guessed.**
+      The user tested the live dev build in their own browser (desktop-width Brave window) and
+      confirmed the phone-shaped screens (fillMaxWidth fields/buttons throughout) stretched
+      edge-to-edge ugly on a wide viewport. Fixed in `main.kt` only (web-specific, no change to
+      the shared screens Android also uses): a centered `Box` + `Surface(Modifier.widthIn(max =
+      480.dp))` around `RoleRouter()`, phone-width column centered on the page instead of
+      stretched. Re-verified live in the browser after the fix.
+- [x] **Real end-to-end login attempted and diagnosed — done 2026-09-13.** The user's own first
+      login attempt (real account, real password) failed with `auth/invalid-email` — a
+      syntactically valid email Firebase's own client-side check should never reject. **Root
+      cause found and reproduced independently** (typed a fresh test email, pressed physical Tab,
+      watched the second field's keystrokes land back in the *email* field instead —
+      `"test@example.com testpass1"` in one field, confirmed via screenshot, not inferred):
+      **Compose Multiplatform's `js` (canvas) target does not route physical Tab or Enter key
+      presses into Compose's key-event/IME-action system at all.** Tried two app-level
+      mitigations — an explicit `onPreviewKeyEvent` Tab intercept, and
+      `KeyboardActions(onDone = ...)` on Enter — **neither fired**, confirming this is a
+      framework-level gap on this specific target (matches a known class of upstream
+      Compose-for-Web `js`-target hardware-keyboard issues), not something patchable from app
+      code. Removed the non-functional `onPreviewKeyEvent` handler (confirmed dead code, not left
+      in speculatively); kept `keyboardOptions`/`keyboardActions` (`ImeAction.Next`/`Done`) since
+      mobile soft-keyboard "next"/"done" buttons may route through a different, untested-but-
+      plausible working path.
+      **The actual, confirmed-working mitigation: click each field instead of tabbing between
+      them.** Verified for real: filling both fields by clicking (no Tab) and submitting by
+      clicking "Entrar" (Enter doesn't submit either, same root cause) produced a real
+      `auth/invalid-credential` response for a fake test account — the *correct* rejection for a
+      syntactically-valid-but-nonexistent login, proving the email reaches Firebase intact and
+      the entire pipeline (App Check token, real Firebase config, GitLive
+      `signInWithEmailAndPassword`) works end to end when driven by clicks. **Known real
+      limitation for the viability test itself**: desktop users who Tab between fields out of
+      habit will silently corrupt their input — worth the trainer knowing about explicitly, not
+      something to discover mid-demo. Not scoped to fix further here (would mean pursuing
+      `wasmJs` for the UI layer specifically, reopening the GitLive-`js`-only constraint 19a
+      already weighed) — flagged as a known follow-up if the viability test itself goes well.
+
+**19g. Hosting: GitHub Pages**
+Suggested: sonnet · low — a new CI workflow plus repo settings, reuses the GitHub Actions setup
+§18k already built. **Not started.**
+- [x] **Decided 2026-09-12 (discussed with the user): GitHub Pages, not Firebase Hosting.**
+      ~100GB/month bandwidth + 1GB storage on a public repo, vs. Firebase Hosting's
+      360MB/day (~10.8GB/month) — meaningfully more headroom for the same zero cost, and reuses
+      the exact GitHub Actions infra §18k already stood up for iOS CI (new workflow file, not a
+      new signup). Trade-off accepted: pure static hosting, no server-side rewrites/functions —
+      irrelevant here, Compose Web builds to a static SPA.
+- [ ] New `.github/workflows/web-deploy.yml`: `ubuntu-latest` (no macOS needed), triggered on
+      push to `main` (or `feature/kmp-web` while this stays a separate front), running
+      `jsBrowserDistribution` then `actions/deploy-pages`.
+- [ ] **(manual)** Enable GitHub Pages in the repo's Settings → Pages, source "GitHub Actions."
+
+**19h. Testing**
+Suggested: sonnet · medium.
+- [ ] `WorkoutParserTest` (already dependency-free `commonTest`) runs against the `js` test
+      target via Kotlin/JS's Karma browser-based test runner.
+      **Blocked, found 2026-09-14 by actually running `:shared:jsTest`** (during `/fixproject`):
+      it fails at configuration with the exact §19f error — `kotlinNodeJsSetup`'s *test* path
+      registers `https://nodejs.org/dist` as a repository itself, which this repo's
+      `FAIL_ON_PROJECT_REPOS` rejects, and it does so regardless of the root
+      `NodeJsEnvSpec.download = false` that fixed the main compile path. Not a one-liner: needs
+      either the Node distribution declared centrally in `settings.gradle.kts`'s
+      `dependencyResolutionManagement` (an `ivy` repo with Kotlin's expected layout) or the test
+      compilation's own env spec configured — decide which when this is picked up. Until then
+      `web-ci.yml` gates the js target on compile only, and says so in its header.
+- [x] The tests that *do* exist now actually run where CI looks: `/scanproject` 2026-09-14 found
+      that `verify` (what `android-ci.yml` calls) only ran `:app`'s placeholder
+      `ExampleUnitTest` — `WorkoutParserTest` lives in `shared/commonTest` and ran only via
+      `:shared:testAndroidHostTest`, which nothing in CI invoked. `verify` now depends on it;
+      proven by forcing a rerun: 15 tests, 0 failures, in the JUnit XML report.
+
+**19i. Registration/cutover**
+Suggested: haiku · low. **Not started.**
+- [ ] Update `CLAUDE.md` to describe the `js`/web target and its deliberate divergences from
+      Android/iOS (19c's direct-Firestore read, no SQLDelight; `SettingsStore`'s localStorage
+      backing; no Crashlytics yet).
+- [ ] Once 19a–19h are green, the actual viability check this section exists for: have the
+      trainer use the deployed web build with a real/test student account and report back.
+
+---
+
+## 20. Feature — Adaptive "real website" shell: sidebar navigation + list-detail on wide screens
+(2026-09-13, via `/newgoal`)
+
+**What this section is and isn't.** The request was "converter o sistema para aceitar um site e
+um app; tornar o app com cara de site". The first half — one system serving both a native app and
+a website off the same codebase and the same Firestore backend — **is already done by §19** (web
+target builds, deploys as a static bundle, real login confirmed end to end on 2026-09-13). This
+section is only the second half: the web build currently looks like *a phone app centered in a
+browser window* (§19f deliberately clamped it to a 480dp column as a viability-test shortcut).
+The ask is to make it read as **a real responsive website/dashboard** instead.
+
+**Scope confirmed with the user 2026-09-13**: structural redesign, not a styling pass. That
+means the navigation model itself changes on wide screens — persistent sidebar instead of a
+bottom bar, students list and the selected student's details side by side instead of a push/pop
+stack — the shape a real trainer-facing web dashboard (Trainerize/TrueCoach's web app) has.
+
+**"Responsivo" here means phone *and* computer, both first-class** (clarified by the user in the
+same exchange). The desktop dashboard is the visible half of the work, but the phone-browser half
+is the one with more users behind it — the trainer's students will open a link on a phone. It is
+also the half that is easiest to *assume* is already handled, because the phone layout reuses the
+same composables the Android app already ships; what differs is the runtime underneath them
+(canvas rendering, the browser's own soft keyboard, touch scrolling, a viewport that moves when
+browser chrome collapses). 20f exists specifically so that half gets proven, not presumed.
+
+**Key decision: this is adaptive shared code, not a web-only fork.** `RoleRouter.kt`,
+`AppNavigation.kt` and `MainScreen.kt` all live in `commonMain` and are used by Android *and*
+web. Driving the new layout off available width (not off `currentPlatform()`) means phones keep
+exactly today's bottom-nav single-column UI, while *any* wide viewport gets the dashboard — web
+desktop today, Android tablets/foldables for free. It also avoids a second, divergent copy of
+the trainer UI, which is the failure mode this whole KMP migration exists to prevent.
+
+```mermaid
+flowchart TD
+    A[20a. Design: viewport classes,\nadaptive-library decision] --> B[20b. Responsive shell:\nsidebar vs bottom bar]
+    A --> C[20c. Remove 19f's 480dp\nweb-only clamp]
+    C --> B
+    B --> D[20d. Students list-detail\ntwo-pane on wide]
+    D --> E[20e. Desktop affordances:\nhover, dialogs, content width]
+    B --> M[20f. Phone browser:\nkeyboard, touch, viewport]
+    E --> F[20g. Tests + verification\nat all three viewports]
+    M --> F
+    F --> G[20h. Registration:\nCLAUDE.md, screenshots]
+```
+
+Suggested: sonnet · high — spans the whole trainer UI surface and changes navigation structure,
+but every decision below is already researched and the screens themselves are small.
+
+**20a. Design rationale and open decisions**
+- [x] **Breakpoint: 840dp — and the site has to be genuinely responsive on both sides of it**
+      (confirmed with the user 2026-09-13: phone *and* computer, not desktop-first with the phone
+      as an afterthought). Material 3's window size classes (Compact <600dp, Medium 600–840dp,
+      Expanded ≥840dp) are the standard thresholds; ≥840dp is where Google's own guidance puts
+      permanent navigation + multi-pane. One threshold, not three, mapping to:
+      - **Phone browser (~360–430dp)** → compact layout. Same composables the Android app uses on
+        a phone, but a *different runtime* (canvas rendering, browser soft keyboard, touch) —
+        which is why it gets its own verification pass in 20f rather than being assumed covered.
+      - **Tablet / narrow desktop window (600–840dp)** → also compact, deliberately. A portrait
+        tablet gets the phone layout; that is a choice, not an oversight, and it keeps this
+        section at two layouts instead of three.
+      - **Desktop (≥840dp)** → the dashboard: sidebar + list-detail.
+- [x] **Use `BoxWithConstraints`, not the Material3 adaptive libraries — for now.** Verified
+      against the real published metadata rather than assumed (the same check that caught three
+      js-variant gaps in §19b/§19e):
+      - `org.jetbrains.compose.material3.adaptive:adaptive` / `:adaptive-layout` — newest stable
+        **1.2.0**, and it *does* publish a `js` variant. `ListDetailPaneScaffold` is genuinely
+        available to this project.
+      - `org.jetbrains.compose.material3:material3-adaptive-navigation-suite` (the artifact that
+        provides `NavigationSuiteScaffold`, i.e. automatic bottom-bar ↔ rail ↔ drawer switching)
+        — newest **stable** is **1.9.0** (js variant confirmed); the 1.10/1.11 lines are
+        alpha-only. This project pins Compose Multiplatform **1.11.0**, so adopting it means a
+        real version skew between a 1.9.0 Material3 component artifact and a 1.11.0 Compose
+        runtime.
+      Decision: `BoxWithConstraints` (already in the Compose UI artifact this project depends on,
+      zero new dependencies, guaranteed on every target) is enough for one breakpoint, three nav
+      destinations and one two-pane split — and it sidesteps both the version skew and the fact
+      that `ListDetailPaneScaffold` wants to own navigation state that today lives in the outer
+      `NavHost` (a disproportionate integration for a two-pane case). The verified coordinates
+      above are recorded so a future pass can adopt the libraries without re-researching, once
+      navigation-suite has a stable release on the 1.11+ line.
+- [x] **Sidebar carries three destinations, not two.** Today's bottom bar has two tabs (Alunos,
+      Agenda) and Settings is reached from the app bar's overflow. Two items is thin for a
+      sidebar; Configurações joins them as a third destination on wide layouts. The compact
+      layout keeps today's two-tab bottom bar + app-bar Settings unchanged.
+- [ ] **Open (decide during 20e, not now): do short forms become dialogs on wide screens?**
+      `AddStudentScreen`/`EditStudentScreen` are full-screen pushes today. On a dashboard they'd
+      read better as modal dialogs over the list. This is the single most invasive remaining
+      idea, so it is deliberately last and separable — the section is valuable without it.
+
+**20b. Responsive shell: sidebar on wide, bottom bar on compact**
+- [x] `MainScreen.kt` wraps its content in `BoxWithConstraints` and branches on
+      `maxWidth >= 840.dp` (`ExpandedWidth`). Compact branch (`CompactMainLayout`) is today's
+      `Scaffold` + `NavigationBar`, unchanged; expanded branch (`ExpandedMainLayout`) is a `Row`
+      with a 240dp `NavigationRail` + content pane. Destination list extracted to a single
+      `MainDestinations` list so both branches render the same set from one source, and the
+      duplicated `navigate {}` block collapsed into `navigateToMainDestination`.
+      Compiles green (`:shared:compileKotlinJs`, `:shared:testAndroidHostTest`, `:app:verify`).
+      Live render across the breakpoint verified in 20g.
+- [x] The existing inner `NavHost` inside `MainScreen` keeps owning destination state for both
+      branches — one `rememberNavController` above the branch, both layouts read the same
+      `currentRoute` and call the same navigate helper, so a resize can't reset the selection.
+- [x] A persistent top bar on the expanded branch (app title + logout). Settings moves into the
+      rail as a third item on this branch (it pushes an outer route, so it is rendered as a rail
+      *action* and never shows as selected — noted in the code, since a reader would otherwise
+      expect selection state).
+
+**20c. Remove §19f's web-only 480dp clamp**
+- [x] Done, landed in the same pass as 20b as the ordering note required. `main.kt` is now a
+      plain full-width `Surface { RoleRouter() }`; the centered-480dp `Box`/`widthIn` wrapper and
+      its now-unused imports are gone. Width is a layout concern inside `MainScreen` (shared with
+      Android) instead of a web-only override.
+      <!-- original item kept below for the reasoning, which still explains why this had to go -->
+- [x] `main.kt`'s `Box`/`Surface(Modifier.widthIn(max = 480.dp))` wrapper (added in §19f to stop
+      the phone-shaped UI stretching edge to edge) must go — it would cap the viewport at 480dp
+      and prevent the ≥840dp branch from *ever* engaging on web. Replace it with a plain
+      full-width `Surface`; readability at ultra-wide is handled inside the content pane (20e),
+      not by clamping the whole app. Done when: the web build reports a `maxWidth` above 840dp in
+      `BoxWithConstraints` on a maximized desktop browser — i.e. the sidebar actually appears.
+      **Ordering note: this must land together with 20b, not before it** — on its own it just
+      restores the edge-to-edge stretch §19f fixed.
+
+**20d. Students list-detail two-pane**
+- [x] Implemented. The expanded branch renders `Row { StudentsScreen(360dp, singleColumn) |
+      VerticalDivider | detail-or-empty }`. Selection is `rememberSaveable` state in `MainScreen`
+      (survives switching to Agenda and back, and a resize), and the selected row is outlined via
+      a new `selected` param on `StudentCard`.
+      **Wiring decision worth recording**: `StudentDetailsScreen` needs six navigation callbacks,
+      so rather than thread all six through `MainScreen` → `StudentsScreen`, the details UI is
+      passed down as a single slot lambda (`studentDetailPane`) built in `AppNavigation.kt`,
+      where those callbacks already live. One new parameter instead of six, and navigation
+      concerns stay in the navigation file.
+      Live click-through verified in 20g.
+- [x] Empty state for the right pane when no student is selected ("Selecione um aluno").
+- [x] Deeper pushes stay pushes: `WorkoutBuilder`, `ManualWorkout`, `EditWorkout`, `AIWorkout`,
+      `PromptFicha` continue to use the outer `NavHost` on both layouts. Scoping the two-pane
+      change to exactly the list↔details step keeps this section bounded — three-level pane
+      nesting is what `ListDetailPaneScaffold` exists for, and 20a deliberately deferred it.
+
+**20e. Desktop affordances**
+- [x] **`LoginScreen` caps its own width (480dp) — a gap this plan missed, found by looking at
+      the render.** 20c removed the app-wide clamp on the assumption that "width is handled
+      inside the layout", but `LoginScreen` is a `RoleRouter` sibling of `MainScreen`, not inside
+      it — so the login form immediately went edge-to-edge across a 1440px window, exactly the
+      ugliness §19f had fixed. Capped in the screen itself; on a phone the cap never binds, so
+      Android is untouched. Verified in the browser at desktop width.
+- [ ] Content max-width inside the detail pane (~900dp) so text and forms don't run the full
+      width of an ultra-wide monitor. Done when: at 2560px the detail pane's content stays
+      readable rather than spanning the window.
+- [x] `Modifier.pointerHoverIcon(PointerIcon.Hand)` on `StudentCard` — the clickable element the
+      trainer hits most on the dashboard. Deliberately not sprayed across every button in the app
+      in this pass: Material 3's own buttons already read as interactive, and a blanket change
+      would touch every screen for little gain. Revisit if the trainer reports specific spots
+      that don't feel clickable.
+- [ ] Revisit 20a's open dialog-vs-push question for `AddStudent`/`EditStudent` with the new
+      layout actually on screen, and either implement it or record the decision not to.
+
+**20f. The site on a phone browser — the other half of "responsivo"**
+Not the same runtime as the Android app on the same phone: Compose renders to a `<canvas>`, input
+goes through the browser's own soft keyboard and touch events, and the viewport moves as browser
+chrome collapses. A desktop window narrowed below 840dp exercises the *layout* branch but proves
+nothing about any of that, so this gets its own verification pass. **Likely the highest-traffic
+path of all** — the trainer's students will open a link on their phone, not on a computer.
+- [ ] **Soft keyboard on a real phone browser — verify before building anything else in 20f.**
+      Two upstream Compose-for-Web bugs covered exactly this (`JetBrains/compose-multiplatform`
+      **#4836** "TextField not opening keyboard in mobile browser", **#3943** "software keyboard
+      is not shown again if focus not changing"); both are **closed/fixed** (confirmed via the
+      GitHub API, last updated Dec 2024) and this project is far past those versions on Compose
+      Multiplatform 1.11.0 — but §19 produced three separate `js`-target surprises that all
+      looked fine on paper, so this is checked, not assumed. Done when: tapping the e-mail field
+      on the deployed site in mobile Chrome *and* mobile Safari raises the keyboard and the typed
+      characters land in the right field. **If it fails, stop and re-plan** — an unusable login
+      on phones would undercut the whole point of the web target, and the fallback (Kotlin/Wasm
+      instead of Kotlin/JS) reopens §19a's GitLive-is-`js`-only constraint.
+- [ ] Touch scrolling and tap targets through the canvas: the students list scrolls with a finger
+      (momentum, no stuck/jumpy behavior), rows are comfortably tappable, and the page itself
+      doesn't double-scroll (canvas scroll fighting browser scroll). Done when: a full scroll
+      through a list longer than the screen behaves like a normal mobile page.
+- [ ] Viewport height with collapsing browser chrome: the layout doesn't leave a dead strip or
+      clip the bottom nav when the mobile address bar hides on scroll. Done when: the bottom bar
+      stays reachable at both address-bar states.
+- [ ] The 840dp breakpoint behaves on a real phone in **landscape** — many phones exceed 840dp
+      wide in landscape and would flip to the sidebar dashboard mid-session. Decide deliberately
+      whether that's wanted (it is defensible: a landscape phone genuinely has the width) or
+      whether the expanded branch should also require a minimum height; record the decision
+      either way rather than letting orientation decide it by accident.
+- [ ] **(manual)** All of the above needs a real phone pointed at the deployed URL (19g) — a
+      desktop browser's device-emulation mode does not reproduce the soft keyboard or real touch
+      behavior faithfully enough to close these items.
+
+**20g. Tests and verification**
+- [x] `./gradlew verify` (lint + unit tests) and `:shared:compileKotlinJs` stay green — run after
+      the 20b/20c/20d batch: `:shared:compileKotlinJs`, `:shared:testAndroidHostTest` and
+      `:app:verify` all BUILD SUCCESSFUL, with only a pre-existing unrelated deprecation warning
+      (`MenuAnchorType` in `Components.kt`). Re-run after any further 20e/20f work.
+- [ ] `TrainerGoldenPathTest.kt` (§9's Compose UI test, Android-instrumented) still passes — it
+      drives the trainer flow through the real screens, so a navigation restructure is exactly
+      what it exists to catch. **(manual)** if no emulator is available in the environment doing
+      the work; note the result rather than skipping silently.
+- [ ] Verified live on the web build at **three** viewports, with a screenshot of each, since
+      "responsivo" is the acceptance criterion and only a render proves it: a real phone browser
+      (20f), a narrow desktop window (<840dp — should be indistinguishable from the phone layout),
+      and maximized desktop (sidebar + two-pane). Use the production static bundle, not
+      `jsBrowserDevelopmentRun` — §19e recorded that the dev server's HMR is measurably less
+      reliable for this kind of check.
+      **Partially done 2026-09-13**: the *logged-out* screen is verified at both widths — at a
+      1024px/DPR-1.25 viewport (819dp, just under the breakpoint) the compact layout is correctly
+      active, and at 1500px (1200dp) the login form renders as a centered 480dp column instead of
+      spanning the monitor. **The logged-in dashboard (sidebar + two-pane) is not verified** and
+      cannot be from this side: `MainScreen` only renders for an authenticated TRAINER, and the
+      session doing the work has no account credentials. Needs the trainer to log in once at a
+      wide window and confirm.
+      Two dev-server gotchas worth knowing for whoever runs this next: viewport emulation leaves
+      the Compose canvas blank until a reload (it re-measures on load, not on resize), and DPR
+      matters — the 840dp breakpoint is ~1050 CSS px at DPR 1.25, not 840.
+- [ ] Confirm on a real Android phone that the **native app** didn't change (the compact branch is
+      supposed to be byte-for-byte today's behavior). **(manual)** — needs the physical device,
+      and is a separate check from 20f's phone-*browser* pass.
+
+**20h. Registration**
+- [ ] Update `CLAUDE.md`: the trainer UI now has two layouts driven by one 840dp breakpoint in
+      `MainScreen.kt`, the sidebar carries a third destination the bottom bar doesn't, and the
+      list-detail split replaces a push on wide screens. This is exactly the kind of
+      non-obvious-from-reading-one-file convention `CLAUDE.md` exists to hold.
+- [ ] Update §19f's own note in this file to point at §20 — its "responsive layout pass" item
+      recorded the 480dp clamp as the answer, and 20c supersedes it. Leave the history, add the
+      pointer.
+
+---
+
+## 21. Fix — Login reaches a frozen screen on the web build
+(2026-09-13, via `/newgoal`)
+
+**Symptom, reported by the user 2026-09-13:** "não consegui logar, deu tela travada" — logging in
+on the web build lands on a stuck screen. Nobody has yet seen §20's dashboard as a result, which
+is why §22 (the visual redesign they actually asked for) is blocked behind this section: you
+cannot judge, let alone iterate on, the appearance of a screen that never renders.
+
+**Timing makes §20 the prime suspect, not a coincidence.** Login worked end to end on this same
+build earlier the same day (§19e/§19f: a real account reached the trainer screens, and a fake one
+correctly returned `auth/invalid-credential`). The only thing that changed in between is §20's
+restructure of `MainScreen` — the screen that renders immediately after a TRAINER logs in.
+
+```mermaid
+flowchart TD
+    A[21a. Reproduce with the\nconsole open] --> B[21b. Root cause]
+    B --> C[21c. Fix]
+    C --> D[21d. Regression check:\nlogged in, both widths]
+```
+
+Suggested: sonnet · high — small surface, but it is a blocking regression and the first suspect
+below is subtle enough that "it looks fine" is not the same as "it is fixed".
+
+**21a. Reproduce and capture evidence — before changing any code**
+- [ ] **(manual)** Log in on the web build with the real trainer account, browser console open,
+      and capture: (1) whether the "Entrar" spinner ever stops, (2) any red console error
+      (especially a `FirebaseFirestoreException`/`PERMISSION_DENIED` or an uncaught coroutine
+      exception, both of which this project has already produced once — §19c), (3) whether the
+      window is above or below the 840dp breakpoint (~1050 CSS px at DPR 1.25, so a maximized
+      laptop is above it and a half-screen window may not be). Done when: those three facts are
+      written down. **Which of the suspects below applies depends entirely on this** — a stuck
+      spinner points at the data layer, a rendered-but-wrong screen points at layout.
+      Needs the account, so it cannot be done from the session doing the work.
+
+**21b. Root cause — two concrete candidates, found by reading the §20 diff**
+- [x] **Suspect 1 (strongest, confirmed present in the code): `Modifier.fillMaxSize()` on `Row`
+      children that should be `Modifier.weight(1f)`.** `MainScreen.kt:195` (the content pane next
+      to the 240dp `NavigationRail`) and `MainScreen.kt:207` (the detail pane next to the 360dp
+      list). Inside a `Row`, `fillMaxSize()` claims the *full* incoming width rather than what is
+      left after a fixed-width sibling — so the content pane is laid out 240dp (and the detail
+      pane 360dp) wider than the space available and is pushed off the right edge. The screen is
+      not frozen, it is drawn where nobody can see it. This alone plausibly produces exactly the
+      reported symptom on a wide window.
+      **Fixed 2026-09-13** — both children now use `weight(1f).fillMaxHeight()`. Compiles green
+      (`:shared:compileKotlinJs`, `:shared:testAndroidHostTest`, `:app:verify`).
+      **Whether this was *the* cause is still unconfirmed** — it is definitely a bug and is
+      definitely gone, but a wrongly-positioned pane and a never-resolving spinner look different
+      to a user, and 21a's evidence (which of the two it was) has not been captured yet. Do not
+      close §21 on this item alone.
+- [ ] **Suspect 2 (applies if 21a shows a spinner that never stops): an uncaught exception in a
+      `Flow` collected by the trainer screens.** §19c already produced this exact failure mode
+      once (`PERMISSION_DENIED` from a query missing its `trainerId` filter), and §19c's fix
+      covered five methods — `getStudents()` was already correct and was *not* among them, but
+      `FirestoreTrainerRepository.getStudents()` uses `combine(drafts, linked)`, which emits
+      nothing until *both* source flows have emitted at least once and propagates a failure from
+      either one. Verify both underlying queries actually emit for this account. Done when:
+      either ruled out by a clean console, or fixed and the list renders.
+- [ ] Record which suspect it actually was, and explicitly note the other as ruled out —
+      "fixed something and it started working" leaves the next person guessing which.
+
+**21c. Fix**
+- [ ] Apply the fix for whichever cause 21b confirms. For Suspect 1 that is `weight(1f)` (plus
+      `fillMaxHeight()` where the child should also stretch vertically) on both `Row` children.
+- [x] While in `MainScreen`: `StudentsScreen` carries its own `Scaffold` (it owns the FAB), so
+      the expanded layout currently nests a `Scaffold` inside the outer one, inside a `Row`.
+      **Checked and deliberately left alone**: the inner `Scaffold` only places the FAB at the
+      bottom-right *of the 360dp list pane*, which is where it belongs for a list pane, and it
+      is not implicated in the freeze. §22c removes the FAB outright, which dissolves the nesting
+      on its own — flattening it now would be churn that §22 immediately undoes.
+
+**21d. Regression check**
+- [x] `./gradlew verify`, `:shared:compileKotlinJs`, `:shared:testAndroidHostTest` green
+      (2026-09-13, after the `weight(1f)` fix).
+- [ ] **(manual)** Logged in, on the web build, at a window **above** 840dp: sidebar, students
+      list and detail pane all visible at once, "Selecione um aluno" before picking anyone.
+- [ ] **(manual)** Logged in, at a window **below** 840dp: bottom bar, single column, identical
+      to the Android app — the compact branch is supposed to be untouched by §20.
+- [ ] **(manual)** The Android app still logs in and navigates normally — `MainScreen` is shared
+      code, so a fix here lands on the phone too.
+
+---
+
+## 22. Feature — Visual identity: stop looking like an Android app
+(2026-09-13, via `/newgoal`)
+
+**The request:** after §20 changed the *structure* (sidebar, two panes), the user's verdict was
+still "o visual ainda parece com de um app". That is a different axis from §20 and the reason
+§20 alone was never going to satisfy it: §20 moved boxes around, but every box is still drawn in
+stock Material 3 — baseline purple, heavily rounded corners, elevation on everything, a circular
+floating action button, a card grid with lots of air. Those are Android-app signals regardless of
+where the panes sit.
+
+**Direction, confirmed with the user 2026-09-13** (they picked all three offered axes):
+1. **Theme** — colours, fonts, corner radii, shadows: stop reading as Material baseline.
+2. **Components and density** — cards/FAB/whitespace → denser rows, ordinary buttons, more
+   information per screen, the way a web dashboard presents a list.
+3. **Site chrome** — a real header with brand identity, and a footer. The app currently opens
+   straight into content, the way an app does.
+
+**Blocked on §21.** Not a soft ordering preference: the screens being restyled are the ones
+nobody can currently reach, and "does this still look like an app?" is a judgement that requires
+looking at it.
+
+```mermaid
+flowchart TD
+    Z[§21 login fix] --> A[22a. Design decisions:\npalette, shape, density, fonts]
+    A --> B[22b. Theme tokens:\ncolour, shape, elevation]
+    B --> C[22c. Components:\nrows over cards, no FAB]
+    B --> D[22d. Site chrome:\nheader + footer]
+    C --> E[22e. Verification\nat all viewports]
+    D --> E
+    E --> F[22f. Registration]
+```
+
+Suggested: sonnet · high — broad surface (touches most screens) and the acceptance criterion is
+subjective, which means more iteration passes than a typical feature.
+
+**22a. Design decisions**
+- [x] **Typography is the one axis with a hard technical blocker, and it is worth knowing before
+      anyone promises a font change.** Compose for Web does *not* use the browser's or system's
+      fonts — Skiko renders text itself, so a custom typeface has to be bundled as font *bytes*
+      through Compose Resources (`commonMain/composeResources/font/...`). This project
+      **deliberately excludes `compose.components.resources`**, documented in
+      `shared/build.gradle.kts`: its resource-ID codegen embeds the project's own folder path,
+      which contains a space (`Personal APP`), and DEX rejects space characters in class names —
+      the *same* root cause that broke `kotlinNpmInstall` in §19f. So a custom font requires
+      first resolving that: rename the project directory (fixes the root cause once and unblocks
+      Compose Resources generally) or keep the built-in typeface and get the "not an app" effect
+      from weight/size/letter-spacing/colour instead.
+- [ ] **Decide (needs the user): rename the project folder, or no custom font for now?** Renaming
+      touches `local.properties`, the keystore path in `app/build.gradle.kts`, and every absolute
+      path baked into this machine's setup — cheap in principle, annoying in practice, and
+      entirely the user's call. Default if they don't care either way: **no custom font**, do the
+      other three axes first, and revisit — a custom palette plus tighter density already moves
+      the needle far more than a typeface does.
+- [ ] Pick the actual palette and shape scale before writing any of it: a neutral, low-chroma
+      surface family with one accent (the current purple can stay as the accent if the trainer
+      likes it — the app-ness comes from purple-tinted *surfaces*, not from the accent), corner
+      radius dropped to roughly 4–8dp from Material's default, and elevation replaced by 1dp
+      borders on cards/panes. Done when: the values exist as named constants, not as magic
+      numbers sprinkled across screens.
+
+**22b. Theme tokens**
+- [ ] A real `AppTheme` composable (`ui/theme/`) wrapping `MaterialTheme` with an explicit
+      `lightColorScheme(...)` built from 22a's palette, a `Shapes` with the reduced radii, and
+      surface/elevation conventions. Replaces the bare `MaterialTheme { }` currently in
+      `main.kt` (web) and `MainActivity.kt` (Android) — one theme, both platforms.
+- [ ] Sweep the screens for hardcoded Material-default assumptions that will fight the new theme.
+      §5d already did one such pass ("hardcoded colors swept across every screen… replaced with
+      `MaterialTheme.colorScheme` tokens"), so this should be small — verify rather than assume.
+- [ ] Dark theme: explicitly **out of scope** for this pass unless the trainer asks. Recording it
+      so it is a decision, not an omission.
+
+**22c. Components and density**
+- [ ] `StudentsScreen`: the 2-column `LazyVerticalGrid` of 100dp `StudentCard`s becomes a dense
+      single-column list of rows (name, objective, status inline), which is also what the §20d
+      list pane wants at 360dp. Done when: the same screen shows meaningfully more students
+      without scrolling, at both viewports.
+- [ ] Replace the circular `FloatingActionButton` ("Cadastrar Aluno") with an ordinary labelled
+      button in the content header — the single most recognisable Android-app signal in the UI.
+- [ ] Tighten default paddings/spacing one step across the trainer screens (16dp → 8/12dp where
+      it does not hurt touch targets on the compact layout — phones still need 48dp targets, so
+      this is a *desktop-density* change gated the same way §20's layout is).
+- [ ] `StudentDetailsScreen` (274 lines) is the densest screen and the one the trainer will stare
+      at most: give it a heading + section structure rather than a stack of cards.
+
+**22d. Site chrome**
+- [ ] A brand header on the expanded layout: product name/logo treatment, not just the plain
+      `TopAppBar` title added in §20b. This is the "é um site" cue the user named directly.
+- [ ] A footer on the expanded layout (version, a "Personal Tracker" line, nothing heavy). Apps
+      do not have footers; sites do — which is exactly why it registers.
+- [ ] Both are expanded-layout only. On a phone browser a header/footer would just eat the
+      screen, and the compact layout is deliberately the app layout (§20a).
+
+**22e. Verification**
+- [ ] `./gradlew verify`, `:shared:compileKotlinJs`, `:shared:testAndroidHostTest` green after
+      each of 22b/22c/22d — this touches shared screens, so Android regressions are the risk.
+- [ ] **(manual)** Side-by-side screenshots, before and after, at desktop width — the acceptance
+      criterion here is a human verdict ("ainda parece app?"), so the check is the trainer
+      looking at it, not a passing test. Expect at least one iteration round.
+- [ ] **(manual)** Confirm on a real Android phone that the compact layout still looks right
+      with the new theme — the theme is shared, so this pass *does* change the native app's
+      appearance (unlike §20, which left it alone). If the trainer wants the phone app to keep
+      the current look, that is a real fork: stop and decide before going further.
+
+**22f. Registration**
+- [ ] `CLAUDE.md`: where the theme lives and that colours/shapes come from `AppTheme` rather than
+      Material defaults, so the next change does not reintroduce hardcoded values.
+- [ ] Record the typography decision from 22a (renamed folder + custom font, or built-in font)
+      next to the existing `compose.components.resources` note in `shared/build.gradle.kts` —
+      that comment is where a future reader will look.
+
+---
+
 ## Suggested build order (what blocks what) — revised 2026-08-18
 
 **Done** (§0, §1 CLAUDE.md, §2 git, §4a Firestore migration, §5d UI debt + AI button wiring, §7

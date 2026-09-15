@@ -125,5 +125,8 @@ dependencies {
 tasks.register("verify") {
     group = "verification"
     description = "Runs unit tests and lint together (excludes connectedAndroidTest, which needs a device/emulator)."
-    dependsOn("testDebugUnitTest", "lint")
+    // :shared:testAndroidHostTest is where the real unit tests live since §18b moved
+    // WorkoutParserTest to commonTest — without it, this task (and android-ci.yml, which calls
+    // it) only ran :app's placeholder ExampleUnitTest. Found by /scanproject 2026-09-14.
+    dependsOn("testDebugUnitTest", "lint", ":shared:testAndroidHostTest")
 }

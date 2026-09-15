@@ -24,6 +24,7 @@ ktor = "3.5.2"
 navigationComposeMultiplatform = "2.9.2"
 jetbrainsLifecycle = "2.11.0"
 kotlinxDatetime = "0.8.0"
+kotlinxBrowser = "0.5.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -54,10 +55,13 @@ gitlive-firebase-auth = { group = "dev.gitlive", name = "firebase-auth", version
 gitlive-firebase-firestore = { group = "dev.gitlive", name = "firebase-firestore", version.ref = "gitliveFirebase" }
 gitlive-firebase-crashlytics = { group = "dev.gitlive", name = "firebase-crashlytics", version.ref = "gitliveFirebase" }
 ktor-client-core = { group = "io.ktor", name = "ktor-client-core", version.ref = "ktor" }
-ktor-client-content-negotiation = { group = "io.ktor", name = "ktor-client-content-negotiation", version.ref = "ktor" }
-ktor-serialization-kotlinx-json = { group = "io.ktor", name = "ktor-serialization-kotlinx-json", version.ref = "ktor" }
 ktor-client-okhttp = { group = "io.ktor", name = "ktor-client-okhttp", version.ref = "ktor" }
 ktor-client-darwin = { group = "io.ktor", name = "ktor-client-darwin", version.ref = "ktor" }
+# GOALS.md §19b: the js target's Ktor HTTP engine (fetch/XHR-backed). Not content-negotiation/
+# serialization-kotlinx-json — neither publishes a `js` variant (only `wasmJs`), which is why
+# GenerativeAiService does its own kotlinx.serialization encode/decode instead of that plugin.
+ktor-client-js = { group = "io.ktor", name = "ktor-client-js", version.ref = "ktor" }
+kotlinx-browser = { group = "org.jetbrains.kotlinx", name = "kotlinx-browser", version.ref = "kotlinxBrowser" }
 koin-compose-viewmodel = { group = "io.insert-koin", name = "koin-compose-viewmodel", version.ref = "koin" }
 jetbrains-navigation-compose = { group = "org.jetbrains.androidx.navigation", name = "navigation-compose", version.ref = "navigationComposeMultiplatform" }
 jetbrains-lifecycle-viewmodel-compose = { group = "org.jetbrains.androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "jetbrainsLifecycle" }

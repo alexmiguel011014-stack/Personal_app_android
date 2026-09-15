@@ -2,6 +2,8 @@ package com.example.personalapp.ui.screen
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Lock
@@ -10,9 +12,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.autofill.ContentType
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.semantics.contentType
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import org.koin.compose.viewmodel.koinViewModel
@@ -31,6 +36,21 @@ fun LoginScreen(
     var password by remember { mutableStateOf("") }
     var selectedRole by remember { mutableStateOf("Personal") }
     var isRegisterMode by remember { mutableStateOf(false) }
+    // GOALS.md §19f: Compose Multiplatform's `js` target doesn't route physical Tab/Enter key
+    // presses into Compose's key-event system at all — confirmed live two ways: Tab left focus
+    // in the email field (the next keystrokes appended into it instead of reaching the password
+    // field, corrupting the value silently), and neither an explicit `onPreviewKeyEvent` Tab
+    // intercept nor `KeyboardActions(onDone)` on Enter fired either (removed the former, a
+    // confirmed no-op; kept `keyboardOptions`/`keyboardActions` below since mobile soft-keyboard
+    // "next"/"done" buttons may route through a different, working path — untested but plausible
+    // and harmless if not). This is a framework-level gap on this specific target, not fixable
+    // from app code — the actual, confirmed-working mitigation is simply clicking each field
+    // instead of tabbing between them (verified: manual clicks produce a clean, uncorrupted
+    // value all the way to a real `auth/invalid-credential` response, not `auth/invalid-email`).
+    val passwordFocusRequester = remember { FocusRequester() }
+    val submit = {
+        if (isRegisterMode) viewModel.register(email, password) else viewModel.login(email, password)
+    }
 
     val authState by viewModel.authState.collectAsState()
     val stayLoggedIn by viewModel.stayLoggedIn.collectAsState()
@@ -41,9 +61,15 @@ fun LoginScreen(
     val passwordResetState by viewModel.passwordResetState.collectAsState()
     val trainerRequestState by viewModel.trainerRequestState.collectAsState()
 
+    // GOALS.md §20e: LoginScreen sits outside MainScreen (RoleRouter picks between them), so
+    // removing §19f's app-wide 480dp clamp in 20c left this form spanning a whole desktop
+    // monitor — found by looking at the render, not predicted. A form caps its own width; on a
+    // phone the cap never binds, so Android is unaffected.
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
     Column(
         modifier = Modifier
-            .fillMaxSize()
+            .fillMaxHeight()
+            .widthIn(max = FormMaxWidth)
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
@@ -91,7 +117,9 @@ fun LoginScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .semantics { contentType = ContentType.EmailAddress },
-            leadingIcon = { Icon(Icons.Default.Email, contentDescription = null) }
+            leadingIcon = { Icon(Icons.Default.Email, contentDescription = null) },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+            keyboardActions = KeyboardActions(onNext = { passwordFocusRequester.requestFocus() })
         )
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -102,11 +130,14 @@ fun LoginScreen(
             label = { Text("Senha") },
             modifier = Modifier
                 .fillMaxWidth()
+                .focusRequester(passwordFocusRequester)
                 .semantics {
                     contentType = if (isRegisterMode) ContentType.NewPassword else ContentType.Password
                 },
             visualTransformation = PasswordVisualTransformation(),
-            leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) }
+            leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { submit() })
         )
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -124,9 +155,7 @@ fun LoginScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         Button(
-            onClick = {
-                if (isRegisterMode) viewModel.register(email, password) else viewModel.login(email, password)
-            },
+            onClick = { submit() },
             modifier = Modifier.fillMaxWidth(),
             enabled = authState !is AuthState.Loading
         ) {
@@ -280,4 +309,7 @@ fun LoginScreen(
             )
         }
     }
+    }
 }
+
+private val FormMaxWidth = 480.dp

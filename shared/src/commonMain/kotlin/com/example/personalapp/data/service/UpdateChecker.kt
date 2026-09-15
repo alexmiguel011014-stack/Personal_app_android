@@ -3,13 +3,12 @@ package com.example.personalapp.data.service
 import com.example.personalapp.util.Platform
 import com.example.personalapp.util.currentPlatform
 import io.ktor.client.HttpClient
-import io.ktor.client.call.body
 import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.isSuccess
-import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
@@ -60,9 +59,12 @@ class UpdateChecker(
     private val currentVersionCode: Int,
     val currentVersionName: String,
 ) {
+    // GOALS.md §19b: no ContentNegotiation plugin — see GenerativeAiService for why (no `js`
+    // target variant for that artifact), same manual-decode fix applies here.
+    private val json = Json { ignoreUnknownKeys = true }
+
     private val httpClient = HttpClient {
         expectSuccess = false
-        install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
         install(HttpTimeout) {
             requestTimeoutMillis = 10_000
             connectTimeoutMillis = 10_000
@@ -76,7 +78,7 @@ class UpdateChecker(
             if (!response.status.isSuccess()) {
                 return UpdateStatus.CheckFailed("HTTP ${response.status.value}")
             }
-            response.body<UpdateManifest>()
+            json.decodeFromString<UpdateManifest>(response.bodyAsText())
         } catch (e: Exception) {
             return UpdateStatus.CheckFailed(e.message ?: "Falha ao verificar atualização")
         }
@@ -104,6 +106,10 @@ class UpdateChecker(
                     }
                 }
             }
+            // GOALS.md §19: a web build has no separate install to go stale — reloading the page
+            // always serves whatever GitHub Pages last deployed, so there is no "please update"
+            // state to surface.
+            Platform.WEB -> UpdateStatus.UpToDate
         }
     }
 }

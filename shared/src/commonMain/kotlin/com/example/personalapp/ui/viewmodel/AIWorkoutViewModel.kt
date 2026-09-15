@@ -9,9 +9,8 @@ import com.example.personalapp.data.model.Exercise
 import com.example.personalapp.data.repository.TrainerRepository
 import com.example.personalapp.data.service.AiProvider
 import com.example.personalapp.data.service.GenerativeAiService
+import com.example.personalapp.util.CrashReporter
 import com.example.personalapp.util.currentTimeMillis
-import dev.gitlive.firebase.Firebase
-import dev.gitlive.firebase.crashlytics.crashlytics
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -65,11 +64,11 @@ class AIWorkoutViewModel(
                         suggestedWorkouts = suggestedWorkouts
                     )
                 } else {
-                    Firebase.crashlytics.log("AIWorkoutViewModel: unparsed AI response: $aiRawResponse")
+                    CrashReporter.log("AIWorkoutViewModel: unparsed AI response: $aiRawResponse")
                     _messages.value = _messages.value + ChatMessage(aiRawResponse, false)
                 }
             } catch (e: Exception) {
-                Firebase.crashlytics.recordException(e)
+                CrashReporter.recordException(e)
                 _messages.value = _messages.value + ChatMessage("Erro técnico: ${e.message ?: "Falha na comunicação com a IA"}", false)
             } finally {
                 _isGenerating.value = false

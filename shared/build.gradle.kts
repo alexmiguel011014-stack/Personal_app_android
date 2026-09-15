@@ -52,6 +52,28 @@ kotlin {
     iosArm64()
     iosSimulatorArm64()
 
+    // GOALS.md §19a/§19b: the web target. Plain `js`, not `wasmJs` — GitLive's Firebase SDK
+    // (§18f, the app's Auth/Firestore layer) only publishes a `js` variant, and Compose
+    // Multiplatform's `js`/canvas renderer no longer needs the old
+    // `org.jetbrains.compose.experimental.jscanvas.enabled` flag, confirming it's a first-class
+    // target, not an experimental fallback. `wasmJs` is documented as a later migration (§19a),
+    // not built now.
+    js {
+        // GOALS.md §19f: the root project name ("Personal APP") has a space, which is invalid
+        // in an npm package name — Kotlin/JS derives one from the Gradle project name/path by
+        // default ("Personal APP-shared"), and `kotlinNpmInstall` rejects it
+        // (`EINVALIDPACKAGENAME`, confirmed via a real failed build, not guessed). This is the
+        // exact same root cause `compose.components.resources` was already left out for
+        // (`shared/build.gradle.kts`'s existing comment on the Android dex step) — `moduleName`
+        // overrides it for this target specifically, without renaming the whole Gradle project.
+        outputModuleName.set("personal-app-shared")
+        browser()
+        // Needed once a real `main()` entry point exists (this module now has one,
+        // shared/src/jsMain/kotlin/.../main.kt) — without this, the js target only produces a
+        // library klib, no runnable browser distribution/task.
+        binaries.executable()
+    }
+
     // GOALS.md §18f: the framework{} block here (baseName/isStatic) replaces the old manual
     // `iosTarget.binaries.framework {}` loop — the cocoapods plugin owns framework config once
     // it's applied, since it also has to inject each pod's headers/link flags into the same
@@ -82,27 +104,28 @@ kotlin {
             implementation(libs.kotlinx.datetime)
             implementation(libs.sqldelight.runtime)
             implementation(libs.sqldelight.coroutines.extensions)
-            // api, not implementation: :app's AppModule.kt (Koin) references DataStore<Preferences>
-            // directly (single { createDataStore(androidContext()) }), so these types must be
-            // visible on :app's compile classpath, not just :shared's internal one.
-            api(libs.androidx.datastore.core)
-            api(libs.androidx.datastore.preferences.core)
+            // androidx.datastore moved out of commonMain (GOALS.md §19b) — datastore-core/
+            // datastore-preferences-core publish no `js` target variant (only `wasmJs`), so
+            // declaring them here (even as api) would break dependency resolution for the web
+            // target. SettingsStore's expect/actual (data/local/SettingsStore.kt) is the
+            // abstraction commonMain depends on instead; only the android/iOS actuals still
+            // reference androidx.datastore types directly.
             // GitLive Kotlin Firebase SDK (GOALS.md §18f) — Google ships no official Firebase KMP
             // SDK, this is the established community alternative. :app's AppModule.kt/AdminViewModel
             // reference FirebaseAuth/FirebaseFirestore directly, hence api not implementation.
             api(libs.gitlive.firebase.auth)
             api(libs.gitlive.firebase.firestore)
-            // implementation, not api: only used internally by TrainerRepository's snapshot
-            // listener error handling, nothing in :app references this type directly. GitLive
-            // ships real Crashlytics coverage (recordException et al) — resolves part of GOALS.md
-            // §18g's "no multiplatform Crashlytics exists yet" note, which predates this SDK
-            // version; re-verify the rest of §18g against this when that item comes up.
-            implementation(libs.gitlive.firebase.crashlytics)
+            // dev.gitlive:firebase-crashlytics moved out of commonMain (GOALS.md §19b) — it
+            // publishes no `js` variant (confirmed via a real dependency-resolution failure,
+            // unlike firebase-auth/firebase-firestore above, which do). util/CrashReporter.kt's
+            // expect/actual is what commonMain calls instead; only the android/iOS actuals still
+            // depend on this artifact directly.
             // Ktor Client (GOALS.md §18f) — replaces GenerativeAiService's HttpURLConnection
-            // calls (JVM/Android-only) for the OpenAI/DeepSeek/Claude BYO-key providers.
+            // calls (JVM/Android-only) for the OpenAI/DeepSeek/Claude BYO-key providers. No
+            // ContentNegotiation/serialization-kotlinx-json plugin (GOALS.md §19b) — neither
+            // publishes a `js` variant (only `wasmJs`); GenerativeAiService/UpdateChecker
+            // (de)serialize by hand with plain kotlinx.serialization instead.
             implementation(libs.ktor.client.core)
-            implementation(libs.ktor.client.content.negotiation)
-            implementation(libs.ktor.serialization.kotlinx.json)
             // GOALS.md §18h: screens/ViewModels move here from :app. api, not implementation —
             // :app's screen call sites (until they move too) and any future iOS app entry point
             // both need these visible, not just :shared's own internals.
@@ -130,7 +153,10 @@ kotlin {
         }
         androidMain.dependencies {
             implementation(libs.sqldelight.android.driver)
+            implementation(libs.androidx.datastore.core)
+            implementation(libs.androidx.datastore.preferences.core)
             implementation(libs.androidx.datastore.core.okio)
+            implementation(libs.gitlive.firebase.crashlytics)
             implementation(libs.ktor.client.okhttp)
             // Firebase AI Logic (GOALS.md §3) — Gemini calls, Android-only (see
             // AndroidGeminiProvider/GeminiProvider's doc). Replaces the deprecated
@@ -139,8 +165,18 @@ kotlin {
         }
         iosMain.dependencies {
             implementation(libs.sqldelight.native.driver)
+            implementation(libs.androidx.datastore.core)
+            implementation(libs.androidx.datastore.preferences.core)
             implementation(libs.androidx.datastore.core.okio)
+            implementation(libs.gitlive.firebase.crashlytics)
             implementation(libs.ktor.client.darwin)
+        }
+        jsMain.dependencies {
+            // GOALS.md §19b/§19d: web's HTTP engine (GenerativeAiService/UpdateChecker) and
+            // browser bindings (SettingsStore/PlatformActions' localStorage/window/navigator
+            // access) — see each file's doc for why datastore/content-negotiation aren't here.
+            implementation(libs.ktor.client.js)
+            implementation(libs.kotlinx.browser)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))

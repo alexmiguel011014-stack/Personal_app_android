@@ -2,12 +2,9 @@ package com.example.personalapp.data.service
 
 import com.example.personalapp.data.local.entity.UserEntity
 import com.example.personalapp.data.repository.SettingsRepository
-import dev.gitlive.firebase.Firebase
-import dev.gitlive.firebase.crashlytics.crashlytics
+import com.example.personalapp.util.CrashReporter
 import io.ktor.client.HttpClient
-import io.ktor.client.call.body
 import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -15,10 +12,11 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
-import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 enum class AiProvider { GEMINI, OPENAI, DEEPSEEK, CLAUDE }
@@ -33,9 +31,13 @@ class GenerativeAiService(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
+    // GOALS.md §19b: no ContentNegotiation plugin here — `ktor-client-content-negotiation`/
+    // `ktor-serialization-kotlinx-json` publish no `js` target variant (only `wasmJs`), which
+    // would break dependency resolution for the web target if used from commonMain. Request/
+    // response (de)serialization is done by hand below with the `json` instance instead, which
+    // needs nothing beyond `ktor-client-core` and works identically on every target.
     private val httpClient = HttpClient {
         expectSuccess = false
-        install(ContentNegotiation) { json(json) }
         install(HttpTimeout) {
             requestTimeoutMillis = 30_000
             connectTimeoutMillis = 30_000
@@ -126,15 +128,15 @@ class GenerativeAiService(
             val response = httpClient.post(url) {
                 contentType(ContentType.Application.Json)
                 header("Authorization", "Bearer $apiKey")
-                setBody(OpenAiChatRequest(model = model, messages = listOf(OpenAiMessage(role = "user", content = fullPrompt))))
+                setBody(json.encodeToString(OpenAiChatRequest(model = model, messages = listOf(OpenAiMessage(role = "user", content = fullPrompt)))))
             }
             if (!response.status.isSuccess()) {
                 return "Erro ao chamar a IA ($providerLabel ${response.status.value}): ${response.bodyAsText()}"
             }
-            val parsed = response.body<OpenAiChatResponse>()
+            val parsed = json.decodeFromString<OpenAiChatResponse>(response.bodyAsText())
             parsed.choices.firstOrNull()?.message?.content ?: "Erro: IA não retornou texto."
         } catch (e: Exception) {
-            Firebase.crashlytics.recordException(e)
+            CrashReporter.recordException(e)
             "Erro ao chamar a IA: ${e.message}"
         }
     }
@@ -152,20 +154,22 @@ class GenerativeAiService(
                 header("x-api-key", apiKey)
                 header("anthropic-version", ANTHROPIC_VERSION)
                 setBody(
-                    ClaudeMessageRequest(
-                        model = CLAUDE_MODEL_ID,
-                        maxTokens = CLAUDE_MAX_TOKENS,
-                        messages = listOf(ClaudeMessage(role = "user", content = fullPrompt)),
+                    json.encodeToString(
+                        ClaudeMessageRequest(
+                            model = CLAUDE_MODEL_ID,
+                            maxTokens = CLAUDE_MAX_TOKENS,
+                            messages = listOf(ClaudeMessage(role = "user", content = fullPrompt)),
+                        )
                     )
                 )
             }
             if (!response.status.isSuccess()) {
                 return "Erro ao chamar a IA (Claude ${response.status.value}): ${response.bodyAsText()}"
             }
-            val parsed = response.body<ClaudeResponse>()
+            val parsed = json.decodeFromString<ClaudeResponse>(response.bodyAsText())
             parsed.content.firstOrNull { it.type == "text" }?.text ?: "Erro: IA não retornou texto."
         } catch (e: Exception) {
-            Firebase.crashlytics.recordException(e)
+            CrashReporter.recordException(e)
             "Erro ao chamar a IA: ${e.message}"
         }
     }

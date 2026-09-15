@@ -15,15 +15,25 @@ import androidx.compose.ui.unit.dp
 import org.koin.compose.viewmodel.koinViewModel
 import com.example.personalapp.ui.viewmodel.TrainerViewModel
 
+/**
+ * @param singleColumn GOALS.md §20d: the expanded layout renders this as a ~360dp list pane next
+ *   to the details, where the default two-column grid would be unreadably cramped.
+ * @param selectedStudentId highlights the row the detail pane is showing (expanded layout only;
+ *   null on compact, where selection is a push, not a persistent state).
+ */
 @Composable
 fun StudentsScreen(
     onStudentSelected: (String) -> Unit,
     onNavigateToAddStudent: () -> Unit,
+    modifier: Modifier = Modifier,
+    singleColumn: Boolean = false,
+    selectedStudentId: String? = null,
     viewModel: TrainerViewModel = koinViewModel()
 ) {
     val students by viewModel.students.collectAsState()
 
     Scaffold(
+        modifier = modifier,
         floatingActionButton = {
             FloatingActionButton(onClick = onNavigateToAddStudent) {
                 Icon(Icons.Default.PersonAdd, contentDescription = "Cadastrar Aluno")
@@ -47,14 +57,15 @@ fun StudentsScreen(
                 }
             } else {
                 LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
+                    columns = GridCells.Fixed(if (singleColumn) 1 else 2),
                     contentPadding = PaddingValues(16.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(students) { student ->
                         StudentCard(
-                            student = student
+                            student = student,
+                            selected = student.id == selectedStudentId
                         ) { onStudentSelected(student.id) }
                     }
                 }

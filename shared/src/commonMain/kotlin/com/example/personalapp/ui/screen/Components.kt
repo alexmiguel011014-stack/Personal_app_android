@@ -1,5 +1,6 @@
 package com.example.personalapp.ui.screen
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -13,6 +14,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.personalapp.data.local.entity.BiometricEntity
@@ -144,7 +147,7 @@ fun ExerciseProgressionChart(workoutLogs: List<WorkoutLogEntity>, modifier: Modi
 }
 
 @Composable
-fun StudentCard(student: UserEntity, onClick: () -> Unit) {
+fun StudentCard(student: UserEntity, selected: Boolean = false, onClick: () -> Unit) {
     val isFeminino = student.gender == "Feminino"
     val backgroundColor = if (isFeminino) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.secondaryContainer
     val onBackgroundColor = if (isFeminino) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onSecondaryContainer
@@ -153,8 +156,13 @@ fun StudentCard(student: UserEntity, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .height(100.dp)
+            // GOALS.md §20e: pointer cursor on the web build — the cheapest single change that
+            // stops a canvas-rendered app feeling like a phone app pasted into a browser.
+            .pointerHoverIcon(PointerIcon.Hand)
             .clickable { onClick() },
-        colors = CardDefaults.cardColors(containerColor = backgroundColor)
+        colors = CardDefaults.cardColors(containerColor = backgroundColor),
+        // GOALS.md §20d: which row the detail pane is showing, on the expanded layout.
+        border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             // Marcador de Observação Médica

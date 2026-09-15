@@ -55,7 +55,31 @@ fun AppNavigation(onLogout: () -> Unit = {}) {
                 onNavigateToAddStudent = {
                     navController.navigate(Screen.AddStudent.route)
                 },
-                onLogout = onLogout
+                onLogout = onLogout,
+                // GOALS.md §20d: on wide screens MainScreen renders the details beside the list
+                // instead of pushing Screen.StudentDetails. The callbacks stay here, where the
+                // rest of the nav graph lives — deeper steps (ficha, edição) are still pushes.
+                studentDetailPane = { studentId ->
+                    StudentDetailsScreen(
+                        studentId = studentId,
+                        onBack = { },
+                        onNavigateToManual = { id ->
+                            navController.navigate(Screen.ManualWorkout.createRoute(id))
+                        },
+                        onNavigateToAI = { id ->
+                            navController.navigate(Screen.AIWorkout.createRoute(id))
+                        },
+                        onNavigateToPromptFicha = { id ->
+                            navController.navigate(Screen.PromptFicha.createRoute(id))
+                        },
+                        onNavigateToEdit = { id ->
+                            navController.navigate(Screen.EditStudent.createRoute(id))
+                        },
+                        onNavigateToWorkoutBuilder = { id ->
+                            navController.navigate(Screen.WorkoutBuilder.createRoute(id))
+                        }
+                    )
+                }
             )
         }
         composable(Screen.Settings.route) {

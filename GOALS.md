@@ -2601,21 +2601,39 @@ Suggested: sonnet · high — turned out to need real Gradle/tooling debugging, 
       — both **BUILD SUCCESSFUL** (the full production-optimized js executable compiles clean,
       not just the library klib) — this is real proof every file across 19b–19f's Kotlin code is
       correct, not just individually-compiling pieces.
-      **Not yet fully verified**: the actual browser-ready bundle (`jsBrowserProductionWebpack`,
-      the last packaging step after compilation) hit a **fourth, still-unresolved local-only
-      issue**: the task tries to invoke a Node.js binary from a path
-      (`~/.gradle/nodejs/node-v24.10.0-win-x64/node.exe`) that the `download = false` setting
-      above should have prevented it from expecting — some path inside Kotlin Gradle Plugin
-      2.3.20 resolves this independently of the setting that (correctly) stopped the actual
-      download step. Confirmed this is Windows/local-tooling-specific, not a code issue, by the
-      same standard §18a already established for iOS (this machine can't fully verify
-      Kotlin/Native locally either) — worked around locally for this session by manually placing
-      a copy of the system Node binary at the expected path (harmless, `~/.gradle/` is a
-      machine-local cache, not part of the repo). **The real, repo-visible fix is for 19g's CI**:
-      a clean `ubuntu-latest` runner won't carry this exact stale-path inconsistency, so treat CI
-      as the verification gate for the actual bundle output, same precedent as `ios-ci.yml`
-      (§18k) — don't block on reproducing this exact local workaround for every future
-      contributor's machine.
+      **Fourth build-tooling issue found, and fully fixed 2026-09-14 (corrects the
+      "Windows/local-only" call below — it wasn't).** `jsBrowserProductionWebpack` failed trying
+      to invoke a Node.js binary from `~/.gradle/nodejs/node-v24.10.0-.../node`, a path the
+      `download = false` root hook should have prevented it from expecting. **This session first
+      assumed it was Windows/local-tooling-specific** (§18a's iOS precedent, "a clean CI runner
+      won't carry it") — **wrong**: the identical failure reproduced on a real
+      `ubuntu-latest` GitHub Actions run (`~/.gradle/nodejs/node-v24.10.0-linux-x64/node`, same
+      error text), proving it deterministic, not platform noise.
+      **Real root cause, confirmed against Kotlin's own source** (not further guessing):
+      `download = false` alone doesn't stop `NodeJsPlugin` from *also* trying to register its own
+      project-level ivy repository for `nodejs.org/dist` — that's controlled by a *separate*
+      property, `downloadBaseUrl`, which stays non-null by default regardless of `download`.
+      `FAIL_ON_PROJECT_REPOS` was rejecting that redundant registration attempt every time,
+      independent of whether a matching repo already existed. Found by reading Kotlin's own
+      integration test fixture for this exact scenario
+      (`nodejs-setup-with-user-repositories`, `kotlin/kotlin@v2.3.20`), not trial and error.
+      **The real fix, two parts, both required**:
+      1. `settings.gradle.kts`: the `nodejs.org/dist` ivy repository declared centrally
+         (`dependencyResolutionManagement`), copied verbatim from Kotlin's own fixture.
+      2. `shared/build.gradle.kts` (**not** the root `build.gradle.kts` — confirmed by testing
+         both: the root-level hook alone left the failure unchanged):
+         `NodeJsEnvSpec.downloadBaseUrl.set(null as String?)`, which stops the plugin's own
+         redundant repo-registration attempt now that the central one satisfies it.
+      The old `download = false` root-level hook is removed (superseded, not layered underneath
+      — a stale disabled setting sitting next to the real fix would misdescribe what's actually
+      happening).
+      **Verified for real**: removed the local manual Node-binary placement from the earlier
+      session (so this run couldn't accidentally reuse it), then `:shared:kotlinNodeJsSetup`
+      downloaded a genuine fresh Node binary through the new repo, and
+      `:shared:jsBrowserDistribution` — the full production build, including the webpack step
+      that was failing — **BUILD SUCCESSFUL in 21m 54s**. `./gradlew verify` re-run clean
+      afterward (these are root/shared build-config files, so an Android regression was the real
+      risk, not assumed away).
 - [x] **Responsive layout pass — done 2026-09-13, judged against a real render, not guessed.**
       The user tested the live dev build in their own browser (desktop-width Brave window) and
       confirmed the phone-shaped screens (fillMaxWidth fields/buttons throughout) stretched

@@ -25,6 +25,15 @@ plugins {
     id("org.jetbrains.kotlin.native.cocoapods")
 }
 
+// GOALS.md §19f/§19g: the equivalent root build.gradle.kts hook alone didn't stop
+// :shared:jsBrowserProductionWebpack from hitting the same "repository added by unknown code"
+// failure — NodeJsPlugin's actual instance backing the js target's own tasks may be scoped to
+// this project, not the root one. Applied here too, matching Kotlin's own integration test
+// fixture, which configures this in the same build file as the js target itself.
+project.plugins.withType<org.jetbrains.kotlin.gradle.targets.js.nodejs.NodeJsPlugin> {
+    project.the<org.jetbrains.kotlin.gradle.targets.js.nodejs.NodeJsEnvSpec>().downloadBaseUrl.set(null as String?)
+}
+
 kotlin {
     compilerOptions {
         freeCompilerArgs.add("-Xexpect-actual-classes")

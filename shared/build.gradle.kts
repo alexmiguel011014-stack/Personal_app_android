@@ -69,6 +69,11 @@ kotlin {
             // :app's compile classpath too, not just :shared's own.
             api(libs.androidx.room3.runtime)
             implementation(libs.androidx.sqlite.bundled)
+            // GOALS.md §18e: DataStore Preferences KMP core (androidx.datastore 1.1.0+).
+            // `api`, same reason as room3-runtime above — :app's AppModule.kt (Koin) wires
+            // DataStore<Preferences> directly.
+            api(libs.androidx.datastore.core)
+            api(libs.androidx.datastore.preferences.core)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))

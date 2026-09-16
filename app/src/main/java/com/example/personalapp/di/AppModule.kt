@@ -1,6 +1,7 @@
 package com.example.personalapp.di
 
 import com.example.personalapp.data.local.AppDatabase
+import com.example.personalapp.data.local.createDataStore
 import com.example.personalapp.data.local.getDatabaseBuilder
 import com.example.personalapp.data.local.getRoomDatabase
 import com.example.personalapp.data.repository.AuthRepository
@@ -36,7 +37,8 @@ val appModule = module {
     single { get<AppDatabase>().appDao() }
 
     single { AuthRepository(get(), get()) }
-    single { SettingsRepository(androidContext()) }
+    single { createDataStore(androidContext()) }
+    single { SettingsRepository(get()) }
     single { TrainerRepository(get(), get(), get()) }
     single { StudentRepository(get(), get()) }
     single { GenerativeAiService(get(), androidContext()) }

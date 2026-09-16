@@ -1554,18 +1554,37 @@ flowchart TD
       before this pass (still needs a real device/emulator, still tracked as its own item in
       §18l, not silently dropped).
 
-**18e. Settings/preferences: DataStore → DataStore Multiplatform**
-- [x] DataStore Preferences (not DataStore Proto) has official multiplatform support already —
-      confirmed via current Android Developers KMP setup docs. `SettingsRepository`'s existing
-      `stringPreferencesKey`s (Gemini/OpenAI/DeepSeek/Claude API keys) move to `commonMain`
-      largely unchanged.
-- [ ] Platform split needed only for the DataStore file location: `expect`/`actual` for the
-      preferences file path (Android: existing `Context.dataStore` delegate; iOS: a path under
-      `NSDocumentDirectory`, mirroring 18d's DB path split). Done when: a saved API key
-      round-trips correctly on both platforms.
-- [ ] **Re-verify §8's backup-exclusion fix** (`data_extraction_rules.xml`/`backup_rules.xml`
-      excluding the DataStore file from Android auto-backup) still applies at the new file
-      location after the module restructure — don't silently lose that protection in the move.
+**18e. Settings/preferences: DataStore → DataStore Multiplatform — done 2026-09-16**
+- [x] DataStore Preferences (not DataStore Proto) has official multiplatform support since 1.1.0
+      (this project already pinned 1.2.1) — confirmed accurate against the current Android
+      Developers KMP setup guide (updated 2026-09-11). Unlike §18d's Room surprise, this premise
+      held: no artifact/package fork, same `androidx.datastore.*` names throughout.
+      `SettingsRepository` (all three `stringPreferencesKey`s — OpenAI/DeepSeek/Claude; Gemini has
+      no key, it's project-level per §3) moved to `:shared`'s `commonMain` whole, not just the
+      keys — its constructor now takes `DataStore<Preferences>` directly instead of `Context`,
+      so the class itself has zero platform dependency.
+- [x] Platform split implemented as a `createDataStore(...)` builder pair, same shape as §18d's
+      `getDatabaseBuilder`: `androidMain`'s `createDataStore(context)` uses `FileStorage` +
+      `PreferencesFileSerializer` (not `PreferencesSerializer` — that one implements
+      `OkioSerializer`, for `OkioStorage`; using it with `FileStorage` fails to compile with a
+      type mismatch, found via the compiler after the official guide's own Android snippet
+      turned out to use the wrong serializer name); `iosMain`'s parameterless `createDataStore()`
+      uses `OkioStorage` + `PreferencesSerializer` + `NSDocumentDirectory`, matching the guide
+      exactly. A common `createDataStore(storage)` in `DataStore.kt` finishes both via
+      `DataStoreFactory.create(storage = storage)`. Koin's `AppModule.kt`:
+      `single { createDataStore(androidContext()) }` → `single { SettingsRepository(get()) }`.
+      **Verified**: `./gradlew :shared:compileAndroidMain verify assembleDebug` all green.
+      **Not verified**: iOS compilation (needs `ios-ci.yml`, needs a push) and an actual saved-key
+      round-trip on a real device (no device in this environment) — same category of gap as
+      §18d, not a new one.
+- [x] **Re-verified**: `androidMain`'s `createDataStore(context)` resolves
+      `context.applicationContext.filesDir.resolve("datastore/settings.preferences_pb")` —
+      the exact same on-disk path Android's old `Context.preferencesDataStore(name = "settings")`
+      delegate always produced (confirmed against `backup_rules.xml`/`data_extraction_rules.xml`'s
+      own hardcoded `datastore/settings.preferences_pb` exclusion path, GOALS.md §8). Since the
+      path is identical, both XML files needed no edit — the exclusion still covers the right
+      file after the move, and an already-installed app's saved API keys stay at the path it
+      already wrote to.
 
 **18f. Backend access layer: Firebase via the GitLive Kotlin SDK**
 - [x] **Google ships no official Firebase KMP SDK** (confirmed current, mid-2026) — use the

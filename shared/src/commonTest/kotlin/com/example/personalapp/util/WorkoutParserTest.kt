@@ -1,8 +1,8 @@
 package com.example.personalapp.util
 
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Test
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 class WorkoutParserTest {
 
@@ -74,7 +74,7 @@ class WorkoutParserTest {
 
     @Test
     fun `parseExercises returns empty list for text with no exercise patterns`() {
-        assertEquals(emptyList<Any>(), WorkoutParser.parseExercises("Apenas um texto qualquer"))
+        assertEquals(emptyList(), WorkoutParser.parseExercises("Apenas um texto qualquer"))
     }
 
     @Test
@@ -127,6 +127,6 @@ class WorkoutParserTest {
     @Test
     fun `calculateEffectiveVolume returns an empty map when no exercise has annotations`() {
         val exercises = WorkoutParser.parseExercises("Supino 3x12\nAgachamento 4x10")
-        assertEquals(emptyMap<String, Double>(), WorkoutParser.calculateEffectiveVolume(exercises))
+        assertEquals(emptyMap(), WorkoutParser.calculateEffectiveVolume(exercises))
     }
 }

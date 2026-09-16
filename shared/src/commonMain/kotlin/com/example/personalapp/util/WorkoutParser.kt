@@ -21,7 +21,7 @@ object WorkoutParser {
     fun parseWorkoutName(text: String): String? {
         val lines = text.lines()
         val nameRegex = Regex("""(Ficha|Treino|Dia)\s+([A-Ga-g1-7])""", RegexOption.IGNORE_CASE)
-        
+
         for (line in lines) {
             val match = nameRegex.find(line)
             if (match != null) {

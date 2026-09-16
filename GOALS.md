@@ -218,10 +218,11 @@ depends on it.
       decision: keep both, link it — added a "Gerenciar" button next to `StudentDetailsScreen`'s
       "Fichas de Treino" header navigating to `Screen.WorkoutBuilder.createRoute(studentId)`.
       Verified via `./gradlew assembleDebug`.
-      - [ ] "Editar" (`WorkoutCard`'s edit icon inside `WorkoutBuilderScreen`) still has no
-        destination — no edit-existing-workout screen exists anywhere in the app. Out of scope for
-        this pass; build one later (reuse `ManualWorkoutScreen`'s exercise-list UI, prefilled,
-        calling `updateWorkout` instead of `insertWorkout`) or remove the dead icon — not decided.
+      - [x] **Done 2026-09-15**: "Editar" (`WorkoutCard`'s edit icon inside `WorkoutBuilderScreen`)
+        now navigates to `ManualWorkoutScreen` with an optional `workoutId` route param, which
+        prefills name/exercises from the existing entity and calls `updateWorkout` instead of
+        `insertWorkout` on save (preserves `isActive`/`status`/`assignedAt`/`createdAt`). Verified
+        via `./gradlew compileDebugKotlin verify` (all green).
 
 - [x] **AI ficha generation — ground it in the hypertrophy volume reference table (researched
       2026-08-17 via `/newgoal`, user supplied the actual PDF this session:
@@ -1445,12 +1446,24 @@ flowchart TD
         this project, iOS and Android both, unrelated to this migration) and the never-added
         `GOOGLE_SERVICES_JSON` repo secret. Both fixed; `main`'s own `android-ci.yml` is now
         confirmed green for the first time.
-- [ ] Move every file with zero Android-framework imports into `commonMain` first (data models —
-      `Exercise`, `PerformedSet`, `WorkoutEntity` fields, `WorkoutParser.kt`'s pure parsing logic,
-      `AIWorkoutResponse`/`AIWorkout`/`AIExercise` — these are the lowest-risk, highest-value
-      moves since they have no platform dependency today). Done when: `WorkoutParserTest` (already
-      dependency-free Kotlin) runs unmodified from `commonTest` on both the JVM (Android) test
-      target and `iosSimulatorArm64` test target.
+- [x] **Done 2026-09-15**: moved `Exercise`, `PerformedSet` (`data/model/`), `WorkoutParser`
+      (`util/`), and `AIWorkoutResponse`/`AIWorkout`/`AIExercise` (extracted from
+      `AIWorkoutViewModel.kt` into a new `AIWorkoutModels.kt`, same package — `ChatMessage` stayed
+      behind since it references `WorkoutEntity`, a Room entity not yet in `commonMain`) into
+      `:shared`'s `commonMain`, same package names throughout so every existing import in `:app`
+      resolves unchanged via the `implementation(project(":shared"))` dependency — zero import
+      changes needed anywhere else. Added `kotlin.serialization` plugin +
+      `kotlinx-serialization-json` to `shared/build.gradle.kts` (`Exercise`/`PerformedSet`/the new
+      AI models are all `@Serializable`). `WorkoutParserTest` moved to `commonTest`, converted
+      from JUnit4 (`org.junit.Assert`) to `kotlin.test` (JUnit4 doesn't run on Kotlin/Native) —
+      same 15 assertions, unchanged logic. **Verified**: `./gradlew :shared:testAndroidHostTest`
+      (all 15 cases pass on the JVM host) and `./gradlew verify assembleDebug` (app module still
+      green). **Not verified**: the `iosSimulatorArm64Test` run — this Windows machine can't
+      compile Kotlin/Native's Apple targets locally, and running `ios-ci.yml` needs a push, which
+      wasn't done in this pass (see the run's final report). Confirm this once pushed before
+      treating the iOS side of this item as more than "should work."
+      `WorkoutEntity` itself (Room entity, still Android-only) intentionally stays in `:app` —
+      moving it is §18d's job (Room → Room KMP), not this item's.
 
 **18c. Dependency injection: Hilt → Koin**
 - [x] **Hilt has no Kotlin Multiplatform support at all** (confirmed current, `REPERTOIRE.md`

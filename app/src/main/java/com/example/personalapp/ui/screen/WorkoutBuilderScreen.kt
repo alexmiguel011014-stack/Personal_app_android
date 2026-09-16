@@ -36,6 +36,7 @@ fun WorkoutBuilderScreen(
     onNavigateToManual: (String) -> Unit = {},
     onNavigateToAI: (String) -> Unit = {},
     onNavigateToPromptFicha: (String) -> Unit = {},
+    onEditWorkout: (String, String) -> Unit = { _, _ -> },
     viewModel: WorkoutViewModel = hiltViewModel(),
 ) {
     val workouts by viewModel.workouts.collectAsState()
@@ -118,6 +119,7 @@ fun WorkoutBuilderScreen(
                     items(workouts) { workout ->
                         WorkoutCard(
                             workout = workout,
+                            onEdit = { onEditWorkout(studentId, workout.id) },
                             onDelete = { viewModel.deleteWorkout(workout) }
                         ) { viewModel.toggleWorkoutStatus(workout) }
                     }
@@ -130,6 +132,7 @@ fun WorkoutBuilderScreen(
 @Composable
 fun WorkoutCard(
     workout: WorkoutEntity,
+    onEdit: () -> Unit,
     onDelete: () -> Unit,
     onToggleStatus: () -> Unit
 ) {
@@ -158,7 +161,7 @@ fun WorkoutCard(
             }
 
             Row {
-                IconButton(onClick = { /* Editar */ }) {
+                IconButton(onClick = onEdit) {
                     Icon(Icons.Default.Edit, contentDescription = "Editar", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 IconButton(onClick = onToggleStatus) {

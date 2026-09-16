@@ -41,4 +41,10 @@ class WorkoutViewModel @Inject constructor(
             repository.updateWorkout(workout.copy(isActive = !workout.isActive))
         }
     }
+
+    fun updateWorkout(workout: WorkoutEntity) {
+        viewModelScope.launch {
+            repository.updateWorkout(workout)
+        }
+    }
 }

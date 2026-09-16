@@ -21,8 +21,9 @@ sealed class Screen(val route: String) {
     object WorkoutBuilder : Screen("workout_builder/{studentId}") {
         fun createRoute(studentId: String) = "workout_builder/$studentId"
     }
-    object ManualWorkout : Screen("manual_workout/{studentId}") {
-        fun createRoute(studentId: String) = "manual_workout/$studentId"
+    object ManualWorkout : Screen("manual_workout/{studentId}?workoutId={workoutId}") {
+        fun createRoute(studentId: String, workoutId: String? = null) =
+            if (workoutId != null) "manual_workout/$studentId?workoutId=$workoutId" else "manual_workout/$studentId"
     }
     object AIWorkout : Screen("ai_workout/{studentId}") {
         fun createRoute(studentId: String) = "ai_workout/$studentId"
@@ -97,12 +98,17 @@ fun AppNavigation(onLogout: () -> Unit = {}) {
         }
         composable(
             route = Screen.ManualWorkout.route,
-            arguments = listOf(navArgument("studentId") { type = NavType.StringType })
+            arguments = listOf(
+                navArgument("studentId") { type = NavType.StringType },
+                navArgument("workoutId") { type = NavType.StringType; nullable = true; defaultValue = null }
+            )
         ) { backStackEntry ->
             val studentId = backStackEntry.arguments?.getString("studentId") ?: ""
+            val workoutId = backStackEntry.arguments?.getString("workoutId")
             ManualWorkoutScreen(
                 studentId = studentId,
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                workoutId = workoutId
             )
         }
         composable(
@@ -131,6 +137,9 @@ fun AppNavigation(onLogout: () -> Unit = {}) {
                 },
                 onNavigateToPromptFicha = { id ->
                     navController.navigate(Screen.PromptFicha.createRoute(id))
+                },
+                onEditWorkout = { sId, wId ->
+                    navController.navigate(Screen.ManualWorkout.createRoute(sId, wId))
                 }
             )
         }

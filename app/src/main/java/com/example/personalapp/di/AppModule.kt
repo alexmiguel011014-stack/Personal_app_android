@@ -1,6 +1,8 @@
 package com.example.personalapp.di
 
 import com.example.personalapp.data.local.AppDatabase
+import com.example.personalapp.data.local.getDatabaseBuilder
+import com.example.personalapp.data.local.getRoomDatabase
 import com.example.personalapp.data.repository.AuthRepository
 import com.example.personalapp.data.repository.SettingsRepository
 import com.example.personalapp.data.repository.StudentRepository
@@ -30,7 +32,7 @@ import org.koin.dsl.module
 val appModule = module {
     single<FirebaseAuth> { Firebase.auth }
     single<FirebaseFirestore> { Firebase.firestore }
-    single { AppDatabase.getDatabase(androidContext()) }
+    single { getRoomDatabase(getDatabaseBuilder(androidContext())) }
     single { get<AppDatabase>().appDao() }
 
     single { AuthRepository(get(), get()) }

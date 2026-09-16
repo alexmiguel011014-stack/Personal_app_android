@@ -1,6 +1,6 @@
 package com.example.personalapp.data.local.dao
 
-import androidx.room.*
+import androidx.room3.*
 import com.example.personalapp.data.local.entity.*
 import kotlinx.coroutines.flow.Flow
 

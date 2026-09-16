@@ -1,8 +1,7 @@
 package com.example.personalapp.data.local
 
-import androidx.room.Room
-import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
+import androidx.room3.Room
+import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import com.example.personalapp.data.local.dao.AppDao
 import com.example.personalapp.data.local.entity.BiometricEntity
 import com.example.personalapp.data.local.entity.ScheduleEntity
@@ -13,35 +12,38 @@ import com.example.personalapp.data.model.Exercise
 import com.example.personalapp.data.model.PerformedSet
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
-import org.junit.After
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Test
-import org.junit.runner.RunWith
+import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
- * Room CRUD + Flow-emission coverage for §9 of GOALS.md. Needs a device/emulator to run
- * (Room's in-memory database requires a real Android SQLite driver) — not runnable in this
- * sandboxed environment, which has no AVD/emulator set up.
+ * Room CRUD + Flow-emission coverage for §9/§18d/§18l of GOALS.md, via BundledSQLiteDriver's
+ * in-memory database. Lives in `iosTest` (not `commonTest`): the Android build variant of
+ * `androidx.sqlite:sqlite-bundled` ships no JVM-host native binary, so this fails with
+ * `UnsatisfiedLinkError: no sqliteJni in java.library.path` under `:shared:testAndroidHostTest`
+ * on a plain desktop JVM — a documented androidx.sqlite limitation, not a bug here. Runs for real
+ * on iosArm64Test/iosSimulatorArm64Test (via CI, this Windows machine can't run Kotlin/Native
+ * tests locally). The equivalent Android-device coverage (needs a real device/emulator, same
+ * limitation this test always had before this move) is tracked as its own §18l item, not
+ * re-added here.
  */
-@RunWith(AndroidJUnit4::class)
 class AppDaoTest {
 
     private lateinit var db: AppDatabase
     private lateinit var dao: AppDao
 
-    @Before
+    @BeforeTest
     fun createDb() {
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
-        db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
-            .allowMainThreadQueries()
+        db = Room.inMemoryDatabaseBuilder<AppDatabase>()
+            .setDriver(BundledSQLiteDriver())
             .build()
         dao = db.appDao()
     }
 
-    @After
+    @AfterTest
     fun closeDb() {
         db.close()
     }

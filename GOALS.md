@@ -1486,22 +1486,73 @@ flowchart TD
       into `commonMain` is now a mechanical follow-up once §18b actually relocates those classes,
       not a separate design problem — deliberately not done speculatively ahead of that move.
 
-**18d. Database: Room → Room Kotlin Multiplatform**
-- [x] **No SQLDelight migration needed** — Room 2.7+ added official KMP support, and Room 3.0
-      (March 2026) makes iOS/JS/WASM first-class targets, per current Android Developers docs.
-      This is the single biggest research-confirmed cost-saver in this whole plan: the existing
-      `AppDatabase`, all entities (`UserEntity`, `WorkoutEntity`, `WorkoutLogEntity`, etc.), and
-      every `AppDao` query move into `commonMain` largely unchanged.
-- [ ] The **only** required platform split is the database builder/file-path function (Android
-      and iOS locate the SQLite file differently) — write one `expect fun getDatabaseBuilder(): 
-      RoomDatabase.Builder<AppDatabase>` in `commonMain`, `actual` implementations in
-      `androidMain` (existing `Context`-based path) and `iosMain` (`NSDocumentDirectory`-based
-      path, per Room's own current KMP setup guide). Done when: a round-trip insert/read against
-      the same `AppDao` query compiles and runs on both `androidUnitTest` and a real
-      `iosSimulatorArm64` test target.
-- [ ] **Re-verify all existing Room migrations** (`MIGRATION_5_6`, the `linked` flag migration
-      6→7, `app/schemas/`) still apply cleanly once the database class lives in `commonMain` —
-      schema export path may need updating in `build.gradle.kts` for the new module location.
+**18d. Database: Room → Room Kotlin Multiplatform — done 2026-09-16**
+- [x] **No SQLDelight migration needed, but the original "largely unchanged" premise was
+      wrong — corrected during implementation.** Room's multiplatform support is not an
+      in-place mode of classic `androidx.room` 2.x; Room 3.0 (stable `3.0.3`, released
+      2026-09-09, confirmed live via developer.android.com) is a **full artifact/package fork**
+      to `androidx.room3` made specifically to be Kotlin-first/multiplatform, per Google's own
+      migration guide (updated 2026-09-11). Real consequences beyond a version bump: every
+      `androidx.room.*` import becomes `androidx.room3.*`; `@TypeConverter`/`@TypeConverters`
+      rename to `@ColumnTypeConverter`/`@ColumnTypeConverters`; migrations move from
+      `Migration(x,y) { override fun migrate(db: SupportSQLiteDatabase) }` to
+      `Migration(x,y) { override suspend fun migrate(connection: SQLiteConnection) }` using
+      `connection.execSQL(...)` (import `androidx.sqlite.execSQL`); the Room Gradle plugin's
+      DSL extension is `room3 { schemaDirectory(...) }`, not `room { }`. None of this changes the
+      actual schema/SQL — same entities, same column names, same migration statements, same
+      version number (7) — so an already-installed app's database should upgrade in place, not
+      get treated as a new/different schema. **Residual risk, explicitly flagged**: this
+      upgrade path (a real device already on schema v7 via the old `androidx.room` 2.x engine,
+      now opening the same file via `androidx.room3`) has not been tested on a real device in
+      this environment (none available) — low-stakes since Firestore is the source of truth for
+      every actively-used table (§4a) and would just resync, except `HistoryEntity`, which stays
+      Room-only and would be lost on a genuine destructive fallback. Test this specifically
+      before distributing a build over an existing install.
+- [x] `AppDatabase`, `AppDao`, `Converters`, and all 6 entities moved to `:shared`'s `commonMain`
+      (same package names). `getDatabaseBuilder()` implemented as a plain top-level function
+      (not `expect`/`actual` itself — the `@ConstructedBy(AppDatabaseConstructor::class)` +
+      `expect object AppDatabaseConstructor : RoomDatabaseConstructor<AppDatabase>` pattern Room's
+      compiler requires is on the constructor, not the builder function): `androidMain`'s
+      `getDatabaseBuilder(context)` resolves the exact same on-disk file location the old
+      `Context.getDatabasePath("personal_app_database")` call always used (preserves existing
+      installs' data); `iosMain`'s parameterless `getDatabaseBuilder()` uses `NSDocumentDirectory`
+      (new — no existing iOS installs to preserve). A common `getRoomDatabase(builder)` in
+      `AppDatabase.kt` applies `.addMigrations(...)`, `.fallbackToDestructiveMigration(...)`,
+      `.setDriver(BundledSQLiteDriver())`, `.setQueryCoroutineContext(Dispatchers.IO)` — same
+      driver Google's own KMP guide recommends (compiled-from-source SQLite, one consistent
+      version across platforms). Koin's `AppModule.kt` updated:
+      `single { getRoomDatabase(getDatabaseBuilder(androidContext())) }`.
+      **`iosX64` dropped as a `:shared` target** (also updated in `ios-ci.yml`) — discovered
+      during this pass that `androidx.room3`/`androidx.sqlite` publish no `iosX64` variant at all
+      (Intel Mac simulator, effectively dead now that Apple no longer sells Intel Macs);
+      `iosArm64` (real devices) + `iosSimulatorArm64` (Apple Silicon Mac simulator) cover every
+      real 2026 target, so this isn't a functional loss. **Verified**:
+      `./gradlew :shared:compileAndroidMain verify assembleDebug` all green, and the packaged
+      `app-debug.apk` bundles `libsqliteJni.so` (confirms the real-device native driver path,
+      not just compile success). **Not verified**: `iosArm64`/`iosSimulatorArm64` compilation —
+      this Windows machine can't run Kotlin/Native's Apple toolchain at all; needs `ios-ci.yml`,
+      which needs a push (not done this pass, see the run's final report).
+- [x] **Re-verified**: `MIGRATION_5_6`/`MIGRATION_6_7` ported with identical SQL (only the
+      surrounding API changed, per above); `shared/schemas/` now holds the same
+      package-qualified schema JSON files moved unchanged from `app/schemas/` (`git mv`, history
+      preserved); `room3 { schemaDirectory("$projectDir/schemas") }` in `shared/build.gradle.kts`
+      replaces the old `ksp { arg("room.schemaLocation", ...) }` block in `app/build.gradle.kts`
+      (removed, along with every other now-unused `androidx.room` 2.x dependency/KSP setup in
+      `:app` — Room lives only in `:shared` now).
+- [x] **`AppDaoTest`/`workoutLog_roundTripsPerformedSets` — real coverage gained, with an
+      honest limitation found.** Converted from JUnit4/`AndroidJUnit4`/`InstrumentationRegistry`
+      to `kotlin.test`, using `Room.inMemoryDatabaseBuilder<AppDatabase>().setDriver(
+      BundledSQLiteDriver())` (no `Context` needed at all — this is new; the old
+      `androidx.room` 2.x version needed a real device/emulator for its in-memory builder).
+      **Placed in `shared/src/iosTest/`, not `commonTest`**: tried `commonTest` first since that
+      was the plan's original intent, but `:shared:testAndroidHostTest` failed with
+      `UnsatisfiedLinkError: no sqliteJni in java.library.path` — confirmed via research this is
+      a known, documented limitation (the Android build variant of `androidx.sqlite:sqlite-bundled`
+      ships no JVM-host native binary, only real Android `.so`s), not a bug introduced here.
+      Moving the test to `iosTest` gives real, previously-impossible iOS coverage (pending CI
+      confirmation, needs a push); real Android-device coverage for this test is unchanged from
+      before this pass (still needs a real device/emulator, still tracked as its own item in
+      §18l, not silently dropped).
 
 **18e. Settings/preferences: DataStore → DataStore Multiplatform**
 - [x] DataStore Preferences (not DataStore Proto) has official multiplatform support already —

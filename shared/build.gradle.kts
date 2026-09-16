@@ -85,6 +85,20 @@ kotlin {
             api(libs.gitlive.firebase.auth)
             api(libs.gitlive.firebase.firestore)
             implementation(libs.gitlive.firebase.crashlytics)
+            // GOALS.md §18f: Ktor replaces HttpURLConnection (JVM-only) for the BYO-key AI
+            // providers. Engine per platform below; HttpClient() picks it up automatically.
+            // `api`: GenerativeAiService's constructor exposes HttpClient (default-valued).
+            api(libs.ktor.client.core)
+        }
+        androidMain.dependencies {
+            implementation(libs.ktor.client.okhttp)
+            // Firebase AI Logic (Gemini) — Android-only SDK, hence the expect/actual in
+            // data/service/Gemini.*.kt. See GOALS.md §3 for why this backend, §18f for the iOS gap.
+            implementation(project.dependencies.platform(libs.firebase.bom))
+            implementation(libs.firebase.ai)
+        }
+        iosMain.dependencies {
+            implementation(libs.ktor.client.darwin)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))

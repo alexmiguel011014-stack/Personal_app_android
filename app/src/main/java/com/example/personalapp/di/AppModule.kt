@@ -49,7 +49,13 @@ val appModule = module {
     single { SettingsRepository(get()) }
     single { TrainerRepository(get(), get(), get()) }
     single { StudentRepository(get(), get()) }
-    single { GenerativeAiService(get(), androidContext()) }
+    single {
+        GenerativeAiService(
+            settingsRepository = get(),
+            volumeReference = androidContext().assets.open("hypertrophy_volume_reference.md")
+                .bufferedReader().use { it.readText() },
+        )
+    }
 
     viewModel { AIWorkoutViewModel(get(), get()) }
     viewModel { AdminViewModel(get(), get()) }

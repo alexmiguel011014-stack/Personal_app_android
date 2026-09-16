@@ -1,28 +1,45 @@
 package com.example.personalapp.data.service
 
-import android.content.Context
 import com.example.personalapp.data.local.entity.UserEntity
 import com.example.personalapp.data.repository.SettingsRepository
-import com.google.firebase.Firebase
-import com.google.firebase.ai.ai
-import com.google.firebase.ai.type.GenerativeBackend
-import com.google.firebase.ai.type.content
-import com.google.firebase.crashlytics.FirebaseCrashlytics
-import kotlinx.coroutines.Dispatchers
+import dev.gitlive.firebase.Firebase
+import dev.gitlive.firebase.crashlytics.crashlytics
+import io.ktor.client.HttpClient
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
+import io.ktor.http.contentType
+import io.ktor.http.isSuccess
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import java.io.OutputStreamWriter
-import java.net.HttpURLConnection
-import java.net.URL
 
 enum class AiProvider { GEMINI, OPENAI, DEEPSEEK, CLAUDE }
 
+// Gemini goes through Firebase AI Logic, whose SDK is Android-only (no KMP wrapper exists — GitLive
+// doesn't cover AI Logic). androidMain implements it for real; iosMain returns an explicit
+// "not available" error so the gap is visible, not silent (GOALS.md §18f). The other three
+// providers are plain HTTPS and work everywhere via Ktor.
+internal expect suspend fun generateWithGeminiPlatform(modelId: String, prompt: String): String
+
+fun createAiHttpClient(): HttpClient = HttpClient {
+    install(HttpTimeout) {
+        connectTimeoutMillis = 30_000
+        requestTimeoutMillis = 30_000
+    }
+}
+
 class GenerativeAiService(
     private val settingsRepository: SettingsRepository,
-    private val context: Context,
+    // The hypertrophy volume reference table (GOALS.md §5d), read once by the platform that owns
+    // the bundled file (Android: app/src/main/assets/hypertrophy_volume_reference.md, via Koin).
+    private val volumeReference: String,
+    private val httpClient: HttpClient = createAiHttpClient(),
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -47,12 +64,6 @@ class GenerativeAiService(
         // the two, and do not "update" this just because a new model ships.
         private const val ANTHROPIC_VERSION = "2023-06-01"
         private const val CLAUDE_MAX_TOKENS = 4096
-    }
-
-    // Read once per process (this service is @Singleton) instead of on every generateWorkout()
-    // call — see GOALS.md §5d for why this is embedded as text instead of sent as a raw PDF.
-    private val volumeReference: String by lazy {
-        context.assets.open("hypertrophy_volume_reference.md").bufferedReader().use { it.readText() }
     }
 
     suspend fun generateWorkout(student: UserEntity, userPrompt: String, provider: AiProvider = AiProvider.GEMINI): String {
@@ -106,16 +117,11 @@ class GenerativeAiService(
     // over "trainer brings their own key" because that model needs either a raw client-held key
     // (the security problem this migration fixes) or a Cloud Function proxy (needs the paid Blaze
     // plan) — see GOALS.md §3.
-    private suspend fun generateWithGemini(fullPrompt: String): String {
-        val generativeModel = Firebase.ai(backend = GenerativeBackend.googleAI())
-            .generativeModel(GEMINI_MODEL_ID)
-        return try {
-            val response = generativeModel.generateContent(content { text(fullPrompt) })
-            response.text ?: "Erro: IA não retornou texto."
-        } catch (e: Exception) {
-            FirebaseCrashlytics.getInstance().recordException(e)
-            "Erro ao chamar a IA: ${e.message}"
-        }
+    private suspend fun generateWithGemini(fullPrompt: String): String = try {
+        generateWithGeminiPlatform(GEMINI_MODEL_ID, fullPrompt)
+    } catch (e: Exception) {
+        Firebase.crashlytics.recordException(e)
+        "Erro ao chamar a IA: ${e.message}"
     }
 
     private suspend fun generateWithOpenAi(fullPrompt: String): String {
@@ -134,36 +140,27 @@ class GenerativeAiService(
     }
 
     private suspend fun callOpenAiCompatible(url: String, apiKey: String, model: String, fullPrompt: String, providerLabel: String): String {
-        return withContext(Dispatchers.IO) {
-            try {
-                val requestBody = json.encodeToString(
-                    OpenAiChatRequest.serializer(),
-                    OpenAiChatRequest(
-                        model = model,
-                        messages = listOf(OpenAiMessage(role = "user", content = fullPrompt)),
-                    )
+        return try {
+            val requestBody = json.encodeToString(
+                OpenAiChatRequest.serializer(),
+                OpenAiChatRequest(
+                    model = model,
+                    messages = listOf(OpenAiMessage(role = "user", content = fullPrompt)),
                 )
-                val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-                    requestMethod = "POST"
-                    doOutput = true
-                    setRequestProperty("Content-Type", "application/json")
-                    setRequestProperty("Authorization", "Bearer $apiKey")
-                    connectTimeout = 30_000
-                    readTimeout = 30_000
-                }
-                OutputStreamWriter(connection.outputStream).use { it.write(requestBody) }
-
-                val responseCode = connection.responseCode
-                val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
-                val responseBody = stream.bufferedReader().use { it.readText() }
-                if (responseCode !in 200..299) return@withContext "Erro ao chamar a IA ($providerLabel $responseCode): $responseBody"
-
-                val parsed = json.decodeFromString(OpenAiChatResponse.serializer(), responseBody)
-                parsed.choices.firstOrNull()?.message?.content ?: "Erro: IA não retornou texto."
-            } catch (e: Exception) {
-                FirebaseCrashlytics.getInstance().recordException(e)
-                "Erro ao chamar a IA: ${e.message}"
+            )
+            val response = httpClient.post(url) {
+                contentType(ContentType.Application.Json)
+                header(HttpHeaders.Authorization, "Bearer $apiKey")
+                setBody(requestBody)
             }
+            val responseBody = response.bodyAsText()
+            if (!response.status.isSuccess()) return "Erro ao chamar a IA ($providerLabel ${response.status.value}): $responseBody"
+
+            val parsed = json.decodeFromString(OpenAiChatResponse.serializer(), responseBody)
+            parsed.choices.firstOrNull()?.message?.content ?: "Erro: IA não retornou texto."
+        } catch (e: Exception) {
+            Firebase.crashlytics.recordException(e)
+            "Erro ao chamar a IA: ${e.message}"
         }
     }
 
@@ -174,38 +171,29 @@ class GenerativeAiService(
         val apiKey = settingsRepository.claudeApiKey.first()
         if (apiKey.isBlank()) return "Erro: Chave de API da Claude não configurada nas configurações."
 
-        return withContext(Dispatchers.IO) {
-            try {
-                val requestBody = json.encodeToString(
-                    ClaudeMessageRequest.serializer(),
-                    ClaudeMessageRequest(
-                        model = CLAUDE_MODEL_ID,
-                        maxTokens = CLAUDE_MAX_TOKENS,
-                        messages = listOf(ClaudeMessage(role = "user", content = fullPrompt)),
-                    )
+        return try {
+            val requestBody = json.encodeToString(
+                ClaudeMessageRequest.serializer(),
+                ClaudeMessageRequest(
+                    model = CLAUDE_MODEL_ID,
+                    maxTokens = CLAUDE_MAX_TOKENS,
+                    messages = listOf(ClaudeMessage(role = "user", content = fullPrompt)),
                 )
-                val connection = (URL(CLAUDE_BASE_URL).openConnection() as HttpURLConnection).apply {
-                    requestMethod = "POST"
-                    doOutput = true
-                    setRequestProperty("Content-Type", "application/json")
-                    setRequestProperty("x-api-key", apiKey)
-                    setRequestProperty("anthropic-version", ANTHROPIC_VERSION)
-                    connectTimeout = 30_000
-                    readTimeout = 30_000
-                }
-                OutputStreamWriter(connection.outputStream).use { it.write(requestBody) }
-
-                val responseCode = connection.responseCode
-                val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
-                val responseBody = stream.bufferedReader().use { it.readText() }
-                if (responseCode !in 200..299) return@withContext "Erro ao chamar a IA (Claude $responseCode): $responseBody"
-
-                val parsed = json.decodeFromString(ClaudeResponse.serializer(), responseBody)
-                parsed.content.firstOrNull { it.type == "text" }?.text ?: "Erro: IA não retornou texto."
-            } catch (e: Exception) {
-                FirebaseCrashlytics.getInstance().recordException(e)
-                "Erro ao chamar a IA: ${e.message}"
+            )
+            val response = httpClient.post(CLAUDE_BASE_URL) {
+                contentType(ContentType.Application.Json)
+                header("x-api-key", apiKey)
+                header("anthropic-version", ANTHROPIC_VERSION)
+                setBody(requestBody)
             }
+            val responseBody = response.bodyAsText()
+            if (!response.status.isSuccess()) return "Erro ao chamar a IA (Claude ${response.status.value}): $responseBody"
+
+            val parsed = json.decodeFromString(ClaudeResponse.serializer(), responseBody)
+            parsed.content.firstOrNull { it.type == "text" }?.text ?: "Erro: IA não retornou texto."
+        } catch (e: Exception) {
+            Firebase.crashlytics.recordException(e)
+            "Erro ao chamar a IA: ${e.message}"
         }
     }
 }

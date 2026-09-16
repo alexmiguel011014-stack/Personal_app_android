@@ -1586,7 +1586,7 @@ flowchart TD
       file after the move, and an already-installed app's saved API keys stay at the path it
       already wrote to.
 
-**18f. Backend access layer: Firebase via the GitLive Kotlin SDK**
+**18f. Backend access layer: Firebase via the GitLive Kotlin SDK — done 2026-09-16 (Android-verified; iOS linking pending, see below)**
 - [x] **Google ships no official Firebase KMP SDK** (confirmed current, mid-2026) — use the
       community-maintained `dev.gitlive:firebase-firestore`/`firebase-auth` (`GitLiveApp/
       firebase-kotlin-sdk` on GitHub), the established option for exactly this gap, actively
@@ -1629,15 +1629,33 @@ flowchart TD
       it lands — belongs with §18j's cloud-Mac session, flagged here so it isn't a surprise.
 - [x] `FirestoreMappers.kt` moved to `commonMain` — plain-map writes unchanged; reads ported to
       GitLive's `DocumentSnapshot.get<T?>()` behind the `fieldOrNull` helper above.
-- [ ] **`GenerativeAiService`'s HTTP calls (OpenAI/DeepSeek/Claude via plain `HttpURLConnection`)
-      need a multiplatform HTTP client** — `HttpURLConnection` is JVM/Android-only. Use Ktor
-      Client (JetBrains' own multiplatform HTTP library, the standard pairing with KMP) with the
-      `Darwin` engine on iOS and existing `OkHttp`/`CIO` engine on Android. Gemini's Firebase AI
-      Logic SDK call (`generateWithGemini()`) is Android-only today (`com.google.firebase:
-      firebase-ai`) — confirm whether it has an iOS equivalent before assuming Gemini stays
-      available on iOS; if not, either drop Gemini as an iOS-side provider option (the other
-      three BYO-key providers already work fine here since they're plain HTTP) or scope that as
-      a known iOS gap, not a silent omission.
+- [x] **Done 2026-09-16** — `GenerativeAiService` moved to `commonMain` on Ktor Client `3.6.0`
+      (latest stable): OpenAI/DeepSeek/Claude are `httpClient.post(url) { contentType(json);
+      header(...); setBody(requestBodyString) }` + `bodyAsText()`, same manual
+      kotlinx.serialization encode/decode as before (no ContentNegotiation plugin — nothing to
+      gain for one POST per provider), `HttpTimeout` at the old 30 s connect/request values, and
+      non-2xx still surfaced as the same "Erro ao chamar a IA (<provider> <status>): <body>"
+      string. Engines: `ktor-client-okhttp` in `androidMain`, `ktor-client-darwin` in `iosMain`;
+      `HttpClient { }` in common code auto-selects whichever is on that target's classpath.
+      The Android-only `context.assets.open("hypertrophy_volume_reference.md")` read became a
+      `volumeReference: String` constructor parameter supplied by the platform DI (Koin's Android
+      module reads the asset once) — the asset file itself stays in `app/src/main/assets/` until
+      §18h moves resources to Compose Multiplatform's resource system. Crashlytics via GitLive.
+      **Gemini on iOS — confirmed and scoped as a known gap, not dropped and not silent**:
+      Firebase AI Logic *does* have a native iOS SDK (`FirebaseAI`, Swift), but no Kotlin
+      Multiplatform wrapper exists (GitLive's module list doesn't cover AI Logic), so it isn't
+      reachable from `commonMain` without a hand-written Swift/cinterop bridge. Implemented as
+      `internal expect suspend fun generateWithGeminiPlatform(modelId, prompt)`: the
+      `androidMain` actual is the existing Firebase AI Logic call verbatim (`firebase-ai` +
+      BOM moved from `:app` to `:shared`'s `androidMain` deps — nothing in `:app` uses it
+      anymore), the `iosMain` actual returns an explicit "Gemini ainda não está disponível no
+      iOS — use OpenAI, DeepSeek ou Claude" string. §18h should hide the Gemini chip on iOS;
+      closing the gap for real means writing that bridge, tracked nowhere else, so: it's a
+      follow-up of its own, only worth doing if Gemini's free tier ever becomes the
+      *reliable* choice again (§14a says it currently isn't). **Verified**: `./gradlew
+      :shared:testAndroidHostTest verify assembleDebug` all green. **Not verified**: a live
+      call through Ktor on Android (no API key/device here — same manual check §16f already
+      relies on) and the iOS Darwin engine compilation (needs CI, needs a push).
 
 **18g. Auth and Security — platform-specific pieces GitLive doesn't cover**
 - [ ] **App Check**: GitLive's SDK doesn't wrap App Check. Keep Android's existing

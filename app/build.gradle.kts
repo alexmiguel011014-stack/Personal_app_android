@@ -100,9 +100,7 @@ dependencies {
     implementation(libs.firebase.crashlytics)
     implementation(libs.firebase.appcheck.playintegrity)
     implementation(libs.firebase.appcheck.debug)
-    // Firebase AI Logic (GOALS.md §3) — replaces the deprecated com.google.ai.client.generativeai
-    // SDK for Gemini calls; free on the Spark plan via the Gemini Developer API backend.
-    implementation(libs.firebase.ai)
+    // Firebase AI Logic (Gemini) now lives in :shared's androidMain (GOALS.md §18f).
     implementation(libs.kotlinx.coroutines.play.services)
 
     testImplementation(libs.junit)

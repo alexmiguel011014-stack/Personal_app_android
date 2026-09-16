@@ -7,16 +7,13 @@ import com.example.personalapp.data.local.entity.UserEntity
 import com.example.personalapp.data.local.entity.WorkoutEntity
 import com.example.personalapp.data.local.entity.WorkoutLogEntity
 import com.example.personalapp.data.repository.TrainerRepository
-import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
-import javax.inject.Inject
 
-@HiltViewModel
-class StudentDetailsViewModel @Inject constructor(
+class StudentDetailsViewModel(
     private val repository: TrainerRepository
 ) : ViewModel() {
 

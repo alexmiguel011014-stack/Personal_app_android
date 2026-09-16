@@ -1453,15 +1453,25 @@ flowchart TD
       target and `iosSimulatorArm64` test target.
 
 **18c. Dependency injection: Hilt → Koin**
-- [ ] **Hilt has no Kotlin Multiplatform support at all** (confirmed current, `REPERTOIRE.md`
-      research) — this is a hard blocker, not a preference. Replace every `@HiltViewModel`/
-      `@Inject`/`@Module`/`@InstallIn` with Koin's `module { }`/`viewModel { }`/`get()` DSL,
-      declared in `commonMain` so the same DI graph serves both platforms. `androidApp` calls
-      `startKoin { androidContext(...) }` in `MainApplication.onCreate()`; the iOS entry point
-      calls the equivalent `initKoin()` from Swift/iosApp. Done when: every existing
-      `hiltViewModel()` call site in Compose screens compiles against Koin's `koinViewModel()`
-      instead, and `./gradlew :app:testDebugUnitTest` still passes (repository/ViewModel tests
-      updated to Koin's test-module-override pattern instead of Hilt's `@TestInstallIn`).
+- [x] **Hilt has no Kotlin Multiplatform support at all** (confirmed current, `REPERTOIRE.md`
+      research) — this is a hard blocker, not a preference. Replaced every `@HiltViewModel`/
+      `@Inject`/`@Module`/`@InstallIn` (32 files: 9 ViewModels, 5 repositories/services, 2 Hilt
+      modules, `MainApplication`/`MainActivity`, 14 `hiltViewModel()` call sites) with Koin
+      4.2.2's `module { }`/`viewModel { }`/`get()`/`androidContext()` DSL in a single new
+      `di/AppModule.kt` (replaces `AuthModule.kt`/`DatabaseModule.kt`, both deleted).
+      `MainApplication.onCreate()` calls `startKoin { androidContext(this@MainApplication);
+      modules(appModule) }`; `MainActivity`'s `@AndroidEntryPoint` removed (Koin needs no
+      activity annotation for Compose-only injection). Every `hiltViewModel()` call site now
+      calls `koinViewModel()` (`org.koin.compose.viewmodel`). Verified via
+      `./gradlew compileDebugKotlin verify assembleDebug` (all green) — no test needed updating,
+      `AuthRepositoryTest`/`TrainerGoldenPathTest` already built their dependencies with plain
+      MockK fakes, never through Hilt's test DSL, so there was no `@TestInstallIn` to migrate.
+      **Scoping note**: this replaces the DI *framework* only, still declared in `app`'s own
+      `di/AppModule.kt`, not in `commonMain` as originally sketched — §18b (moving the
+      ViewModels/repositories themselves into `commonMain`) hasn't happened yet, so there's
+      nothing multiplatform for a `commonMain` Koin module to wire up yet. Moving `appModule`
+      into `commonMain` is now a mechanical follow-up once §18b actually relocates those classes,
+      not a separate design problem — deliberately not done speculatively ahead of that move.
 
 **18d. Database: Room → Room Kotlin Multiplatform**
 - [x] **No SQLDelight migration needed** — Room 2.7+ added official KMP support, and Room 3.0

@@ -9,13 +9,11 @@ import com.example.personalapp.data.model.Exercise
 import com.example.personalapp.data.repository.TrainerRepository
 import com.example.personalapp.data.service.AiProvider
 import com.example.personalapp.data.service.GenerativeAiService
-import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.Serializable
 import java.util.UUID
-import javax.inject.Inject
 
 data class ChatMessage(
     val text: String,
@@ -43,8 +41,7 @@ data class AIExercise(
     val notes: String? = null
 )
 
-@HiltViewModel
-class AIWorkoutViewModel @Inject constructor(
+class AIWorkoutViewModel(
     private val trainerRepository: TrainerRepository,
     private val aiService: GenerativeAiService
 ) : ViewModel() {

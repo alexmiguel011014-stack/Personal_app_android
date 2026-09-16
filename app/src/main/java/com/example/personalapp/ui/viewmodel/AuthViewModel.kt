@@ -5,11 +5,9 @@ import androidx.lifecycle.viewModelScope
 import com.example.personalapp.data.repository.AuthRepository
 import com.example.personalapp.data.repository.TrainerRepository
 import com.example.personalapp.data.repository.UserRole
-import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import javax.inject.Inject
 
 sealed class AuthState {
     object Idle : AuthState()
@@ -40,8 +38,7 @@ sealed class TrainerRequestState {
     data class Error(val message: String) : TrainerRequestState()
 }
 
-@HiltViewModel
-class AuthViewModel @Inject constructor(
+class AuthViewModel(
     private val repository: AuthRepository,
     private val trainerRepository: TrainerRepository,
 ) : ViewModel() {

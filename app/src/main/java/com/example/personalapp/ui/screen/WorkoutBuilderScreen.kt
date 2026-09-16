@@ -16,7 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.hilt.navigation.compose.hiltViewModel
+import org.koin.compose.viewmodel.koinViewModel
 import com.example.personalapp.data.local.entity.WorkoutEntity
 import com.example.personalapp.ui.viewmodel.WorkoutViewModel
 
@@ -37,7 +37,7 @@ fun WorkoutBuilderScreen(
     onNavigateToAI: (String) -> Unit = {},
     onNavigateToPromptFicha: (String) -> Unit = {},
     onEditWorkout: (String, String) -> Unit = { _, _ -> },
-    viewModel: WorkoutViewModel = hiltViewModel(),
+    viewModel: WorkoutViewModel = koinViewModel(),
 ) {
     val workouts by viewModel.workouts.collectAsState()
 

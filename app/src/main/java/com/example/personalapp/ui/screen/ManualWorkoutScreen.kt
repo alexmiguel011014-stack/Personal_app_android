@@ -14,7 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import org.koin.compose.viewmodel.koinViewModel
 import com.example.personalapp.data.local.entity.WorkoutEntity
 import com.example.personalapp.data.model.Exercise
 import com.example.personalapp.ui.viewmodel.WorkoutViewModel
@@ -27,7 +27,7 @@ fun ManualWorkoutScreen(
     studentId: String,
     onBack: () -> Unit,
     workoutId: String? = null,
-    viewModel: WorkoutViewModel = hiltViewModel()
+    viewModel: WorkoutViewModel = koinViewModel()
 ) {
     var workoutName by remember { mutableStateOf("") }
     val exercises = remember { mutableStateListOf<Exercise>() }

@@ -4,8 +4,6 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.tasks.await
-import javax.inject.Inject
-import javax.inject.Singleton
 
 enum class UserRole {
     ADM, TRAINER, STUDENT, NONE
@@ -15,8 +13,7 @@ enum class UserRole {
 // for every other role, and null for a STUDENT who hasn't linked to a trainer yet.
 data class AuthResult(val role: UserRole, val trainerId: String?)
 
-@Singleton
-class AuthRepository @Inject constructor(
+class AuthRepository(
     private val auth: FirebaseAuth,
     private val firestore: FirebaseFirestore
 ) {

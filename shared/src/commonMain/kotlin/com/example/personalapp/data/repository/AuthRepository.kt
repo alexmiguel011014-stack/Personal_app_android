@@ -1,9 +1,12 @@
 package com.example.personalapp.data.repository
 
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.FirebaseFirestoreException
-import kotlinx.coroutines.tasks.await
+import com.example.personalapp.util.nowMillis
+import dev.gitlive.firebase.auth.FirebaseAuth
+import dev.gitlive.firebase.auth.FirebaseUser
+import dev.gitlive.firebase.firestore.FirebaseFirestore
+import dev.gitlive.firebase.firestore.FirebaseFirestoreException
+import dev.gitlive.firebase.firestore.FirestoreExceptionCode
+import dev.gitlive.firebase.firestore.code
 
 enum class UserRole {
     ADM, TRAINER, STUDENT, NONE
@@ -13,26 +16,26 @@ enum class UserRole {
 // for every other role, and null for a STUDENT who hasn't linked to a trainer yet.
 data class AuthResult(val role: UserRole, val trainerId: String?)
 
+// Pure: how a users/{uid} doc's raw fields become an AuthResult. Missing or unrecognized role
+// defaults to STUDENT (a self-registered account has no role doc at all — see register()).
+// Kept separate from the Firebase plumbing so it's unit-testable without mocking the SDK.
+fun resolveAuthResult(role: String?, trainerId: String?): AuthResult {
+    val resolved = role?.uppercase()?.let { raw -> UserRole.entries.firstOrNull { it.name == raw } }
+    return AuthResult(resolved ?: UserRole.STUDENT, trainerId)
+}
+
 class AuthRepository(
     private val auth: FirebaseAuth,
     private val firestore: FirebaseFirestore
 ) {
     suspend fun login(email: String, pass: String): Result<AuthResult> {
         return try {
-            val result = auth.signInWithEmailAndPassword(email, pass).await()
+            val result = auth.signInWithEmailAndPassword(email, pass)
             val uid = result.user?.uid ?: return Result.failure(Exception("UID não encontrado"))
 
             // Buscar role no Firestore
-            val doc = firestore.collection("users").document(uid).get().await()
-            val roleStr = doc.getString("role")?.uppercase() ?: "STUDENT"
-
-            val role = try {
-                UserRole.valueOf(roleStr)
-            } catch (e: Exception) {
-                UserRole.STUDENT
-            }
-
-            Result.success(AuthResult(role, doc.getString("trainerId")))
+            val doc = firestore.collection("users").document(uid).get()
+            Result.success(resolveAuthResult(doc.get<String?>("role"), doc.get<String?>("trainerId")))
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -44,7 +47,7 @@ class AuthRepository(
     // to STUDENT, so this reuses the same path rather than duplicating the role lookup.
     suspend fun register(email: String, pass: String): Result<AuthResult> {
         return try {
-            auth.createUserWithEmailAndPassword(email, pass).await()
+            auth.createUserWithEmailAndPassword(email, pass)
             login(email, pass)
         } catch (e: Exception) {
             Result.failure(e)
@@ -60,9 +63,9 @@ class AuthRepository(
             firestore.collection("trainerRequests").document(user.uid).set(
                 mapOf(
                     "email" to (user.email ?: ""),
-                    "createdAt" to System.currentTimeMillis(),
+                    "createdAt" to nowMillis(),
                 )
-            ).await()
+            )
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -71,7 +74,7 @@ class AuthRepository(
 
     suspend fun resetPassword(email: String): Result<Unit> {
         return try {
-            auth.sendPasswordResetEmail(email).await()
+            auth.sendPasswordResetEmail(email)
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -85,33 +88,33 @@ class AuthRepository(
     suspend fun claimInvite(code: String): Result<String> {
         val uid = auth.currentUser?.uid ?: return Result.failure(Exception("Não autenticado"))
         return try {
-            val trainerId = firestore.runTransaction { transaction ->
+            val trainerId = firestore.runTransaction {
                 val inviteRef = firestore.collection("invites").document(code)
-                val invite = transaction.get(inviteRef)
-                if (!invite.exists()) throw Exception("Código de convite inválido")
-                if (invite.getBoolean("used") == true) throw Exception("Código de convite já utilizado")
-                val trainerId = invite.getString("trainerId") ?: throw Exception("Convite inválido")
+                val invite = get(inviteRef)
+                if (!invite.exists) throw Exception("Código de convite inválido")
+                if (invite.get<Boolean?>("used") == true) throw Exception("Código de convite já utilizado")
+                val trainerId = invite.get<String?>("trainerId") ?: throw Exception("Convite inválido")
 
                 val userRef = firestore.collection("users").document(uid)
-                transaction.set(
+                set(
                     userRef,
                     mapOf(
                         "role" to "STUDENT",
                         "trainerId" to trainerId,
                         "inviteCode" to code,
-                        "name" to (invite.getString("name") ?: ""),
-                        "phone" to (invite.getString("phone") ?: ""),
-                        "gender" to (invite.getString("gender") ?: "Masculino"),
-                        "goal" to (invite.getString("goal") ?: ""),
-                        "experienceLevel" to (invite.getString("experienceLevel") ?: ""),
-                        "medicalNotes" to (invite.getString("medicalNotes") ?: ""),
-                        "trainingDays" to (invite.get("trainingDays") ?: emptyList<String>()),
-                        "createdAt" to System.currentTimeMillis(),
+                        "name" to (invite.get<String?>("name") ?: ""),
+                        "phone" to (invite.get<String?>("phone") ?: ""),
+                        "gender" to (invite.get<String?>("gender") ?: "Masculino"),
+                        "goal" to (invite.get<String?>("goal") ?: ""),
+                        "experienceLevel" to (invite.get<String?>("experienceLevel") ?: ""),
+                        "medicalNotes" to (invite.get<String?>("medicalNotes") ?: ""),
+                        "trainingDays" to (invite.get<List<String>?>("trainingDays") ?: emptyList()),
+                        "createdAt" to nowMillis(),
                     )
                 )
-                transaction.update(inviteRef, "used", true)
+                updateFields(inviteRef) { "used" to true }
                 trainerId
-            }.await()
+            }
             Result.success(trainerId)
         } catch (e: Exception) {
             // A PERMISSION_DENIED here (not an invalid-code/already-used message from the checks
@@ -120,7 +123,7 @@ class AuthRepository(
             // The raw Firebase message is opaque, so surface something actionable instead.
             val firestoreCause = e as? FirebaseFirestoreException
                 ?: (e.cause as? FirebaseFirestoreException)
-            if (firestoreCause?.code == FirebaseFirestoreException.Code.PERMISSION_DENIED) {
+            if (firestoreCause?.code == FirestoreExceptionCode.PERMISSION_DENIED) {
                 Result.failure(Exception("Esta conta já está vinculada a um perfil existente — fale com o administrador."))
             } else {
                 Result.failure(e)
@@ -128,9 +131,10 @@ class AuthRepository(
         }
     }
 
-    fun getCurrentUser() = auth.currentUser
+    fun getCurrentUser(): FirebaseUser? = auth.currentUser
 
-    fun logout() {
+    // suspend (unlike the Android SDK's signOut()): GitLive's is asynchronous on every platform.
+    suspend fun logout() {
         auth.signOut()
     }
 }

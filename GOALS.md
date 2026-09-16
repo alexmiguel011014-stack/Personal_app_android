@@ -1593,15 +1593,42 @@ flowchart TD
       maintained, in production use by other teams. The newer `KFire` alternative is still beta
       as of this research — not a safe bet for an app already depending heavily on Firestore
       transactions (`AuthRepository.claimInvite`) and listeners.
-- [ ] Rewrite `TrainerRepository`/`StudentRepository`/`AuthRepository`'s direct
-      `com.google.firebase.firestore.*`/`com.google.firebase.auth.*` calls against GitLive's API
-      in `commonMain` — same snapshot-listener/transaction *shape* (GitLive's API deliberately
-      mirrors the Android Firebase SDK's), but a real rewrite, not a drop-in. Done when: the
-      existing `startListening(trainerId)` mirror-into-Room behavior and `claimInvite()`'s
-      transactional re-claim logic (§13d) both pass equivalent tests against GitLive on both
-      platforms.
-- [ ] `FirestoreMappers.kt`'s entity↔doc mapping moves to `commonMain` largely unchanged (it's
-      already plain-map-based, not tied to any Android-only Firestore API surface).
+- [x] **Done 2026-09-16** — `TrainerRepository`/`StudentRepository`/`AuthRepository` rewritten
+      against GitLive `2.7.0` (latest stable; `3.0.0` exists only as `alpha02`, same "not a safe
+      bet" reasoning as KFire above) in `:shared`'s `commonMain`. Real API differences hit,
+      beyond package names: snapshot listeners are `Flow`s (`Query.snapshots`), so
+      `startListening` now holds a `Job` per mirrored collection (`onEach { documentChanges… }
+      .catch { crashlytics }.launchIn(scope)`) and `stopListening` cancels them, and
+      `StudentRepository`'s three `callbackFlow`+`addSnapshotListener` wrappers collapsed into one
+      `snapshots.map { … }` helper; `signOut()` is `suspend` (`AuthViewModel.logout()` now
+      launches it); field reads are reified `get<T?>("field")` and decode *strictly*, so
+      `FirestoreMappers` gained a lenient `fieldOrNull<T>()` to keep the old "malformed → null →
+      default" semantics; `runTransaction { }` has a `Transaction` receiver (`get`/`set`/
+      `updateFields(ref) { "used" to true }`); `whereEqualTo` is deprecated in favour of
+      `where { "f" equalTo v }` / `where { all(…) }`. `System.currentTimeMillis()`/`java.util.UUID`
+      (JVM-only) replaced by `kotlin.time.Clock`/`kotlin.uuid.Uuid` (`util/Platform.kt`), same
+      epoch-millis and canonical UUID text. Also **JVM target 11 → 17 in both modules**: GitLive
+      ships JVM-17 bytecode and its API is mostly `inline`, which Kotlin refuses to inline into a
+      lower target (found via compiler error, not documented anywhere obvious). Koin registers the
+      GitLive `FirebaseAuth`/`FirebaseFirestore` alongside the official `FirebaseFirestore`, which
+      stays only for `AdminViewModel` (ADM-only, Android-only, untouched) — on Android both wrap
+      the same default `FirebaseApp` instance. Crashlytics calls in the moved code use GitLive's
+      `Firebase.crashlytics` (it *does* ship a KMP `firebase-crashlytics` module — see the §18g
+      note). **Tests**: the MockK-based `AuthRepositoryTest` (JVM-only, mocked the Android SDK's
+      `Task`s) is gone; its five role-resolution assertions moved to a pure
+      `resolveAuthResult(role, trainerId)` + `commonTest`'s `AuthResultResolutionTest` (6 cases,
+      no mocking, runs on every target) — the one dropped case, "sign-in exception →
+      `Result.failure`", is generic try/catch plumbing, noted rather than silently lost (§18l's
+      own "decide and document" ask). **Verified**: `./gradlew :shared:testAndroidHostTest verify
+      assembleDebug` all green (22 shared tests). **Not verified, and expected to need macOS work
+      before it can be**: the `iosSimulatorArm64Test` half of this item's "done when" — GitLive's
+      iOS actuals bind to the Firebase iOS SDK, which the test/app binaries must *link* (CocoaPods
+      `pod("FirebaseFirestore")`/`("FirebaseAuth")`/`("FirebaseCrashlytics")` via the Kotlin
+      CocoaPods plugin, or SPM in the Xcode project). That setup can't be done or checked from
+      this Windows machine, so `ios-ci.yml`'s test step will most likely fail at link time until
+      it lands — belongs with §18j's cloud-Mac session, flagged here so it isn't a surprise.
+- [x] `FirestoreMappers.kt` moved to `commonMain` — plain-map writes unchanged; reads ported to
+      GitLive's `DocumentSnapshot.get<T?>()` behind the `fieldOrNull` helper above.
 - [ ] **`GenerativeAiService`'s HTTP calls (OpenAI/DeepSeek/Claude via plain `HttpURLConnection`)
       need a multiplatform HTTP client** — `HttpURLConnection` is JVM/Android-only. Use Ktor
       Client (JetBrains' own multiplatform HTTP library, the standard pairing with KMP) with the

@@ -19,19 +19,27 @@ import com.example.personalapp.ui.viewmodel.StudentViewModel
 import com.example.personalapp.ui.viewmodel.TrainerViewModel
 import com.example.personalapp.ui.viewmodel.WorkoutViewModel
 import com.google.firebase.Firebase
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.firestore
+import dev.gitlive.firebase.auth.auth
+import dev.gitlive.firebase.firestore.firestore
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.module.dsl.viewModel
 import org.koin.dsl.module
+import dev.gitlive.firebase.Firebase as GitLiveFirebase
+import dev.gitlive.firebase.auth.FirebaseAuth as GitLiveFirebaseAuth
+import dev.gitlive.firebase.firestore.FirebaseFirestore as GitLiveFirebaseFirestore
 
 // GOALS.md §18c: replaces AuthModule/DatabaseModule (Dagger/Hilt) — Hilt has no Kotlin
 // Multiplatform support, Koin does. Every provider here is a straight port of the old
 // @Provides/@Inject wiring, same singleton shape, no behavior change.
 val appModule = module {
-    single<FirebaseAuth> { Firebase.auth }
+    // GOALS.md §18f: the repositories (now in :shared) use the GitLive KMP wrappers; on Android
+    // these delegate to the same default FirebaseApp the official SDK below uses, so both are the
+    // one Firestore instance. The official type stays registered only for AdminViewModel, which
+    // is ADM-only/Android-only and untouched by the KMP migration so far.
+    single<GitLiveFirebaseAuth> { GitLiveFirebase.auth }
+    single<GitLiveFirebaseFirestore> { GitLiveFirebase.firestore }
     single<FirebaseFirestore> { Firebase.firestore }
     single { getRoomDatabase(getDatabaseBuilder(androidContext())) }
     single { get<AppDatabase>().appDao() }

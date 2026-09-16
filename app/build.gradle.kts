@@ -56,9 +56,10 @@ android {
             }
         }
     }
+    // JVM 17 (was 11) to match :shared — see the note in shared/build.gradle.kts (GOALS.md §18f).
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
     buildFeatures {
         compose = true

@@ -136,7 +136,8 @@ class AuthViewModel(
 
     fun logout() {
         trainerRepository.stopListening()
-        repository.logout()
+        // Route away immediately; the (now suspend, GitLive) sign-out completes in the background.
         _authState.value = AuthState.Idle
+        viewModelScope.launch { repository.logout() }
     }
 }

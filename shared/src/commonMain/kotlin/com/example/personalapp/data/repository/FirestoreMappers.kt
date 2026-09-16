@@ -7,7 +7,7 @@ import com.example.personalapp.data.local.entity.WorkoutEntity
 import com.example.personalapp.data.local.entity.WorkoutLogEntity
 import com.example.personalapp.data.model.Exercise
 import com.example.personalapp.data.model.PerformedSet
-import com.google.firebase.firestore.DocumentSnapshot
+import dev.gitlive.firebase.firestore.DocumentSnapshot
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -16,6 +16,16 @@ import kotlinx.serialization.json.Json
 // same nullable-safe construction rules apply on both sides. Exercise/PerformedSet lists reuse the
 // exact JSON encoding Room's own Converters already use, instead of a second nested-map mapping.
 private val json = Json { ignoreUnknownKeys = true }
+
+// GitLive's DocumentSnapshot.get<T>() decodes strictly (a field stored with an unexpected type
+// throws), unlike the Android SDK's getString()/getLong() which just returned null. This keeps the
+// old lenient "missing or malformed field -> null -> default" behaviour every mapper below relies on.
+private inline fun <reified T> DocumentSnapshot.fieldOrNull(name: String): T? =
+    try {
+        get<T?>(name)
+    } catch (e: Exception) {
+        null
+    }
 
 fun UserEntity.toFirestoreMap(trainerId: String): Map<String, Any?> = mapOf(
     "trainerId" to trainerId,
@@ -31,18 +41,18 @@ fun UserEntity.toFirestoreMap(trainerId: String): Map<String, Any?> = mapOf(
 )
 
 fun DocumentSnapshot.toUserEntity(): UserEntity? {
-    val name = getString("name") ?: return null
+    val name = fieldOrNull<String>("name") ?: return null
     return UserEntity(
         id = id,
         name = name,
-        role = getString("role") ?: "student",
-        gender = getString("gender") ?: "Masculino",
-        phone = getString("phone") ?: "",
-        goal = getString("goal") ?: "",
-        experienceLevel = getString("experienceLevel") ?: "",
-        medicalNotes = getString("medicalNotes") ?: "",
-        trainingDays = (get("trainingDays") as? List<*>)?.filterIsInstance<String>() ?: emptyList(),
-        createdAt = getLong("createdAt") ?: 0L,
+        role = fieldOrNull<String>("role") ?: "student",
+        gender = fieldOrNull<String>("gender") ?: "Masculino",
+        phone = fieldOrNull<String>("phone") ?: "",
+        goal = fieldOrNull<String>("goal") ?: "",
+        experienceLevel = fieldOrNull<String>("experienceLevel") ?: "",
+        medicalNotes = fieldOrNull<String>("medicalNotes") ?: "",
+        trainingDays = fieldOrNull<List<String>>("trainingDays") ?: emptyList(),
+        createdAt = fieldOrNull<Long>("createdAt") ?: 0L,
     )
 }
 
@@ -50,19 +60,19 @@ fun DocumentSnapshot.toUserEntity(): UserEntity? {
 // convention) into the same UserEntity shape the trainer-side screens already read — role is
 // normalized to Room's lowercase convention so it still matches AppDao.getStudents()'s query.
 fun DocumentSnapshot.toLinkedUserEntity(): UserEntity? {
-    if (getString("role") != "STUDENT") return null
-    val name = getString("name") ?: return null
+    if (fieldOrNull<String>("role") != "STUDENT") return null
+    val name = fieldOrNull<String>("name") ?: return null
     return UserEntity(
         id = id,
         name = name,
         role = "student",
-        gender = getString("gender") ?: "Masculino",
-        phone = getString("phone") ?: "",
-        goal = getString("goal") ?: "",
-        experienceLevel = getString("experienceLevel") ?: "",
-        medicalNotes = getString("medicalNotes") ?: "",
-        trainingDays = (get("trainingDays") as? List<*>)?.filterIsInstance<String>() ?: emptyList(),
-        createdAt = getLong("createdAt") ?: 0L,
+        gender = fieldOrNull<String>("gender") ?: "Masculino",
+        phone = fieldOrNull<String>("phone") ?: "",
+        goal = fieldOrNull<String>("goal") ?: "",
+        experienceLevel = fieldOrNull<String>("experienceLevel") ?: "",
+        medicalNotes = fieldOrNull<String>("medicalNotes") ?: "",
+        trainingDays = fieldOrNull<List<String>>("trainingDays") ?: emptyList(),
+        createdAt = fieldOrNull<Long>("createdAt") ?: 0L,
         linked = true,
     )
 }
@@ -91,10 +101,10 @@ fun WorkoutEntity.toFirestoreMap(trainerId: String): Map<String, Any?> = mapOf(
 )
 
 fun DocumentSnapshot.toWorkoutEntity(): WorkoutEntity? {
-    val studentId = getString("studentId") ?: return null
-    val name = getString("name") ?: return null
+    val studentId = fieldOrNull<String>("studentId") ?: return null
+    val name = fieldOrNull<String>("name") ?: return null
     val exercises = try {
-        json.decodeFromString<List<Exercise>>(getString("exercisesJson") ?: "[]")
+        json.decodeFromString<List<Exercise>>(fieldOrNull<String>("exercisesJson") ?: "[]")
     } catch (e: Exception) {
         emptyList()
     }
@@ -102,11 +112,11 @@ fun DocumentSnapshot.toWorkoutEntity(): WorkoutEntity? {
         id = id,
         studentId = studentId,
         name = name,
-        isActive = getBoolean("isActive") ?: true,
+        isActive = fieldOrNull<Boolean>("isActive") ?: true,
         exercises = exercises,
-        createdAt = getLong("createdAt") ?: 0L,
-        status = getString("status") ?: "draft",
-        assignedAt = getLong("assignedAt"),
+        createdAt = fieldOrNull<Long>("createdAt") ?: 0L,
+        status = fieldOrNull<String>("status") ?: "draft",
+        assignedAt = fieldOrNull<Long>("assignedAt"),
     )
 }
 
@@ -120,14 +130,14 @@ fun BiometricEntity.toFirestoreMap(trainerId: String): Map<String, Any?> = mapOf
 )
 
 fun DocumentSnapshot.toBiometricEntity(): BiometricEntity? {
-    val studentId = getString("studentId") ?: return null
+    val studentId = fieldOrNull<String>("studentId") ?: return null
     return BiometricEntity(
         id = id,
         userId = studentId,
-        weight = getDouble("weight") ?: 0.0,
-        height = getDouble("height") ?: 0.0,
-        bodyFat = getDouble("bodyFat") ?: 0.0,
-        date = getLong("date") ?: 0L,
+        weight = fieldOrNull<Double>("weight") ?: 0.0,
+        height = fieldOrNull<Double>("height") ?: 0.0,
+        bodyFat = fieldOrNull<Double>("bodyFat") ?: 0.0,
+        date = fieldOrNull<Long>("date") ?: 0L,
     )
 }
 
@@ -139,12 +149,12 @@ fun ScheduleEntity.toFirestoreMap(trainerId: String): Map<String, Any?> = mapOf(
 )
 
 fun DocumentSnapshot.toScheduleEntity(): ScheduleEntity? {
-    val studentId = getString("studentId") ?: return null
+    val studentId = fieldOrNull<String>("studentId") ?: return null
     return ScheduleEntity(
         id = id,
         studentId = studentId,
-        dayOfWeek = getString("dayOfWeek") ?: "",
-        hour = getString("hour") ?: "",
+        dayOfWeek = fieldOrNull<String>("dayOfWeek") ?: "",
+        hour = fieldOrNull<String>("hour") ?: "",
     )
 }
 
@@ -159,11 +169,11 @@ fun WorkoutLogEntity.toFirestoreMap(trainerId: String): Map<String, Any?> = mapO
 )
 
 fun DocumentSnapshot.toWorkoutLogEntity(): WorkoutLogEntity? {
-    val studentId = getString("studentId") ?: return null
-    val workoutId = getString("workoutId") ?: return null
-    val exerciseName = getString("exerciseName") ?: return null
+    val studentId = fieldOrNull<String>("studentId") ?: return null
+    val workoutId = fieldOrNull<String>("workoutId") ?: return null
+    val exerciseName = fieldOrNull<String>("exerciseName") ?: return null
     val performedSets = try {
-        json.decodeFromString<List<PerformedSet>>(getString("performedSetsJson") ?: "[]")
+        json.decodeFromString<List<PerformedSet>>(fieldOrNull<String>("performedSetsJson") ?: "[]")
     } catch (e: Exception) {
         emptyList()
     }
@@ -172,8 +182,8 @@ fun DocumentSnapshot.toWorkoutLogEntity(): WorkoutLogEntity? {
         studentId = studentId,
         workoutId = workoutId,
         exerciseName = exerciseName,
-        date = getLong("date") ?: 0L,
+        date = fieldOrNull<Long>("date") ?: 0L,
         performedSets = performedSets,
-        note = getString("note"),
+        note = fieldOrNull<String>("note"),
     )
 }

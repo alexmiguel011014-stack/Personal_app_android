@@ -32,10 +32,13 @@ kotlin {
         compileSdk = 37
         minSdk = 24
         withHostTest {}
+        // JVM 17 (was 11): GitLive's Firebase KMP SDK (GOALS.md §18f) ships JVM-17 bytecode and its
+        // API is largely inline functions, which Kotlin refuses to inline into a lower target.
+        // :app's compileOptions match this.
         compilations.configureEach {
             compileTaskProvider.configure {
                 compilerOptions {
-                    jvmTarget.set(JvmTarget.JVM_11)
+                    jvmTarget.set(JvmTarget.JVM_17)
                 }
             }
         }
@@ -74,6 +77,14 @@ kotlin {
             // DataStore<Preferences> directly.
             api(libs.androidx.datastore.core)
             api(libs.androidx.datastore.preferences.core)
+            // GOALS.md §18f: Firebase via the community GitLive KMP SDK (Google ships no official
+            // Firebase KMP SDK). Android actuals delegate to the official Firebase Android SDK the
+            // app already ships; iOS actuals bind to the Firebase iOS SDK, which the iOS app/test
+            // binaries must link themselves (CocoaPods/SPM — a macOS-only setup step, see GOALS.md).
+            // `api`: :app's Koin module and AuthViewModel touch these types directly.
+            api(libs.gitlive.firebase.auth)
+            api(libs.gitlive.firebase.firestore)
+            implementation(libs.gitlive.firebase.crashlytics)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))

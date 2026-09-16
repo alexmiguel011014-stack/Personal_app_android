@@ -7,26 +7,32 @@ import com.example.personalapp.data.local.entity.ScheduleEntity
 import com.example.personalapp.data.local.entity.UserEntity
 import com.example.personalapp.data.local.entity.WorkoutEntity
 import com.example.personalapp.data.local.entity.WorkoutLogEntity
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.crashlytics.FirebaseCrashlytics
-import com.google.firebase.firestore.DocumentChange
-import com.google.firebase.firestore.DocumentSnapshot
-import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.ListenerRegistration
-import com.google.firebase.firestore.Query
-import com.google.firebase.firestore.SetOptions
+import com.example.personalapp.util.nowMillis
+import com.example.personalapp.util.randomUuidString
+import dev.gitlive.firebase.Firebase
+import dev.gitlive.firebase.auth.FirebaseAuth
+import dev.gitlive.firebase.crashlytics.crashlytics
+import dev.gitlive.firebase.firestore.ChangeType
+import dev.gitlive.firebase.firestore.DocumentSnapshot
+import dev.gitlive.firebase.firestore.FirebaseFirestore
+import dev.gitlive.firebase.firestore.Query
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.tasks.await
-import java.util.UUID
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 
 /**
  * Firestore is the source of truth (see GOALS.md §4a): writes here go to Firestore first,
  * a snapshot listener (started via [startListening]) mirrors each trainer-scoped collection
  * back into Room, and every screen keeps reading from Room's Flows as before.
+ *
+ * GOALS.md §18f: built on the GitLive Firebase KMP SDK. Its snapshot listeners are Flows
+ * ([Query.snapshots]) rather than callback registrations, so "listening" here is a collecting
+ * coroutine per collection and [stopListening] cancels those jobs.
  */
 class TrainerRepository(
     private val appDao: AppDao,
@@ -34,7 +40,7 @@ class TrainerRepository(
     private val auth: FirebaseAuth,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var activeListeners: List<ListenerRegistration> = emptyList()
+    private var activeListeners: List<Job> = emptyList()
 
     private fun currentTrainerId(): String? = auth.currentUser?.uid
 
@@ -48,14 +54,16 @@ class TrainerRepository(
             mirror("workoutLogs", trainerId, DocumentSnapshot::toWorkoutLogEntity, appDao::insertWorkoutLog, appDao::deleteWorkoutLogById),
             // Linked students live in users/{uid}, not students/{id} — see GOALS.md §7 "unify".
             mirrorQuery(
-                firestore.collection("users").whereEqualTo("trainerId", trainerId).whereEqualTo("role", "STUDENT"),
+                firestore.collection("users").where {
+                    all("trainerId" equalTo trainerId, "role" equalTo "STUDENT")
+                },
                 DocumentSnapshot::toLinkedUserEntity, appDao::insertUser, appDao::deleteUserById,
             ),
         )
     }
 
     fun stopListening() {
-        activeListeners.forEach { it.remove() }
+        activeListeners.forEach { it.cancel() }
         activeListeners = emptyList()
     }
 
@@ -65,34 +73,33 @@ class TrainerRepository(
         map: (DocumentSnapshot) -> T?,
         upsert: suspend (T) -> Unit,
         deleteById: suspend (String) -> Unit,
-    ): ListenerRegistration = mirrorQuery(firestore.collection(collection).whereEqualTo("trainerId", trainerId), map, upsert, deleteById)
+    ): Job = mirrorQuery(
+        firestore.collection(collection).where { "trainerId" equalTo trainerId },
+        map, upsert, deleteById,
+    )
 
     private fun <T> mirrorQuery(
         query: Query,
         map: (DocumentSnapshot) -> T?,
         upsert: suspend (T) -> Unit,
         deleteById: suspend (String) -> Unit,
-    ): ListenerRegistration =
-        query.addSnapshotListener { snapshot, error ->
-            if (error != null) FirebaseCrashlytics.getInstance().recordException(error)
-            val changes = snapshot?.documentChanges ?: return@addSnapshotListener
-            scope.launch {
-                for (change in changes) {
-                    when (change.type) {
-                        DocumentChange.Type.ADDED, DocumentChange.Type.MODIFIED ->
-                            map(change.document)?.let { upsert(it) }
-                        DocumentChange.Type.REMOVED ->
-                            deleteById(change.document.id)
-                    }
+    ): Job = query.snapshots
+        .onEach { snapshot ->
+            for (change in snapshot.documentChanges) {
+                when (change.type) {
+                    ChangeType.ADDED, ChangeType.MODIFIED -> map(change.document)?.let { upsert(it) }
+                    ChangeType.REMOVED -> deleteById(change.document.id)
                 }
             }
         }
+        .catch { Firebase.crashlytics.recordException(it) }
+        .launchIn(scope)
 
     // Users / Students
     suspend fun insertUser(user: UserEntity) {
         appDao.insertUser(user)
         currentTrainerId()?.let {
-            firestore.collection("students").document(user.id).set(user.toFirestoreMap(it)).await()
+            firestore.collection("students").document(user.id).set(user.toFirestoreMap(it))
         }
     }
 
@@ -100,10 +107,10 @@ class TrainerRepository(
         appDao.updateUser(user)
         if (user.linked) {
             firestore.collection("users").document(user.id)
-                .set(user.toLinkedStudentUpdateMap(), SetOptions.merge()).await()
+                .set(user.toLinkedStudentUpdateMap(), merge = true)
         } else {
             currentTrainerId()?.let {
-                firestore.collection("students").document(user.id).set(user.toFirestoreMap(it)).await()
+                firestore.collection("students").document(user.id).set(user.toFirestoreMap(it))
             }
         }
     }
@@ -111,7 +118,7 @@ class TrainerRepository(
     suspend fun deleteUser(user: UserEntity) {
         appDao.deleteUser(user)
         val collection = if (user.linked) "users" else "students"
-        firestore.collection(collection).document(user.id).delete().await()
+        firestore.collection(collection).document(user.id).delete()
     }
 
     fun getStudents(): Flow<List<UserEntity>> = appDao.getStudents()
@@ -121,12 +128,12 @@ class TrainerRepository(
     // doc so claiming doesn't need a second read of the (soon-to-be-archived) students/{id} draft.
     suspend fun generateInvite(draft: UserEntity): String {
         val trainerId = currentTrainerId() ?: error("Not authenticated")
-        val code = UUID.randomUUID().toString().take(8).uppercase()
+        val code = randomUuidString().take(8).uppercase()
         firestore.collection("invites").document(code).set(
             mapOf(
                 "trainerId" to trainerId,
                 "used" to false,
-                "createdAt" to System.currentTimeMillis(),
+                "createdAt" to nowMillis(),
                 "draftId" to draft.id,
                 "name" to draft.name,
                 "phone" to draft.phone,
@@ -136,7 +143,7 @@ class TrainerRepository(
                 "medicalNotes" to draft.medicalNotes,
                 "trainingDays" to draft.trainingDays,
             )
-        ).await()
+        )
         return code
     }
 
@@ -144,7 +151,7 @@ class TrainerRepository(
     suspend fun insertBiometric(biometric: BiometricEntity) {
         appDao.insertBiometric(biometric)
         currentTrainerId()?.let {
-            firestore.collection("biometrics").document(biometric.id).set(biometric.toFirestoreMap(it)).await()
+            firestore.collection("biometrics").document(biometric.id).set(biometric.toFirestoreMap(it))
         }
     }
 
@@ -157,7 +164,7 @@ class TrainerRepository(
     // StudentRepository.getMyWorkouts() queries Firestore for status == "assigned". Without this,
     // every workout stays "draft" forever and the student never sees anything.
     private fun WorkoutEntity.withDerivedStatus(): WorkoutEntity = if (isActive) {
-        copy(status = "assigned", assignedAt = assignedAt ?: System.currentTimeMillis())
+        copy(status = "assigned", assignedAt = assignedAt ?: nowMillis())
     } else {
         copy(status = "draft", assignedAt = null)
     }
@@ -166,7 +173,7 @@ class TrainerRepository(
         val toSave = workout.withDerivedStatus()
         appDao.insertWorkout(toSave)
         currentTrainerId()?.let {
-            firestore.collection("workouts").document(toSave.id).set(toSave.toFirestoreMap(it)).await()
+            firestore.collection("workouts").document(toSave.id).set(toSave.toFirestoreMap(it))
         }
     }
 
@@ -174,13 +181,13 @@ class TrainerRepository(
         val toSave = workout.withDerivedStatus()
         appDao.updateWorkout(toSave)
         currentTrainerId()?.let {
-            firestore.collection("workouts").document(toSave.id).set(toSave.toFirestoreMap(it)).await()
+            firestore.collection("workouts").document(toSave.id).set(toSave.toFirestoreMap(it))
         }
     }
 
     suspend fun deleteWorkout(workout: WorkoutEntity) {
         appDao.deleteWorkout(workout)
-        firestore.collection("workouts").document(workout.id).delete().await()
+        firestore.collection("workouts").document(workout.id).delete()
     }
 
     fun getActiveWorkoutsByStudent(studentId: String): Flow<List<WorkoutEntity>> = appDao.getActiveWorkoutsByStudent(studentId)
@@ -192,13 +199,13 @@ class TrainerRepository(
     suspend fun insertSchedule(schedule: ScheduleEntity) {
         appDao.insertSchedule(schedule)
         currentTrainerId()?.let {
-            firestore.collection("schedules").document(schedule.id).set(schedule.toFirestoreMap(it)).await()
+            firestore.collection("schedules").document(schedule.id).set(schedule.toFirestoreMap(it))
         }
     }
 
     suspend fun deleteSchedule(schedule: ScheduleEntity) {
         appDao.deleteSchedule(schedule)
-        firestore.collection("schedules").document(schedule.id).delete().await()
+        firestore.collection("schedules").document(schedule.id).delete()
     }
 
     suspend fun getAllSchedules() = appDao.getAllSchedules()
@@ -207,7 +214,7 @@ class TrainerRepository(
     // profile, not from auth.currentUser, since the writer here is the student, not the trainer).
     suspend fun insertWorkoutLog(log: WorkoutLogEntity, trainerId: String) {
         appDao.insertWorkoutLog(log)
-        firestore.collection("workoutLogs").document(log.id).set(log.toFirestoreMap(trainerId)).await()
+        firestore.collection("workoutLogs").document(log.id).set(log.toFirestoreMap(trainerId))
     }
 
     fun getWorkoutLogsByStudent(studentId: String): Flow<List<WorkoutLogEntity>> = appDao.getWorkoutLogsByStudent(studentId)

@@ -6,18 +6,24 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Hub
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
+import com.example.personalapp.data.service.AppVersion
+import com.example.personalapp.data.service.UpdateChecker
+import com.example.personalapp.data.service.UpdateStatus
+import com.example.personalapp.ui.UpdateActions
 import com.example.personalapp.ui.viewmodel.SettingsViewModel
+import kotlinx.coroutines.launch
 
 // Tabbed shell (mirrors AdminDashboardScreen's NavigationBar + selectedTab pattern for
-// consistency, GOALS.md §16a) — starts with one tab ("IA") but is structured so a future
-// settings category is one more tabs-list entry + one more `when` branch, not a redesign.
+// consistency, GOALS.md §16a): "IA" (§16) and "Atualização" (§18i's manual update check).
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
@@ -25,7 +31,7 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = koinViewModel()
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("IA")
+    val tabs = listOf("IA", "Atualização")
 
     Scaffold(
         topBar = {
@@ -45,7 +51,7 @@ fun SettingsScreen(
                         selected = selectedTab == index,
                         onClick = { selectedTab = index },
                         label = { Text(label) },
-                        icon = { Icon(Icons.Default.Hub, contentDescription = null) }
+                        icon = { Icon(if (index == 0) Icons.Default.Hub else Icons.Default.SystemUpdate, contentDescription = null) }
                     )
                 }
             }
@@ -54,6 +60,7 @@ fun SettingsScreen(
         Column(modifier = Modifier.padding(padding)) {
             when (selectedTab) {
                 0 -> AiSettingsTab(viewModel)
+                1 -> UpdateTab()
             }
         }
     }
@@ -135,5 +142,36 @@ private fun AiSettingsTab(viewModel: SettingsViewModel) {
                 placeholder = { Text("Insira sua chave aqui...") }
             )
         }
+    }
+}
+
+// GOALS.md §18i, "manual check": the same UpdateChecker the launch banner uses, on demand.
+@Composable
+private fun UpdateTab(
+    checker: UpdateChecker = koinInject(),
+    appVersion: AppVersion = koinInject(),
+) {
+    val scope = rememberCoroutineScope()
+    var status by remember { mutableStateOf<UpdateStatus?>(null) }
+    var checking by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text("Versão instalada: ${appVersion.name} (${appVersion.code})", style = MaterialTheme.typography.bodyMedium)
+        Button(
+            enabled = !checking,
+            onClick = {
+                checking = true
+                scope.launch {
+                    status = checker.check()
+                    checking = false
+                }
+            },
+        ) {
+            Text(if (checking) "Verificando..." else "Verificar atualização")
+        }
+        status?.let { UpdateActions(it) }
     }
 }

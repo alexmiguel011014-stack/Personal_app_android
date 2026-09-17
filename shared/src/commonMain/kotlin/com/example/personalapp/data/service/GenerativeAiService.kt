@@ -27,7 +27,8 @@ enum class AiProvider { GEMINI, OPENAI, DEEPSEEK, CLAUDE }
 // providers are plain HTTPS and work everywhere via Ktor.
 internal expect suspend fun generateWithGeminiPlatform(modelId: String, prompt: String): String
 
-fun createAiHttpClient(): HttpClient = HttpClient {
+// One HttpClient for the whole app (AI providers, update manifest) — a Koin single.
+fun createHttpClient(): HttpClient = HttpClient {
     install(HttpTimeout) {
         connectTimeoutMillis = 30_000
         requestTimeoutMillis = 30_000
@@ -37,7 +38,7 @@ fun createAiHttpClient(): HttpClient = HttpClient {
 class GenerativeAiService(
     private val settingsRepository: SettingsRepository,
     private val promptAssets: PromptAssets,
-    private val httpClient: HttpClient = createAiHttpClient(),
+    private val httpClient: HttpClient = createHttpClient(),
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 

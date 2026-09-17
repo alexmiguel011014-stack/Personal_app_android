@@ -7,6 +7,8 @@ import com.example.personalapp.data.repository.StudentRepository
 import com.example.personalapp.data.repository.TrainerRepository
 import com.example.personalapp.data.service.GenerativeAiService
 import com.example.personalapp.data.service.PromptAssets
+import com.example.personalapp.data.service.UpdateChecker
+import com.example.personalapp.data.service.createHttpClient
 import com.example.personalapp.ui.viewmodel.AIWorkoutViewModel
 import com.example.personalapp.ui.viewmodel.AdminViewModel
 import com.example.personalapp.ui.viewmodel.AuthViewModel
@@ -37,8 +39,10 @@ val sharedModule: Module = module {
     single { SettingsRepository(get()) }
     single { TrainerRepository(get(), get(), get()) }
     single { StudentRepository(get(), get()) }
+    single { createHttpClient() }
     single { PromptAssets() }
-    single { GenerativeAiService(get(), get()) }
+    single { GenerativeAiService(get(), get(), get()) }
+    single { UpdateChecker(get(), get()) }
 
     viewModel { AIWorkoutViewModel(get(), get()) }
     viewModel { AdminViewModel(get(), get()) }
@@ -51,5 +55,5 @@ val sharedModule: Module = module {
     viewModel { WorkoutViewModel(get()) }
 }
 
-// Provides AppDatabase and DataStore<Preferences> for the current platform.
+// Provides AppDatabase, DataStore<Preferences> and AppVersion for the current platform.
 expect val platformModule: Module

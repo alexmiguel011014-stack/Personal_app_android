@@ -1744,27 +1744,47 @@ flowchart TD
       more Android-only assumption *was* found and removed by the compiler, not by this list:
       `String.format(Locale.ROOT, …)` in `ScheduleScreen` (JVM-only) — noted in the first item.
 
-**18i. In-app update checker — both platforms (user's explicit ask)**
-- [ ] New `commonMain` `UpdateChecker`: reads a small `latest.json` manifest (version code,
-      changelog note, platform-specific download URL) hosted in this same public GitHub repo
-      (e.g. via GitHub Releases or a raw file on `main`) — no new backend needed, reuses existing
-      free infrastructure (the repo is already public, confirmed 2026-08-21).
-- [ ] **Automatic check**: on app launch (not a true background job — keeps this portable across
-      platforms without needing a cross-platform WorkManager equivalent, consistent with this
-      project's existing "no speculative infrastructure" convention), compare the running app's
-      version against the manifest; if newer, show a non-blocking banner.
-- [ ] **Manual check**: a "Verificar atualização" button in Settings (new tab or added to the
-      existing "IA" tab's shell — §16's tabbed Settings already anticipated more categories being
-      added later), calling the same `UpdateChecker` on demand.
-- [ ] **Android-specific action**: banner/button opens the new `.apk` download URL directly
-      (Android already trusts "install from unknown sources" for this app, per the existing
-      sideload distribution model) — the person taps through Android's own install prompt, same
-      as today's manual reinstall, just without needing you physically present.
-- [ ] **iOS-specific action**: since SideStore already re-signs/refreshes from its configured
-      source periodically, the in-app banner's role is different — show **days remaining until
-      the current signature expires** (the real risk flagged in 18a) with a "atualizar agora"
-      button that triggers SideStore's refresh directly if a URL scheme/deep link for that
-      exists, or at minimum clear instructions, so an expiring app is never a silent surprise.
+**18i. In-app update checker — both platforms (user's explicit ask) — done 2026-09-16 (Android-verified)**
+- [x] `data/service/UpdateChecker.kt` (`commonMain`): fetches the raw `latest.json` from this
+      repo's `main` (the file committed in `1246bea`; URL in `DEFAULT_MANIFEST_URL`) through the
+      same Ktor `HttpClient` the AI providers use (now one Koin single), decodes it with
+      `kotlinx.serialization` (`ignoreUnknownKeys`, so extra fields can be added to the manifest
+      without breaking older installs), and compares against an `AppVersion` (code, name,
+      platform) that the platform Koin module supplies — Android from `PackageManager`, iOS
+      from `Info.plist`'s `CFBundleVersion`/`CFBundleShortVersionString`. Returns a sealed
+      `UpdateStatus`: `UpToDate`, `UpdateAvailable(versionName, changelog, downloadUrl?)`,
+      `SignatureExpiring(daysLeft)` (iOS only), `Failed(message)` — network/parse problems are
+      values, never exceptions, so an offline launch is quiet. **Tested** in `commonTest`
+      (`UpdateCheckerTest`, 6 cases on Ktor's `MockEngine`: behind/at version for each
+      platform, iOS has no download URL, HTTP 404 and malformed JSON both surface as `Failed`).
+      **To publish a version**: bump `versionCode`/`versionName` in `app/build.gradle.kts`,
+      attach the signed `app-release.apk` to a GitHub Release, edit `latest.json` on `main` to
+      match — nothing else to deploy.
+- [x] **Automatic check**: `ui/UpdateBanner.kt`, placed above `RoleRouter()` in the common
+      `App()` root — one `check()` per process start (`produceState`), rendering a dismissible
+      `tertiaryContainer` card only for `UpdateAvailable`/`SignatureExpiring`; `UpToDate` and
+      `Failed` show nothing (offline is normal; the manual check below is where failures are
+      shown). No background job, per the original scoping.
+- [x] **Manual check**: `SettingsScreen` gained a second tab, "Atualização" (§16a's tabbed
+      shell paid off — one list entry + one `when` branch), showing the installed version and a
+      "Verificar atualização" button that runs the same `UpdateChecker` and renders the result
+      through the shared `UpdateActions` composable (also used by the banner).
+- [x] **Android-specific action**: "Baixar atualização" opens `downloadUrl` via the common
+      `LocalUriHandler` — the browser downloads the `.apk` and Android's own install prompt takes
+      over, same sideload flow as today's manual reinstall. **Not verified on a device** (none
+      here); the URL itself points at `releases/latest/download/app-release.apk`, which only
+      resolves once a GitHub Release with that asset exists — none published yet (§11 decided
+      against the Play Store; a Release is the free equivalent this needs).
+- [x] **iOS-specific action — implemented, unverifiable here**: the manifest's
+      `ios.signatureExpiresAt` (ISO `YYYY-MM-DD`, currently `null`; maintained by hand when a
+      build is re-signed) becomes `SignatureExpiring(daysLeft)` once within
+      `SIGNATURE_WARNING_DAYS` (3 — free Apple IDs sign for 7 days), and both that state and an
+      iOS `UpdateAvailable` render the clear instruction ("abra o SideStore e toque em Refresh
+      All") plus an "Abrir SideStore" button that attempts the `sidestore://` URL scheme
+      (wrapped in `runCatching`, so a scheme SideStore doesn't register just does nothing).
+      Whether that scheme opens SideStore, and the whole iOS banner, can only be checked on an
+      iPhone with SideStore — §18j's territory; the logic itself is covered by
+      `UpdateCheckerTest`.
 
 **18j. iOS distribution: SideStore free path (now) → Apple Developer Program (later, when paid)**
 - [ ] Host the built `.ipa` + an AltStore/SideStore-format "source" JSON (app metadata + download

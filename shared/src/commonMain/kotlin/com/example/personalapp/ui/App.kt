@@ -1,5 +1,6 @@
 package com.example.personalapp.ui
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -16,7 +17,12 @@ fun App() {
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colorScheme.background
         ) {
-            RoleRouter()
+            Column(modifier = Modifier.fillMaxSize()) {
+                UpdateBanner()
+                Column(modifier = Modifier.weight(1f)) {
+                    RoleRouter()
+                }
+            }
         }
     }
 }

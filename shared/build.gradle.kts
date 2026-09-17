@@ -1,8 +1,8 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
-// GOALS.md §18b: the shared KMP module. Starts empty on purpose — this is the toolchain
-// checkpoint (Android compiles locally, iOS compiles via CI's macOS runner, see
-// .github/workflows/ios-ci.yml) that has to be green before any real business logic moves in.
+// GOALS.md §18: the shared KMP module — data layer (§18b–§18f) and, since §18h, the whole
+// Compose Multiplatform UI. :app is a thin Android shell around it; iosMain exposes
+// MainViewController() for the (future) Xcode project.
 //
 // Uses com.android.kotlin.multiplatform.library, not the classic com.android.library — AGP 9
 // made the classic library/application plugins incompatible with the Kotlin Multiplatform
@@ -14,8 +14,14 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.googleKsp)
     alias(libs.plugins.androidx.room3)
-    // Compose Multiplatform / compose-compiler intentionally NOT applied yet — no Compose code
-    // lives in :shared until §18h. Add both back then, together with the compose.* dependencies.
+    alias(libs.plugins.compose.multiplatform)
+    alias(libs.plugins.compose.compiler)
+}
+
+// GOALS.md §18h: the two prompt/reference Markdown files moved from app/src/main/assets/ to
+// src/commonMain/composeResources/files/ so both platforms bundle them; read via Res.readBytes.
+compose.resources {
+    packageOfResClass = "com.example.personalapp.resources"
 }
 
 // GOALS.md §18d: Room 3.0 (androidx.room3, stable as of 2026-09-09) is a full artifact/package
@@ -89,6 +95,23 @@ kotlin {
             // providers. Engine per platform below; HttpClient() picks it up automatically.
             // `api`: GenerativeAiService's constructor exposes HttpClient (default-valued).
             api(libs.ktor.client.core)
+            // GOALS.md §18h: Compose Multiplatform UI. `api` so :app's MainActivity can call
+            // App() / the androidTest golden-path test can drive the screens directly.
+            api(compose.runtime)
+            api(compose.foundation)
+            api(compose.material3)
+            api(compose.ui)
+            api(compose.materialIconsExtended)
+            api(compose.components.resources)
+            api(compose.components.uiToolingPreview)
+            api(libs.jetbrains.lifecycle.viewmodel.compose)
+            api(libs.jetbrains.lifecycle.runtime.compose)
+            api(libs.jetbrains.navigation.compose)
+            implementation(libs.kotlinx.datetime)
+            // Koin for Compose + the viewModel { } DSL / koinViewModel(), all multiplatform.
+            api(project.dependencies.platform(libs.koin.bom))
+            api(libs.koin.compose)
+            api(libs.koin.compose.viewmodel)
         }
         androidMain.dependencies {
             implementation(libs.ktor.client.okhttp)
@@ -96,6 +119,8 @@ kotlin {
             // data/service/Gemini.*.kt. See GOALS.md §3 for why this backend, §18f for the iOS gap.
             implementation(project.dependencies.platform(libs.firebase.bom))
             implementation(libs.firebase.ai)
+            // androidContext() for the Android platform Koin module (di/PlatformModule.android.kt).
+            implementation(libs.koin.android)
         }
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)

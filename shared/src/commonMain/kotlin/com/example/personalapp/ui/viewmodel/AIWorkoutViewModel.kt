@@ -1,6 +1,5 @@
 package com.example.personalapp.ui.viewmodel
 
-import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.personalapp.data.local.entity.UserEntity
@@ -12,7 +11,8 @@ import com.example.personalapp.data.service.GenerativeAiService
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
-import java.util.UUID
+import com.example.personalapp.util.randomUuidString
+import com.example.personalapp.util.nowMillis
 
 data class ChatMessage(
     val text: String,
@@ -35,7 +35,7 @@ class AIWorkoutViewModel(
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    fun sendMessage(text: String, studentId: String, provider: AiProvider = AiProvider.GEMINI) {
+    fun sendMessage(text: String, studentId: String, provider: AiProvider = AiProvider.OPENAI) {
         if (text.isBlank()) return
 
         viewModelScope.launch {
@@ -61,12 +61,12 @@ class AIWorkoutViewModel(
                         suggestedWorkouts = suggestedWorkouts
                     )
                 } else {
-                    Log.d("AIWorkoutViewModel", "AI Raw Response: $aiRawResponse")
+                    println("AIWorkoutViewModel: AI raw response: $aiRawResponse")
                     _messages.value = _messages.value + ChatMessage(aiRawResponse, false)
                 }
             } catch (e: Exception) {
-                Log.e("AIWorkoutViewModel", "Error generating workout", e)
-                _messages.value = _messages.value + ChatMessage("Erro técnico: ${e.localizedMessage ?: "Falha na comunicação com a IA"}", false)
+                println("AIWorkoutViewModel: error generating workout: $e")
+                _messages.value = _messages.value + ChatMessage("Erro técnico: ${e.message ?: "Falha na comunicação com a IA"}", false)
             } finally {
                 _isGenerating.value = false
             }
@@ -85,14 +85,14 @@ class AIWorkoutViewModel(
             
             parsed.workouts.map { aiWorkout ->
                 WorkoutEntity(
-                    id = UUID.randomUUID().toString(),
+                    id = randomUuidString(),
                     studentId = studentId,
                     name = aiWorkout.name,
                     isActive = true,
                     exercises = aiWorkout.exercises.map { 
                         Exercise(it.name, it.sets, it.reps, it.weight, null, it.notes)
                     },
-                    createdAt = System.currentTimeMillis()
+                    createdAt = nowMillis()
                 )
             }
         } catch (e: Exception) {

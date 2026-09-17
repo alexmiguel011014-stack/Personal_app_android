@@ -33,7 +33,10 @@ fun AIWorkoutScreen(
     val messages by viewModel.messages.collectAsState()
     val isGenerating by viewModel.isGenerating.collectAsState()
     var inputText by remember { mutableStateOf("") }
-    var provider by remember { mutableStateOf(AiProvider.GEMINI) }
+    // Default is a BYO-key provider, not Gemini: Gemini's free Developer-API tier is the one
+    // that keeps returning "model overloaded" (GOALS.md §14a/§14c) — it stays available, but as
+    // the last chip, not the one a tap lands on.
+    var provider by remember { mutableStateOf(AiProvider.OPENAI) }
 
     Scaffold(
         topBar = {
@@ -60,11 +63,6 @@ fun AIWorkoutScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 FilterChip(
-                    selected = provider == AiProvider.GEMINI,
-                    onClick = { provider = AiProvider.GEMINI },
-                    label = { Text("Gemini") }
-                )
-                FilterChip(
                     selected = provider == AiProvider.OPENAI,
                     onClick = { provider = AiProvider.OPENAI },
                     label = { Text("ChatGPT") }
@@ -78,6 +76,11 @@ fun AIWorkoutScreen(
                     selected = provider == AiProvider.CLAUDE,
                     onClick = { provider = AiProvider.CLAUDE },
                     label = { Text("Claude") }
+                )
+                FilterChip(
+                    selected = provider == AiProvider.GEMINI,
+                    onClick = { provider = AiProvider.GEMINI },
+                    label = { Text("Gemini (grátis, instável)") }
                 )
             }
             LazyColumn(

@@ -22,7 +22,8 @@ import com.example.personalapp.data.model.Exercise
 import com.example.personalapp.ui.viewmodel.PromptFichaViewModel
 import com.example.personalapp.util.WorkoutParser
 import kotlinx.coroutines.launch
-import java.util.UUID
+import com.example.personalapp.util.randomUuidString
+import com.example.personalapp.util.nowMillis
 
 // The provider-agnostic half of GOALS.md §15: instead of calling an AI API in-app, hand the
 // trainer a ready-to-run prompt for whichever AI app they already have, then reuse the existing
@@ -74,12 +75,12 @@ fun PromptFichaScreen(
                     showValidation = true
                     if (workoutName.isNotBlank() && exercises.isNotEmpty()) {
                         val workout = WorkoutEntity(
-                            id = UUID.randomUUID().toString(),
+                            id = randomUuidString(),
                             studentId = studentId,
                             name = workoutName,
                             isActive = true,
                             exercises = exercises.toList(),
-                            createdAt = System.currentTimeMillis()
+                            createdAt = nowMillis()
                         )
                         viewModel.insertWorkout(workout)
                         onBack()

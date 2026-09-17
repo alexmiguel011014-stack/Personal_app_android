@@ -72,26 +72,13 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.material)
 
-    // Compose
-    implementation(platform(libs.androidx.compose.bom))
-    implementation(libs.androidx.ui)
-    implementation(libs.androidx.ui.graphics)
-    implementation(libs.androidx.ui.tooling.preview)
-    implementation(libs.androidx.material3)
-    implementation(libs.androidx.material.icons.extended)
+    // GOALS.md §18h: every screen, ViewModel and the navigation graph live in :shared (Compose
+    // Multiplatform, exposed as `api`). :app only needs the Activity entry point.
     implementation(libs.androidx.activity.compose)
-    implementation(libs.kotlinx.serialization.json)
 
-    // Koin (GOALS.md §18c — Hilt has no Kotlin Multiplatform support)
+    // Koin (GOALS.md §18c): startKoin/androidContext in MainApplication; modules are in :shared.
     implementation(platform(libs.koin.bom))
     implementation(libs.koin.android)
-    implementation(libs.koin.androidx.compose)
-
-    // Lifecycle
-    implementation(libs.androidx.lifecycle.viewmodel.compose)
-
-    // Navigation
-    implementation(libs.androidx.navigation.compose)
 
     // Firebase
     implementation(platform(libs.firebase.bom))
@@ -109,7 +96,8 @@ dependencies {
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.mockk.android)
-    androidTestImplementation(platform(libs.androidx.compose.bom))
+    // Pinned to the Jetpack Compose version Compose Multiplatform 1.11.0 is based on (no
+    // multiplatform port of the UI-test artifacts exists).
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.test.manifest)
 }

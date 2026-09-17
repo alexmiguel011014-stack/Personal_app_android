@@ -1,11 +1,11 @@
 package com.example.personalapp.ui.viewmodel
 
-import android.content.Context
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.example.personalapp.data.local.entity.UserEntity
 import com.example.personalapp.data.local.entity.WorkoutEntity
 import com.example.personalapp.data.repository.TrainerRepository
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
+import com.example.personalapp.data.service.PromptAssets
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -18,11 +18,22 @@ import kotlinx.coroutines.launch
 // annotations this same template asks the AI to produce.
 class PromptFichaViewModel(
     private val trainerRepository: TrainerRepository,
-    private val context: Context,
+    private val promptAssets: PromptAssets,
 ) : ViewModel() {
 
     private val _student = MutableStateFlow<UserEntity?>(null)
     val student: StateFlow<UserEntity?> = _student
+
+    // Template with the reference table already spliced in. Loaded once, up front, so
+    // buildPrompt() can stay synchronous for the "Copiar Prompt" click (the files are ~10 KB).
+    private var fullTemplate: String = ""
+
+    init {
+        viewModelScope.launch {
+            fullTemplate = promptAssets.fichaPromptTemplate()
+                .replace("\$TABLE_PLACEHOLDER\$", promptAssets.volumeReference())
+        }
+    }
 
     fun loadStudent(studentId: String) {
         viewModelScope.launch {
@@ -31,10 +42,6 @@ class PromptFichaViewModel(
     }
 
     fun buildPrompt(userRequest: String): String {
-        val template = context.assets.open("ficha_prompt_template.md").bufferedReader().use { it.readText() }
-        val table = context.assets.open("hypertrophy_volume_reference.md").bufferedReader().use { it.readText() }
-        val fullTemplate = template.replace("\$TABLE_PLACEHOLDER\$", table)
-
         val student = _student.value
         val profile = if (student != null) {
             """

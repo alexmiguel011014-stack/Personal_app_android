@@ -22,7 +22,6 @@ import org.koin.compose.viewmodel.koinViewModel
 import com.example.personalapp.data.local.entity.ScheduleEntity
 import com.example.personalapp.data.local.entity.UserEntity
 import com.example.personalapp.ui.viewmodel.TrainerViewModel
-import java.util.Locale
 
 @Composable
 fun ScheduleScreen(
@@ -98,7 +97,7 @@ fun DayAgendaItem(
     onBookSlot: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(value = false) }
-    val hours = (6..21).map { String.format(Locale.ROOT, "%02dh", it) }
+    val hours = (6..21).map { it.toString().padStart(2, '0') + "h" }
 
     Card(
         modifier = Modifier

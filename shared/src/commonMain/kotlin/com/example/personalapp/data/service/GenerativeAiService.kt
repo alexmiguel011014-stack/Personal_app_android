@@ -36,9 +36,7 @@ fun createAiHttpClient(): HttpClient = HttpClient {
 
 class GenerativeAiService(
     private val settingsRepository: SettingsRepository,
-    // The hypertrophy volume reference table (GOALS.md §5d), read once by the platform that owns
-    // the bundled file (Android: app/src/main/assets/hypertrophy_volume_reference.md, via Koin).
-    private val volumeReference: String,
+    private val promptAssets: PromptAssets,
     private val httpClient: HttpClient = createAiHttpClient(),
 ) {
     private val json = Json { ignoreUnknownKeys = true }
@@ -66,8 +64,8 @@ class GenerativeAiService(
         private const val CLAUDE_MAX_TOKENS = 4096
     }
 
-    suspend fun generateWorkout(student: UserEntity, userPrompt: String, provider: AiProvider = AiProvider.GEMINI): String {
-        val fullPrompt = buildPrompt(student, userPrompt)
+    suspend fun generateWorkout(student: UserEntity, userPrompt: String, provider: AiProvider = AiProvider.OPENAI): String {
+        val fullPrompt = buildPrompt(student, userPrompt, promptAssets.volumeReference())
         return when (provider) {
             AiProvider.GEMINI -> generateWithGemini(fullPrompt)
             AiProvider.OPENAI -> generateWithOpenAi(fullPrompt)
@@ -76,7 +74,7 @@ class GenerativeAiService(
         }
     }
 
-    private fun buildPrompt(student: UserEntity, userPrompt: String) = """
+    private fun buildPrompt(student: UserEntity, userPrompt: String, volumeReference: String) = """
         Você é um Personal Trainer especialista.
         Crie um treino para o seguinte aluno:
         Nome: ${student.name}

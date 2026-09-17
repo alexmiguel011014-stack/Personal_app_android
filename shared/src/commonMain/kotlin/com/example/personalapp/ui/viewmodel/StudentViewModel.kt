@@ -10,7 +10,8 @@ import com.example.personalapp.data.repository.StudentRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import java.util.UUID
+import com.example.personalapp.util.randomUuidString
+import com.example.personalapp.util.nowMillis
 
 class StudentViewModel(
     private val repository: StudentRepository,
@@ -46,11 +47,11 @@ class StudentViewModel(
             entries.filterValues { it.isNotEmpty() }.forEach { (exerciseName, sets) ->
                 repository.logSession(
                     WorkoutLogEntity(
-                        id = UUID.randomUUID().toString(),
+                        id = randomUuidString(),
                         studentId = studentId,
                         workoutId = workoutId,
                         exerciseName = exerciseName,
-                        date = System.currentTimeMillis(),
+                        date = nowMillis(),
                         performedSets = sets,
                     ),
                     trainerId,

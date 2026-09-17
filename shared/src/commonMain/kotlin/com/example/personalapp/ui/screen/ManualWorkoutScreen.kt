@@ -19,7 +19,8 @@ import com.example.personalapp.data.local.entity.WorkoutEntity
 import com.example.personalapp.data.model.Exercise
 import com.example.personalapp.ui.viewmodel.WorkoutViewModel
 import com.example.personalapp.util.WorkoutParser
-import java.util.UUID
+import com.example.personalapp.util.randomUuidString
+import com.example.personalapp.util.nowMillis
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -90,12 +91,12 @@ fun ManualWorkoutScreen(
                             current.copy(name = workoutName, exercises = exercises.toList())
                         } else {
                             WorkoutEntity(
-                                id = UUID.randomUUID().toString(),
+                                id = randomUuidString(),
                                 studentId = studentId,
                                 name = workoutName,
                                 isActive = true,
                                 exercises = exercises.toList(),
-                                createdAt = System.currentTimeMillis()
+                                createdAt = nowMillis()
                             )
                         }
                         if (current != null) viewModel.updateWorkout(workout) else viewModel.insertWorkout(workout)

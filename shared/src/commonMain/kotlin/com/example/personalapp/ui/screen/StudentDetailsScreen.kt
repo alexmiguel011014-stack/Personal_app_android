@@ -1,6 +1,5 @@
 package com.example.personalapp.ui.screen
 
-import android.content.Intent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -12,14 +11,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import org.koin.compose.viewmodel.koinViewModel
 import com.example.personalapp.ui.viewmodel.StudentDetailsViewModel
-import java.text.SimpleDateFormat
-import java.util.*
+import com.example.personalapp.ui.platform.rememberTextSharer
+import com.example.personalapp.util.formatDate
+import com.example.personalapp.util.formatDateTime
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -42,7 +41,7 @@ fun StudentDetailsScreen(
     var showFichaDialog by remember { mutableStateOf(false) }
     var showBiometricDialog by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
-    val context = LocalContext.current
+    val shareText = rememberTextSharer()
     val clipboardManager = LocalClipboardManager.current
 
     LaunchedEffect(studentId) {
@@ -73,13 +72,7 @@ fun StudentDetailsScreen(
             inviteCode = inviteCode,
             inviteError = inviteError,
             onDismiss = { viewModel.clearInvite() },
-            onShare = { code ->
-                val intent = Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"
-                    putExtra(Intent.EXTRA_TEXT, "Seu código de convite Personal Tracker: $code")
-                }
-                context.startActivity(Intent.createChooser(intent, null))
-            },
+            onShare = { code -> shareText("Seu código de convite Personal Tracker: $code") },
             onCopy = { code -> clipboardManager.setText(AnnotatedString(code)) },
         )
     }
@@ -104,7 +97,6 @@ fun StudentDetailsScreen(
         }
     ) { padding ->
         student?.let { s ->
-            val currentLocale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
@@ -159,7 +151,7 @@ fun StudentDetailsScreen(
                 }
 
                 items(workoutLogs.sortedByDescending { it.date }.take(10)) { log ->
-                    val dateStr = SimpleDateFormat("dd/MM/yyyy HH:mm", currentLocale).format(Date(log.date))
+                    val dateStr = formatDateTime(log.date)
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Row(
                             modifier = Modifier.padding(12.dp).fillMaxWidth(),
@@ -193,7 +185,7 @@ fun StudentDetailsScreen(
                 }
 
                 items(biometrics.take(5)) { bio ->
-                    val dateStr = SimpleDateFormat("dd/MM/yyyy", currentLocale).format(Date(bio.date))
+                    val dateStr = formatDate(bio.date)
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Row(modifier = Modifier.padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Column {

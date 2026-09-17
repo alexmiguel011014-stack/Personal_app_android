@@ -3,7 +3,8 @@ package com.example.personalapp
 import android.app.Application
 import android.content.pm.ApplicationInfo
 import android.util.Log
-import com.example.personalapp.di.appModule
+import com.example.personalapp.di.platformModule
+import com.example.personalapp.di.sharedModule
 import com.example.personalapp.shared.sharedModulePlatformName
 import com.google.firebase.Firebase
 import com.google.firebase.appcheck.appCheck
@@ -17,7 +18,7 @@ class MainApplication : Application() {
         super.onCreate()
         startKoin {
             androidContext(this@MainApplication)
-            modules(appModule)
+            modules(platformModule, sharedModule)
         }
         // GOALS.md §18b toolchain checkpoint: confirms :app actually links against :shared,
         // not just that both modules happen to compile independently.

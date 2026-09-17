@@ -987,10 +987,12 @@ flowchart TD
       evaluation. The evaluation itself is still worth doing eventually (which provider actually
       follows the volume-budget math best), just informally, whenever real usage accumulates —
       not a blocker for shipping the choice.
-- [ ] Keep Gemini wired as an optional fallback (§3's existing code), but stop treating it as the
-      default/primary path in any UI copy until Google's free-tier reliability changes — still
-      accurate advice, unaffected by the §16 expansion (Gemini stays one of four choices, just
-      not the one to lead with in copy/defaults).
+- [x] **Done 2026-09-16** — Gemini stays wired but is no longer the default anywhere:
+      `AIWorkoutScreen`'s initial chip is ChatGPT (OpenAI, the provider with the working
+      BYO-key path §14c recommended leading with), Gemini is the *last* chip and labelled
+      "Gemini (grátis, instável)", and the `provider` default parameter on both
+      `AIWorkoutViewModel.sendMessage()` and `GenerativeAiService.generateWorkout()` is
+      `AiProvider.OPENAI`. Verified as part of the §18h build (`verify assembleDebug` green).
 
 ---
 
@@ -1664,37 +1666,83 @@ flowchart TD
       App Check (App Attest provider for release, debug provider for local iOS testing) — a
       real native-bridge implementation, not optional, since `firestore.rules`'/Auth's security
       posture assumes App Check is active on every client.
-- [ ] **Crashlytics**: no drop-in multiplatform equivalent exists yet (confirmed current
-      research). Options, pick one rather than defaulting silently: (a) **CrashKiOS**
-      (Touchlab's KMM crash-reporting bridge, explicitly built for this exact gap, forwards
-      crashes to the existing Firebase Crashlytics project) — closest to today's behavior,
-      recommended; (b) drop Crashlytics on iOS specifically and rely on manual bug reports during
-      the free/test phase — acceptable given the small current user count, revisit once paid.
+- [x] **Crashlytics — decided 2026-09-16, and the premise was stale**: a drop-in *does* exist
+      for what this app uses. GitLive ships `dev.gitlive:firebase-crashlytics` (KMP wrapper over
+      Firebase Crashlytics on both platforms, found while doing §18f), and this project only ever
+      calls `recordException(...)` for non-fatal errors — every such call now goes through
+      `Firebase.crashlytics` from `commonMain` (`TrainerRepository`, `StudentRepository`,
+      `GenerativeAiService`). CrashKiOS (option a) solves a *different* problem — symbolicated
+      Kotlin/Native stack traces for native *crashes* — which this app doesn't rely on today;
+      revisit only if iOS crash reports turn out unreadable once real iOS usage exists. Like
+      every other GitLive iOS actual, the Crashlytics one links against the Firebase iOS SDK,
+      which is the same pending CocoaPods/SPM macOS step flagged in §18f.
 - [ ] Re-verify §8's App Check debug-token registration flow (§13a) still applies correctly once
       requests can come from either platform's debug provider — the Firebase Console's debug
       token allow-list is per-install, not per-platform, so this should be mechanically the same
       process repeated once per iOS test device, not a new mechanism.
 
-**18h. UI: Jetpack Compose → Compose Multiplatform, Navigation**
-- [ ] Move every screen composable with no Android-only API calls (`ContentType`/autofill
-      semantics, `LocalConfiguration`, Android-specific icons) into `commonMain` — per current
-      migration reports for exactly this move (existing Jetpack Compose app → Compose
-      Multiplatform), most Composables are reported to work unchanged; the real work is
-      resources (no generated Android `R` class in common code — move string/icon resources to
-      Compose Multiplatform's resource system) and anything directly touching
-      `android.content.Context`/`ClipboardManager`/Android permissions APIs (`expect`/`actual`
-      those specifically, e.g. `PromptFichaScreen`'s clipboard copy from §15e).
-- [ ] Adopt the official Compose Multiplatform Navigation library (stable since 1.10.0) as a
-      drop-in for the existing Navigation Compose usage (`AppNavigation.kt`'s `Screen` sealed
-      class/`NavHost` already maps closely to the multiplatform API). iOS-specific: swipe-back
-      gesture needs an explicit `iosMain` UIKit gesture recognizer or Compose Cupertino — native
-      back-swipe isn't automatic, confirm current guidance at implementation time (this is an
-      area still actively evolving per the research).
-- [ ] **Explicitly re-verify each Android-only UI fix already shipped this project** doesn't
-      silently regress on iOS: the `NonObservableLocale` fix (§10, `LocalConfiguration.current
-      .locales[0]`), the R8/lint sweep (§8/§10, Android-build-only, doesn't apply to iOS but
-      shouldn't be assumed equivalent-safe without checking), and `Icons.AutoMirrored.*` usage
-      (already correctly multiplatform-safe per §13's fix this session).
+**18h. UI: Jetpack Compose → Compose Multiplatform, Navigation — done 2026-09-16 (Android-verified)**
+- [x] **All 22 UI files** (every screen, `Components.kt`, `AppNavigation`/`StudentNavigation`/
+      `RoleRouter`) and all 9 ViewModels moved to `:shared`'s `commonMain`, same package names,
+      plus a new common `App()` root (`ui/App.kt`) that `MainActivity.setContent { App() }` and
+      iOS's `MainViewController()` both host. `:app` is now three files (`MainActivity`,
+      `MainApplication`, manifest) and its own Compose/Navigation/Lifecycle dependencies are
+      gone — the migration reports were right: the Composables themselves moved unchanged.
+      Compose Multiplatform `1.11.0` (plugin already in the catalog since §18b), with the
+      component versions from its own compatibility table: `org.jetbrains.androidx.navigation
+      2.9.2`, `lifecycle 2.11.0`, Koin `koin-compose`/`koin-compose-viewmodel` (the
+      `koinViewModel()` import was already the multiplatform one since §18c). Consequence worth
+      knowing: this **retired `:app`'s Compose BOM `2024.12.01`** (the ~1.5-years-behind pin
+      §10 deliberately left for "a dedicated future pass") — Android now gets Jetpack Compose
+      `1.11.1` via CMP, so that upgrade happened here, implicitly; `ui-test-junit4` is pinned to
+      the same `1.11.1` for the golden-path test. **The Android-only bits, each with its
+      replacement**: `Intent(ACTION_SEND)` share sheet → `expect`/`actual`
+      `rememberTextSharer()` (`ui/platform/Share.*.kt`; iOS `UIActivityViewController`);
+      `Intent(ACTION_VIEW)` for the Crashlytics console link → `LocalUriHandler` (common);
+      `FirebaseApp.getInstance().options.projectId` → GitLive `Firebase.app.options.projectId`;
+      `SimpleDateFormat` + `LocalConfiguration.current.locales[0]` → `util/DateFormat.kt` on
+      `kotlinx-datetime 0.8.0` (the locale only ever fed a fixed numeric pattern, so nothing
+      user-visible changes); `String.format("%02dh")` → `padStart`; `java.util.UUID`/
+      `System.currentTimeMillis()` → the §18f `Platform.kt` helpers; `android.util.Log` →
+      `println` (debug-only chatter); `@Preview` → `org.jetbrains.compose.ui.tooling.preview`.
+      `LocalClipboardManager` and the `ContentType` autofill semantics on `LoginScreen` are
+      already common in CMP 1.11 — kept as-is. **Resources**: the two `.md` prompt files moved
+      from `app/src/main/assets/` to `shared/src/commonMain/composeResources/files/`, read via
+      `Res.readBytes` behind a `PromptAssets` Koin single (`GenerativeAiService` and
+      `PromptFichaViewModel` no longer take a `Context`; the ViewModel preloads the template so
+      the "Copiar Prompt" click stays synchronous). There were no `R.string`/`R.drawable` uses to
+      migrate — the app's strings are hardcoded pt-BR. `AdminViewModel` (the last official-SDK
+      Firestore user) ported to GitLive too (`Query.count()` = the same server-side aggregation),
+      so the official `FirebaseFirestore` type is gone from DI entirely. **Koin split**:
+      `sharedModule` (`commonMain`, the whole graph) + `expect val platformModule` (Android:
+      Room builder + DataStore via `androidContext()`; iOS: the parameterless builders) and an
+      iOS `initKoin()`. **Verified**: `./gradlew :shared:testAndroidHostTest
+      :app:compileDebugAndroidTestKotlin verify assembleDebug` all green (22 shared tests; the
+      35 MB debug APK builds). Found and fixed along the way: `TrainerGoldenPathTest` hadn't
+      compiled since §16g added `onNavigateToPromptFicha` to `StudentDetailsScreen` — nobody
+      ran `compileDebugAndroidTestKotlin` after that, and `verify` doesn't include it (§9's
+      "written, compiles" claim had silently gone stale). **Not verified**: anything on iOS
+      (needs CI, needs a push — and, before the test binary can even link, the Firebase iOS SDK
+      step from §18f) and a real-device run of the migrated UI on Android (no device here — the
+      Compose version jump is the one change here that deserves a hands-on smoke test before
+      the next sideloaded build goes to the trainer).
+- [x] Navigation: `org.jetbrains.androidx.navigation:navigation-compose 2.9.2` was a true
+      drop-in — same `androidx.navigation.compose` package, so `AppNavigation.kt`/
+      `StudentNavigation.kt` moved without a single import change (`NavHost`, `composable`,
+      `navArgument`, `NavType.StringType` all resolve). **iOS swipe-back: still open, and now
+      tracked as its own note here rather than a checkbox** — CMP's navigation 2.9 does *not*
+      provide the native edge-swipe back gesture on iOS automatically; it needs either the
+      `iosMain` gesture-recognizer approach or waiting for the navigation-event integration that
+      CMP 1.11.0's release notes list (`navigationevent-compose 1.1.0`). Decide when the iOS app
+      is actually being run (§18j) — it can't be evaluated from here and doesn't affect Android.
+- [x] Re-verified each earlier Android-only UI fix against the move: the `NonObservableLocale`
+      fix (§10) is **superseded**, not regressed — the locale read is gone entirely because the
+      date formatter never used it for anything observable (see above); the R8/lint sweep
+      (§8/§10) still applies unchanged to the Android build (`lint` is part of `verify`, still
+      green), and has no iOS counterpart to regress; `Icons.AutoMirrored.*` compiles from
+      `commonMain` via `compose.materialIconsExtended`, confirming it's multiplatform-safe. One
+      more Android-only assumption *was* found and removed by the compiler, not by this list:
+      `String.format(Locale.ROOT, …)` in `ScheduleScreen` (JVM-only) — noted in the first item.
 
 **18i. In-app update checker — both platforms (user's explicit ask)**
 - [ ] New `commonMain` `UpdateChecker`: reads a small `latest.json` manifest (version code,
@@ -1747,13 +1795,13 @@ flowchart TD
       independently (`android-ci.yml` on `main`, `ios-ci.yml` on `feature/kmp-ios`).
 
 **18l. Testing**
-- [ ] Move `WorkoutParserTest` (already dependency-free) to `commonTest` — done when it passes on
-      both `testDebugUnitTest` (Android/JVM) and an `iosSimulatorArm64` test run.
-- [ ] `AuthRepositoryTest` (MockK-based) needs a KMP-compatible mocking approach — MockK is
-      JVM-only; either keep this test Android-only (acceptable, it's testing Android-specific
-      Firebase mock plumbing today, not core logic) or migrate the assertions it covers into a
-      `commonTest` against GitLive's SDK using a fake/in-memory implementation instead of a mock.
-      Don't silently drop the coverage — decide and document which.
+- [x] `WorkoutParserTest` — moved to `commonTest` in §18b (2026-09-15), converted to
+      `kotlin.test`; passes on `:shared:testAndroidHostTest` (15/15). The iOS run is the same
+      pending-CI/pending-push caveat as everything else on iOS.
+- [x] `AuthRepositoryTest` — decided and done in §18f (2026-09-16): its assertions were all
+      about role resolution, so that logic became the pure `resolveAuthResult()` and the test
+      became `commonTest`'s `AuthResultResolutionTest` (6 cases, no mocking, every target). The
+      one generic "exception → `Result.failure`" case was dropped knowingly (documented in §18f).
 - [ ] `AppDaoTest`/`workoutLog_roundTripsPerformedSets` (Room in-memory, currently `androidTest`-
       only) — re-run against Room's KMP in-memory test builder on `iosTest` too, given 18d's
       migration; this is genuinely new coverage the project didn't have before (Room's iOS path

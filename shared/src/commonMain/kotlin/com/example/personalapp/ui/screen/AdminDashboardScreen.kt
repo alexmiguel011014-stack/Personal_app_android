@@ -16,6 +16,9 @@ import org.koin.compose.viewmodel.koinViewModel
 import com.example.personalapp.ui.viewmodel.AdminViewModel
 import com.example.personalapp.ui.viewmodel.ApiStatus
 import com.example.personalapp.ui.viewmodel.AuthViewModel
+import androidx.compose.ui.platform.LocalUriHandler
+import dev.gitlive.firebase.Firebase
+import dev.gitlive.firebase.app
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -70,9 +73,9 @@ fun AdminDashboardScreen(
 
 @Composable
 fun LogsTab() {
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val uriHandler = LocalUriHandler.current
     val projectId = remember {
-        runCatching { com.google.firebase.FirebaseApp.getInstance().options.projectId }.getOrNull()
+        runCatching { Firebase.app.options.projectId }.getOrNull()
     }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
@@ -93,7 +96,7 @@ fun LogsTab() {
                         } else {
                             "https://console.firebase.google.com"
                         }
-                        context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)))
+                        uriHandler.openUri(url)
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {

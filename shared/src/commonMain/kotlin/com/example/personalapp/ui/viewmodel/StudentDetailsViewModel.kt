@@ -12,6 +12,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import com.example.personalapp.util.randomUuidString
+import com.example.personalapp.util.nowMillis
 
 class StudentDetailsViewModel(
     private val repository: TrainerRepository
@@ -47,12 +49,12 @@ class StudentDetailsViewModel(
     fun addBiometric(studentId: String, weight: Double, bodyFat: Double) {
         viewModelScope.launch {
             val biometric = BiometricEntity(
-                id = java.util.UUID.randomUUID().toString(),
+                id = randomUuidString(),
                 userId = studentId,
                 weight = weight,
                 height = _student.value?.medicalNotes?.toDoubleOrNull() ?: 0.0, // Height is tricky if not stored separately, I should probably add height to UserEntity or keep it in Biometric correctly.
                 bodyFat = bodyFat,
-                date = System.currentTimeMillis()
+                date = nowMillis()
             )
             repository.insertBiometric(biometric)
         }

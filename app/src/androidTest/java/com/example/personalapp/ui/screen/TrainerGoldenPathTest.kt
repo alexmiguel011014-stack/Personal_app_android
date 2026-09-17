@@ -121,6 +121,7 @@ class TrainerGoldenPathTest {
                     onBack = {},
                     onNavigateToManual = {},
                     onNavigateToAI = {},
+                    onNavigateToPromptFicha = {},
                     onNavigateToEdit = {},
                     onNavigateToWorkoutBuilder = {},
                     viewModel = studentDetailsViewModel,

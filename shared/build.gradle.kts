@@ -38,6 +38,11 @@ kotlin {
         compileSdk = 37
         minSdk = 24
         withHostTest {}
+        // GOALS.md §18l: the on-device (instrumented) test compilation, for the Room round-trip
+        // tests in src/roomTest — see the sourceSets block. Needs a device/emulator to *run*.
+        withDeviceTest {
+            instrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        }
         // JVM 17 (was 11): GitLive's Firebase KMP SDK (GOALS.md §18f) ships JVM-17 bytecode and its
         // API is largely inline functions, which Kotlin refuses to inline into a lower target.
         // :app's compileOptions match this.
@@ -130,7 +135,35 @@ kotlin {
             implementation(libs.kotlinx.coroutines.test)
             implementation(libs.ktor.client.mock)
         }
+        // GOALS.md §18l: tests that need BundledSQLiteDriver's native library — Room's in-memory
+        // round trips (AppDaoTest) — live in src/roomTest/kotlin, which is added as a *source
+        // directory* to both the iOS test source set and the Android *device* test source set.
+        // Not commonTest: the Android build variant of androidx.sqlite:sqlite-bundled ships no
+        // JVM-host binary, so under testAndroidHostTest they fail with UnsatisfiedLinkError (§18d).
+        // A shared directory rather than a shared source set with dependsOn edges, because manual
+        // dependsOn calls make KGP skip the default hierarchy template — which would silently
+        // disconnect iosMain from the iOS targets.
+        val roomTestDir = "src/roomTest/kotlin"
+        iosTest {
+            kotlin.srcDir(roomTestDir)
+        }
+        getByName("androidDeviceTest") {
+            kotlin.srcDir(roomTestDir)
+            dependencies {
+                implementation(kotlin("test"))
+                implementation(libs.androidx.junit)
+                implementation(libs.androidx.test.runner)
+            }
+        }
     }
+}
+
+// Compose Multiplatform 1.11.0's resources plugin registers a "copy resources to assets" task
+// for the KMP-library plugin's deviceTest variant but leaves its outputDirectory unset, which
+// fails Gradle's property validation the moment the device-test compilation is requested
+// (GOALS.md §18l). The Room round-trip tests don't touch compose resources, so skip it.
+tasks.matching { it.name == "copyAndroidDeviceTestComposeResourcesToAndroidAssets" }.configureEach {
+    enabled = false
 }
 
 dependencies {

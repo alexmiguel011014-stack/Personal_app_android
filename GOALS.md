@@ -1790,9 +1790,38 @@ flowchart TD
 - [ ] Host the built `.ipa` + an AltStore/SideStore-format "source" JSON (app metadata + download
       URL + version) somewhere stable and free — a GitHub Release asset on this same public repo
       is the natural choice, consistent with 18i's update-manifest hosting.
-- [ ] Document (in this file, not just in chat) the one-time per-iPhone SideStore setup steps —
-      this becomes the "dev setup note" the project has flagged needing before (§13a already
-      noted the same need for App Check debug tokens once more than one test device exists).
+- [x] **Per-iPhone SideStore setup — documented 2026-09-17** from the official docs
+      (docs.sidestore.io/docs/installation/prerequisites and /install, read that day; SideStore's
+      tooling names have churned — the VPN helper was "StosVPN" until it was pulled from the App
+      Store in 2026, now "LocalDevVPN"; the desktop installer is "iloader" — so re-check those
+      two names against the docs before following this on a new phone):
+      1. **Needs**: iPhone on iOS 15+ with a passcode; an Apple Account (a free one is fine — see
+         the limits below); **Wi-Fi** (mobile data doesn't work for SideStore's local VPN trick);
+         a computer (Windows/macOS/Linux) **only for the one-time install**, never again after.
+      2. **On the iPhone**: install **LocalDevVPN** (App Store, or the AltStore PAL source), open
+         it, add the VPN when prompted ("Allow VPN Configurations" → passcode) and connect. It
+         must be on every time SideStore installs, updates or refreshes anything.
+      3. **On the computer**: install **iloader** for that OS, connect the iPhone by USB, trust
+         the computer on the phone, open iloader, sign in with the Apple Account (case-sensitive;
+         doesn't have to be the phone's own account), pick the device, choose
+         **"Install SideStore (Stable)"**.
+      4. **Back on the iPhone**: Settings → General → VPN & Device Management → under
+         "Developer App" tap the Apple Account → **Trust** → "Allow & Restart"; then Settings →
+         Privacy & Security → **Developer Mode** on (restarts again). Open LocalDevVPN →
+         Connect. Open SideStore, sign in with the *same* Apple Account, go to **My Apps** and tap
+         the **"7 DAYS"** counter next to SideStore to refresh it (accept "Refresh Now" / the
+         certificate-revoke prompt if asked). SideStore briefly closes and reopens — done.
+      5. **Installing Personal Tracker**: SideStore → Sources → "+" → paste this repo's source
+         URL (the AltStore/SideStore-format JSON from the item above — *not published yet*) →
+         install "Personal Tracker" from it. Updates then arrive through the same source;
+         refreshes happen on their own while LocalDevVPN is on, or by tapping the days counter.
+      6. **App Check**: a debug build on an iPhone needs its debug token registered in Firebase
+         Console → App Check → the iOS app → Manage debug tokens, exactly like §13a did for
+         Android — one token per install.
+      7. **Limits of the free Apple Account**: signatures last **7 days** (the in-app banner from
+         §18i warns at 3 days left, reading `latest.json`'s `ios.signatureExpiresAt`, which is
+         maintained by hand), at most **3 sideloaded apps** at once, and the pairing file can
+         expire after an iOS update/reset — redo step 3 when that happens.
 - [ ] **(manual, deferred)** When the trainer starts charging students: enroll in the Apple
       Developer Program ($99/yr), switch distribution to TestFlight (up to 10,000 testers, no
       per-device technical setup for the end user), and revisit whether the Play Store's one-time
@@ -1822,15 +1851,39 @@ flowchart TD
       about role resolution, so that logic became the pure `resolveAuthResult()` and the test
       became `commonTest`'s `AuthResultResolutionTest` (6 cases, no mocking, every target). The
       one generic "exception → `Result.failure`" case was dropped knowingly (documented in §18f).
-- [ ] `AppDaoTest`/`workoutLog_roundTripsPerformedSets` (Room in-memory, currently `androidTest`-
-      only) — re-run against Room's KMP in-memory test builder on `iosTest` too, given 18d's
-      migration; this is genuinely new coverage the project didn't have before (Room's iOS path
-      was untested until this move).
-- [ ] `TrainerGoldenPathTest.kt` (Compose UI test) — Compose Multiplatform's iOS UI-testing
-      tooling is comparatively less mature than Android's `ui-test-junit4`; confirm current
-      support at implementation time. If iOS Compose UI testing isn't practical yet, keep this
-      test Android-only and say so explicitly rather than silently losing golden-path coverage
-      with no note.
+- [x] **Done 2026-09-17** — `AppDaoTest` (7 cases incl. `workoutLog_roundTripsPerformedSets`)
+      now lives in `shared/src/roomTest/kotlin`, a plain source *directory* added via
+      `kotlin.srcDir` to both `iosTest` and the new `androidDeviceTest` source set
+      (`withDeviceTest { instrumentationRunner = AndroidJUnitRunner }` on the KMP-library
+      plugin). Why a shared directory and not a shared source set: the first attempt used
+      `val roomTest by creating { dependsOn(commonTest) }` + `dependsOn(roomTest)` edges, which
+      (a) failed at configuration because `iosTest` doesn't exist yet at that point of the script
+      and (b) would have made KGP *skip the default hierarchy template* ("explicit dependsOn
+      edges were configured…"), silently disconnecting `iosMain` from the iOS targets. Two
+      snags fixed on the way: Compose Multiplatform 1.11.0's resources plugin registers a
+      `copyAndroidDeviceTestComposeResourcesToAndroidAssets` task for the deviceTest variant but
+      never sets its `outputDirectory`, failing Gradle's property validation — disabled by name
+      in `shared/build.gradle.kts` (the Room tests don't touch resources); and `androidx.test`
+      `ext.junit` bumped 1.1.5 → 1.3.0 / `runner` 1.7.0 added (current stable per the AndroidX
+      releases page). **Verified**: `./gradlew :shared:compileAndroidDeviceTest
+      :shared:assembleAndroidDeviceTest` — the test APK builds
+      (`shared/build/outputs/apk/androidTest/shared-androidTest.apk`) and `AppDaoTest` classes
+      are in `build/classes/kotlin/android/deviceTest/`; `testAndroidHostTest` still green
+      (28 tests, the Room ones correctly excluded). **Not verified**: actually running it —
+      `:shared:connectedAndroidDeviceTest` needs a device/emulator (none here; same as it
+      always was for this test), and the iOS run needs CI + the Firebase iOS SDK linking (§18f).
+- [x] **Decided 2026-09-17: `TrainerGoldenPathTest` stays Android-only, deliberately.** CMP
+      does ship a multiplatform UI-test API (`org.jetbrains.compose.ui:ui-test`,
+      `runComposeUiTest { }`), so an iOS port is *possible* — but the test's whole substance is
+      its MockK fakes of `TrainerRepository`/`StudentRepository` (`coEvery`/`every` over
+      `MutableStateFlow`s), and MockK is JVM-only; porting means hand-writing fake repositories
+      (or extracting interfaces to fake) first. That's a real, separate piece of work with no
+      user-visible payoff until the iOS app itself exists and can be run, so it's not done now
+      and not silently dropped: the test remains in `app/src/androidTest`, pinned to Jetpack
+      Compose `1.11.1`'s `ui-test-junit4` (the version CMP 1.11.0 is based on), and
+      `:app:compileDebugAndroidTestKotlin` is now part of every verification run in this file —
+      it had silently stopped compiling once already (§18h). Revisit alongside §18j's first real
+      iOS session, when `runComposeUiTest` can actually be exercised.
 
 **18m. Registration/cutover**
 - [ ] Once 18a–18l are green on both platforms, cut the existing `app` module over to depend on
@@ -1838,9 +1891,15 @@ flowchart TD
       that moved to `commonMain`) — verified via a full `./gradlew verify assembleDebug` pass
       identical in spirit to every other verification gate this project already uses, plus the
       equivalent iOS build succeeding in CI (18k).
-- [ ] Update `CLAUDE.md` and `README.md` to describe the new KMP module shape — this is exactly
-      the kind of cross-cutting convention change CLAUDE.md exists to document (per its own
-      existing "Module documentation strategy" note, §1).
+- [x] **Done 2026-09-17** — `CLAUDE.md` rewritten for the KMP shape (module layout and what
+      goes where, the verification commands including the `compileDebugAndroidTestKotlin` and
+      `testAndroidHostTest` gaps `verify` has, the `roomTest` source-directory rule, JVM 17 /
+      `androidx.room3` / GitLive pointers, the corrected role routing — the old text still said
+      the Student role had no screens — schemas under `shared/schemas/`, the load-bearing DB and
+      DataStore file names, the derived `status`/`assignedAt` rule, the current AI provider
+      setup, and a "Releasing a build" recipe tied to `latest.json`). `README.md` rewritten
+      likewise (stack, prerequisites, commands, iOS status, distribution). Both describe what
+      exists today, including that iOS is unverified — not the target state.
 
 ---
 

@@ -9,8 +9,14 @@ rules_version = '2';
 //   biometrics/{entryId} - trainerId, studentId
 //   schedules/{scheduleId} - trainerId, studentId
 //   workoutLogs/{logId}  - trainerId, studentId (written by the student, read by their trainer)
+//   assessments/{id}     - trainerId, studentId, submittedAt, parQAnswersJson, goal, ... (GOALS.md
+//                           §17: written by the student, append-only, read by their trainer)
 //   trainerRequests/{uid} - email, createdAt. Self-written "please promote me" mailbox, doc ID is
 //                           the requester's own uid; only an ADM can read/act on it (GOALS.md §5e).
+//
+//   users/{uid} also carries the GOALS.md §17 flags a trainer grants a linked student:
+//   canSelfAssess, canLogBiometrics (trainer-only), pendingAssessmentRequest (set by the trainer,
+//   cleared by the student's assessment batch), lastAssessmentId (that batch's link).
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -55,18 +61,44 @@ service cloud.firestore {
           get(/databases/$(database)/documents/invites/$(request.resource.data.inviteCode)).data.trainerId &&
         get(/databases/$(database)/documents/invites/$(request.resource.data.inviteCode)).data.used == false
       );
-      // The second branch is a narrow re-claim exception (GOALS.md §13d): an account that
-      // already has a users/{uid} doc but is still an unclaimed STUDENT (trainerId null) may
-      // attach to a trainer for the first time via the same valid-unused-invite proof the
-      // create rule above requires. Any other existing role/trainerId (TRAINER, ADM, or already
-      // linked to a different trainer) stays blocked — that needs an explicit ADM decision, not
-      // a client-driven overwrite.
+      // Three writers:
+      // 1. The owning trainer (GOALS.md §17c, and the fix for a pre-existing gap: before this,
+      //    no branch let a trainer edit a linked student's profile at all, so EditStudentScreen's
+      //    set(merge) on users/{uid} was silently PERMISSION_DENIED). Restricted to the profile
+      //    fields TrainerRepository.updateUser writes plus the §17 permission/request flags —
+      //    never role/trainerId/inviteCode.
+      // 2. The student themselves: own profile fields only. role/trainerId immutable (the
+      //    anti-self-promotion guarantee); canSelfAssess/canLogBiometrics immutable (trainer-
+      //    granted, §17); pendingAssessmentRequest may only go true -> false, and only in the
+      //    same batch that creates the assessment doc named by lastAssessmentId (existsAfter
+      //    sees the batch's own writes) — a student can't just dismiss a request.
+      // 3. The narrow re-claim exception (GOALS.md §13d): an account that already has a
+      //    users/{uid} doc but is still an unclaimed STUDENT (trainerId null) may attach to a
+      //    trainer for the first time via the same valid-unused-invite proof the create rule
+      //    above requires. Any other existing role/trainerId (TRAINER, ADM, or already linked to
+      //    a different trainer) stays blocked — that needs an explicit ADM decision.
       allow update: if isAdmin() || (
+        isOwningTrainer(field(resource.data, 'trainerId')) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'name', 'gender', 'phone', 'goal', 'experienceLevel', 'medicalNotes', 'trainingDays',
+          'canSelfAssess', 'canLogBiometrics', 'pendingAssessmentRequest'
+        ])
+      ) || (
         isSignedIn() && request.auth.uid == uid &&
         (
           (
             field(request.resource.data, 'role') == field(resource.data, 'role') &&
-            field(request.resource.data, 'trainerId') == field(resource.data, 'trainerId')
+            field(request.resource.data, 'trainerId') == field(resource.data, 'trainerId') &&
+            field(request.resource.data, 'canSelfAssess') == field(resource.data, 'canSelfAssess') &&
+            field(request.resource.data, 'canLogBiometrics') == field(resource.data, 'canLogBiometrics') &&
+            (
+              field(request.resource.data, 'pendingAssessmentRequest') == field(resource.data, 'pendingAssessmentRequest') ||
+              (
+                field(resource.data, 'pendingAssessmentRequest') == true &&
+                field(request.resource.data, 'pendingAssessmentRequest') == false &&
+                existsAfter(/databases/$(database)/documents/assessments/$(request.resource.data.lastAssessmentId))
+              )
+            )
           ) ||
           (
             field(resource.data, 'role') == 'STUDENT' &&
@@ -115,11 +147,19 @@ service cloud.firestore {
       allow update, delete: if isOwningTrainer(resource.data.trainerId);
     }
 
-    // biometrics/{entryId} — trainer manages; student reads their own entries.
+    // biometrics/{entryId} — trainer manages; student reads their own entries, and may create
+    // their own once the trainer set canLogBiometrics on their profile (GOALS.md §17c). The
+    // trainerId on the entry must be the student's own trainer, as with workoutLogs.
     match /biometrics/{entryId} {
       allow read: if isOwningTrainer(resource.data.trainerId) ||
         (isSignedIn() && resource.data.studentId == request.auth.uid);
-      allow create: if isOwningTrainer(request.resource.data.trainerId);
+      allow create: if isOwningTrainer(request.resource.data.trainerId) || (
+        isSignedIn() &&
+        request.resource.data.studentId == request.auth.uid &&
+        field(get(/databases/$(database)/documents/users/$(request.auth.uid)).data, 'canLogBiometrics') == true &&
+        request.resource.data.trainerId ==
+          field(get(/databases/$(database)/documents/users/$(request.auth.uid)).data, 'trainerId')
+      );
       allow update, delete: if isOwningTrainer(resource.data.trainerId);
     }
 
@@ -143,6 +183,20 @@ service cloud.firestore {
         request.resource.data.trainerId ==
           field(get(/databases/$(database)/documents/users/$(request.auth.uid)).data, 'trainerId');
       allow delete: if isSignedIn() && resource.data.studentId == request.auth.uid;
+    }
+
+    // assessments/{id} — GOALS.md §17: the student's self-assessment history. Created by the
+    // student only while their trainer has granted canSelfAssess, attributed to that trainer;
+    // read by the owning trainer or the student. Append-only: no update/delete, so history can't
+    // be rewritten from a client.
+    match /assessments/{id} {
+      allow read: if isOwningTrainer(resource.data.trainerId) ||
+        (isSignedIn() && resource.data.studentId == request.auth.uid);
+      allow create: if isSignedIn() &&
+        request.resource.data.studentId == request.auth.uid &&
+        field(get(/databases/$(database)/documents/users/$(request.auth.uid)).data, 'canSelfAssess') == true &&
+        request.resource.data.trainerId ==
+          field(get(/databases/$(database)/documents/users/$(request.auth.uid)).data, 'trainerId');
     }
 
     // trainerRequests/{uid} — a self-registered STUDENT asks to become a TRAINER; only the ADM

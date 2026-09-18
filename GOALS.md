@@ -41,669 +41,26 @@ depends on it.
 
 ---
 
-## 0. Toolchain / local setup
-- [x] JDK 17 installed (Temurin, via winget).
-- [x] Android `platform-tools` (adb) installed.
-- [x] **Android SDK Platform 37 + matching build-tools installed** — `platforms;android-37.0` +
-      `build-tools;37.0.0` installed via `sdkmanager`, `local.properties` created pointing at
-      the project-local `android-sdk/` (the system `ANDROID_HOME` pointed at a nonexistent path).
-- [x] `app/google-services.json` — created via Firebase Console, placed at `app/google-services.json`
-      (`package_name` verified to match `com.example.personalapp`). `./gradlew assembleDebug`
-      confirmed green (`processDebugGoogleServices` passes).
-- [x] Firebase project confirmed working: Auth (Email/Password) enabled and Firestore Database
-      created — both verified live via unauthenticated Identity Toolkit / Firestore REST probes
-      (`INVALID_LOGIN_CREDENTIALS` and `403 PERMISSION_DENIED` respectively, not
-      `CONFIGURATION_NOT_FOUND` / 404).
+## Archived sections (every item `[x]`)
 
-## 1. Project identity
-- [x] `README.md` exists and accurately describes the app, stack and setup steps.
-- [x] `CLAUDE.md` added at the project root: role-routing model (`RoleRouter.kt`), the
-      Firestore-source-of-truth + Room-cache data layer (updated to match the §4a migration, not
-      the old "local-only" description), the Smart Paste parsing heuristic (`WorkoutParser.kt`),
-      and the AI-workout entry points (now two, see the `WorkoutBuilderScreen` finding above).
-- [x] **Module documentation strategy (decided 2026-08-17):** don't add a separate `docs/` tree
-      that will drift from the code — keep `CLAUDE.md` for cross-cutting conventions (routing,
-      data-layer shape, parsing quirks) and add a short KDoc block (`/** ... */`) directly on
-      classes whose *purpose* isn't obvious from their name/members alone. Done: `TrainerRepository`
-      (Firestore-as-source-of-truth explanation), `FirestoreMappers.kt` (why plain maps, not POJO
-      reflection), `WorkoutParser` (sets-vs-reps heuristic, moved from a code comment to a proper
-      doc comment), `AdminViewModel` (why it reads Firestore directly instead of going through
-      `TrainerRepository`). `AppLogger` never ended up existing — §5e's Logs tab was built directly
-      on Firebase Crashlytics instead, so that part of the original item is moot.
+Moved out of this file on 2026-09-17 per `/execgoals` rule 4a; the numbering below is still
+what §-references throughout this file mean. Checksums are in `dev/goals-archive/README.md`.
 
-## 2. Version control
-- [x] Git repository, remote configured (`github.com/alexmiguel011014-stack/Personal_app_android`) —
-      the local folder had no `.git` at all until this session (the outer `sites/` monorepo
-      deliberately excludes this project via its own `.gitignore`); initialized locally, synced
-      onto the existing remote history via `git reset --soft`, dedicated SSH key added, pushed.
-- [x] `.gitignore` covers build artifacts, `.idea` noise, `google-services.json`, and (as of this
-      session) `android-sdk/`, `graphify-out/`, `repomix-output.xml`.
-- [x] No secret committed (`google-services.json` and API keys are correctly gitignored/never
-      hardcoded — keys are user-entered at runtime, see §8 for why that itself is a risk).
-
-## 3. Backend (Firebase + planned AI proxy)
-- [x] Firebase Auth wired for email/password login (`AuthRepository.login`).
-- [x] Role read from `Firestore: users/{uid}.role` on login (`ADM`/`TRAINER`/`STUDENT`).
-- [x] **Decision reversed 2026-08-18** (superseding the same-day decision above to keep
-      per-trainer keys): the user chose to stay on Firebase's free Spark plan rather than upgrade
-      to Blaze, which rules out the Cloud Function proxy entirely (Cloud Functions can't deploy on
-      Spark at any usage level, zero or not). Within that constraint, migrated Gemini to the
-      **Firebase AI Logic SDK** (`com.google.firebase:firebase-ai`, Gemini Developer API backend)
-      instead — free on Spark, officially maintained (replaces the deprecated
-      `com.google.ai.client.generativeai`), and fixes the original raw-client-key security concern
-      (unrestricted/standard Gemini keys being retired by Google through Sept 2026) because there
-      is no client-held key anymore: `Firebase.ai(backend = GenerativeBackend.googleAI())` calls
-      are authenticated via the project's own Firebase config + App Check (already wired, §8),
-      not a key typed into Settings. Traded away "each trainer brings their own Gemini key" — the
-      app now uses one Gemini configuration for the whole project, managed by the app owner in the
-      Firebase Console, not per-trainer. **OpenAI is unaffected and still per-trainer** (raw HTTP
-      call, no Firebase billing involved) — kept in Settings as the opt-in "bring your own key"
-      alternative for trainers who want it, so the product still offers a BYO-key path, just not
-      for Gemini specifically. Implemented in `GenerativeAiService.kt`
-      (`generateWithGemini()`), `SettingsRepository`/`SettingsViewModel`/`SettingsScreen.kt`
-      (Gemini key field removed), `AdminViewModel`/`AdminDashboardScreen.kt` (Gemini status row is
-      now a static "always on" indicator, not a per-device key check). Removed the deprecated SDK
-      dependency and its now-orphaned version catalog entries. Verified via
-      `./gradlew compileDebugKotlin verify` (all green). **New manual step, only doable by the
-      user**: enable Gemini access for the project in Firebase Console → Build → AI Logic → Get
-      started → choose "Gemini Developer API" (free) — the SDK call will fail at runtime until
-      that's done, same category as the two other pending manual Console steps (publish
-      `firestore.rules`, enable App Check enforcement — see §8).
-- [x] Gemini model id updated: `gemini-1.5-pro` → `gemini-3.7-flash` (current stable as of
-      2026-08-18; verify against https://firebase.google.com/docs/ai-logic/models before relying
-      on it long-term, Google sunsets model ids on a rolling schedule).
-- [x] `com.google.ai.client.generativeai` (deprecated SDK) removed entirely, replaced by the
-      Firebase AI Logic SDK per the decision above.
-
-## 4. Database — Firestore sync + new workout-log model
-
-**4a. Firestore as source of truth (confirmed requirement — see Product goal)**
-- [x] Room local DB (`AppDatabase`, v5) with entities: `UserEntity`, `BiometricEntity`,
-      `WorkoutEntity`, `HistoryEntity`, `ScheduleEntity`. Full CRUD via `AppDao`/`TrainerRepository`.
-- [x] `TrainerRepository` migrated: every write (students/workouts/biometrics/schedules/workoutLogs)
-      goes to Firestore (`FirestoreMappers.kt` entity↔doc mapping) in addition to Room; a
-      `startListening(trainerId)` snapshot listener per collection mirrors Firestore changes back
-      into Room (upsert on ADDED/MODIFIED, delete on REMOVED); every screen still reads Room, now
-      via `Flow` end-to-end (`getBiometricsByUser`/`getActiveWorkoutsByStudent` converted from
-      one-shot suspend calls so the UI updates reactively when the listener writes land). Wired to
-      start on trainer login / stop on logout in `AuthViewModel`. `HistoryEntity` intentionally
-      stays Room-only (superseded by `workoutLogs`, see Product goal #3). Verified via
-      `./gradlew assembleDebug` — not runtime-tested against a live device/emulator (none set up
-      in this environment); the Student-side write path (§5b) doesn't exist yet, so the
-      `workoutLogs` sync direction is exercised by the listener/rules but has no writer yet.
-- [x] Firestore schema, per-trainer scoped (`trainerId` field on every doc), implemented for
-      `students`, `workouts` (incl. `status`/`assignedAt`), `biometrics`, `schedules`,
-      `workoutLogs` — matches `firestore.rules`. **Not done:** `trainerId` on the Student's own
-      `users/{uid}` doc — that's set by the §7 linking mechanism, which is blocked on the Blaze
-      plan decision (Cloud Function), so there's no writer for it yet.
-- [x] New Room entity `WorkoutLogEntity` + `PerformedSet` (`data/model/PerformedSet.kt`,
-      `data/local/entity/WorkoutLogEntity.kt`) — same JSON-in-column pattern as `Exercise`.
-- [x] Room migration strategy: `exportSchema = true` (schema committed at
-      `app/schemas/.../6.json`), real `MIGRATION_5_6` (adds `workouts.status`/`assignedAt`,
-      creates `workout_logs`) registered via `.addMigrations(...)`, `fallbackToDestructiveMigration`
-      kept only as a safety net for anything without an explicit migration path.
-
-## 5. Frontend (Jetpack Compose)
-
-**5a. Existing (Trainer/ADM side)**
-- [x] **Trainer role** — fully built and routed (`AppNavigation.kt`): Main (students list +
-      bottom-nav tabs including `ScheduleScreen`), AddStudent, EditStudent, StudentDetails,
-      ManualWorkout (detailed exercise builder), WorkoutBuilder, AIWorkout (Gemini generation +
-      "Smart Paste" import via `WorkoutParser.kt`), Settings (API key entry).
-- [x] **ADM role** — `AdminDashboardScreen` exists and is routed from `RoleRouter`; all three tabs
-      are now real (see §5e — done 2026-08-17 via `/execgoals`).
-- [x] Evolution/biometrics chart exists: `Components.kt` has a custom `WeightChart` (Compose
-      `Canvas`, hand-drawn line + points), used from `StudentDetailsScreen`. No charting library
-      dependency — keep it that way; extend this same component for exercise-load progression
-      (5c) instead of adding a charting library.
-
-**5b. Student role (Product goal #2) — done 2026-08-17 via `/execgoals`**
-- [x] `RoleRouter` now routes `Authenticated(STUDENT)` with a claimed `trainerId` to a real
-      `StudentNavigation` (bottom nav: Treinos / Evolução), instead of the old dead-end message
-      card. Unclaimed students still see `LoginScreen`'s invite-code entry (§7).
-      - **My Workouts** (`StudentWorkoutsScreen`) — read-only list of ficha(s) the Trainer assigned
-        (`workouts` where `studentId == me && status == assigned`), expandable per-card to show
-        exercises/sets/reps/weight targets.
-      - **Log Session** (`StudentLogSessionScreen`) — per exercise in the workout, the Student
-        enters sets × weight × reps performed and submits — writes one `workoutLogs` doc per
-        exercise (§4a). This is the "atualização de carga" from Product goal #3.
-      - **My Evolution** (`StudentEvolutionScreen`) — biometrics chart (`WeightChart`) +
-        per-exercise load-progression chart (`ExerciseProgressionChart`, shared with §5c).
-      - New `StudentRepository` reads straight from Firestore (`callbackFlow` snapshot listeners)
-        instead of Room — the student's device never runs `TrainerRepository.startListening`, so
-        Room would be empty there. Writes reuse `TrainerRepository.insertWorkoutLog`.
-      - Verified via `./gradlew compileDebugKotlin testDebugUnitTest lint` (all pass) — not
-        runtime-tested against a live device/emulator (none set up in this environment).
-
-**5c. Trainer — receiving updates + evolution report (Product goal #3, #4) — done 2026-08-17**
-- [x] "Atividade Recente" section added to `StudentDetailsScreen` listing the student's latest
-      logged sessions (date, exercise, weight/reps), sourced from `TrainerRepository`'s existing
-      `workoutLogs` Room mirror (already real-time via the §4a snapshot listener — no new listener
-      needed). No push notifications added, per the original "don't add FCM" scope note.
-- [x] `WeightChart` generalized into a `LineChart(points, emptyMessage)` reusable component
-      (`Components.kt`); `WeightChart` is now a thin wrapper over it. New `ExerciseProgressionChart`
-      (exercise picker + `LineChart`) built once and shared by both `StudentDetailsScreen` (Trainer
-      side) and `StudentEvolutionScreen` (Student's own view).
-
-**5d. Concrete UI/professionalism debt (Product goal #5, #6) — found while reading the code**
-- [x] `DayAgendaItem`'s "add appointment" button — turned out to already be fixed: `ScheduleScreen.kt`
-      has its own working `DayAgendaItem(day, schedules, students, onBookSlot)` wired to
-      `viewModel.bookSlot(...)` → `repository.insertSchedule(...)`. The unwired duplicate this item
-      described lived in `Components.kt` as dead code (different signature, never called from
-      anywhere) — deleted it.
-- [x] Hardcoded colors swept across every screen (`Components.kt`, `ScheduleScreen.kt`,
-      `WorkoutBuilderScreen.kt`, `AdminDashboardScreen.kt`, `StudentDetailsScreen.kt`,
-      `StudentsScreen.kt`, `ManualWorkoutScreen.kt`, `LoginScreen.kt`, `AIWorkoutScreen.kt`) and
-      replaced with `MaterialTheme.colorScheme` tokens. Gender card tint now sources
-      `tertiaryContainer`/`secondaryContainer` as suggested. Added one shared `SuccessGreen`
-      constant (`Components.kt`) for the "active/online" indicators M3 has no built-in role for,
-      instead of the same hex duplicated across files.
-- [x] Loading/empty/error state sweep: the explicit examples named here (empty students list,
-      empty workout list) turned out to already exist (`StudentsScreen`, `WorkoutBuilderScreen`).
-      Added the one genuinely missing case found: an empty-exercises-list state in
-      `ManualWorkoutScreen`. Did not build a general loading-skeleton system — no screen is
-      Firestore-mid-load blocking today (offline-first Room reads are synchronous from cache).
-- [x] Form validation added: `AddStudentScreen`, `EditStudentScreen` (name required, at least one
-      training day required, inline `supportingText` errors) and `ManualWorkoutScreen` +
-      `AddExerciseDialog` (workout name / exercise name required, inline errors) — all previously
-      silent no-ops on missing required fields.
-- [x] **`WorkoutBuilderScreen.kt`'s "Criar Manual"/"Criar com IA" buttons wired** —
-      `onNavigateToManual`/`onNavigateToAI` params added, call the existing `ManualWorkout`/
-      `AIWorkout` routes (same pattern already used from `StudentDetailsScreen`). **Found while
-      wiring: the screen itself was completely unreachable** — no button anywhere navigated to
-      `Screen.WorkoutBuilder`; `StudentDetailsScreen`'s own "Ficha Personal" button already
-      reached the AI/Manual screens directly via a dialog, bypassing `WorkoutBuilderScreen`
-      entirely. Since `WorkoutBuilderScreen` additionally lists all active workouts with
-      edit/toggle/delete (which the read-only list on `StudentDetailsScreen` doesn't have), user
-      decision: keep both, link it — added a "Gerenciar" button next to `StudentDetailsScreen`'s
-      "Fichas de Treino" header navigating to `Screen.WorkoutBuilder.createRoute(studentId)`.
-      Verified via `./gradlew assembleDebug`.
-      - [ ] "Editar" (`WorkoutCard`'s edit icon inside `WorkoutBuilderScreen`) still has no
-        destination — no edit-existing-workout screen exists anywhere in the app. Out of scope for
-        this pass; build one later (reuse `ManualWorkoutScreen`'s exercise-list UI, prefilled,
-        calling `updateWorkout` instead of `insertWorkout`) or remove the dead icon — not decided.
-
-- [x] **AI ficha generation — ground it in the hypertrophy volume reference table (researched
-      2026-08-17 via `/newgoal`, user supplied the actual PDF this session:
-      `tabela_volume_direto_indireto_hipertrofia_final_v9.pdf`, 4 pages, ~15.7KB). Implemented
-      2026-08-17 via `/execgoals` (approach 1, text-embedding — see below): asset created at
-      `app/src/main/assets/hypertrophy_volume_reference.md` with the exact content specified;
-      `GenerativeAiService` now takes `@ApplicationContext Context` (Hilt), reads the asset once
-      (`by lazy`, the service is `@Singleton`), and appends it plus a short usage instruction to
-      `buildPrompt()` — applies to both `AiProvider.GEMINI` and `AiProvider.OPENAI` since both go
-      through the same `buildPrompt()`. `AIWorkoutViewModel`'s JSON-parsing contract untouched, as
-      planned. Verified via `./gradlew compileDebugKotlin testDebugUnitTest lint` (all pass, one
-      pre-existing `@param:` annotation-target warning, same pattern already present in
-      `SettingsRepository`) — **not yet verified against a live API call** (no
-      `google-services.json`/real Gemini or OpenAI key in this environment) — first real
-      generation should be checked for whether the model actually references the table in its
-      exercise choices, not just that the code compiles.**
-
-      Before this, `GenerativeAiService.generateWorkout()` sent only a text prompt built from the
-      student's profile fields (§3) to whichever provider is selected (`AiProvider.GEMINI`/
-      `OPENAI`, done 2026-08-17 via `/execgoals`, see §5e). Goal: make the AI balance weekly volume
-      per muscle group using this table instead of general knowledge alone, for both providers.
-      - **What the PDF actually is** (read directly, not guessed): a scoring table, not prose —
-        for ~70 named exercises across 6 categories (Empurrar, Puxar, Quadril/joelho, Posterior/
-        hinges, Monoarticulares, Core/calistenia), each exercise has a 0–1.0 score per muscle
-        (1.0 = direct/primary target, 0.75 = strong secondary, 0.5 = relevant indirect, 0.25 =
-        low, 0 = don't count), representing how much one hard set of that exercise counts toward
-        that muscle's weekly effective hypertrophy volume. Plus a short RIR-based adjustment
-        section (§7 of the PDF: full value at 0–2 RIR, secondaries −0.25 at 3–4 RIR, half-or-zero
-        at 5+ RIR) and a sourced-references section (Schoenfeld, Kubo, Plotkin, etc. — informational
-        provenance, not needed at inference time).
-      - **Two technical approaches researched — recommendation: text-embedding, not raw PDF
-        upload:**
-        1. **Recommended — extract once, embed as text in the existing prompt.** Convert the
-           table to a compact Markdown block (see exact content below) bundled as an Android
-           asset, and append it to `buildPrompt()`'s existing string for **both** providers,
-           unchanged from today's plain-text call shape (`content { text(fullPrompt) }` for
-           Gemini, the existing JSON `messages` array for OpenAI). No SDK migration needed, no
-           multimodal API differences to reconcile between providers, no per-call PDF
-           reprocessing cost, and no OCR/table-transcription risk — the numbers are guaranteed
-           byte-exact instead of hoping the model reads a rendered table correctly. This is the
-           better engineering choice specifically *because* the source document is already small,
-           dense, and precisely structured — text-embedding a lossy-transcription risk that raw
-           multimodal input carries for exactly this kind of tabular reference.
-        2. **Alternative — native multimodal PDF upload (not recommended here, but real and
-           available if the reference material later becomes large/prose-heavy/frequently
-           changing).** Researched current (2026-08-17) capabilities for both providers:
-           - **Gemini**: supported via `content { inlineData(bytes = pdfBytes, mimeType =
-             "application/pdf") }`, but only on the **Firebase AI Logic SDK**
-             (`com.google.firebase:firebase-ai`) — the deprecated SDK this project still uses
-             (`com.google.ai.client.generativeai`) doesn't have this call shape, so approach 2
-             would force the §3 SDK migration as a hard prerequisite. Limits confirmed via
-             Firebase's own input-file-requirements page: 50MB/file, 1000 pages/file, but **the
-             *inline* request total is capped at 20MB** (PDFs are tokenized like images) —
-             irrelevant at this PDF's 15.7KB, but worth knowing if a bigger reference doc is used
-             later. (Source: firebase.google.com/docs/ai-logic/input-file-requirements)
-           - **OpenAI**: also now supports direct PDF input to Chat Completions (base64 or file
-             URL; the API extracts text *and* renders page images internally for vision-capable
-             models like `gpt-4o`/`gpt-4o-mini`) — this is new since the original 2026-08-16
-             research pass, which had assumed OpenAI needed the Files API/assistants flow. Real
-             caveats found: PDF input burns meaningfully more tokens than plain text (whole pages
-             processed as images), file inputs are capped at 100 pages / 32MB per request, and
-             there are open community bug reports of inconsistent extraction ("works with some
-             API keys but fails for others" — community.openai.com/t/1390246). (Source:
-             platform.openai.com/docs/guides/pdf-files, openai.com dev announcement.)
-           - Bottom line: approach 2 is viable for *both* providers today, but costs more tokens
-             per call, adds a real transcription-fidelity risk for a table this precise, and for
-             Gemini specifically reopens the not-yet-done SDK migration as a blocker. Don't build
-             this now; revisit only if a future reference document doesn't compress well to text
-             (e.g. a large illustrated exercise-technique guide).
-      - **Implementation shape (approach 1) for `/execgoals`:**
-        1. Create `app/src/main/assets/hypertrophy_volume_reference.md` with exactly the content
-           block below (already extracted and condensed from the PDF — the long "why this score"
-           prose and the academic-citations section are dropped, since they inform *how the table
-           was built*, not how the model should *use* it; keeping them would just burn prompt
-           tokens on every single generation call for no behavioral benefit).
-        2. `GenerativeAiService` needs `@ApplicationContext Context` added to its constructor
-           (Hilt-provided, no new module needed) to read the asset via
-           `context.assets.open("hypertrophy_volume_reference.md").bufferedReader().use { it.readText() }`
-           — cache it in a `private val` (read once per `GenerativeAiService` instance, it's
-           `@Singleton`, not per-call).
-        3. Append the reference text to `buildPrompt()`, after the existing student-profile block,
-           with a short instruction wrapping it — e.g. (adjust wording to match the existing
-           prompt's tone, don't just concatenate verbatim):
-           ```
-           Use a tabela de referência abaixo para balancear o volume semanal por grupo muscular ao
-           escolher e distribuir os exercícios da ficha. Cada valor indica quanto uma série "dura"
-           daquele exercício conta como volume efetivo de hipertrofia para aquele músculo (0 a
-           1,0; ver a régua de pontuação). Priorize cobrir os grupos musculares relevantes ao
-           objetivo do aluno sem concentrar volume demais em poucos músculos.
-
-           {reference text}
-           ```
-        4. No change needed to `AIWorkoutViewModel`'s JSON-parsing contract (`AIWorkoutResponse`/
-           `AIWorkout`/`AIExercise`) — the reference table only changes what grounds the model's
-           choice of exercises/sets, not the requested output shape. Confirmed unchanged from the
-           original 2026-08-16 research.
-        5. This is a **fixed reference bundled for every trainer**, not a per-trainer configurable
-           upload — matches the actual ask (the user supplied one specific table they trust, not
-           "let each trainer bring their own"). If per-trainer custom references become a real
-           want later, that's a distinct, larger feature (Settings upload + storage +
-           per-generation file selection) — don't build it speculatively now.
-        6. **No longer coupled to §3's SDK migration** — unlike the original 2026-08-16 draft of
-           this item, approach 1 works today on the current (deprecated but functional)
-           `com.google.ai.client.generativeai` SDK for Gemini and on the existing
-           `HttpURLConnection` call for OpenAI. §3's SDK migration is still worth doing for its own
-           reasons (client-side key exposure, general deprecation), just no longer a prerequisite
-           for this feature. (§3's cross-reference to this item has been corrected accordingly.)
-        7. Token-cost note: the condensed Markdown block below is roughly 1.5–2k tokens, added to
-           *every* `generateWorkout()` call for *both* providers. Acceptable at this size; if the
-           reference table grows substantially later, consider trimming rarely-relevant exercise
-           categories per-call based on the student's stated training days, rather than always
-           sending the whole table — not needed at today's size, don't build it preemptively.
-
-      **Exact content for `app/src/main/assets/hypertrophy_volume_reference.md`:**
-      ```markdown
-      # Tabela de Volume Direto/Indireto para Hipertrofia
-
-      Estima quanto uma série dura de um exercício conta para a hipertrofia provável de cada
-      músculo (não é % de ativação, não precisa somar 1 na mesma linha). Use para séries de boa
-      qualidade, amplitude adequada, ~0-3 reps em reserva.
-
-      Régua: 1,0 = volume direto/alvo principal · 0,75 = secundário muito forte/quase direto ·
-      0,5 = indireto relevante · 0,25 = participação baixa · 0 = não contar.
-
-      ## Empurrar
-      | Exercício | Peitoral | Delt. ant. | Delt. lat. | Delt. post. | Tríceps geral | Cabeça longa tríceps |
-      |---|---|---|---|---|---|---|
-      | Supino reto | 1 | 0,5 | 0 | 0 | 0,5 | 0,25 |
-      | Supino inclinado | 1 | 0,75 | 0 | 0 | 0,5 | 0,25 |
-      | Paralela inclinada / foco peito | 1 | 0,5 | 0 | 0 | 0,75 | 0,25 |
-      | Paralela vertical / foco tríceps | 0,75 | 0,5 | 0 | 0 | 1 | 0,25 |
-      | Tríceps banco alta amplitude | 0,5 | 0,5 | 0 | 0 | 1 | 0,25 |
-      | Desenvolvimento vertical | 0,25 | 1 | 0,75 | 0 | 0,5 | 0,25 |
-      | Flexão tradicional | 1 | 0,5 | 0 | 0 | 0,5 | 0,25 |
-
-      ## Puxar
-      | Exercício | Latíssimo/redondo maior | Trapézio médio/romboides | Delt. post. | Bíceps | Braquial/braquiorradial |
-      |---|---|---|---|---|---|
-      | Puxada/barra fixa pronada | 1 | 0,25 | 0,25 | 0,5 | 0,5 |
-      | Puxada/barra fixa neutra | 1 | 0,25 | 0,25 | 0,5 | 0,75 |
-      | Puxada/barra fixa supinada | 1 | 0,25 | 0,25 | 0,75 | 0,5 |
-      | Remada neutra cotovelo junto | 1 | 0,75 | 0,5 | 0,5 | 0,75 |
-      | Remada supinada cotovelo junto | 1 | 0,75 | 0,5 | 0,75 | 0,5 |
-      | Remada aberta / high row | 0,5 | 1 | 1 | 0,5 | 0,5 |
-      | Remada australiana pronada | 1 | 1 | 1 | 0,5 | 0,5 |
-      | Remada australiana supinada | 1 | 0,75 | 0,75 | 0,75 | 0,5 |
-
-      ## Quadril e joelho (agachamentos, leg press, unilaterais)
-      | Exercício | Vastos/quadríceps | Reto femoral | Isquios | Glúteo máx. | Glúteo médio | Adutores | Eretor |
-      |---|---|---|---|---|---|---|---|
-      | Agachamento profundo | 1 | 0,25 | 0,25 | 1 | 0,25 | 1 | 0,5 |
-      | Agachamento sumô | 1 | 0,25 | 0,25 | 0,75 | 0,25 | 1 | 0,25 |
-      | Leg press 45° profundo | 1 | 0,25 | 0,25 | 1 | 0 | 0,75 | 0 |
-      | Leg press 180° profundo | 1 | 0,25 | 0,25 | 1 | 0 | 0,75 | 0 |
-      | Leg press 180° unilateral profundo | 1 | 0,25 | 0,25 | 1 | 0,25 | 0,75 | 0 |
-      | Hack squat | 1 | 0,25 | 0 | 0,5 | 0 | 0,5 | 0 |
-      | Afundo padrão | 1 | 0,25 | 0,25 | 0,75 | 0,5 | 0,5 | 0 |
-      | Búlgaro | 1 | 0,25 | 0,5 | 1 | 0,5 | 0,5 | 0 |
-      | Agachamento unilateral | 1 | 0,25 | 0,5 | 1 | 0,75 | 0,5 | 0 |
-      | Step-up médio/alto | 1 | 0,25 | 0,5 | 1 | 0,75 | 0,5 | 0,25 |
-
-      ## Posterior, glúteo e hinges
-      | Exercício | Vastos/quadríceps | Reto femoral | Isquios | Glúteo máx. | Glúteo médio | Adutores | Eretor | Gastrocnêmio |
-      |---|---|---|---|---|---|---|---|---|
-      | Stiff | 0 | 0 | 1 | 0,75 | 0 | 0,25 | 0,75 | 0 |
-      | RDL | 0 | 0 | 1 | 0,75 | 0 | 0,25 | 0,5 | 0 |
-      | Terra convencional | 0,5 | 0 | 0,5 | 0,75 | 0 | 0,25 | 1 | 0 |
-      | Terra sumô | 0,5 | 0 | 0,5 | 0,75 | 0,25 | 1 | 0,5 | 0 |
-      | Elevação pélvica / hip thrust | 0 | 0 | 0,25 | 1 | 0,25 | 0 | 0 | 0 |
-      | Flexão nórdica / Nordic | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0,25 |
-
-      ## Monoarticulares e isolados (alvo 1,0 → outros níveis)
-      | Exercício | 1,0 | 0,75 | 0,5 | 0,25 |
-      |---|---|---|---|---|
-      | Cadeira extensora | Vastos; reto femoral; quadríceps | - | - | - |
-      | Mesa/cadeira flexora | Isquiotibiais | - | - | Gastrocnêmio (se tornozelo dorsifletido) |
-      | Panturrilha em pé | Gastrocnêmio | Sóleo | - | - |
-      | Panturrilha sentada | Sóleo | - | - | Gastrocnêmio |
-      | Elevação lateral | Deltoide lateral | - | - | Delt. ant.; post.; trapézio superior |
-      | Crucifixo inverso | Deltoide posterior | - | Trapézio médio/romboides | - |
-      | Peck deck / crucifixo | Peitoral | - | - | Deltoide anterior |
-      | Rosca supinada / Scott / 45° / Bayesian | Bíceps braquial | - | Braquial | Braquiorradial |
-      | Rosca martelo | Braquial/braquiorradial | Bíceps braquial | - | - |
-      | Rosca reversa | Braquiorradial/braquial | - | - | Bíceps braquial |
-      | Tríceps pushdown | Tríceps geral | Cabeça longa | - | - |
-      | Tríceps overhead/francês | Tríceps geral; cabeça longa | - | - | - |
-      | Tríceps coice/coreano | Tríceps geral | - | Cabeça longa | Delt. post./latíssimo |
-      | Cadeira abdutora | Glúteo médio/mínimo | - | TFL | Glúteo máximo (fibras superiores) |
-      | Cadeira adutora | Adutores | - | - | - |
-      | Pulldown braços estendidos | Latíssimo/redondo maior | - | - | Delt. post.; cabeça longa tríceps; peitoral esternal |
-
-      ## Core, calistenia e peso corporal
-      | Exercício | 1,0 | 0,75 | 0,5 | 0,25 |
-      |---|---|---|---|---|
-      | Abdominal na rodinha | Reto abdominal | Oblíquos; core profundo | - | Serrátil; peitoral; latíssimo; tríceps |
-      | Prancha abdominal tradicional | - | - | Reto abdominal; oblíquos; core profundo | Serrátil; deltoide ant.; eretor; glúteo máx.; reto femoral |
-      | Muscle-up estrito | Latíssimo/redondo maior | Bíceps; peitoral; tríceps geral; antebraço | Braquial/braquiorradial; deltoide ant.; trapézio/romboides; serrátil; core | Deltoide posterior |
-
-      ## Ajustes por RIR (aplicar antes de somar volume)
-      - 0-2 RIR e boa amplitude: valor cheio.
-      - 3-4 RIR: mantém o principal se a série foi desafiadora, mas reduz secundários em 0,25.
-      - 5+ RIR: conta no máximo metade do valor, ou não conta.
-      - Músculo-alvo não foi limitante (ex.: stiff interrompido pela lombar antes dos posteriores):
-        reduza o valor, não conte como 1.
-      ```
-
-**5e. ADM Dashboard — currently 100% mocked (found 2026-08-17, from a real-device screenshot
-after the first successful ADM login).** All three tabs render fixed data that never changes and
-don't reflect anything real. Each needs its own fix:
-
-- [x] **Logs tab — done 2026-08-17, user chose "Proper (fleet-wide)".** Wired Firebase Crashlytics
-      (`firebase-crashlytics` + Gradle plugin) instead of a Room-based log viewer. Catch blocks in
-      `GenerativeAiService` (both providers) and `TrainerRepository`'s snapshot listeners now call
-      `FirebaseCrashlytics.getInstance().recordException(...)` — previously fully silent.
-      Deliberately **not** wired into `AuthRepository`'s login/register/resetPassword/claimInvite
-      catch blocks: those are routine, already-user-surfaced failures (wrong password, invalid
-      invite code), not silent bugs — recording every failed login as a Crashlytics exception
-      would be noise, not signal. Since Crashlytics has no client-side read API, `LogsTab` no
-      longer shows an inline log list — it explains where errors go now and links to
-      `console.firebase.google.com/project/{projectId}/crashlytics` (project id read at runtime
-      from `FirebaseApp.getInstance().options`). "Copiar"/"Limpar" removed (nothing to copy/clear
-      locally anymore).
-      - **Compat note:** `firebase-crashlytics-gradle:3.0.0` has a known circular-dependency bug
-        with KSP (`injectCrashlyticsMappingFileIdDebug` ↔ `kspDebugKotlin`, confirmed via
-        upstream GitHub issues firebase/firebase-android-sdk#5925 and #5930); pinned to `3.0.7`
-        (latest patch, includes the fix) instead. `2.9.9` (the suggested workaround before the
-        patch) doesn't work either — it uses the removed `applicationVariants` API against this
-        project's AGP 9.3.1.
-- [x] **Gestão tab — done 2026-08-17.** New `AdminViewModel` (`FirebaseFirestore` injected
-      directly, ADM-only cross-trainer data). "Personais"/"Total Usuários" cards use the researched
-      count-aggregation query; "Personais Ativos" lists real trainer docs (`get()` on
-      `role == "TRAINER"`, name only for now). No `firestore.rules` change needed, as researched
-      (`isAdmin()` doesn't depend on `resource.data`, so it's provable for the whole query).
-- [x] **APIs tab — done 2026-08-17, user chose "Implementar de verdade" for OpenAI** (not the
-      recommended removal). `GenerativeAiService` now takes an `AiProvider` (GEMINI/OPENAI);
-      `AIWorkoutScreen` got a Gemini/ChatGPT `FilterChip` toggle. OpenAI calls
-      `api.openai.com/v1/chat/completions` (`gpt-4o-mini`) via plain `HttpURLConnection` +
-      `kotlinx.serialization` — no new HTTP dependency (OkHttp/Retrofit) for one POST call.
-      Status rows: Firestore does a real `.limit(1).get()` probe with a 5s timeout (Online/
-      Offline); Gemini/OpenAI show "Configurada"/"Não configurada" **for this device only**, with
-      an explicit caption explaining why — both are still per-trainer keys (§3), so there is no
-      single fleet-wide "is AI online" signal until the §3 Cloud Function proxy exists.
-
-## 6. Connectivity
-- [x] Client↔Firestore sync strategy per §4: snapshot listeners (`TrainerRepository.startListening`,
-      `addSnapshotListener`), not one-shot fetches; Firestore's built-in offline cache is used as-is,
-      no custom queue.
-- [x] Trainer→Student ficha assignment is a Firestore write (`WorkoutEntity.status` flips
-      `draft`↔`assigned`) the Student's snapshot listener picks up (`StudentRepository`'s
-      `whereEqualTo("status", "assigned")` query) — no push/notification transport needed,
-      Firestore's own real-time listeners cover both directions (assignment down, `workoutLogs`
-      up). This is the whole "connects with the trainer" mechanism from Product goal #2/#3 — no
-      extra messaging layer required. **Bug found and fixed 2026-08-18** while verifying this
-      item: `status`/`assignedAt` were dead fields — nothing ever wrote `status = "assigned"`,
-      only `isActive` was toggled by the UI, so the Student's query would never have matched
-      anything. Fixed by deriving `status`/`assignedAt` from `isActive` in
-      `TrainerRepository.insertWorkout`/`updateWorkout` (`withDerivedStatus()`), one point of
-      truth for every workout-creation call site (AI, manual, toggle) instead of touching each one.
-- [x] **Moot as of 2026-08-18** — §3's Cloud Function proxy plan was dropped (Firebase Spark plan
-      can't deploy Cloud Functions at all; the user chose to stay on the free plan). Gemini calls
-      go through the Firebase AI Logic SDK directly from the client instead, so there's no
-      client↔Cloud Function contract to define — the SDK's own request/response shape is the
-      contract, and it's already what `GenerativeAiService`/`WorkoutParser` are built around.
-- [x] No other third-party integrations in scope currently (no push notifications, no payments —
-      confirmed absent; do not add unless requested).
-
-## 7. Auth
-- [x] Firebase Auth (email/password) + Firestore-stored `role` field, read client-side.
-- [x] `firestore.rules` written (users self-read, role/trainerId self-promotion blocked,
-      students/workouts/biometrics/schedules/workoutLogs scoped by `trainerId`, students read-only
-      on their own docs) and published via the Firestore console Rules tab. Verified live with an
-      unauthenticated REST probe returning `403 PERMISSION_DENIED` (not open, not 404-missing-db).
-- [x] **Student↔Trainer linking — revised 2026-08-17: invite-code pattern, no Cloud Function
-      needed. Implemented 2026-08-17 via `/execgoals`, data-model decision: option 1 (unify).**
-      The original plan required a Cloud Function (blocked on the Blaze plan). Researched
-      an alternative that stays on Spark: a short-lived invite code, stored as its own Firestore
-      doc, validated entirely inside `firestore.rules` — a standard pattern for exactly this
-      problem (general confirmation: Firestore rules can reference *other* documents via `get()`/
-      `exists()` inside a condition, which is what makes self-service claims like this safe without
-      a server). Design:
-      - New collection `invites/{code}` — `code` is a random ~8-char id generated client-side
-        (`UUID.randomUUID().toString().take(8).uppercase()` is fine, collision risk is negligible
-        at this scale). Doc: `{trainerId, used: false, createdAt}` (+ whatever student-profile
-        draft fields the data-model decision below needs).
-      - Rules: `allow create: if isOwningTrainer(request.resource.data.trainerId) &&
-        request.resource.data.used == false;` — only the trainer can mint one, and only unused.
-        `allow read: if isSignedIn();` — a prospective student needs to look up the code to
-        validate it before claiming (codes are random+long enough that guessing isn't practical,
-        same tradeoff every "invite link" system makes). `allow update` only permits the one
-        `used: false -> true` transition, `trainerId` unchanged — nothing else about an invite can
-        ever be edited.
-      - `users/{uid}` rules gain a **create**-time (not update-time — a self-registered student has
-        no `users/{uid}` doc yet, so this is their very first write) exception: `allow create: if
-        isAdmin() || (isSignedIn() && request.auth.uid == uid && request.resource.data.role ==
-        'STUDENT' && get(/databases/$(database)/documents/invites/$(request.resource.data.inviteCode)).data.trainerId
-        == request.resource.data.trainerId && get(...).data.used == false);` — a student can claim
-        `role: STUDENT` + `trainerId: X` for themselves *only* by presenting a currently-valid,
-        unused invite that was minted by trainer X. The existing `update` rule (role/trainerId
-        immutable after the first write) is untouched, so this is a true one-time claim — exactly
-        the same self-promotion protection as before, just with one narrow, provable exception.
-      - UI: Trainer gets a "Gerar convite" action (new invite doc + share sheet with the code).
-        Student gets a "Tenho um código de convite" entry point (probably on first login when
-        `authState` resolves to `Authenticated` with no role — reuse the message card just added
-        to `LoginScreen`, turn it into an input instead of a dead-end).
-      - **Open data-model question — needs a decision before implementation, not a silent pick:**
-        today `AddStudentScreen` writes a `UserEntity`/`students` doc keyed by a random
-        client-generated UUID, entirely disconnected from any Firebase Auth account (there's no
-        login for that student at all). Once a student has a *real* Auth uid, every existing
-        `resource.data.studentId == request.auth.uid` check in `firestore.rules` (and every
-        `workouts`/`biometrics`/`schedules`/`workoutLogs` write from `TrainerRepository`) implicitly
-        assumes `studentId` *is* that uid. Two ways to reconcile, pick one:
-        1. **Unify**: stop treating `students/{id}` as a separate collection for linked students —
-           a linked student's profile *is* their `users/{uid}` doc (role, trainerId, name, phone,
-           goal, trainingDays, etc. all together). `students/{id}` stays only for trainer-authored
-           drafts *before* an invite is claimed; claiming migrates the draft's fields into
-           `users/{uid}` and the trainer can archive/delete the draft. Fewer moving parts long-term,
-           but touches `TrainerRepository`, `AddStudentScreen`, `StudentDetailsScreen`, and
-           `FirestoreMappers` (all currently built around `UserEntity`/`students`).
-        2. **Bridge**: keep `students/{id}` exactly as-is (still keyed by the original random id,
-           still where `AddStudentScreen`/`StudentDetailsScreen` read/write from), and add a
-           `linkedUid` field set once an invite is claimed; every place that currently does
-           `studentId == request.auth.uid` instead resolves through one extra lookup
-           (`students` doc where `linkedUid == request.auth.uid`). Less code churn in the existing
-           trainer-side screens, but every rule and every `workouts`/`biometrics`/... write gains a
-           layer of indirection, and Firestore rules can't easily do this uid-and-not know
-(` in`/`array-contains` queries inside rules exist but add real complexity).
-        Recommendation: **option 1 (unify)** — it's more work up front but removes a permanent
-        source of confusion (two ids referring to the same person) instead of papering over it.
-      - **Implemented 2026-08-17:** `UserEntity.linked` flag (Room migration 6→7) distinguishes a
-        pre-invite draft (`students/{id}`) from a linked profile (`users/{uid}`);
-        `TrainerRepository.updateUser`/`deleteUser` branch on it. `invites/{code}` collection +
-        `users/{uid}` create-time claim exception added to `firestore.rules` (also extended
-        `users/{uid}` `allow delete` to the owning trainer, for symmetry with every other
-        collection — a linked student's account can now be removed the same way an unclaimed
-        draft can). `AuthRepository.claimInvite` uses a Firestore transaction so two devices can't
-        claim the same code in a race. `StudentDetailsScreen` got a "Gerar Convite" action;
-        `LoginScreen` got the code-input claim UI, replacing the old dead-end message card.
-        **⚠️ `firestore.rules` changes are only code until published** — same manual step as the
-        first version (no Firebase CLI/`firebase.json` in this repo): copy the file into the
-        Firestore console's Rules tab and publish. Not done as part of this pass — I can't reach
-        the console from here.
-- [x] Add basic auth UX gaps: password reset flow now that self-registration exists (`register()`
-      already added to `AuthRepository`/`AuthViewModel`/`LoginScreen`, 2026-08-16 — password reset
-      is the remaining gap, same screen, `auth.sendPasswordResetEmail(email)`). **Done 2026-08-17.**
-
-## 8. Security
-- [x] `<uses-permission android:name="android.permission.INTERNET" />` added to `AndroidManifest.xml`.
-- [x] Gemini/OpenAI API keys — **backup exclusion done**: excluded the DataStore file
-      (`datastore/settings.preferences_pb`) in both `data_extraction_rules.xml` (cloud-backup +
-      device-transfer, API 31+) and `backup_rules.xml` (legacy full-backup-content) — the key no
-      longer rides along in Android's automatic cloud/local backups. **Encryption at rest: not
-      done, and the GOALS.md suggestion to use it is now stale** — researched
-      `androidx.security.crypto` before implementing (good thing: checked before recommending) and
-      found `MasterKey`/`EncryptedSharedPreferences` are now themselves deprecated upstream
-      ("Use `javax.crypto.KeyGenerator` with `AndroidKeyStore` instead" — androidx source, 2026).
-      Hand-rolling Keystore-backed AES/GCM correctly (IV handling, migrating already-stored
-      plaintext values, key alias lifecycle) is real security-sensitive work that deserves its own
-      pass, not a rushed add-on here. Once §3's proxy exists the key may not need to live
-      on-device at all, which could make this moot — decide after §3, not before.
-- [x] `firestore.rules` written and published (see §7) — no longer running in open/test mode.
-- [x] R8 shrinking/obfuscation enabled (`optimization { enable = true }`). Verified with a real
-      `./gradlew assembleRelease` (not just a config read) — `minifyReleaseWithR8`,
-      `optimizeReleaseResources` and the mandatory `lintVitalRelease` check all passed with the
-      existing `keepRules/rules.keep` (empty) and no extra keep rules needed: Room/Hilt/Firebase
-      each ship their own consumer R8 rules inside their AARs. Produced
-      `app/build/outputs/apk/release/app-release-unsigned.apk`.
-- [x] Target API compliance: `targetSdk = 37` already exceeds Google Play's Aug 31, 2026
-      requirement (API 36 for new apps/updates) — confirmed compliant, no action needed.
-- [x] **Firebase App Check — done 2026-08-17.** (noticed the console's own banner prompting this
-      while working in Firestore, 2026-08-17: "Proteja os recursos do Cloud Firestore de abusos,
-      como fraude de faturamento ou phishing"). App Check attests that requests hitting
-      Firestore/Auth/the future Cloud Function actually come from *this* real app build, not a
-      script replaying the API key — directly relevant now that self-registration (`register()`)
-      and the invite-code system above both accept unauthenticated-adjacent writes (account
-      creation, invite lookups) that a script could otherwise hit directly with just the public
-      API key. `firebase-appcheck-playintegrity` added; `MainApplication.onCreate()` installs
-      `PlayIntegrityAppCheckProviderFactory` before any Firebase call. **⚠️ Needs one manual step
-      in the Firebase Console** (Console → App Check → register the Android app → Play Integrity
-      provider) — the client-side wiring alone doesn't turn on enforcement; until that's done in
-      the console, App Check runs in an unenforced/monitoring-only state. Not done as part of
-      this pass — same reason as the `firestore.rules` publish above, no console access from here.
-
-## 9. Testing
-- [x] Real coverage added (placeholders `ExampleUnitTest`/`ExampleInstrumentedTest` left in place,
-      harmless):
-      1. `WorkoutParserTest` (`app/src/test/.../util/`) — 8 cases, name/exercise parsing including
-         the reps-first heuristic, multi-line input, blank/non-matching lines. **Ran, all pass.**
-      2. `AuthRepositoryTest` (`app/src/test/.../data/repository/`) — 5 cases, role resolution
-         (TRAINER/ADM, case-insensitive), default-to-STUDENT on missing/unrecognized role,
-         sign-in failure → `Result.failure`. Mocks `FirebaseAuth`/`FirebaseFirestore` with MockK +
-         `Tasks.forResult`/`forException` (added `mockk`, `kotlinx-coroutines-test` as test-only
-         deps). **Ran, all pass.**
-      3. `AppDaoTest` (`app/src/androidTest/.../data/local/`) — Room in-memory CRUD + Flow
-         emissions for students, workouts (incl. new `status` default), biometrics, schedules.
-         **Written and compiles clean** (`compileDebugAndroidTestKotlin`), but Room's in-memory
-         builder needs a real Android SQLite driver — **not runnable in this environment** (no
-         AVD/emulator set up here); needs a device/emulator or CI matrix to actually execute.
-      4. `workoutLog_roundTripsPerformedSets` (same file) — covers the `workoutLogs` round-trip
-         item explicitly. Same caveat: written, compiles, not run.
-- [x] Compose UI test (instrumented) for the Trainer golden path: `TrainerGoldenPathTest.kt`
-      (`app/src/androidTest/.../ui/screen/`) — trainer assigns a workout (toggles Ativo in
-      `WorkoutBuilderScreen`), student logs a session (`StudentViewModel.logSession`), trainer's
-      `StudentDetailsScreen` reflects the new log. Real `WorkoutViewModel`/`StudentDetailsViewModel`/
-      `StudentViewModel` driven through their actual Compose screens; `TrainerRepository`/
-      `StudentRepository` are MockK fakes backed by `MutableStateFlow`s the stubs mutate, standing
-      in for Firestore's realtime listeners — no live backend needed. Added
-      `androidx.compose.ui:ui-test-junit4`/`ui-test-manifest` + `mockk-android` as androidTest-only
-      deps for this. **Ran `compileDebugAndroidTestKotlin`, compiles clean** — same caveat as
-      `AppDaoTest`: Compose UI tests execute on-device, not runnable in this sandboxed environment
-      (no AVD/emulator here). **Writing this test surfaced a real bug**, now fixed: `WorkoutEntity.status`
-      (what `StudentRepository` queries for `"assigned"`) was a dead field — only `isActive` was
-      ever toggled by the UI, so no student would ever have seen an assigned workout. Fixed in
-      `TrainerRepository.insertWorkout`/`updateWorkout` (see §6).
-- [x] Single command that runs everything device-independent: `./gradlew verify` (registered in
-      `app/build.gradle.kts`, depends on `testDebugUnitTest` + `lint`). `connectedAndroidTest` is
-      deliberately excluded — it needs a device/emulator, kept as its own explicit stage
-      (see §11). Ran, green.
-
-## 10. Code quality
-- [x] `./gradlew lint` runs clean (0 errors, 0 warnings). Fixed the 2 real errors: an unescaped
-      drive-letter colon in `local.properties` (`PropertyEscape`), and a genuine
-      `NonObservableLocale` bug in `StudentDetailsScreen.kt` (`Locale.getDefault()` called inside
-      a composable doesn't recompose on locale change — switched to
-      `LocalConfiguration.current.locales[0]`, the stable, recomposition-safe equivalent;
-      `LocalLocale` didn't compile against this project's pinned Compose BOM). Deleted 3 unused
-      template colors (`purple_500`, `teal_700`, `white`). Explicitly suppressed (not silently,
-      documented in `app/lint.xml`) the 15 "newer dependency version available" warnings —
-      bumping them (esp. Compose BOM 2024.12.01, ~1.5 years behind) is real upgrade work needing
-      runtime verification this environment can't do; left as a dedicated future pass.
-- [x] `StudentDetailsScreen.kt` (393→262 lines) and `ManualWorkoutScreen.kt` (250→155 lines) split:
-      dialogs, the top bar's overflow menu, and small display rows moved to new sibling files
-      `StudentDetailsComponents.kt` / `ManualWorkoutComponents.kt` (screen keeps orchestration —
-      state + the `LazyColumn`/`Scaffold` — supporting composables live alongside it). Behavior
-      unchanged; verified via `./gradlew verify compileDebugAndroidTestKotlin` (all green).
-
-## 11. CI / Deployment
-- [x] `.github/workflows/android-ci.yml` added: runs on push/PR to `main` — sets up JDK 21,
-      writes `app/google-services.json` from a `GOOGLE_SERVICES_JSON` repo secret, runs
-      `./gradlew verify` (lint + unit tests, the §9 task) then `assembleDebug`, uploads the lint
-      HTML report as an artifact. `connectedAndroidTest`/instrumented tests deliberately excluded
-      (no emulator matrix set up — can come later). YAML syntax validated locally.
-      **Repo secret added 2026-08-21** (`gh secret set GOOGLE_SERVICES_JSON`, user confirmed) —
-      confirmed live via a real green run, not just "added and assumed working": rerunning the
-      previously-failing CI run after adding the secret produced a full pass (`Lint + unit tests`,
-      `Assemble debug APK`, lint report upload, all green). **A second, previously-undiscovered
-      bug was also blocking every CI run before this, found while debugging §18k's new iOS CI
-      job**: `gradlew` was tracked in git as mode `100644` (not executable) instead of `100755`,
-      so every push/PR to `main` had actually been failing at the very first `./gradlew` call —
-      confirmed via `gh run list` showing failures on the last several pushes, all with the same
-      "Permission denied" error, unrelated to the missing secret. Fixed with
-      `git update-index --chmod=+x gradlew`, committed directly to `main`. Both root causes are
-      now resolved — CI is verified genuinely green, the first time this project's CI has
-      actually passed.
-- [x] Release signing wired: `release-keystore.jks` generated (`keytool`, RSA 2048, PKCS12, valid
-      10000 days, alias `personalapp-release`) at the project root. `app/build.gradle.kts` reads
-      the store path + passwords from `local.properties` (both gitignored — added `*.jks`/
-      `*.keystore` to `.gitignore` too) and wires `signingConfigs.release`, applied to the
-      `release` build type only when those properties are present (so a clone without them still
-      gets an unsigned release build, no regression). **Verified: `./gradlew assembleRelease`
-      succeeds and produces a signed `app-release.apk`.** This is an upload key for local/manual
-      release builds — before actually publishing to Play Store, enroll in Play App Signing
-      (Google holds the real app signing key; this becomes the upload key) and treat these
-      generated passwords as placeholders to rotate, not final production secrets.
-- [x] **Decided 2026-08-18: not publishing to the Play Store.** With a small client base, the
-      user judged the ongoing overhead (Data Safety form, listing upkeep, review process) not
-      worth it for now — distribution will be direct (sideloaded `app-release.apk`, e.g. shared
-      link/file to each trainer's device) instead. This makes the remaining Play Store-specific
-      prerequisites (app icon/screenshots sized for the Store listing, the Play Console "Data
-      Safety" form) **not applicable, not just blocked** — dropping them, not deferring them.
-      What's still genuinely useful regardless of distribution channel, already done:
-      - [x] Release signing (see above) — sideloaded APKs still benefit from being signed
-        consistently across updates, so Android treats each new version as an update rather than
-        a conflicting reinstall.
-      - [x] Privacy policy drafted: `store-listing/privacy-policy.md` — covers every data type the
-        code actually collects (see the §2 table: auth, profile, `medicalNotes`, biometrics,
-        workout logs, invite codes, AI keys, Crashlytics, App Check). Still worth keeping even
-        without a Store listing, given the health data involved (LGPD Art. 5º sensitive-data
-        category applies regardless of distribution channel) — just host it wherever's convenient
-        (a simple webpage, a shared doc) instead of a Play Console-mandated URL, and treat it as a
-        starting draft, not legal advice.
-      - `store-listing/listing-copy.md` (title/description/category) is now moot — Play Store-only
-        content, safe to ignore or delete whenever.
+- §0 Toolchain / local setup → [`dev/goals-archive/goals-00-toolchain-local-setup.md`](dev/goals-archive/goals-00-toolchain-local-setup.md)
+- §1 Project identity → [`dev/goals-archive/goals-01-project-identity.md`](dev/goals-archive/goals-01-project-identity.md)
+- §2 Version control → [`dev/goals-archive/goals-02-version-control.md`](dev/goals-archive/goals-02-version-control.md)
+- §3 Backend (Firebase + planned AI proxy) → [`dev/goals-archive/goals-03-backend.md`](dev/goals-archive/goals-03-backend.md)
+- §4 Database — Firestore sync + new workout-log model → [`dev/goals-archive/goals-04-database-firestore-sync-new-workout-log-model.md`](dev/goals-archive/goals-04-database-firestore-sync-new-workout-log-model.md)
+- §5 Frontend (Jetpack Compose) → [`dev/goals-archive/goals-05-frontend.md`](dev/goals-archive/goals-05-frontend.md)
+- §6 Connectivity → [`dev/goals-archive/goals-06-connectivity.md`](dev/goals-archive/goals-06-connectivity.md)
+- §7 Auth → [`dev/goals-archive/goals-07-auth.md`](dev/goals-archive/goals-07-auth.md)
+- §8 Security → [`dev/goals-archive/goals-08-security.md`](dev/goals-archive/goals-08-security.md)
+- §9 Testing → [`dev/goals-archive/goals-09-testing.md`](dev/goals-archive/goals-09-testing.md)
+- §10 Code quality → [`dev/goals-archive/goals-10-code-quality.md`](dev/goals-archive/goals-10-code-quality.md)
+- §11 CI / Deployment → [`dev/goals-archive/goals-11-ci-deployment.md`](dev/goals-archive/goals-11-ci-deployment.md)
+- §13 Post-MVP Fixes & Validation (2026-08-19, via `/newgoal`) → [`dev/goals-archive/goals-13-post-mvp-fixes-validation.md`](dev/goals-archive/goals-13-post-mvp-fixes-validation.md)
+- §14 Research — cost-effective AI providers for a future constraint-aware ficha generator → [`dev/goals-archive/goals-14-research-cost-effective-ai-providers-for-a.md`](dev/goals-archive/goals-14-research-cost-effective-ai-providers-for-a.md)
+- §16 Feature — DeepSeek + Claude as selectable providers, dedicated Settings tabs → [`dev/goals-archive/goals-16-feature-deepseek-claude-as-selectable-providers.md`](dev/goals-archive/goals-16-feature-deepseek-claude-as-selectable-providers.md)
 
 ---
 
@@ -736,260 +93,6 @@ make (pricing, which processor, subscription vs. one-time).
 If/when any of these become real priorities, treat each as its own `/newgoal` research pass (the
 depth needed — e.g. messaging's real-time delivery model, or payment PCI scope — deserves the same
 front-loaded research this file already does for the rest of the app, not a rushed bolt-on).
-
----
-
-## 13. Post-MVP Fixes & Validation (2026-08-19, via `/newgoal`)
-
-Found via real-device testing (Samsung SM-S926B) after the MVP (§§0-11) and the trainer-request
-flow addition were installed. Fix-type items: current (wrong) behavior → root cause → fix →
-regression test, per `fix.md`'s discipline — a patch without a stated root cause isn't done.
-
-```mermaid
-flowchart TD
-    A[13a. AI generation broken\nApp Check token invalid] --> D[Retest AI ficha generation]
-    B[13b. ADM stats never refreshed] --> C[13c. Validate trainer-request flow end to end]
-    E[13d. Invite claim fails once\na users doc already exists] --> C
-    B --> D
-```
-
-**13a. AI ficha generation fails — "Firebase App Check token is invalid"**
-- [x] **Repro:** on the installed debug build, `StudentDetailsScreen` → "Ficha Personal" → "Com IA"
-      → send any message with the Gemini provider selected → reply is always `Erro ao chamar a
-      IA: Firebase App Check token is invalid.` (confirmed via screenshot, 2026-08-19). OpenAI
-      provider not yet retested against this same build — check both once the fix lands, since
-      App Check protects Firestore/Auth too, not just the AI Logic call.
-- [x] **Root cause — confirmed live via `adb logcat` 2026-08-19:** `MainApplication.kt` installs
-      `DebugAppCheckProviderFactory` for any debuggable build (see §8's App Check item) — the
-      sideloaded/`installDebug` APK on this phone is debuggable, so it generates a random **debug
-      token**, logged on every app start:
-      `DebugAppCheckProvider: Enter this debug secret into the allow list in the Firebase Console
-      for your project: 1dce3124-8e1c-4fe8-9c25-1aa9be85ae4f`. §8 already flagged App Check
-      enforcement itself as a pending manual step, but never called out this *separate*
-      debug-token registration sub-step, which is required specifically for debug builds
-      regardless of Play Integrity enforcement status. An unregistered debug token is rejected
-      server-side as unrecognized/invalid — matching the exact error text seen.
-- [x] **Fix — done 2026-08-19:** registered `1dce3124-8e1c-4fe8-9c25-1aa9be85ae4f` in Firebase
-      Console → App Check → Apps → `com.example.personalapp` → ⋮ → Manage debug tokens → Add
-      debug token → Salvar. The app showed as "Não registrado" with no attestation provider at
-      all (the pending §8 manual step) — the debug-token action was still reachable directly from
-      the row's ⋮ menu without registering Play Integrity first. Note for later: this token is
-      tied to this specific app install; a fresh install (data wipe) or a different test device
-      will need its own token registered the same way — worth documenting in a short "dev setup"
-      note once there's more than one test device in rotation. Play Integrity itself is still
-      "Não registrado" — that's the separate §8 item for real release-build attestation, not
-      needed for debug-build testing.
-- [x] **Regression test (manual) — passed 2026-08-19:** sent a real prompt from `AIWorkoutScreen`
-      (Gemini) on the physical device. The `App Check token is invalid` error is gone — the call
-      now reaches Gemini's backend for real, confirmed by a *different* error surfacing instead:
-      `This model is currently experiencing high demand. Spikes in demand are usually temporary.
-      Please try again later.` — a transient Gemini-side capacity response (HTTP 503-class,
-      unrelated to App Check/auth), not a bug in this app. This is also the first live
-      confirmation the Firebase AI Logic migration (§3) actually works end-to-end, which GOALS.md
-      had flagged as unverified since it was written. Retry once demand clears; if it persists
-      across many retries/hours, that would be worth a fresh look, but one instance is expected
-      Gemini API behavior, not a regression.
-
-**13b. ADM Gestão tab (trainer count, total users, pending requests) never refreshed after first
-load — done 2026-08-19**
-- [x] **Repro:** `AdminViewModel.loadUserStats()` and `loadTrainerRequests()` both ran exactly
-      once, in `init{}`. Any Firestore change after the ViewModel was constructed (a new trainer
-      promoted, a new `trainerRequests` doc written) never appeared in the Gestão tab without a
-      full process kill + cold start — a same-session tab switch or even backgrounding/resuming
-      the app wasn't enough, since the `ViewModel` instance (and its `StateFlow`s) survives that.
-      This is exactly why "Personais: 0" stayed stuck even with an active Trainer already using
-      the app, and why a submitted trainer-access request didn't show up in "Solicitações
-      Pendentes".
-- [x] **Root cause:** one-shot `.get()` Firestore reads in `init{}` with no listener and no
-      re-trigger path anywhere in the UI layer — not a data problem, a missing-refresh problem.
-- [x] **Fix:** made `loadUserStats()`/`loadTrainerRequests()` public on `AdminViewModel`; call
-      both from a `LaunchedEffect(Unit)` in `UserManagementTab` (`AdminDashboardScreen.kt`) —
-      re-runs every time this composable re-enters composition, i.e. every time the Gestão tab is
-      selected, no extra state needed. Added a manual refresh `IconButton` next to "Solicitações
-      Pendentes" for an on-demand recheck without leaving the tab.
-- [x] **Regression test (manual) — passed 2026-08-20:** on-device, `alexmiguel011014@gmail.com`
-      tapped "Solicitar acesso de Trainer" while the ADM's Gestão tab was already open in the
-      background; switching back to the tab showed the new pending request without restarting the
-      app. Confirms the `LaunchedEffect(Unit)` re-trigger fix works for real, not just compiles.
-
-**13d. Claiming an invite permanently fails once a `users/{uid}` doc exists for that account —
-found 2026-08-19 (`alexmiguel011014@gmail.com`), worked around manually, needs a real fix**
-- [x] **Repro:** on `LoginScreen`, an authenticated account with an existing `users/{uid}` Firestore
-      doc enters a trainer-minted invite code → claim silently fails (Firestore
-      `PERMISSION_DENIED`, surfaced to the user as the raw exception string, not a helpful
-      message). Confirmed live 2026-08-19. Two distinct starting states both reach this same dead
-      end, and are worth telling apart because only one has a safe automatic fix:
-      1. **Genuinely-unclaimed STUDENT** (`role: STUDENT`, `trainerId: null`) — e.g. an account
-         previously promoted/rejected through some other admin action that still left a doc
-         behind, or any future path that writes a `users/{uid}` doc before the invite is claimed.
-         *Checked against the code: today's plain self-registration (`AuthRepository.register()` →
-         `login()`) does **not** itself write a `users/{uid}` doc — a purely-registered,
-         never-touched account is still doc-less and claims fine via the existing `create` rule.
-         This case matters for any account that picked up a doc some other way (see case 2, or a
-         future flow) while still logically "unclaimed".*
-      2. **Account already has an incompatible role** — most likely what actually happened to
-         `alexmiguel011014@gmail.com`: earlier in this same session it was used to test the
-         ADM's "Promover manualmente" UID-paste form (`AdminViewModel.promoteToTrainer()`, a
-         `SetOptions.merge()` write setting `role: TRAINER`), which — like the working fix in
-         13b/13c — creates a real `users/{uid}` doc with `role: TRAINER`. Reusing that same
-         account as a STUDENT then hits a doc that already has an unrelated role. **This case
-         should not be silently auto-resolved** — a STUDENT invite claim silently overwriting an
-         existing TRAINER doc would be a real privilege/data-loss bug, not a fix.
-- [x] **Root cause:** `AuthRepository.claimInvite()` always does a plain
-      `transaction.set(userRef, mapOf(role="STUDENT", trainerId=<real>, ...))` with no branch for
-      "does this uid already have a doc, and if so, what's actually in it". Firestore evaluates
-      any write to an existing doc as `update`, and `firestore.rules`' `update` rule requires
-      `role`/`trainerId` to stay byte-identical to `resource.data` (the anti-self-promotion
-      guarantee) — with no exception carved out for the one legitimate case (1) where changing
-      `trainerId` from `null` is exactly what should be allowed. Compounding this: `claimInvite()`'s
-      caller (`AuthViewModel.claimInvite()`, `AuthViewModel.kt:110-112`) surfaces the raw Firebase
-      exception message on failure (`e.message ?: "Código inválido"`) — for a rules rejection this
-      is an opaque `PERMISSION_DENIED` string, giving no hint that the real problem is "this
-      account already has a role" vs. any other reason the code could be rejected.
-- [x] **Fix — two parts (implemented 2026-08-19, not yet republished to the live Console):**
-      1. **`firestore.rules`**, `users/{uid}` `allow update`: add a narrow exception, additive to
-         the existing unchanged-fields check, covering *only* case 1 above (existing role is
-         already `STUDENT` **and** existing `trainerId` is `null`) — presenting the same
-         currently-valid/unused-invite proof the `create` rule already requires:
-         ```
-         allow update: if isAdmin() || (
-           isSignedIn() && request.auth.uid == uid &&
-           (
-             (
-               field(request.resource.data, 'role') == field(resource.data, 'role') &&
-               field(request.resource.data, 'trainerId') == field(resource.data, 'trainerId')
-             ) ||
-             (
-               field(resource.data, 'role') == 'STUDENT' &&
-               field(resource.data, 'trainerId') == null &&
-               request.resource.data.role == 'STUDENT' &&
-               request.resource.data.trainerId ==
-                 get(/databases/$(database)/documents/invites/$(request.resource.data.inviteCode)).data.trainerId &&
-               get(/databases/$(database)/documents/invites/$(request.resource.data.inviteCode)).data.used == false
-             )
-           )
-         );
-         ```
-         Case 2 (already `TRAINER`/`ADM`, or already linked to a different trainer) deliberately
-         stays blocked — that's correct behavior, not a bug, and needs an explicit ADM decision
-         (demote/unlink first), not a client-driven overwrite.
-      2. **UX for case 2, `AuthViewModel.claimInvite()`:** catch a Firestore
-         `PERMISSION_DENIED`/`FirebaseFirestoreException` specifically and map it to a clear
-         message (e.g. "Esta conta já está vinculada a um perfil existente — fale com o
-         administrador.") instead of forwarding the raw exception text, so this doesn't require a
-         support conversation + manual Console lookup to diagnose next time.
-- [x] **Regression test (manual) — case 1 passed 2026-08-20; case 2 accepted as UI-unreachable
-      (see below).**
-      1. **Case 1 — passed.** Registered a fresh test account (`teste@teste.com`), manually created
-         its `users/{uid}` doc (`role: STUDENT, trainerId: null`, simulating a path that leaves an
-         unclaimed doc behind), had a trainer (`alexmiguel011014@gmail.com`) generate an invite,
-         claimed it from the test account — confirmed success, `RoleRouter` routed into
-         `StudentNavigation` (verified on-device: "Treinos"/"Evolução" tabs, "Nenhuma ficha
-         atribuída ainda"). **Real deployment bug found and fixed along the way, not a code bug**:
-         the first claim attempt failed with the exact pre-fix "already linked" error even though
-         the local `firestore.rules` file had the §13d exception. Root cause: the rules **published
-         on the live Firebase Console were stale** — an older version without the §13d `update`
-         exception (confirmed by having the user paste the live rules text back for comparison).
-         The user had believed this was already republished (see the "13b/13c" pass), but it
-         hadn't actually gone out. Republishing the current local file fixed it immediately — no
-         code change needed. **Process takeaway**: after any `firestore.rules` edit, verify what's
-         *live* by reading it back from the Console, don't just trust "I published it" from memory
-         — this cost real debugging time chasing a phantom code bug that didn't exist.
-      2. **Case 2 — accepted as structurally unreachable via the UI, not hands-on tested.** Traced
-         `RoleRouter`: an account with an existing role (`TRAINER`, or already-linked `STUDENT`)
-         never reaches the invite-claim screen at all — it's routed straight into
-         `AppNavigation`/`StudentNavigation` instead. The rule is defense-in-depth against a direct
-         API/DB write, not something a normal user flow can trigger, so a click-through regression
-         test isn't structurally possible without a raw authenticated Firestore call outside the
-         app. User decision: accept this as covered by code review + UI routing, skip the extra
-         verification step.
-      - **Two unrelated real bugs surfaced during this test pass — both fixed and verified
-        on-device 2026-08-21:**
-        1. `TrainerRepository`'s `users where trainerId==X and role==STUDENT` listener query
-           (the §7 "unify" model's linked-student sync) failed with `PERMISSION_DENIED` — confirmed
-           live via logcat (`Listen for QueryWrapper(...) failed: Status{code=PERMISSION_DENIED}`).
-           `firestore.rules`' `users/{uid}` collection only allowed self-read or `isAdmin()` — no
-           rule let a trainer read/list their own linked students' `users/{uid}` docs, so the
-           "linked student" half of the §7 unify model had never actually synced into a trainer's
-           `Meus Alunos` list. **Fixed**: added `isOwningTrainer(field(resource.data, 'trainerId'))`
-           to the `users/{uid}` `allow read` rule, republished. **Verified on-device**: after the
-           fix, `alexmiguel011014@gmail.com`'s "Meus Alunos" correctly showed *two* cards (the
-           original `students/` draft + the newly-linked `users/` account from the 13d case-1
-           test) — before the fix only the draft ever appeared.
-        2. The Trainer's main screen (`MainScreen`/students list) had **no logout button** — found
-           when trying to switch test accounts, had to force-close the app instead. **Fixed**:
-           added a logout `IconButton` (`Icons.AutoMirrored.Filled.Logout`) to `MainScreen`'s
-           `TopAppBar`, threaded `onLogout` through `AppNavigation()` from `RoleRouter` (same
-           `viewModel.logout()` pattern already used for ADM/Student). **Verified on-device**:
-           tapping it returns to `LoginScreen` cleanly.
-        Both changes verified via `./gradlew compileDebugKotlin verify assembleDebug` (all green)
-        before on-device testing.
-
-**13c. Trainer-request flow (`trainerRequests`) — end-to-end validation — done 2026-08-20**
-- [x] `firestore.rules`' `trainerRequests/{uid}` block was republished in the Firebase Console
-      (user-confirmed 2026-08-19) and no `PERMISSION_DENIED` was seen in logcat afterward — the
-      rules side is live. Full pass confirmed on-device 2026-08-20:
-      `alexmiguel011014@gmail.com` (a STUDENT account) tapped "Solicitar acesso de Trainer" on
-      `LoginScreen`, the request appeared live in the ADM's "Solicitações Pendentes" (see 13b),
-      "Aceitar" promoted it to TRAINER. The whole trainer-onboarding feature (GOALS.md's "Post-MVP
-      addition") is now verified end-to-end, not just "compiles and rules are live". Side effect
-      worth noting: this reused `alexmiguel011014@gmail.com` as the test account, so it's now a
-      real TRAINER — no longer available as a clean unclaimed-STUDENT fixture for 13d below, which
-      needs a fresh account instead.
-
----
-
-## 14. Research — cost-effective AI providers for a future constraint-aware ficha generator
-(2026-08-19, via `/newgoal /repertoire`)
-
-Feeds §15 below only for its *future* phase (real in-app AI re-integration) — §15's immediate
-deliverable (the prompt-template + paste flow) ships regardless of this section and needs no AI
-API of its own. Domain grounding: see `REPERTOIRE.md` (scientific + competitive-landscape lenses).
-
-```mermaid
-flowchart TD
-    A[14a. Why Gemini is unreliable\nright now - confirmed] --> B[14b. Cheap-provider comparison]
-    B --> C[14c. Recommendation for\na future phase-2 integration]
-```
-
-**14a. Why the Gemini errors are real and external, not a bug in this app**
-- The `App Check token is invalid` error (§13a) was this app's own bug, now fixed. The `This
-  model is currently experiencing high demand` error reported afterward (2026-08-19) is a
-  **separate, well-documented, industry-wide problem with Gemini's free/Developer API tier**,
-  not something fixable in this codebase: Google cut the Gemini API free-tier quota by 50-92%
-  on 2025-12-07, and a further wave of "model overloaded" errors was widely reported starting
-  2026-01-16. This app's Firebase AI Logic integration (§3) uses exactly this free
-  "Gemini Developer API" tier by design (the whole point of the §3 migration was staying on
-  Firebase's free Spark plan). **The user's instinct to not trust Gemini here going forward is
-  correct, not overly cautious** — this isn't a transient blip to wait out, it's the tier's
-  current normal operating condition.
-
-**14b. Cheap-provider landscape (pricing, structured-output support, reliability notes)**
-
-| Provider / model | Price (in/out per 1M tokens) | Structured JSON output | Notes |
-|---|---|---|---|
-| Gemini 2.5 Flash-Lite (free Developer tier, current integration) | $0.10 / $0.40 (paid tier; free tier is what's failing) | Yes | Cheapest Google option, but the free tier is exactly what's currently unreliable (14a) — a **paid** Gemini tier might sidestep this, but that reopens the Blaze-plan decision §3 deliberately avoided. |
-| **GPT-5 Nano (OpenAI)** | ~$0.05 / — (cheapest OpenAI tier) | Yes (`response_format`) | **This app already has a working OpenAI HTTP integration** (`GenerativeAiService.generateWithOpenAi()`, `api.openai.com/v1/chat/completions`) — currently pointed at `gpt-4o-mini` (GOALS.md §5e), which is no longer the cheapest/current option. Switching the model string is near-zero engineering cost. |
-| DeepSeek V3.2 / V4 Flash | $0.14 / $0.28 | Yes (`json_object` mode) | Cheapest true frontier-quality option. Real caveat found: DeepSeek's own API has **its own documented uptime fluctuations under peak demand** — the standard industry mitigation is a multi-provider fallback, i.e. the same class of risk this section exists to get away from, not a strictly safer bet than Gemini. Would need a brand-new HTTP integration (no existing code path, unlike OpenAI). |
-| Claude Haiku 4.5 (Anthropic) | $1 / $5 | Yes (tool-use/structured mode) | Pricier than the above, but Anthropic models have a strong instruction-following reputation (relevant given the volume-budget math in `REPERTOIRE.md` needs to be followed *exactly*, not approximately). No existing integration in this app — would need a new HTTP client, same lift as DeepSeek. |
-
-**14c. Recommendation for a future phase-2 — superseded 2026-08-19 by the user's explicit choice
-(see §16): give the trainer all four providers now rather than wait-and-see on just one.**
-- [x] ~~Cheapest path to re-enable in-app AI with real reliability: point the already-wired OpenAI
-      integration at a current cheap model before building a new provider integration.~~
-      Superseded — §16 builds DeepSeek and Claude now regardless, per explicit user direction.
-      The underlying cost point still stands (OpenAI's `gpt-4o-mini` model id in
-      `GenerativeAiService` is stale — worth a follow-up bump to a current cheap model, tracked
-      informally here, not urgent enough for its own numbered item).
-- [x] ~~Only build a DeepSeek/new-provider integration if a real evaluation shows the cheap-OpenAI
-      path isn't accurate enough.~~ Superseded — built directly in §16, not gated on an
-      evaluation. The evaluation itself is still worth doing eventually (which provider actually
-      follows the volume-budget math best), just informally, whenever real usage accumulates —
-      not a blocker for shipping the choice.
-- [ ] Keep Gemini wired as an optional fallback (§3's existing code), but stop treating it as the
-      default/primary path in any UI copy until Google's free-tier reliability changes — still
-      accurate advice, unaffected by the §16 expansion (Gemini stays one of four choices, just
-      not the one to lead with in copy/defaults).
 
 ---
 
@@ -1089,118 +192,13 @@ flowchart TD
 
 ---
 
-## 16. Feature — DeepSeek + Claude as selectable providers, dedicated Settings tabs
-(2026-08-19, via `/newgoal`)
-
-Supersedes part of §15g: the user's direction here is to *expand* the direct in-app AI path
-(more provider choice), not fully retire it in favor of §15's prompt-and-paste flow — both now
-coexist as first-class options (see 16a). Grounds provider specifics in real API docs (endpoint,
-auth header, request/response shape) so `/execgoals` implements against a checked spec, not a
-guess — DeepSeek and Claude have genuinely different wire formats from each other, this matters.
-
-```mermaid
-flowchart TD
-    A[16a. Design: keep both AI\npaths, tabbed Settings shape] --> B[16b. SettingsRepository/VM:\nnew key fields]
-    A --> E[16d. AIWorkoutScreen:\n4 provider chips]
-    B --> C[16c. GenerativeAiService:\nDeepSeek + Claude calls]
-    C --> E
-    B --> F[16e. Settings screen\ntabbed rebuild]
-    C --> G[16f. Tests]
-    E --> H[16g. Registration:\nentry-point dialogs]
-    F --> H
-```
-
-**16a. Design rationale**
-- [x] **Amend §15g**: don't hide `AIWorkoutScreen` behind `PromptFichaScreen` — keep both reachable.
-      The "Ficha Personal" dialog (`StudentDetailsScreen`) and `WorkoutBuilderScreen`'s "Criar com
-      IA" now offer a choice between **"IA no app"** (`AIWorkoutScreen`, direct call, now 4
-      providers to pick from) and **"Prompt para IA externa"** (§15's `PromptFichaScreen`) —
-      giving the trainer a live in-app fallback *and* a fully external option, not forcing one.
-- [x] **`AiProvider` enum expands**: `GEMINI, OPENAI, DEEPSEEK, CLAUDE`. Gemini stays the only
-      project-level/free provider (Firebase AI Logic, §3); the other three are all
-      **BYO-key**, exactly the pattern OpenAI already established — no new architecture, just two
-      more branches of something that already works.
-- [x] **Settings becomes tabbed**, reusing the `NavigationBar` + `selectedTab` pattern already
-      proven in `AdminDashboardScreen` (§5e) for consistency rather than inventing a second
-      "sectioned screen" convention in the same app. Starts with **one tab, "IA"**, holding
-      everything AI-related (Gemini's status card + three BYO-key fields). Adding a future
-      settings category later is one more entry in the tab list + one more `when` branch — no
-      rearchitecture needed when that day comes, which is the actual ask ("já começa a organizar
-      melhor").
-
-**16b. `SettingsRepository`/`SettingsViewModel` — new key storage**
-- [x] Mirror the existing `openaiApiKey` pattern exactly: two new `stringPreferencesKey`s
-      (`deepseek_api_key`, `claude_api_key`) in `SettingsRepository`, two new `Flow<String>`
-      exposures + `saveXApiKey()` functions, surfaced on `SettingsViewModel` the same way
-      `openaiApiKey`/`saveOpenaiApiKey` already are.
-
-**16c. `GenerativeAiService` — DeepSeek and Claude calls**
-- [x] **DeepSeek — reuses the existing OpenAI request/response classes verbatim.** DeepSeek's API
-      is explicitly OpenAI-wire-format-compatible (confirmed via current API docs,
-      `api-docs.deepseek.com`): same `Authorization: Bearer <key>` header, same
-      `{"model": ..., "messages": [{"role", "content"}]}` request shape, same
-      `{"choices": [{"message": {"content"}}]}` response shape already modeled by
-      `OpenAiChatRequest`/`OpenAiChatResponse`. Only two things differ from the existing
-      `generateWithOpenAi()`: base URL `https://api.deepseek.com/chat/completions` and model id
-      `deepseek-chat` (current general-purpose alias; `deepseek-v4-flash`/`deepseek-v4-pro` also
-      exist per §14b's pricing research — verify which is current/recommended at implementation
-      time, same staleness caveat already written for `GEMINI_MODEL_ID`). Read the key from
-      `settingsRepository.deepseekApiKey`, same blank-key-check/error-string convention as OpenAI.
-- [x] **Claude — new request/response shape, NOT OpenAI-compatible.** Anthropic's Messages API:
-      `POST https://api.anthropic.com/v1/messages`. Headers: `x-api-key: <key>` (not
-      `Authorization: Bearer`), `anthropic-version: 2023-06-01` (a stable API-version string,
-      unrelated to model version — do not confuse the two), `Content-Type: application/json`.
-      Body: `{"model": "claude-haiku-4-5", "max_tokens": 4096, "messages": [{"role": "user",
-      "content": fullPrompt}]}`. Response: `{"content": [{"type": "text", "text": "..."}]}` (a
-      list of content blocks, not a single string — take the first `text`-type block). New
-      `@Serializable` classes needed: `ClaudeMessageRequest(model, maxTokens, messages)`,
-      `ClaudeMessage(role, content)`, `ClaudeResponse(content: List<ClaudeContentBlock>)`,
-      `ClaudeContentBlock(type, text)` — same `HttpURLConnection` + `kotlinx.serialization`
-      pattern already used for OpenAI, no new HTTP dependency. Read the key from
-      `settingsRepository.claudeApiKey`.
-- [x] Both new branches follow the exact error-handling shape `generateWithOpenAi()` already
-      established: blank-key check returns a clear Portuguese error string before making any
-      network call, non-2xx response passes the body through in the error string (not a generic
-      "failed"), and `FirebaseCrashlytics.getInstance().recordException(e)` on any thrown
-      exception — consistency with the one pattern this file already got right, not a new style.
-
-**16d. `AIWorkoutScreen` — four provider chips**
-- [x] Extend the existing `FilterChip` row (currently Gemini/ChatGPT only) with "DeepSeek" and
-      "Claude" chips, same `provider by remember { mutableStateOf(...) }` selection pattern.
-
-**16e. Settings screen — tabbed rebuild**
-- [x] Rebuild `SettingsScreen` per 16a's tab shape (`NavigationBar` with one "IA" tab today).
-      Inside the IA tab: keep the existing Gemini info card unchanged, and one `OutlinedTextField`
-      + `PasswordVisualTransformation` per BYO-key provider (OpenAI, DeepSeek, Claude) — **one
-      shared "Salvar" action saving all three at once** (cheaper than three separate FABs/buttons
-      for what's functionally one form), matching the existing single-FAB pattern but extended to
-      write all three keys together.
-
-**16f. Tests**
-- [x] **Descoped, reasoning recorded 2026-08-19**: a real `GenerativeAiServiceTest` would need
-      either a new test dependency (MockWebServer — this project has consistently avoided adding
-      an HTTP test/client dependency for a single POST call, same reasoning that kept OpenAI on
-      plain `HttpURLConnection` in the first place) or loosening the request/response data
-      classes from `private` to something a same-package test file could reach — neither is
-      proportionate to add just for this. Consistent with the existing gap: `generateWithOpenAi()`
-      itself has never had a unit test either, so this isn't a new hole, just staying honest about
-      an old one. Verification for all three BYO-key providers stays manual — plug in a real key
-      and send one message from `AIWorkoutScreen`, same as how OpenAI has always been checked.
-
-**16g. Registration**
-- [x] Update the "Ficha Personal" dialog (`StudentDetailsScreen`) and `WorkoutBuilderScreen`'s
-      "Criar com IA" entry point per 16a's amended design (choice between `AIWorkoutScreen` and
-      `PromptFichaScreen`, not just the latter as §15g originally specified).
-
----
-
 ## 17. Feature — student connection clarity, trainer-granted permissions, self-assessment
 (2026-08-19, via `/newgoal`)
 
-**Not yet started — the user flagged this as a real gap but was explicitly unsure whether now is
-the right time to build it ("não sei se agora é o melhor momento"). This section is the plan for
-when they decide to; running `/execgoals` against it is a separate, later decision, not implied by
-writing it.**
+**Built 2026-09-17 via `/execgoals`, on the user's explicit go-ahead (chosen alongside "push +
+PR" and "pause iOS"). Android-verified end to end at the build level; the two things only a
+person can do — publish the new `firestore.rules` and run the flows on real devices — are the
+open items in §17f.** Deviations from the plan below are noted inline where they happen.
 
 Grounded in a direct code read (not assumption) before designing anything, since the request
 questioned whether the current model is architecturally broken:
@@ -1239,10 +237,10 @@ flowchart TD
 ```
 
 **17a. Design rationale**
-- [ ] **Draft vs. connected badge**: purely visual, uses the existing `UserEntity.linked` field
+- [x] **Done** — **Draft vs. connected badge**: purely visual, uses the existing `UserEntity.linked` field
       already returned by the merged query — no new data needed. Closes the actual confusion the
       user flagged without touching the data model.
-- [ ] **Permission set stays small and named, not a generic feature-flag framework**: exactly two
+- [x] **Done** — **Permission set stays small and named, not a generic feature-flag framework**: exactly two
       toggles, both trainer-controlled and default OFF (per "que o personal libera... quando
       personal autorizar"):
       - `canSelfAssess` — student may fill out a self-assessment when the trainer requests one.
@@ -1251,7 +249,7 @@ flowchart TD
       A third or fourth toggle can be added later the same way if a real need shows up — building
       a generic per-feature permission engine now for two known toggles is speculative flexibility
       this project's own conventions already avoid elsewhere.
-- [ ] **Self-assessment is a time-series collection (`assessments/{id}`), not a single overwritable
+- [x] **Done, one deviation** (`requestedAt` dropped — see 17b) — **Self-assessment is a time-series collection (`assessments/{id}`), not a single overwritable
       profile field** — mirrors the existing `biometrics`/`workoutLogs` pattern (Firestore source
       of truth + Room mirror), giving the trainer a real history instead of only ever seeing the
       latest answers. Content grounded in the **PAR-Q+** (Physical Activity Readiness
@@ -1262,80 +260,80 @@ flowchart TD
       medical reason) — plus the profile fields `UserEntity` already has (`goal`,
       `experienceLevel`, `trainingDays`), not an invented bespoke form. A "yes" answer should be
       flagged visibly to the trainer (liability/safety relevance), not just logged silently.
-- [ ] **Request is pull-based, not push** — the trainer "requesting" an assessment just flips
+- [x] **Done** — **Request is pull-based, not push** — the trainer "requesting" an assessment just flips
       `pendingAssessmentRequest = true` on the student's own doc; the student sees it next time
       they open the app (same pattern already used for role-promotion — GOALS.md explicitly keeps
       push notifications/FCM out of scope project-wide). No new messaging infrastructure needed.
 
 **17b. Data model**
-- [ ] New Room entity `AssessmentEntity` + Firestore collection `assessments/{id}`:
+- [x] **Done** (`data/local/entity/AssessmentEntity.kt`, Room migration 7→8 with SQL copied from the exported `8.json`; `requestedAt` deliberately **not** stored — the request only ever lives as the profile's `pendingAssessmentRequest` flag and the doc is created at submission, so the field would always have been null) — New Room entity `AssessmentEntity` + Firestore collection `assessments/{id}`:
       `studentId`, `trainerId`, `requestedAt`, `submittedAt` (null until answered), `parQAnswers`
       (map of question key → boolean), `goal`/`experienceLevel`/`trainingDays` snapshot at
       submission time (so history reflects what was true *then*, not the current live profile).
       Room migration (schema version bump, exported schema committed under `app/schemas/`, per
       CLAUDE.md's own convention — no `fallbackToDestructiveMigration` reliance).
-- [ ] New fields on `UserEntity`/`users/{uid}`: `canSelfAssess: Boolean = false`,
+- [x] **Done** (`FirestoreMappers.toLinkedUserEntity` reads them; drafts in `students/{id}` never carry them) — New fields on `UserEntity`/`users/{uid}`: `canSelfAssess: Boolean = false`,
       `canLogBiometrics: Boolean = false`, `pendingAssessmentRequest: Boolean = false`. Extend
       `FirestoreMappers.kt` (`toFirestoreMap()`/`toUserEntity()`) — same three-places-in-lockstep
       rule CLAUDE.md already documents for this data layer.
-- [ ] `TrainerRepository`: `requestAssessment(studentId)` (sets the pending flag),
+- [x] **Done** (`setStudentPermissions`/`requestAssessment` take the `UserEntity` and use GitLive `updateFields { }` — targeted field writes, never a whole-profile merge; `observeUserById` added so the details screen follows the row) — `TrainerRepository`: `requestAssessment(studentId)` (sets the pending flag),
       `getAssessmentsForStudent(studentId): Flow<List<AssessmentEntity>>`,
       `setStudentPermission(studentId, canSelfAssess, canLogBiometrics)`.
-- [ ] `StudentRepository`: `submitAssessment(answers, profileSnapshot)` (writes the doc, clears
+- [x] **Done** (`getMyProfile` live `users/{uid}` snapshots; `submitAssessment` is one `WriteBatch` — assessment doc + `pendingAssessmentRequest=false` + `lastAssessmentId`; `logOwnBiometric`) — `StudentRepository`: `submitAssessment(answers, profileSnapshot)` (writes the doc, clears
       the pending flag), `logOwnBiometric(entry)` (only meaningful when `canLogBiometrics` is
       true — the rule in 17c is the real gate, this is just the write path).
 
 **17c. `firestore.rules`**
-- [ ] `assessments/{id}`: `allow create` if `isOwningTrainer(request.resource.data.trainerId)`
+- [x] **Done, narrower than planned** (only the *student* creates assessment docs — the trainer's "request" is a flag on the profile, so a trainer-create branch had nothing to write; append-only, no update/delete) — `assessments/{id}`: `allow create` if `isOwningTrainer(request.resource.data.trainerId)`
       (the request) **or** if the caller is the student themselves, `request.resource.data.studentId
       == request.auth.uid`, and their own `users/{uid}.canSelfAssess == true` (the submission —
       same `get()`-a-related-doc pattern already used for invite validation). `allow read` if
       owning trainer or the student themselves (same shape as `workoutLogs`).
-- [ ] `users/{uid}` self-`update`: add one more narrow, additive exception (same style as §13d's
+- [x] **Done** (self-update now also pins `canSelfAssess`/`canLogBiometrics` and only lets `pendingAssessmentRequest` go true→false when `existsAfter(assessments/$lastAssessmentId)` — the batch's own write. **Plus a fix for a pre-existing bug found here**: there was *no* update branch for the owning trainer at all, so `EditStudentScreen`'s save on a linked student was silently `PERMISSION_DENIED` in production — the 2026-08-26 fix noted in memory never reached `main`. Added: `isOwningTrainer` may update exactly the profile fields + the three §17 flags, via `diff().affectedKeys().hasOnly([...])`) — `users/{uid}` self-`update`: add one more narrow, additive exception (same style as §13d's
       re-claim exception) permitting `pendingAssessmentRequest` to change **only** `true → false`
       and **only** as part of the same write that creates an `assessments/{id}` doc for that
       student — this is the "submitting an assessment clears its own pending flag" self-write,
       distinct from `canSelfAssess`/`canLogBiometrics` themselves, which stay trainer-only
       (`isAdmin() || isOwningTrainer(...)`), never student-settable.
-- [ ] `biometrics/{entryId}` `allow create`: add a narrow exception permitting a student to create
+- [x] **Done** — `biometrics/{entryId}` `allow create`: add a narrow exception permitting a student to create
       their own entry (`request.resource.data.studentId == request.auth.uid`) only when their own
       `users/{uid}.canLogBiometrics == true` — additive to the existing `isOwningTrainer`-only
       create rule, not a replacement.
 
 **17d. Trainer-side UI**
-- [ ] Student list/card (`StudentsScreen`/`MainScreen`): a small badge — "Conectado" vs
+- [x] **Done** (`StudentCard`: Link/LinkOff icon + "Conectado" / "Aguardando conexão" under the name) — Student list/card (`StudentsScreen`/`MainScreen`): a small badge — "Conectado" vs
       "Cadastrado (aguardando conexão)" — driven by the existing `linked` field.
-- [ ] `StudentDetailsScreen`: new "Permissões" section with two switches
+- [x] **Done** (`StudentPermissionsSection.kt`: two `Switch`es, "Solicitar autoavaliação" enabled only with permission, pending state shown; `AssessmentCard` history with any PAR-Q+ "sim" in `errorContainer` listing the exact questions; rendered only for `linked` students) — `StudentDetailsScreen`: new "Permissões" section with two switches
       (`canSelfAssess`/`canLogBiometrics`), a "Solicitar Autoavaliação" button (enabled only when
       `canSelfAssess` is already on — request presupposes permission, not the other way around),
       and an assessment-history list (newest first, flags any "yes" PAR-Q answer visibly).
 
 **17e. Student-side UI**
-- [ ] `StudentNavigation`: reads the student's own `canSelfAssess`/`canLogBiometrics` from their
+- [x] **Done** (`StudentViewModel.profile` from `getMyProfile`; "Registrar medida" on Evolução exists only while `canLogBiometrics`; the assessment route is reachable only from the pending banner) — `StudentNavigation`: reads the student's own `canSelfAssess`/`canLogBiometrics` from their
       already-synced profile (via `StudentRepository`'s existing listener, no new sync mechanism)
       and conditionally shows the corresponding tab/action — hidden entirely, not just disabled,
       when the trainer hasn't granted it.
-- [ ] Pending-assessment banner/screen: when `pendingAssessmentRequest == true`, show the PAR-Q
+- [x] **Done** (banner on both top-level tabs → `StudentAssessmentScreen`: 7 PAR-Q+ questions as Sim/Não switches, goal/level editable, day chips prefilled from the live profile; submit = the batch above, then back) — Pending-assessment banner/screen: when `pendingAssessmentRequest == true`, show the PAR-Q
       questions (pre-filled `goal`/`experienceLevel`/`trainingDays` from the current profile,
       editable) → submit writes `assessments/{id}` + clears the pending flag in the same logical
       action (17c's rule requires this).
-- [ ] Self-log biometrics screen: reuses the existing `WeightChart`/biometric-entry UI pattern
+- [x] **Done** (the trainer's `AddBiometricDialog` reused verbatim from `StudentEvolutionScreen`, gated by the flag; `height` is 0 there too, as on the trainer side) — Self-log biometrics screen: reuses the existing `WeightChart`/biometric-entry UI pattern
       already built for the trainer side (`StudentDetailsScreen`/`Components.kt`) rather than
       building a second one — same component, a student-facing write path gated by 17c's rule.
 
 **17f. Tests**
-- [ ] Room DAO test for `AssessmentEntity` CRUD + the new migration (same in-memory-DB pattern
+- [x] **Done for CRUD + the new users columns** (`src/roomTest/.../AssessmentDaoTest`, 4 cases, device/iOS-simulator only like `AppDaoTest`) plus pure `commonTest` coverage (`AssessmentTest`: PAR-Q flagging order/unknown keys, converter round trip — runs in `verify`). **Not written**: a `MigrationTestHelper` test for 7→8 — Room 3's testing artifact would need the exported schemas packaged as instrumented-test assets, itself unverifiable here; the migration SQL was instead cross-checked byte-for-byte against `8.json`'s `createSql`, the same guarantee the helper would assert — Room DAO test for `AssessmentEntity` CRUD + the new migration (same in-memory-DB pattern
       `AppDaoTest` already uses — note the existing caveat: written and compiling is verifiable
       here, actually *running* needs a device/emulator, same as every other `androidTest` in this
       project).
-- [ ] **(manual)** `firestore.rules` changes always need live verification after publishing — this
+- [ ] **(manual — needs you)** **Live test started 2026-09-17 (emulator = trainer, Galaxy S24+ = student): "Conectado" badge, the permission switches, "Solicitar autoavaliação" and the student's banner → PAR-Q+ screen all worked end to end; the student's submit was `PERMISSION_DENIED` because the rules below were still the 2026-09-15 version — the only thing left is publishing them and re-running the submit.** Publish the updated `firestore.rules` (Console → Firestore → Regras, paste the whole file, read it back — same as 2026-09-15) and verify live, on two phones: trainer flips a switch → student's banner appears → student submits → trainer sees the card; a student with `canSelfAssess == false` must be **blocked** on a direct write, not just hidden. Also confirms the trainer-edit fix (edit a linked student's phone and check the Firestore doc changed). `firestore.rules` changes always need live verification after publishing — this
       is no different from every other rules change this session: publish, then confirm both the
       trainer-request path and the student-submit path actually work, and that a `canSelfAssess ==
       false` student is genuinely blocked (not just hidden in the UI) from creating an
       `assessments/{id}` doc directly.
 
 **17g. Registration**
-- [ ] Wire the new "Permissões"/assessment-history section into `StudentDetailsScreen`'s existing
+- [x] **Done** — Wire the new "Permissões"/assessment-history section into `StudentDetailsScreen`'s existing
       layout (not a new top-level screen — it belongs alongside the other per-student management
       already there). Wire the new student-side screens into `StudentNavigation`'s existing tab
       list, conditionally per 17e.
@@ -1344,6 +342,13 @@ flowchart TD
 
 ## 18. Build — Cross-platform: bring the app to iOS via Kotlin Multiplatform
 (2026-08-21, via `/newgoal /repertoire`)
+
+> **⏸ iOS paused — user decision, 2026-09-17.** The KMP restructure is done and verified on
+> Android (§18b–§18i, §18l); everything that needs a Mac, an iPhone, or the Firebase iOS SDK
+> linked (§18g, §18j's `.ipa`/source JSON, the iOS half of §18m, every "not verified on iOS"
+> note below) stays open on purpose and is **not** to be picked up by `/execgoals` until iOS is
+> un-paused. Nothing iOS has been built, linked or run from this repo yet; `ios-ci.yml` is
+> expected to fail at link time until the CocoaPods/SPM step from §18f lands.
 
 The single biggest architecture change to this project since it began — bigger than the §4a
 Firestore migration. Full research feeding this section is in `REPERTOIRE.md` Part 2 (regulatory
@@ -1445,148 +450,380 @@ flowchart TD
         this project, iOS and Android both, unrelated to this migration) and the never-added
         `GOOGLE_SERVICES_JSON` repo secret. Both fixed; `main`'s own `android-ci.yml` is now
         confirmed green for the first time.
-- [ ] Move every file with zero Android-framework imports into `commonMain` first (data models —
-      `Exercise`, `PerformedSet`, `WorkoutEntity` fields, `WorkoutParser.kt`'s pure parsing logic,
-      `AIWorkoutResponse`/`AIWorkout`/`AIExercise` — these are the lowest-risk, highest-value
-      moves since they have no platform dependency today). Done when: `WorkoutParserTest` (already
-      dependency-free Kotlin) runs unmodified from `commonTest` on both the JVM (Android) test
-      target and `iosSimulatorArm64` test target.
+- [x] **Done 2026-09-15**: moved `Exercise`, `PerformedSet` (`data/model/`), `WorkoutParser`
+      (`util/`), and `AIWorkoutResponse`/`AIWorkout`/`AIExercise` (extracted from
+      `AIWorkoutViewModel.kt` into a new `AIWorkoutModels.kt`, same package — `ChatMessage` stayed
+      behind since it references `WorkoutEntity`, a Room entity not yet in `commonMain`) into
+      `:shared`'s `commonMain`, same package names throughout so every existing import in `:app`
+      resolves unchanged via the `implementation(project(":shared"))` dependency — zero import
+      changes needed anywhere else. Added `kotlin.serialization` plugin +
+      `kotlinx-serialization-json` to `shared/build.gradle.kts` (`Exercise`/`PerformedSet`/the new
+      AI models are all `@Serializable`). `WorkoutParserTest` moved to `commonTest`, converted
+      from JUnit4 (`org.junit.Assert`) to `kotlin.test` (JUnit4 doesn't run on Kotlin/Native) —
+      same 15 assertions, unchanged logic. **Verified**: `./gradlew :shared:testAndroidHostTest`
+      (all 15 cases pass on the JVM host) and `./gradlew verify assembleDebug` (app module still
+      green). **Not verified**: the `iosSimulatorArm64Test` run — this Windows machine can't
+      compile Kotlin/Native's Apple targets locally, and running `ios-ci.yml` needs a push, which
+      wasn't done in this pass (see the run's final report). Confirm this once pushed before
+      treating the iOS side of this item as more than "should work."
+      `WorkoutEntity` itself (Room entity, still Android-only) intentionally stays in `:app` —
+      moving it is §18d's job (Room → Room KMP), not this item's.
 
 **18c. Dependency injection: Hilt → Koin**
-- [ ] **Hilt has no Kotlin Multiplatform support at all** (confirmed current, `REPERTOIRE.md`
-      research) — this is a hard blocker, not a preference. Replace every `@HiltViewModel`/
-      `@Inject`/`@Module`/`@InstallIn` with Koin's `module { }`/`viewModel { }`/`get()` DSL,
-      declared in `commonMain` so the same DI graph serves both platforms. `androidApp` calls
-      `startKoin { androidContext(...) }` in `MainApplication.onCreate()`; the iOS entry point
-      calls the equivalent `initKoin()` from Swift/iosApp. Done when: every existing
-      `hiltViewModel()` call site in Compose screens compiles against Koin's `koinViewModel()`
-      instead, and `./gradlew :app:testDebugUnitTest` still passes (repository/ViewModel tests
-      updated to Koin's test-module-override pattern instead of Hilt's `@TestInstallIn`).
+- [x] **Hilt has no Kotlin Multiplatform support at all** (confirmed current, `REPERTOIRE.md`
+      research) — this is a hard blocker, not a preference. Replaced every `@HiltViewModel`/
+      `@Inject`/`@Module`/`@InstallIn` (32 files: 9 ViewModels, 5 repositories/services, 2 Hilt
+      modules, `MainApplication`/`MainActivity`, 14 `hiltViewModel()` call sites) with Koin
+      4.2.2's `module { }`/`viewModel { }`/`get()`/`androidContext()` DSL in a single new
+      `di/AppModule.kt` (replaces `AuthModule.kt`/`DatabaseModule.kt`, both deleted).
+      `MainApplication.onCreate()` calls `startKoin { androidContext(this@MainApplication);
+      modules(appModule) }`; `MainActivity`'s `@AndroidEntryPoint` removed (Koin needs no
+      activity annotation for Compose-only injection). Every `hiltViewModel()` call site now
+      calls `koinViewModel()` (`org.koin.compose.viewmodel`). Verified via
+      `./gradlew compileDebugKotlin verify assembleDebug` (all green) — no test needed updating,
+      `AuthRepositoryTest`/`TrainerGoldenPathTest` already built their dependencies with plain
+      MockK fakes, never through Hilt's test DSL, so there was no `@TestInstallIn` to migrate.
+      **Scoping note**: this replaces the DI *framework* only, still declared in `app`'s own
+      `di/AppModule.kt`, not in `commonMain` as originally sketched — §18b (moving the
+      ViewModels/repositories themselves into `commonMain`) hasn't happened yet, so there's
+      nothing multiplatform for a `commonMain` Koin module to wire up yet. Moving `appModule`
+      into `commonMain` is now a mechanical follow-up once §18b actually relocates those classes,
+      not a separate design problem — deliberately not done speculatively ahead of that move.
 
-**18d. Database: Room → Room Kotlin Multiplatform**
-- [x] **No SQLDelight migration needed** — Room 2.7+ added official KMP support, and Room 3.0
-      (March 2026) makes iOS/JS/WASM first-class targets, per current Android Developers docs.
-      This is the single biggest research-confirmed cost-saver in this whole plan: the existing
-      `AppDatabase`, all entities (`UserEntity`, `WorkoutEntity`, `WorkoutLogEntity`, etc.), and
-      every `AppDao` query move into `commonMain` largely unchanged.
-- [ ] The **only** required platform split is the database builder/file-path function (Android
-      and iOS locate the SQLite file differently) — write one `expect fun getDatabaseBuilder(): 
-      RoomDatabase.Builder<AppDatabase>` in `commonMain`, `actual` implementations in
-      `androidMain` (existing `Context`-based path) and `iosMain` (`NSDocumentDirectory`-based
-      path, per Room's own current KMP setup guide). Done when: a round-trip insert/read against
-      the same `AppDao` query compiles and runs on both `androidUnitTest` and a real
-      `iosSimulatorArm64` test target.
-- [ ] **Re-verify all existing Room migrations** (`MIGRATION_5_6`, the `linked` flag migration
-      6→7, `app/schemas/`) still apply cleanly once the database class lives in `commonMain` —
-      schema export path may need updating in `build.gradle.kts` for the new module location.
+**18d. Database: Room → Room Kotlin Multiplatform — done 2026-09-16**
+- [x] **No SQLDelight migration needed, but the original "largely unchanged" premise was
+      wrong — corrected during implementation.** Room's multiplatform support is not an
+      in-place mode of classic `androidx.room` 2.x; Room 3.0 (stable `3.0.3`, released
+      2026-09-09, confirmed live via developer.android.com) is a **full artifact/package fork**
+      to `androidx.room3` made specifically to be Kotlin-first/multiplatform, per Google's own
+      migration guide (updated 2026-09-11). Real consequences beyond a version bump: every
+      `androidx.room.*` import becomes `androidx.room3.*`; `@TypeConverter`/`@TypeConverters`
+      rename to `@ColumnTypeConverter`/`@ColumnTypeConverters`; migrations move from
+      `Migration(x,y) { override fun migrate(db: SupportSQLiteDatabase) }` to
+      `Migration(x,y) { override suspend fun migrate(connection: SQLiteConnection) }` using
+      `connection.execSQL(...)` (import `androidx.sqlite.execSQL`); the Room Gradle plugin's
+      DSL extension is `room3 { schemaDirectory(...) }`, not `room { }`. None of this changes the
+      actual schema/SQL — same entities, same column names, same migration statements, same
+      version number (7) — so an already-installed app's database should upgrade in place, not
+      get treated as a new/different schema. **Residual risk, explicitly flagged**: this
+      upgrade path (a real device already on schema v7 via the old `androidx.room` 2.x engine,
+      now opening the same file via `androidx.room3`) has not been tested on a real device in
+      this environment (none available) — low-stakes since Firestore is the source of truth for
+      every actively-used table (§4a) and would just resync, except `HistoryEntity`, which stays
+      Room-only and would be lost on a genuine destructive fallback. Test this specifically
+      before distributing a build over an existing install.
+- [x] `AppDatabase`, `AppDao`, `Converters`, and all 6 entities moved to `:shared`'s `commonMain`
+      (same package names). `getDatabaseBuilder()` implemented as a plain top-level function
+      (not `expect`/`actual` itself — the `@ConstructedBy(AppDatabaseConstructor::class)` +
+      `expect object AppDatabaseConstructor : RoomDatabaseConstructor<AppDatabase>` pattern Room's
+      compiler requires is on the constructor, not the builder function): `androidMain`'s
+      `getDatabaseBuilder(context)` resolves the exact same on-disk file location the old
+      `Context.getDatabasePath("personal_app_database")` call always used (preserves existing
+      installs' data); `iosMain`'s parameterless `getDatabaseBuilder()` uses `NSDocumentDirectory`
+      (new — no existing iOS installs to preserve). A common `getRoomDatabase(builder)` in
+      `AppDatabase.kt` applies `.addMigrations(...)`, `.fallbackToDestructiveMigration(...)`,
+      `.setDriver(BundledSQLiteDriver())`, `.setQueryCoroutineContext(Dispatchers.IO)` — same
+      driver Google's own KMP guide recommends (compiled-from-source SQLite, one consistent
+      version across platforms). Koin's `AppModule.kt` updated:
+      `single { getRoomDatabase(getDatabaseBuilder(androidContext())) }`.
+      **`iosX64` dropped as a `:shared` target** (also updated in `ios-ci.yml`) — discovered
+      during this pass that `androidx.room3`/`androidx.sqlite` publish no `iosX64` variant at all
+      (Intel Mac simulator, effectively dead now that Apple no longer sells Intel Macs);
+      `iosArm64` (real devices) + `iosSimulatorArm64` (Apple Silicon Mac simulator) cover every
+      real 2026 target, so this isn't a functional loss. **Verified**:
+      `./gradlew :shared:compileAndroidMain verify assembleDebug` all green, and the packaged
+      `app-debug.apk` bundles `libsqliteJni.so` (confirms the real-device native driver path,
+      not just compile success). **Not verified**: `iosArm64`/`iosSimulatorArm64` compilation —
+      this Windows machine can't run Kotlin/Native's Apple toolchain at all; needs `ios-ci.yml`,
+      which needs a push (not done this pass, see the run's final report).
+- [x] **Re-verified**: `MIGRATION_5_6`/`MIGRATION_6_7` ported with identical SQL (only the
+      surrounding API changed, per above); `shared/schemas/` now holds the same
+      package-qualified schema JSON files moved unchanged from `app/schemas/` (`git mv`, history
+      preserved); `room3 { schemaDirectory("$projectDir/schemas") }` in `shared/build.gradle.kts`
+      replaces the old `ksp { arg("room.schemaLocation", ...) }` block in `app/build.gradle.kts`
+      (removed, along with every other now-unused `androidx.room` 2.x dependency/KSP setup in
+      `:app` — Room lives only in `:shared` now).
+- [x] **`AppDaoTest`/`workoutLog_roundTripsPerformedSets` — real coverage gained, with an
+      honest limitation found.** Converted from JUnit4/`AndroidJUnit4`/`InstrumentationRegistry`
+      to `kotlin.test`, using `Room.inMemoryDatabaseBuilder<AppDatabase>().setDriver(
+      BundledSQLiteDriver())` (no `Context` needed at all — this is new; the old
+      `androidx.room` 2.x version needed a real device/emulator for its in-memory builder).
+      **Placed in `shared/src/iosTest/`, not `commonTest`**: tried `commonTest` first since that
+      was the plan's original intent, but `:shared:testAndroidHostTest` failed with
+      `UnsatisfiedLinkError: no sqliteJni in java.library.path` — confirmed via research this is
+      a known, documented limitation (the Android build variant of `androidx.sqlite:sqlite-bundled`
+      ships no JVM-host native binary, only real Android `.so`s), not a bug introduced here.
+      Moving the test to `iosTest` gives real, previously-impossible iOS coverage (pending CI
+      confirmation, needs a push); real Android-device coverage for this test is unchanged from
+      before this pass (still needs a real device/emulator, still tracked as its own item in
+      §18l, not silently dropped).
 
-**18e. Settings/preferences: DataStore → DataStore Multiplatform**
-- [x] DataStore Preferences (not DataStore Proto) has official multiplatform support already —
-      confirmed via current Android Developers KMP setup docs. `SettingsRepository`'s existing
-      `stringPreferencesKey`s (Gemini/OpenAI/DeepSeek/Claude API keys) move to `commonMain`
-      largely unchanged.
-- [ ] Platform split needed only for the DataStore file location: `expect`/`actual` for the
-      preferences file path (Android: existing `Context.dataStore` delegate; iOS: a path under
-      `NSDocumentDirectory`, mirroring 18d's DB path split). Done when: a saved API key
-      round-trips correctly on both platforms.
-- [ ] **Re-verify §8's backup-exclusion fix** (`data_extraction_rules.xml`/`backup_rules.xml`
-      excluding the DataStore file from Android auto-backup) still applies at the new file
-      location after the module restructure — don't silently lose that protection in the move.
+**18e. Settings/preferences: DataStore → DataStore Multiplatform — done 2026-09-16**
+- [x] DataStore Preferences (not DataStore Proto) has official multiplatform support since 1.1.0
+      (this project already pinned 1.2.1) — confirmed accurate against the current Android
+      Developers KMP setup guide (updated 2026-09-11). Unlike §18d's Room surprise, this premise
+      held: no artifact/package fork, same `androidx.datastore.*` names throughout.
+      `SettingsRepository` (all three `stringPreferencesKey`s — OpenAI/DeepSeek/Claude; Gemini has
+      no key, it's project-level per §3) moved to `:shared`'s `commonMain` whole, not just the
+      keys — its constructor now takes `DataStore<Preferences>` directly instead of `Context`,
+      so the class itself has zero platform dependency.
+- [x] Platform split implemented as a `createDataStore(...)` builder pair, same shape as §18d's
+      `getDatabaseBuilder`: `androidMain`'s `createDataStore(context)` uses `FileStorage` +
+      `PreferencesFileSerializer` (not `PreferencesSerializer` — that one implements
+      `OkioSerializer`, for `OkioStorage`; using it with `FileStorage` fails to compile with a
+      type mismatch, found via the compiler after the official guide's own Android snippet
+      turned out to use the wrong serializer name); `iosMain`'s parameterless `createDataStore()`
+      uses `OkioStorage` + `PreferencesSerializer` + `NSDocumentDirectory`, matching the guide
+      exactly. A common `createDataStore(storage)` in `DataStore.kt` finishes both via
+      `DataStoreFactory.create(storage = storage)`. Koin's `AppModule.kt`:
+      `single { createDataStore(androidContext()) }` → `single { SettingsRepository(get()) }`.
+      **Verified**: `./gradlew :shared:compileAndroidMain verify assembleDebug` all green.
+      **Not verified**: iOS compilation (needs `ios-ci.yml`, needs a push) and an actual saved-key
+      round-trip on a real device (no device in this environment) — same category of gap as
+      §18d, not a new one.
+- [x] **Re-verified**: `androidMain`'s `createDataStore(context)` resolves
+      `context.applicationContext.filesDir.resolve("datastore/settings.preferences_pb")` —
+      the exact same on-disk path Android's old `Context.preferencesDataStore(name = "settings")`
+      delegate always produced (confirmed against `backup_rules.xml`/`data_extraction_rules.xml`'s
+      own hardcoded `datastore/settings.preferences_pb` exclusion path, GOALS.md §8). Since the
+      path is identical, both XML files needed no edit — the exclusion still covers the right
+      file after the move, and an already-installed app's saved API keys stay at the path it
+      already wrote to.
 
-**18f. Backend access layer: Firebase via the GitLive Kotlin SDK**
+**18f. Backend access layer: Firebase via the GitLive Kotlin SDK — done 2026-09-16 (Android-verified; iOS linking pending, see below)**
 - [x] **Google ships no official Firebase KMP SDK** (confirmed current, mid-2026) — use the
       community-maintained `dev.gitlive:firebase-firestore`/`firebase-auth` (`GitLiveApp/
       firebase-kotlin-sdk` on GitHub), the established option for exactly this gap, actively
       maintained, in production use by other teams. The newer `KFire` alternative is still beta
       as of this research — not a safe bet for an app already depending heavily on Firestore
       transactions (`AuthRepository.claimInvite`) and listeners.
-- [ ] Rewrite `TrainerRepository`/`StudentRepository`/`AuthRepository`'s direct
-      `com.google.firebase.firestore.*`/`com.google.firebase.auth.*` calls against GitLive's API
-      in `commonMain` — same snapshot-listener/transaction *shape* (GitLive's API deliberately
-      mirrors the Android Firebase SDK's), but a real rewrite, not a drop-in. Done when: the
-      existing `startListening(trainerId)` mirror-into-Room behavior and `claimInvite()`'s
-      transactional re-claim logic (§13d) both pass equivalent tests against GitLive on both
-      platforms.
-- [ ] `FirestoreMappers.kt`'s entity↔doc mapping moves to `commonMain` largely unchanged (it's
-      already plain-map-based, not tied to any Android-only Firestore API surface).
-- [ ] **`GenerativeAiService`'s HTTP calls (OpenAI/DeepSeek/Claude via plain `HttpURLConnection`)
-      need a multiplatform HTTP client** — `HttpURLConnection` is JVM/Android-only. Use Ktor
-      Client (JetBrains' own multiplatform HTTP library, the standard pairing with KMP) with the
-      `Darwin` engine on iOS and existing `OkHttp`/`CIO` engine on Android. Gemini's Firebase AI
-      Logic SDK call (`generateWithGemini()`) is Android-only today (`com.google.firebase:
-      firebase-ai`) — confirm whether it has an iOS equivalent before assuming Gemini stays
-      available on iOS; if not, either drop Gemini as an iOS-side provider option (the other
-      three BYO-key providers already work fine here since they're plain HTTP) or scope that as
-      a known iOS gap, not a silent omission.
+- [x] **Done 2026-09-16** — `TrainerRepository`/`StudentRepository`/`AuthRepository` rewritten
+      against GitLive `2.7.0` (latest stable; `3.0.0` exists only as `alpha02`, same "not a safe
+      bet" reasoning as KFire above) in `:shared`'s `commonMain`. Real API differences hit,
+      beyond package names: snapshot listeners are `Flow`s (`Query.snapshots`), so
+      `startListening` now holds a `Job` per mirrored collection (`onEach { documentChanges… }
+      .catch { crashlytics }.launchIn(scope)`) and `stopListening` cancels them, and
+      `StudentRepository`'s three `callbackFlow`+`addSnapshotListener` wrappers collapsed into one
+      `snapshots.map { … }` helper; `signOut()` is `suspend` (`AuthViewModel.logout()` now
+      launches it); field reads are reified `get<T?>("field")` and decode *strictly*, so
+      `FirestoreMappers` gained a lenient `fieldOrNull<T>()` to keep the old "malformed → null →
+      default" semantics; `runTransaction { }` has a `Transaction` receiver (`get`/`set`/
+      `updateFields(ref) { "used" to true }`); `whereEqualTo` is deprecated in favour of
+      `where { "f" equalTo v }` / `where { all(…) }`. `System.currentTimeMillis()`/`java.util.UUID`
+      (JVM-only) replaced by `kotlin.time.Clock`/`kotlin.uuid.Uuid` (`util/Platform.kt`), same
+      epoch-millis and canonical UUID text. Also **JVM target 11 → 17 in both modules**: GitLive
+      ships JVM-17 bytecode and its API is mostly `inline`, which Kotlin refuses to inline into a
+      lower target (found via compiler error, not documented anywhere obvious). Koin registers the
+      GitLive `FirebaseAuth`/`FirebaseFirestore` alongside the official `FirebaseFirestore`, which
+      stays only for `AdminViewModel` (ADM-only, Android-only, untouched) — on Android both wrap
+      the same default `FirebaseApp` instance. Crashlytics calls in the moved code use GitLive's
+      `Firebase.crashlytics` (it *does* ship a KMP `firebase-crashlytics` module — see the §18g
+      note). **Tests**: the MockK-based `AuthRepositoryTest` (JVM-only, mocked the Android SDK's
+      `Task`s) is gone; its five role-resolution assertions moved to a pure
+      `resolveAuthResult(role, trainerId)` + `commonTest`'s `AuthResultResolutionTest` (6 cases,
+      no mocking, runs on every target) — the one dropped case, "sign-in exception →
+      `Result.failure`", is generic try/catch plumbing, noted rather than silently lost (§18l's
+      own "decide and document" ask). **Verified**: `./gradlew :shared:testAndroidHostTest verify
+      assembleDebug` all green (22 shared tests). **Not verified, and expected to need macOS work
+      before it can be**: the `iosSimulatorArm64Test` half of this item's "done when" — GitLive's
+      iOS actuals bind to the Firebase iOS SDK, which the test/app binaries must *link* (CocoaPods
+      `pod("FirebaseFirestore")`/`("FirebaseAuth")`/`("FirebaseCrashlytics")` via the Kotlin
+      CocoaPods plugin, or SPM in the Xcode project). That setup can't be done or checked from
+      this Windows machine, so `ios-ci.yml`'s test step will most likely fail at link time until
+      it lands — belongs with §18j's cloud-Mac session, flagged here so it isn't a surprise.
+- [x] `FirestoreMappers.kt` moved to `commonMain` — plain-map writes unchanged; reads ported to
+      GitLive's `DocumentSnapshot.get<T?>()` behind the `fieldOrNull` helper above.
+- [x] **Done 2026-09-16** — `GenerativeAiService` moved to `commonMain` on Ktor Client `3.6.0`
+      (latest stable): OpenAI/DeepSeek/Claude are `httpClient.post(url) { contentType(json);
+      header(...); setBody(requestBodyString) }` + `bodyAsText()`, same manual
+      kotlinx.serialization encode/decode as before (no ContentNegotiation plugin — nothing to
+      gain for one POST per provider), `HttpTimeout` at the old 30 s connect/request values, and
+      non-2xx still surfaced as the same "Erro ao chamar a IA (<provider> <status>): <body>"
+      string. Engines: `ktor-client-okhttp` in `androidMain`, `ktor-client-darwin` in `iosMain`;
+      `HttpClient { }` in common code auto-selects whichever is on that target's classpath.
+      The Android-only `context.assets.open("hypertrophy_volume_reference.md")` read became a
+      `volumeReference: String` constructor parameter supplied by the platform DI (Koin's Android
+      module reads the asset once) — the asset file itself stays in `app/src/main/assets/` until
+      §18h moves resources to Compose Multiplatform's resource system. Crashlytics via GitLive.
+      **Gemini on iOS — confirmed and scoped as a known gap, not dropped and not silent**:
+      Firebase AI Logic *does* have a native iOS SDK (`FirebaseAI`, Swift), but no Kotlin
+      Multiplatform wrapper exists (GitLive's module list doesn't cover AI Logic), so it isn't
+      reachable from `commonMain` without a hand-written Swift/cinterop bridge. Implemented as
+      `internal expect suspend fun generateWithGeminiPlatform(modelId, prompt)`: the
+      `androidMain` actual is the existing Firebase AI Logic call verbatim (`firebase-ai` +
+      BOM moved from `:app` to `:shared`'s `androidMain` deps — nothing in `:app` uses it
+      anymore), the `iosMain` actual returns an explicit "Gemini ainda não está disponível no
+      iOS — use OpenAI, DeepSeek ou Claude" string. §18h should hide the Gemini chip on iOS;
+      closing the gap for real means writing that bridge, tracked nowhere else, so: it's a
+      follow-up of its own, only worth doing if Gemini's free tier ever becomes the
+      *reliable* choice again (§14a says it currently isn't). **Verified**: `./gradlew
+      :shared:testAndroidHostTest verify assembleDebug` all green. **Not verified**: a live
+      call through Ktor on Android (no API key/device here — same manual check §16f already
+      relies on) and the iOS Darwin engine compilation (needs CI, needs a push).
 
 **18g. Auth and Security — platform-specific pieces GitLive doesn't cover**
-- [ ] **App Check**: GitLive's SDK doesn't wrap App Check. Keep Android's existing
+- [ ] **⏸ iOS paused (2026-09-17).** **App Check**: GitLive's SDK doesn't wrap App Check. Keep Android's existing
       `DebugAppCheckProviderFactory`/`PlayIntegrityAppCheckProviderFactory` wiring in
       `androidMain` unchanged; add a thin `iosMain` `actual` bridging to Firebase iOS SDK's own
       App Check (App Attest provider for release, debug provider for local iOS testing) — a
       real native-bridge implementation, not optional, since `firestore.rules`'/Auth's security
       posture assumes App Check is active on every client.
-- [ ] **Crashlytics**: no drop-in multiplatform equivalent exists yet (confirmed current
-      research). Options, pick one rather than defaulting silently: (a) **CrashKiOS**
-      (Touchlab's KMM crash-reporting bridge, explicitly built for this exact gap, forwards
-      crashes to the existing Firebase Crashlytics project) — closest to today's behavior,
-      recommended; (b) drop Crashlytics on iOS specifically and rely on manual bug reports during
-      the free/test phase — acceptable given the small current user count, revisit once paid.
-- [ ] Re-verify §8's App Check debug-token registration flow (§13a) still applies correctly once
+- [x] **Crashlytics — decided 2026-09-16, and the premise was stale**: a drop-in *does* exist
+      for what this app uses. GitLive ships `dev.gitlive:firebase-crashlytics` (KMP wrapper over
+      Firebase Crashlytics on both platforms, found while doing §18f), and this project only ever
+      calls `recordException(...)` for non-fatal errors — every such call now goes through
+      `Firebase.crashlytics` from `commonMain` (`TrainerRepository`, `StudentRepository`,
+      `GenerativeAiService`). CrashKiOS (option a) solves a *different* problem — symbolicated
+      Kotlin/Native stack traces for native *crashes* — which this app doesn't rely on today;
+      revisit only if iOS crash reports turn out unreadable once real iOS usage exists. Like
+      every other GitLive iOS actual, the Crashlytics one links against the Firebase iOS SDK,
+      which is the same pending CocoaPods/SPM macOS step flagged in §18f.
+- [ ] **⏸ iOS paused (2026-09-17).** Re-verify §8's App Check debug-token registration flow (§13a) still applies correctly once
       requests can come from either platform's debug provider — the Firebase Console's debug
       token allow-list is per-install, not per-platform, so this should be mechanically the same
       process repeated once per iOS test device, not a new mechanism.
 
-**18h. UI: Jetpack Compose → Compose Multiplatform, Navigation**
-- [ ] Move every screen composable with no Android-only API calls (`ContentType`/autofill
-      semantics, `LocalConfiguration`, Android-specific icons) into `commonMain` — per current
-      migration reports for exactly this move (existing Jetpack Compose app → Compose
-      Multiplatform), most Composables are reported to work unchanged; the real work is
-      resources (no generated Android `R` class in common code — move string/icon resources to
-      Compose Multiplatform's resource system) and anything directly touching
-      `android.content.Context`/`ClipboardManager`/Android permissions APIs (`expect`/`actual`
-      those specifically, e.g. `PromptFichaScreen`'s clipboard copy from §15e).
-- [ ] Adopt the official Compose Multiplatform Navigation library (stable since 1.10.0) as a
-      drop-in for the existing Navigation Compose usage (`AppNavigation.kt`'s `Screen` sealed
-      class/`NavHost` already maps closely to the multiplatform API). iOS-specific: swipe-back
-      gesture needs an explicit `iosMain` UIKit gesture recognizer or Compose Cupertino — native
-      back-swipe isn't automatic, confirm current guidance at implementation time (this is an
-      area still actively evolving per the research).
-- [ ] **Explicitly re-verify each Android-only UI fix already shipped this project** doesn't
-      silently regress on iOS: the `NonObservableLocale` fix (§10, `LocalConfiguration.current
-      .locales[0]`), the R8/lint sweep (§8/§10, Android-build-only, doesn't apply to iOS but
-      shouldn't be assumed equivalent-safe without checking), and `Icons.AutoMirrored.*` usage
-      (already correctly multiplatform-safe per §13's fix this session).
+**18h. UI: Jetpack Compose → Compose Multiplatform, Navigation — done 2026-09-16 (Android-verified)**
+- [x] **All 22 UI files** (every screen, `Components.kt`, `AppNavigation`/`StudentNavigation`/
+      `RoleRouter`) and all 9 ViewModels moved to `:shared`'s `commonMain`, same package names,
+      plus a new common `App()` root (`ui/App.kt`) that `MainActivity.setContent { App() }` and
+      iOS's `MainViewController()` both host. `:app` is now three files (`MainActivity`,
+      `MainApplication`, manifest) and its own Compose/Navigation/Lifecycle dependencies are
+      gone — the migration reports were right: the Composables themselves moved unchanged.
+      Compose Multiplatform `1.11.0` (plugin already in the catalog since §18b), with the
+      component versions from its own compatibility table: `org.jetbrains.androidx.navigation
+      2.9.2`, `lifecycle 2.11.0`, Koin `koin-compose`/`koin-compose-viewmodel` (the
+      `koinViewModel()` import was already the multiplatform one since §18c). Consequence worth
+      knowing: this **retired `:app`'s Compose BOM `2024.12.01`** (the ~1.5-years-behind pin
+      §10 deliberately left for "a dedicated future pass") — Android now gets Jetpack Compose
+      `1.11.1` via CMP, so that upgrade happened here, implicitly; `ui-test-junit4` is pinned to
+      the same `1.11.1` for the golden-path test. **The Android-only bits, each with its
+      replacement**: `Intent(ACTION_SEND)` share sheet → `expect`/`actual`
+      `rememberTextSharer()` (`ui/platform/Share.*.kt`; iOS `UIActivityViewController`);
+      `Intent(ACTION_VIEW)` for the Crashlytics console link → `LocalUriHandler` (common);
+      `FirebaseApp.getInstance().options.projectId` → GitLive `Firebase.app.options.projectId`;
+      `SimpleDateFormat` + `LocalConfiguration.current.locales[0]` → `util/DateFormat.kt` on
+      `kotlinx-datetime 0.8.0` (the locale only ever fed a fixed numeric pattern, so nothing
+      user-visible changes); `String.format("%02dh")` → `padStart`; `java.util.UUID`/
+      `System.currentTimeMillis()` → the §18f `Platform.kt` helpers; `android.util.Log` →
+      `println` (debug-only chatter); `@Preview` → `org.jetbrains.compose.ui.tooling.preview`.
+      `LocalClipboardManager` and the `ContentType` autofill semantics on `LoginScreen` are
+      already common in CMP 1.11 — kept as-is. **Resources**: the two `.md` prompt files moved
+      from `app/src/main/assets/` to `shared/src/commonMain/composeResources/files/`, read via
+      `Res.readBytes` behind a `PromptAssets` Koin single (`GenerativeAiService` and
+      `PromptFichaViewModel` no longer take a `Context`; the ViewModel preloads the template so
+      the "Copiar Prompt" click stays synchronous). There were no `R.string`/`R.drawable` uses to
+      migrate — the app's strings are hardcoded pt-BR. `AdminViewModel` (the last official-SDK
+      Firestore user) ported to GitLive too (`Query.count()` = the same server-side aggregation),
+      so the official `FirebaseFirestore` type is gone from DI entirely. **Koin split**:
+      `sharedModule` (`commonMain`, the whole graph) + `expect val platformModule` (Android:
+      Room builder + DataStore via `androidContext()`; iOS: the parameterless builders) and an
+      iOS `initKoin()`. **Verified**: `./gradlew :shared:testAndroidHostTest
+      :app:compileDebugAndroidTestKotlin verify assembleDebug` all green (22 shared tests; the
+      35 MB debug APK builds). Found and fixed along the way: `TrainerGoldenPathTest` hadn't
+      compiled since §16g added `onNavigateToPromptFicha` to `StudentDetailsScreen` — nobody
+      ran `compileDebugAndroidTestKotlin` after that, and `verify` doesn't include it (§9's
+      "written, compiles" claim had silently gone stale). **Not verified**: anything on iOS
+      (needs CI, needs a push — and, before the test binary can even link, the Firebase iOS SDK
+      step from §18f) and a real-device run of the migrated UI on Android (no device here — the
+      Compose version jump is the one change here that deserves a hands-on smoke test before
+      the next sideloaded build goes to the trainer).
+- [x] Navigation: `org.jetbrains.androidx.navigation:navigation-compose 2.9.2` was a true
+      drop-in — same `androidx.navigation.compose` package, so `AppNavigation.kt`/
+      `StudentNavigation.kt` moved without a single import change (`NavHost`, `composable`,
+      `navArgument`, `NavType.StringType` all resolve). **iOS swipe-back: still open, and now
+      tracked as its own note here rather than a checkbox** — CMP's navigation 2.9 does *not*
+      provide the native edge-swipe back gesture on iOS automatically; it needs either the
+      `iosMain` gesture-recognizer approach or waiting for the navigation-event integration that
+      CMP 1.11.0's release notes list (`navigationevent-compose 1.1.0`). Decide when the iOS app
+      is actually being run (§18j) — it can't be evaluated from here and doesn't affect Android.
+- [x] Re-verified each earlier Android-only UI fix against the move: the `NonObservableLocale`
+      fix (§10) is **superseded**, not regressed — the locale read is gone entirely because the
+      date formatter never used it for anything observable (see above); the R8/lint sweep
+      (§8/§10) still applies unchanged to the Android build (`lint` is part of `verify`, still
+      green), and has no iOS counterpart to regress; `Icons.AutoMirrored.*` compiles from
+      `commonMain` via `compose.materialIconsExtended`, confirming it's multiplatform-safe. One
+      more Android-only assumption *was* found and removed by the compiler, not by this list:
+      `String.format(Locale.ROOT, …)` in `ScheduleScreen` (JVM-only) — noted in the first item.
 
-**18i. In-app update checker — both platforms (user's explicit ask)**
-- [ ] New `commonMain` `UpdateChecker`: reads a small `latest.json` manifest (version code,
-      changelog note, platform-specific download URL) hosted in this same public GitHub repo
-      (e.g. via GitHub Releases or a raw file on `main`) — no new backend needed, reuses existing
-      free infrastructure (the repo is already public, confirmed 2026-08-21).
-- [ ] **Automatic check**: on app launch (not a true background job — keeps this portable across
-      platforms without needing a cross-platform WorkManager equivalent, consistent with this
-      project's existing "no speculative infrastructure" convention), compare the running app's
-      version against the manifest; if newer, show a non-blocking banner.
-- [ ] **Manual check**: a "Verificar atualização" button in Settings (new tab or added to the
-      existing "IA" tab's shell — §16's tabbed Settings already anticipated more categories being
-      added later), calling the same `UpdateChecker` on demand.
-- [ ] **Android-specific action**: banner/button opens the new `.apk` download URL directly
-      (Android already trusts "install from unknown sources" for this app, per the existing
-      sideload distribution model) — the person taps through Android's own install prompt, same
-      as today's manual reinstall, just without needing you physically present.
-- [ ] **iOS-specific action**: since SideStore already re-signs/refreshes from its configured
-      source periodically, the in-app banner's role is different — show **days remaining until
-      the current signature expires** (the real risk flagged in 18a) with a "atualizar agora"
-      button that triggers SideStore's refresh directly if a URL scheme/deep link for that
-      exists, or at minimum clear instructions, so an expiring app is never a silent surprise.
+**18i. In-app update checker — both platforms (user's explicit ask) — done 2026-09-16 (Android-verified)**
+- [x] `data/service/UpdateChecker.kt` (`commonMain`): fetches the raw `latest.json` from this
+      repo's `main` (the file committed in `1246bea`; URL in `DEFAULT_MANIFEST_URL`) through the
+      same Ktor `HttpClient` the AI providers use (now one Koin single), decodes it with
+      `kotlinx.serialization` (`ignoreUnknownKeys`, so extra fields can be added to the manifest
+      without breaking older installs), and compares against an `AppVersion` (code, name,
+      platform) that the platform Koin module supplies — Android from `PackageManager`, iOS
+      from `Info.plist`'s `CFBundleVersion`/`CFBundleShortVersionString`. Returns a sealed
+      `UpdateStatus`: `UpToDate`, `UpdateAvailable(versionName, changelog, downloadUrl?)`,
+      `SignatureExpiring(daysLeft)` (iOS only), `Failed(message)` — network/parse problems are
+      values, never exceptions, so an offline launch is quiet. **Tested** in `commonTest`
+      (`UpdateCheckerTest`, 6 cases on Ktor's `MockEngine`: behind/at version for each
+      platform, iOS has no download URL, HTTP 404 and malformed JSON both surface as `Failed`).
+      **To publish a version**: bump `versionCode`/`versionName` in `app/build.gradle.kts`,
+      attach the signed `app-release.apk` to a GitHub Release, edit `latest.json` on `main` to
+      match — nothing else to deploy.
+- [x] **Automatic check**: `ui/UpdateBanner.kt`, placed above `RoleRouter()` in the common
+      `App()` root — one `check()` per process start (`produceState`), rendering a dismissible
+      `tertiaryContainer` card only for `UpdateAvailable`/`SignatureExpiring`; `UpToDate` and
+      `Failed` show nothing (offline is normal; the manual check below is where failures are
+      shown). No background job, per the original scoping.
+- [x] **Manual check**: `SettingsScreen` gained a second tab, "Atualização" (§16a's tabbed
+      shell paid off — one list entry + one `when` branch), showing the installed version and a
+      "Verificar atualização" button that runs the same `UpdateChecker` and renders the result
+      through the shared `UpdateActions` composable (also used by the banner).
+- [x] **Android-specific action**: "Baixar atualização" opens `downloadUrl` via the common
+      `LocalUriHandler` — the browser downloads the `.apk` and Android's own install prompt takes
+      over, same sideload flow as today's manual reinstall. **Not verified on a device** (none
+      here); the URL itself points at `releases/latest/download/app-release.apk`, which only
+      resolves once a GitHub Release with that asset exists — none published yet (§11 decided
+      against the Play Store; a Release is the free equivalent this needs).
+- [x] **iOS-specific action — implemented, unverifiable here**: the manifest's
+      `ios.signatureExpiresAt` (ISO `YYYY-MM-DD`, currently `null`; maintained by hand when a
+      build is re-signed) becomes `SignatureExpiring(daysLeft)` once within
+      `SIGNATURE_WARNING_DAYS` (3 — free Apple IDs sign for 7 days), and both that state and an
+      iOS `UpdateAvailable` render the clear instruction ("abra o SideStore e toque em Refresh
+      All") plus an "Abrir SideStore" button that attempts the `sidestore://` URL scheme
+      (wrapped in `runCatching`, so a scheme SideStore doesn't register just does nothing).
+      Whether that scheme opens SideStore, and the whole iOS banner, can only be checked on an
+      iPhone with SideStore — §18j's territory; the logic itself is covered by
+      `UpdateCheckerTest`.
 
 **18j. iOS distribution: SideStore free path (now) → Apple Developer Program (later, when paid)**
-- [ ] Host the built `.ipa` + an AltStore/SideStore-format "source" JSON (app metadata + download
+- [ ] **⏸ iOS paused (2026-09-17).** Host the built `.ipa` + an AltStore/SideStore-format "source" JSON (app metadata + download
       URL + version) somewhere stable and free — a GitHub Release asset on this same public repo
       is the natural choice, consistent with 18i's update-manifest hosting.
-- [ ] Document (in this file, not just in chat) the one-time per-iPhone SideStore setup steps —
-      this becomes the "dev setup note" the project has flagged needing before (§13a already
-      noted the same need for App Check debug tokens once more than one test device exists).
+- [x] **Per-iPhone SideStore setup — documented 2026-09-17** from the official docs
+      (docs.sidestore.io/docs/installation/prerequisites and /install, read that day; SideStore's
+      tooling names have churned — the VPN helper was "StosVPN" until it was pulled from the App
+      Store in 2026, now "LocalDevVPN"; the desktop installer is "iloader" — so re-check those
+      two names against the docs before following this on a new phone):
+      1. **Needs**: iPhone on iOS 15+ with a passcode; an Apple Account (a free one is fine — see
+         the limits below); **Wi-Fi** (mobile data doesn't work for SideStore's local VPN trick);
+         a computer (Windows/macOS/Linux) **only for the one-time install**, never again after.
+      2. **On the iPhone**: install **LocalDevVPN** (App Store, or the AltStore PAL source), open
+         it, add the VPN when prompted ("Allow VPN Configurations" → passcode) and connect. It
+         must be on every time SideStore installs, updates or refreshes anything.
+      3. **On the computer**: install **iloader** for that OS, connect the iPhone by USB, trust
+         the computer on the phone, open iloader, sign in with the Apple Account (case-sensitive;
+         doesn't have to be the phone's own account), pick the device, choose
+         **"Install SideStore (Stable)"**.
+      4. **Back on the iPhone**: Settings → General → VPN & Device Management → under
+         "Developer App" tap the Apple Account → **Trust** → "Allow & Restart"; then Settings →
+         Privacy & Security → **Developer Mode** on (restarts again). Open LocalDevVPN →
+         Connect. Open SideStore, sign in with the *same* Apple Account, go to **My Apps** and tap
+         the **"7 DAYS"** counter next to SideStore to refresh it (accept "Refresh Now" / the
+         certificate-revoke prompt if asked). SideStore briefly closes and reopens — done.
+      5. **Installing Personal Tracker**: SideStore → Sources → "+" → paste this repo's source
+         URL (the AltStore/SideStore-format JSON from the item above — *not published yet*) →
+         install "Personal Tracker" from it. Updates then arrive through the same source;
+         refreshes happen on their own while LocalDevVPN is on, or by tapping the days counter.
+      6. **App Check**: a debug build on an iPhone needs its debug token registered in Firebase
+         Console → App Check → the iOS app → Manage debug tokens, exactly like §13a did for
+         Android — one token per install.
+      7. **Limits of the free Apple Account**: signatures last **7 days** (the in-app banner from
+         §18i warns at 3 days left, reading `latest.json`'s `ios.signatureExpiresAt`, which is
+         maintained by hand), at most **3 sideloaded apps** at once, and the pairing file can
+         expire after an iOS update/reset — redo step 3 when that happens.
 - [ ] **(manual, deferred)** When the trainer starts charging students: enroll in the Apple
       Developer Program ($99/yr), switch distribution to TestFlight (up to 10,000 testers, no
       per-device technical setup for the end user), and revisit whether the Play Store's one-time
@@ -1609,32 +846,67 @@ flowchart TD
       independently (`android-ci.yml` on `main`, `ios-ci.yml` on `feature/kmp-ios`).
 
 **18l. Testing**
-- [ ] Move `WorkoutParserTest` (already dependency-free) to `commonTest` — done when it passes on
-      both `testDebugUnitTest` (Android/JVM) and an `iosSimulatorArm64` test run.
-- [ ] `AuthRepositoryTest` (MockK-based) needs a KMP-compatible mocking approach — MockK is
-      JVM-only; either keep this test Android-only (acceptable, it's testing Android-specific
-      Firebase mock plumbing today, not core logic) or migrate the assertions it covers into a
-      `commonTest` against GitLive's SDK using a fake/in-memory implementation instead of a mock.
-      Don't silently drop the coverage — decide and document which.
-- [ ] `AppDaoTest`/`workoutLog_roundTripsPerformedSets` (Room in-memory, currently `androidTest`-
-      only) — re-run against Room's KMP in-memory test builder on `iosTest` too, given 18d's
-      migration; this is genuinely new coverage the project didn't have before (Room's iOS path
-      was untested until this move).
-- [ ] `TrainerGoldenPathTest.kt` (Compose UI test) — Compose Multiplatform's iOS UI-testing
-      tooling is comparatively less mature than Android's `ui-test-junit4`; confirm current
-      support at implementation time. If iOS Compose UI testing isn't practical yet, keep this
-      test Android-only and say so explicitly rather than silently losing golden-path coverage
-      with no note.
+- [x] `WorkoutParserTest` — moved to `commonTest` in §18b (2026-09-15), converted to
+      `kotlin.test`; passes on `:shared:testAndroidHostTest` (15/15). The iOS run is the same
+      pending-CI/pending-push caveat as everything else on iOS.
+- [x] `AuthRepositoryTest` — decided and done in §18f (2026-09-16): its assertions were all
+      about role resolution, so that logic became the pure `resolveAuthResult()` and the test
+      became `commonTest`'s `AuthResultResolutionTest` (6 cases, no mocking, every target). The
+      one generic "exception → `Result.failure`" case was dropped knowingly (documented in §18f).
+- [x] **Done 2026-09-17** — `AppDaoTest` (7 cases incl. `workoutLog_roundTripsPerformedSets`)
+      now lives in `shared/src/roomTest/kotlin`, a plain source *directory* added via
+      `kotlin.srcDir` to both `iosTest` and the new `androidDeviceTest` source set
+      (`withDeviceTest { instrumentationRunner = AndroidJUnitRunner }` on the KMP-library
+      plugin). Why a shared directory and not a shared source set: the first attempt used
+      `val roomTest by creating { dependsOn(commonTest) }` + `dependsOn(roomTest)` edges, which
+      (a) failed at configuration because `iosTest` doesn't exist yet at that point of the script
+      and (b) would have made KGP *skip the default hierarchy template* ("explicit dependsOn
+      edges were configured…"), silently disconnecting `iosMain` from the iOS targets. Two
+      snags fixed on the way: Compose Multiplatform 1.11.0's resources plugin registers a
+      `copyAndroidDeviceTestComposeResourcesToAndroidAssets` task for the deviceTest variant but
+      never sets its `outputDirectory`, failing Gradle's property validation — disabled by name
+      in `shared/build.gradle.kts` (the Room tests don't touch resources); and `androidx.test`
+      `ext.junit` bumped 1.1.5 → 1.3.0 / `runner` 1.7.0 added (current stable per the AndroidX
+      releases page). **Verified**: `./gradlew :shared:compileAndroidDeviceTest
+      :shared:assembleAndroidDeviceTest` — the test APK builds
+      (`shared/build/outputs/apk/androidTest/shared-androidTest.apk`) and `AppDaoTest` classes
+      are in `build/classes/kotlin/android/deviceTest/`; `testAndroidHostTest` still green
+      (28 tests, the Room ones correctly excluded). **Not verified**: actually running it —
+      `:shared:connectedAndroidDeviceTest` needs a device/emulator (none here; same as it
+      always was for this test), and the iOS run needs CI + the Firebase iOS SDK linking (§18f).
+- [x] **Decided 2026-09-17: `TrainerGoldenPathTest` stays Android-only, deliberately.** CMP
+      does ship a multiplatform UI-test API (`org.jetbrains.compose.ui:ui-test`,
+      `runComposeUiTest { }`), so an iOS port is *possible* — but the test's whole substance is
+      its MockK fakes of `TrainerRepository`/`StudentRepository` (`coEvery`/`every` over
+      `MutableStateFlow`s), and MockK is JVM-only; porting means hand-writing fake repositories
+      (or extracting interfaces to fake) first. That's a real, separate piece of work with no
+      user-visible payoff until the iOS app itself exists and can be run, so it's not done now
+      and not silently dropped: the test remains in `app/src/androidTest`, pinned to Jetpack
+      Compose `1.11.1`'s `ui-test-junit4` (the version CMP 1.11.0 is based on), and
+      `:app:compileDebugAndroidTestKotlin` is now part of every verification run in this file —
+      it had silently stopped compiling once already (§18h). Revisit alongside §18j's first real
+      iOS session, when `runComposeUiTest` can actually be exercised.
 
 **18m. Registration/cutover**
-- [ ] Once 18a–18l are green on both platforms, cut the existing `app` module over to depend on
-      `shared` as its only source of truth (no dead duplicate Android-only copies of anything
-      that moved to `commonMain`) — verified via a full `./gradlew verify assembleDebug` pass
-      identical in spirit to every other verification gate this project already uses, plus the
-      equivalent iOS build succeeding in CI (18k).
-- [ ] Update `CLAUDE.md` and `README.md` to describe the new KMP module shape — this is exactly
-      the kind of cross-cutting convention change CLAUDE.md exists to document (per its own
-      existing "Module documentation strategy" note, §1).
+- [x] **Android half done 2026-09-17; iOS half paused.** `:app` depends on `:shared` as its only
+      source of truth — after §18h it holds exactly `MainActivity`, `MainApplication`, the
+      manifest and resources; there is no Android-only duplicate of anything that moved to
+      `commonMain` (`app/src/main/java` has two files). Verified via `./gradlew verify
+      assembleDebug` plus, from this item on, `verify` itself also runs
+      `:shared:testAndroidHostTest`, `:app:compileDebugAndroidTestKotlin` and
+      `:shared:compileAndroidDeviceTest`, so the CI gate (`android-ci.yml` runs `verify`) covers
+      the shared tests and the instrumented-test compilation too — closing the two gaps §18h and
+      §18l found. The "equivalent iOS build succeeding in CI (18k)" half is the paused part:
+      reopen this item's iOS check when iOS resumes; nothing in the Android cutover depends on it.
+- [x] **Done 2026-09-17** — `CLAUDE.md` rewritten for the KMP shape (module layout and what
+      goes where, the verification commands including the `compileDebugAndroidTestKotlin` and
+      `testAndroidHostTest` gaps `verify` has, the `roomTest` source-directory rule, JVM 17 /
+      `androidx.room3` / GitLive pointers, the corrected role routing — the old text still said
+      the Student role had no screens — schemas under `shared/schemas/`, the load-bearing DB and
+      DataStore file names, the derived `status`/`assignedAt` rule, the current AI provider
+      setup, and a "Releasing a build" recipe tied to `latest.json`). `README.md` rewritten
+      likewise (stack, prerequisites, commands, iOS status, distribution). Both describe what
+      exists today, including that iOS is unverified — not the target state.
 
 ---
 

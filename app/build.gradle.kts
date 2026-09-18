@@ -5,8 +5,6 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.kotlin.serialization)
-    alias(libs.plugins.hilt)
-    alias(libs.plugins.googleKsp)
     alias(libs.plugins.googleServices)
     alias(libs.plugins.firebaseCrashlytics)
 }
@@ -58,17 +56,21 @@ android {
             }
         }
     }
+    // JVM 17 (was 11) to match :shared — see the note in shared/build.gradle.kts (GOALS.md §18f).
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
     buildFeatures {
         compose = true
     }
-}
-
-ksp {
-    arg("room.schemaLocation", "$projectDir/schemas")
+    packaging {
+        resources {
+            // mockk-android pulls junit-jupiter into the instrumented-test APK; six of its jars
+            // ship the same META-INF/LICENSE.md and packaging refuses the duplicate.
+            excludes += setOf("META-INF/LICENSE.md", "META-INF/LICENSE-notice.md")
+        }
+    }
 }
 
 dependencies {
@@ -77,34 +79,13 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.material)
 
-    // Room
-    implementation(libs.androidx.room.runtime)
-    implementation(libs.androidx.room.ktx)
-    ksp(libs.androidx.room.compiler)
-
-    // Compose
-    implementation(platform(libs.androidx.compose.bom))
-    implementation(libs.androidx.ui)
-    implementation(libs.androidx.ui.graphics)
-    implementation(libs.androidx.ui.tooling.preview)
-    implementation(libs.androidx.material3)
-    implementation(libs.androidx.material.icons.extended)
+    // GOALS.md §18h: every screen, ViewModel and the navigation graph live in :shared (Compose
+    // Multiplatform, exposed as `api`). :app only needs the Activity entry point.
     implementation(libs.androidx.activity.compose)
-    implementation(libs.kotlinx.serialization.json)
 
-    // Hilt
-    implementation(libs.hilt.android)
-    ksp(libs.hilt.compiler)
-    implementation(libs.androidx.hilt.navigation.compose)
-
-    // Lifecycle
-    implementation(libs.androidx.lifecycle.viewmodel.compose)
-
-    // Navigation
-    implementation(libs.androidx.navigation.compose)
-
-    // DataStore
-    implementation(libs.androidx.datastore.preferences)
+    // Koin (GOALS.md §18c): startKoin/androidContext in MainApplication; modules are in :shared.
+    implementation(platform(libs.koin.bom))
+    implementation(libs.koin.android)
 
     // Firebase
     implementation(platform(libs.firebase.bom))
@@ -113,9 +94,7 @@ dependencies {
     implementation(libs.firebase.crashlytics)
     implementation(libs.firebase.appcheck.playintegrity)
     implementation(libs.firebase.appcheck.debug)
-    // Firebase AI Logic (GOALS.md §3) — replaces the deprecated com.google.ai.client.generativeai
-    // SDK for Gemini calls; free on the Spark plan via the Gemini Developer API backend.
-    implementation(libs.firebase.ai)
+    // Firebase AI Logic (Gemini) now lives in :shared's androidMain (GOALS.md §18f).
     implementation(libs.kotlinx.coroutines.play.services)
 
     testImplementation(libs.junit)
@@ -124,15 +103,25 @@ dependencies {
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.mockk.android)
-    androidTestImplementation(platform(libs.androidx.compose.bom))
+    // Pinned to the Jetpack Compose version Compose Multiplatform 1.11.0 is based on (no
+    // multiplatform port of the UI-test artifacts exists).
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.test.manifest)
 }
 
-// GOALS.md §9: one command for the checks that don't need a device (see §11 for why
-// connectedAndroidTest is deliberately excluded — it's a separate CI/local stage, emulator-only).
+// GOALS.md §9/§18m: one command for every check that doesn't need a device — :app unit tests +
+// lint, :shared's commonTest suite on the JVM, and *building* both instrumented test APKs (they
+// went stale unnoticed once, §18h; and compiling alone missed a packaging conflict once, §17).
+// Running them (connectedAndroidTest, :shared:connectedAndroidDeviceTest) stays a separate,
+// emulator-only stage.
 tasks.register("verify") {
     group = "verification"
-    description = "Runs unit tests and lint together (excludes connectedAndroidTest, which needs a device/emulator)."
-    dependsOn("testDebugUnitTest", "lint")
+    description = "Unit tests + lint (:app), shared JVM tests, and instrumented-test APK builds — everything that runs without a device."
+    dependsOn(
+        "testDebugUnitTest",
+        "lint",
+        "assembleDebugAndroidTest",
+        ":shared:testAndroidHostTest",
+        ":shared:assembleAndroidDeviceTest",
+    )
 }

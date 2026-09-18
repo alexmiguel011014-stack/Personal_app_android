@@ -3,11 +3,11 @@ name: iOS CI
 # GOALS.md §18k: builds the Kotlin/Native iOS targets on GitHub's macOS runner, free on this
 # public repo. Deliberately separate from android-ci.yml — this job is expected to be flaky
 # while the KMP migration (§18) is in progress, and shouldn't block the working Android CI.
+#
+# iOS is paused (GOALS.md §18 header, 2026-09-17): manual trigger only until it resumes, so a
+# known failure (the test binary can't link without the Firebase iOS SDK — §18f) doesn't mark
+# every Android PR red. Restore the push/pull_request triggers when iOS work restarts.
 on:
-  push:
-    branches: [main, feature/kmp-ios]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -26,7 +26,8 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Compile iOS targets
-        run: ./gradlew :shared:compileKotlinIosSimulatorArm64 :shared:compileKotlinIosArm64 :shared:compileKotlinIosX64
+        # iosX64 dropped GOALS.md §18d: androidx.room3/androidx.sqlite publish no iosX64 variant.
+        run: ./gradlew :shared:compileKotlinIosSimulatorArm64 :shared:compileKotlinIosArm64
 
       - name: Run shared module tests on iOS simulator
         run: ./gradlew :shared:iosSimulatorArm64Test

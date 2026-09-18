@@ -23,6 +23,9 @@ interface AppDao {
     @Query("SELECT * FROM users WHERE id = :id")
     suspend fun getUserById(id: String): UserEntity?
 
+    @Query("SELECT * FROM users WHERE id = :id")
+    fun observeUserById(id: String): Flow<UserEntity?>
+
     @Query("DELETE FROM users WHERE id = :id")
     suspend fun deleteUserById(id: String)
 
@@ -84,4 +87,14 @@ interface AppDao {
 
     @Query("SELECT * FROM workout_logs WHERE workoutId = :workoutId ORDER BY date DESC")
     suspend fun getWorkoutLogsByWorkout(workoutId: String): List<WorkoutLogEntity>
+
+    // Assessment Operations (GOALS.md §17)
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAssessment(assessment: AssessmentEntity)
+
+    @Query("DELETE FROM assessments WHERE id = :id")
+    suspend fun deleteAssessmentById(id: String)
+
+    @Query("SELECT * FROM assessments WHERE studentId = :studentId ORDER BY submittedAt DESC")
+    fun getAssessmentsByStudent(studentId: String): Flow<List<AssessmentEntity>>
 }

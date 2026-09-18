@@ -38,6 +38,8 @@ fun StudentDetailsScreen(
     val workoutLogs by viewModel.workoutLogs.collectAsState()
     val inviteCode by viewModel.inviteCode.collectAsState()
     val inviteError by viewModel.inviteError.collectAsState()
+    val assessments by viewModel.assessments.collectAsState()
+    val permissionError by viewModel.permissionError.collectAsState()
     var showFichaDialog by remember { mutableStateOf(false) }
     var showBiometricDialog by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
@@ -84,6 +86,15 @@ fun StudentDetailsScreen(
         )
     }
 
+    permissionError?.let { message ->
+        AlertDialog(
+            onDismissRequest = { viewModel.clearPermissionError() },
+            title = { Text("Não foi possível salvar") },
+            text = { Text(message) },
+            confirmButton = { TextButton(onClick = { viewModel.clearPermissionError() }) { Text("OK") } },
+        )
+    }
+
     Scaffold(
         topBar = {
             StudentDetailsTopBar(
@@ -123,6 +134,33 @@ fun StudentDetailsScreen(
                             }
                         }
                     }
+                }
+
+                // GOALS.md §17d/§17g: permissions + self-assessment history, linked students only —
+                // a draft has no account to grant anything to (the top bar's "Gerar Convite" is
+                // the next step for those).
+                if (s.linked) {
+                    item {
+                        Text("Permissões do aluno", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        StudentPermissionsSection(
+                            student = s,
+                            onSetPermissions = { selfAssess, logBio -> viewModel.setPermissions(selfAssess, logBio) },
+                            onRequestAssessment = { viewModel.requestAssessment() },
+                        )
+                    }
+                    item {
+                        Text("Autoavaliações", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        if (assessments.isEmpty()) {
+                            Text(
+                                "Nenhuma autoavaliação enviada ainda.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(vertical = 8.dp)
+                            )
+                        }
+                    }
+                    items(assessments) { assessment -> AssessmentCard(assessment) }
                 }
 
                 item {

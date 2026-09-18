@@ -4,6 +4,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -175,9 +177,10 @@ fun StudentCard(student: UserEntity, onClick: () -> Unit) {
                 }
             }
 
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
+            Column(
+                modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
                     text = student.name,
@@ -185,6 +188,23 @@ fun StudentCard(student: UserEntity, onClick: () -> Unit) {
                     fontWeight = FontWeight.Bold,
                     color = onBackgroundColor
                 )
+                // GOALS.md §17d: the one visual cue the "Meus Alunos" list was missing — a draft
+                // the trainer typed in (students/{id}) vs. an account that claimed an invite
+                // (users/{uid}). Both are real students; only the second can log in.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        if (student.linked) Icons.Default.Link else Icons.Default.LinkOff,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = onBackgroundColor
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = if (student.linked) "Conectado" else "Aguardando conexão",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = onBackgroundColor
+                    )
+                }
             }
         }
     }

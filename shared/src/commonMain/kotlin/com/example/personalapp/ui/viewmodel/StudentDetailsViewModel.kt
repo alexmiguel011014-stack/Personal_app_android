@@ -2,6 +2,7 @@ package com.example.personalapp.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.personalapp.data.local.entity.AssessmentEntity
 import com.example.personalapp.data.local.entity.BiometricEntity
 import com.example.personalapp.data.local.entity.UserEntity
 import com.example.personalapp.data.local.entity.WorkoutEntity
@@ -37,10 +38,18 @@ class StudentDetailsViewModel(
     private val _inviteError = MutableStateFlow<String?>(null)
     val inviteError: StateFlow<String?> = _inviteError
 
+    private val _assessments = MutableStateFlow<List<AssessmentEntity>>(emptyList())
+    val assessments: StateFlow<List<AssessmentEntity>> = _assessments
+
+    private val _permissionError = MutableStateFlow<String?>(null)
+    val permissionError: StateFlow<String?> = _permissionError
+
     fun loadStudent(studentId: String) {
-        viewModelScope.launch {
-            _student.value = repository.getUserById(studentId)
-        }
+        // Observed, not fetched once: the §17 permission switches and the invite claim both change
+        // this row (from the trainer's own writes and from the users/{uid} Firestore mirror), and
+        // the screen has to follow. A one-shot getUserById() went stale after any edit.
+        repository.observeUserById(studentId).onEach { _student.value = it }.launchIn(viewModelScope)
+        repository.getAssessmentsForStudent(studentId).onEach { _assessments.value = it }.launchIn(viewModelScope)
         repository.getBiometricsByUser(studentId).onEach { _biometrics.value = it }.launchIn(viewModelScope)
         repository.getActiveWorkoutsByStudent(studentId).onEach { _workouts.value = it }.launchIn(viewModelScope)
         repository.getWorkoutLogsByStudent(studentId).onEach { _workoutLogs.value = it }.launchIn(viewModelScope)
@@ -90,5 +99,35 @@ class StudentDetailsViewModel(
     fun clearInvite() {
         _inviteCode.value = null
         _inviteError.value = null
+    }
+
+    // GOALS.md §17d: the two trainer-controlled switches, one write each (the other flag is
+    // passed through unchanged so a single toggle never clobbers the other).
+    fun setPermissions(canSelfAssess: Boolean, canLogBiometrics: Boolean) {
+        val student = _student.value ?: return
+        viewModelScope.launch {
+            try {
+                repository.setStudentPermissions(student, canSelfAssess, canLogBiometrics)
+                _permissionError.value = null
+            } catch (e: Exception) {
+                _permissionError.value = e.message ?: "Falha ao salvar permissões"
+            }
+        }
+    }
+
+    fun requestAssessment() {
+        val student = _student.value ?: return
+        viewModelScope.launch {
+            try {
+                repository.requestAssessment(student)
+                _permissionError.value = null
+            } catch (e: Exception) {
+                _permissionError.value = e.message ?: "Falha ao solicitar autoavaliação"
+            }
+        }
+    }
+
+    fun clearPermissionError() {
+        _permissionError.value = null
     }
 }

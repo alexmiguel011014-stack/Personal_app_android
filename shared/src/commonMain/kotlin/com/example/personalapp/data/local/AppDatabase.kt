@@ -40,6 +40,23 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
     }
 }
 
+// GOALS.md §17b: trainer-granted permission flags on users + the assessments history table.
+// The CREATE TABLE below is copied from the exported schema (shared/schemas/.../8.json) so Room's
+// post-migration validation sees exactly what it expects.
+val MIGRATION_7_8 = object : Migration(7, 8) {
+    override suspend fun migrate(connection: SQLiteConnection) {
+        connection.execSQL("ALTER TABLE users ADD COLUMN canSelfAssess INTEGER NOT NULL DEFAULT 0")
+        connection.execSQL("ALTER TABLE users ADD COLUMN canLogBiometrics INTEGER NOT NULL DEFAULT 0")
+        connection.execSQL("ALTER TABLE users ADD COLUMN pendingAssessmentRequest INTEGER NOT NULL DEFAULT 0")
+        connection.execSQL(
+            "CREATE TABLE IF NOT EXISTS `assessments` (`id` TEXT NOT NULL, `studentId` TEXT NOT NULL, " +
+                "`trainerId` TEXT NOT NULL, `submittedAt` INTEGER NOT NULL, `parQAnswersJson` TEXT NOT NULL, " +
+                "`goal` TEXT NOT NULL, `experienceLevel` TEXT NOT NULL, `trainingDays` TEXT NOT NULL, " +
+                "PRIMARY KEY(`id`))"
+        )
+    }
+}
+
 @Database(
     entities = [
         UserEntity::class,
@@ -48,8 +65,9 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
         HistoryEntity::class,
         ScheduleEntity::class,
         WorkoutLogEntity::class,
+        AssessmentEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = true
 )
 @ColumnTypeConverters(Converters::class)
@@ -72,7 +90,7 @@ const val DATABASE_FILE_NAME = "personal_app_database"
 // above for what's actually expected to run on every real upgrade.
 fun getRoomDatabase(builder: RoomDatabase.Builder<AppDatabase>): AppDatabase {
     return builder
-        .addMigrations(MIGRATION_5_6, MIGRATION_6_7)
+        .addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
         .fallbackToDestructiveMigration(dropAllTables = true)
         .setDriver(BundledSQLiteDriver())
         .setQueryCoroutineContext(Dispatchers.IO)

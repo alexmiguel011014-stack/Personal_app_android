@@ -1,5 +1,6 @@
 package com.example.personalapp.data.repository
 
+import com.example.personalapp.data.local.entity.AssessmentEntity
 import com.example.personalapp.data.local.entity.BiometricEntity
 import com.example.personalapp.data.local.entity.ScheduleEntity
 import com.example.personalapp.data.local.entity.UserEntity
@@ -74,6 +75,9 @@ fun DocumentSnapshot.toLinkedUserEntity(): UserEntity? {
         trainingDays = fieldOrNull<List<String>>("trainingDays") ?: emptyList(),
         createdAt = fieldOrNull<Long>("createdAt") ?: 0L,
         linked = true,
+        canSelfAssess = fieldOrNull<Boolean>("canSelfAssess") ?: false,
+        canLogBiometrics = fieldOrNull<Boolean>("canLogBiometrics") ?: false,
+        pendingAssessmentRequest = fieldOrNull<Boolean>("pendingAssessmentRequest") ?: false,
     )
 }
 
@@ -185,5 +189,37 @@ fun DocumentSnapshot.toWorkoutLogEntity(): WorkoutLogEntity? {
         date = fieldOrNull<Long>("date") ?: 0L,
         performedSets = performedSets,
         note = fieldOrNull<String>("note"),
+    )
+}
+
+// GOALS.md §17: assessments/{id}. parQAnswers ride as the same JSON string Room's Converters store,
+// like exercisesJson/performedSetsJson; trainingDays as a plain list, like users.trainingDays.
+fun AssessmentEntity.toFirestoreMap(): Map<String, Any?> = mapOf(
+    "trainerId" to trainerId,
+    "studentId" to studentId,
+    "submittedAt" to submittedAt,
+    "parQAnswersJson" to json.encodeToString(parQAnswers),
+    "goal" to goal,
+    "experienceLevel" to experienceLevel,
+    "trainingDays" to trainingDays,
+)
+
+fun DocumentSnapshot.toAssessmentEntity(): AssessmentEntity? {
+    val studentId = fieldOrNull<String>("studentId") ?: return null
+    val trainerId = fieldOrNull<String>("trainerId") ?: return null
+    val parQAnswers = try {
+        json.decodeFromString<Map<String, Boolean>>(fieldOrNull<String>("parQAnswersJson") ?: "{}")
+    } catch (e: Exception) {
+        emptyMap()
+    }
+    return AssessmentEntity(
+        id = id,
+        studentId = studentId,
+        trainerId = trainerId,
+        submittedAt = fieldOrNull<Long>("submittedAt") ?: 0L,
+        parQAnswers = parQAnswers,
+        goal = fieldOrNull<String>("goal") ?: "",
+        experienceLevel = fieldOrNull<String>("experienceLevel") ?: "",
+        trainingDays = fieldOrNull<List<String>>("trainingDays") ?: emptyList(),
     )
 }

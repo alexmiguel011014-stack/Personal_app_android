@@ -18,4 +18,11 @@ data class UserEntity(
     // true once this student claimed an invite: profile lives in Firestore's users/{uid} (this id
     // IS their Firebase Auth uid), not students/{id}. See GOALS.md §7 "unify".
     val linked: Boolean = false,
+    // GOALS.md §17: trainer-granted, default off, only meaningful for a linked student. Written by
+    // the trainer (TrainerRepository.setStudentPermissions/requestAssessment); firestore.rules
+    // blocks the student from changing the first two and only lets them *clear* the third, as
+    // part of the batch that writes the assessment.
+    val canSelfAssess: Boolean = false,
+    val canLogBiometrics: Boolean = false,
+    val pendingAssessmentRequest: Boolean = false,
 )

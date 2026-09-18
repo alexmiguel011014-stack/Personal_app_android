@@ -1,6 +1,7 @@
 package com.example.personalapp.data.repository
 
 import com.example.personalapp.data.local.dao.AppDao
+import com.example.personalapp.data.local.entity.AssessmentEntity
 import com.example.personalapp.data.local.entity.BiometricEntity
 import com.example.personalapp.data.local.entity.HistoryEntity
 import com.example.personalapp.data.local.entity.ScheduleEntity
@@ -52,6 +53,7 @@ class TrainerRepository(
             mirror("biometrics", trainerId, DocumentSnapshot::toBiometricEntity, appDao::insertBiometric, appDao::deleteBiometricById),
             mirror("schedules", trainerId, DocumentSnapshot::toScheduleEntity, appDao::insertSchedule, appDao::deleteScheduleById),
             mirror("workoutLogs", trainerId, DocumentSnapshot::toWorkoutLogEntity, appDao::insertWorkoutLog, appDao::deleteWorkoutLogById),
+            mirror("assessments", trainerId, DocumentSnapshot::toAssessmentEntity, appDao::insertAssessment, appDao::deleteAssessmentById),
             // Linked students live in users/{uid}, not students/{id} — see GOALS.md §7 "unify".
             mirrorQuery(
                 firestore.collection("users").where {
@@ -123,6 +125,31 @@ class TrainerRepository(
 
     fun getStudents(): Flow<List<UserEntity>> = appDao.getStudents()
     suspend fun getUserById(id: String) = appDao.getUserById(id)
+    fun observeUserById(id: String): Flow<UserEntity?> = appDao.observeUserById(id)
+
+    // GOALS.md §17: trainer-granted permissions on a *linked* student's own users/{uid} doc. A
+    // targeted field update, not a set(merge) of the whole profile, so nothing else on the doc is
+    // touched; firestore.rules only lets the owning trainer write these keys.
+    suspend fun setStudentPermissions(student: UserEntity, canSelfAssess: Boolean, canLogBiometrics: Boolean) {
+        require(student.linked) { "Permissões só se aplicam a alunos conectados" }
+        appDao.updateUser(student.copy(canSelfAssess = canSelfAssess, canLogBiometrics = canLogBiometrics))
+        firestore.collection("users").document(student.id).updateFields {
+            "canSelfAssess" to canSelfAssess
+            "canLogBiometrics" to canLogBiometrics
+        }
+    }
+
+    // Pull-based request (GOALS.md §17a): flips a flag the student's own profile listener picks up
+    // next time they open the app — no push infrastructure. Cleared by the student's submission.
+    suspend fun requestAssessment(student: UserEntity) {
+        require(student.linked && student.canSelfAssess) { "Aluno precisa estar conectado e com autoavaliação liberada" }
+        appDao.updateUser(student.copy(pendingAssessmentRequest = true))
+        firestore.collection("users").document(student.id).updateFields {
+            "pendingAssessmentRequest" to true
+        }
+    }
+
+    fun getAssessmentsForStudent(studentId: String): Flow<List<AssessmentEntity>> = appDao.getAssessmentsByStudent(studentId)
 
     // Trainer-initiated Student invite (GOALS.md §7). Snapshots the draft's fields onto the invite
     // doc so claiming doesn't need a second read of the (soon-to-be-archived) students/{id} draft.

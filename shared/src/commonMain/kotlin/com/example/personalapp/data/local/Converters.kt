@@ -36,6 +36,20 @@ class Converters {
     }
 
     @ColumnTypeConverter
+    fun fromBooleanMap(value: Map<String, Boolean>): String {
+        return Json.encodeToString(value)
+    }
+
+    @ColumnTypeConverter
+    fun toBooleanMap(value: String): Map<String, Boolean> {
+        return try {
+            Json.decodeFromString(value)
+        } catch (e: Exception) {
+            emptyMap()
+        }
+    }
+
+    @ColumnTypeConverter
     fun fromStringList(value: List<String>): String {
         return Json.encodeToString(value)
     }

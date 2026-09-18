@@ -64,6 +64,13 @@ android {
     buildFeatures {
         compose = true
     }
+    packaging {
+        resources {
+            // mockk-android pulls junit-jupiter into the instrumented-test APK; six of its jars
+            // ship the same META-INF/LICENSE.md and packaging refuses the duplicate.
+            excludes += setOf("META-INF/LICENSE.md", "META-INF/LICENSE-notice.md")
+        }
+    }
 }
 
 dependencies {
@@ -103,17 +110,18 @@ dependencies {
 }
 
 // GOALS.md §9/§18m: one command for every check that doesn't need a device — :app unit tests +
-// lint, :shared's commonTest suite on the JVM, and *compilation* of both instrumented test sets
-// (they went stale unnoticed once, §18h). Running them (connectedAndroidTest,
-// :shared:connectedAndroidDeviceTest) stays a separate, emulator-only stage.
+// lint, :shared's commonTest suite on the JVM, and *building* both instrumented test APKs (they
+// went stale unnoticed once, §18h; and compiling alone missed a packaging conflict once, §17).
+// Running them (connectedAndroidTest, :shared:connectedAndroidDeviceTest) stays a separate,
+// emulator-only stage.
 tasks.register("verify") {
     group = "verification"
-    description = "Unit tests + lint (:app), shared JVM tests, and instrumented-test compilation — everything that runs without a device."
+    description = "Unit tests + lint (:app), shared JVM tests, and instrumented-test APK builds — everything that runs without a device."
     dependsOn(
         "testDebugUnitTest",
         "lint",
-        "compileDebugAndroidTestKotlin",
+        "assembleDebugAndroidTest",
         ":shared:testAndroidHostTest",
-        ":shared:compileAndroidDeviceTest",
+        ":shared:assembleAndroidDeviceTest",
     )
 }

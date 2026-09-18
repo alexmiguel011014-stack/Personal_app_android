@@ -12,6 +12,9 @@ import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.semantics.contentType
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import org.koin.compose.viewmodel.koinViewModel
@@ -81,10 +84,15 @@ fun LoginScreen(
         Spacer(modifier = Modifier.height(24.dp))
 
         if (selectedRole == "Personal") {
+            // singleLine: Enter used to insert a newline into the value (multi-line default), which
+            // Firebase then rejected as "badly formatted" — invisible on screen. Found on the
+            // emulator's hardware keyboard during §17's smoke test.
             OutlinedTextField(
                 value = email,
                 onValueChange = { email = it },
                 label = { Text("E-mail") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
                 modifier = Modifier
                     .fillMaxWidth()
                     .semantics { contentType = ContentType.EmailAddress },
@@ -97,6 +105,8 @@ fun LoginScreen(
                 value = password,
                 onValueChange = { password = it },
                 label = { Text("Senha") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
                 modifier = Modifier
                     .fillMaxWidth()
                     .semantics {
@@ -110,7 +120,7 @@ fun LoginScreen(
 
             Button(
                 onClick = {
-                    if (isRegisterMode) viewModel.register(email, password) else viewModel.login(email, password)
+                    if (isRegisterMode) viewModel.register(email.trim(), password) else viewModel.login(email.trim(), password)
                 },
                 modifier = Modifier.fillMaxWidth(),
                 enabled = authState !is AuthState.Loading
@@ -131,7 +141,7 @@ fun LoginScreen(
 
             if (!isRegisterMode) {
                 TextButton(
-                    onClick = { viewModel.resetPassword(email) },
+                    onClick = { viewModel.resetPassword(email.trim()) },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = email.isNotBlank() && passwordResetState !is PasswordResetState.Loading
                 ) {

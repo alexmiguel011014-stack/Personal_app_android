@@ -1,11 +1,16 @@
 package com.example.personalapp.ui.screen
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.example.personalapp.data.local.entity.AssessmentEntity
 import com.example.personalapp.data.local.entity.BiometricEntity
 import com.example.personalapp.data.local.entity.UserEntity
 import com.example.personalapp.data.local.entity.WorkoutEntity
@@ -22,6 +27,7 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -33,8 +39,10 @@ import org.junit.runner.RunWith
  * for Firestore's realtime listeners, so the test exercises real ViewModel/Compose reactivity
  * without a live backend or device network access.
  *
- * Needs a device/emulator to run (Compose UI tests execute on-device) — not runnable in this
- * sandboxed environment (no AVD set up here), same caveat as [com.example.personalapp.data.local.AppDaoTest].
+ * Needs a device/emulator to run (Compose UI tests execute on-device). A ComposeTestRule allows
+ * exactly one `setContent` per test, so the two trainer screens are swapped through a state
+ * flag inside a single composition rather than by calling `setContent` twice (that threw
+ * "has already set content" the first time this ever ran on a device, §17's smoke test).
  */
 @RunWith(AndroidJUnit4::class)
 class TrainerGoldenPathTest {
@@ -64,8 +72,11 @@ class TrainerGoldenPathTest {
         every { trainerRepository.getActiveWorkoutsByStudent(studentId) } returns workoutsFlow
         every { trainerRepository.getWorkoutLogsByStudent(studentId) } returns logsFlow
         every { trainerRepository.getBiometricsByUser(studentId) } returns MutableStateFlow<List<BiometricEntity>>(emptyList())
-        coEvery { trainerRepository.getUserById(studentId) } returns
-            UserEntity(id = studentId, name = "Ana", role = "student", createdAt = 0L)
+        // §17: StudentDetailsViewModel observes the profile row and the assessment history.
+        every { trainerRepository.observeUserById(studentId) } returns
+            MutableStateFlow<UserEntity?>(UserEntity(id = studentId, name = "Ana", role = "student", createdAt = 0L))
+        every { trainerRepository.getAssessmentsForStudent(studentId) } returns
+            MutableStateFlow<List<AssessmentEntity>>(emptyList())
         coEvery { trainerRepository.updateWorkout(any()) } answers {
             // Mirrors the real fix in TrainerRepository: isActive drives status/assignedAt.
             val updated = firstArg<WorkoutEntity>()
@@ -81,6 +92,13 @@ class TrainerGoldenPathTest {
         }
 
         val studentRepository = mockk<StudentRepository>()
+        // StudentViewModel.start() collects these four; the student's Firestore-backed views are
+        // stand-ins here — the assertion is on the trainer side.
+        every { studentRepository.getMyProfile(studentId) } returns
+            MutableStateFlow<UserEntity?>(UserEntity(id = studentId, name = "Ana", role = "student", createdAt = 0L, linked = true))
+        every { studentRepository.getMyWorkouts(studentId) } returns workoutsFlow
+        every { studentRepository.getMyBiometrics(studentId) } returns MutableStateFlow<List<BiometricEntity>>(emptyList())
+        every { studentRepository.getMyWorkoutLogs(studentId) } returns logsFlow
         coEvery { studentRepository.logSession(any(), any()) } coAnswers {
             trainerRepository.insertWorkoutLog(firstArg(), secondArg())
         }
@@ -90,9 +108,23 @@ class TrainerGoldenPathTest {
         val studentViewModel = StudentViewModel(studentRepository)
 
         // Step 1: trainer opens the workout builder and assigns the (currently draft) workout.
+        var showStudentDetails by mutableStateOf(false)
         composeTestRule.setContent {
             MaterialTheme {
-                WorkoutBuilderScreen(studentId = studentId, onBack = {}, viewModel = workoutViewModel)
+                if (showStudentDetails) {
+                    StudentDetailsScreen(
+                        studentId = studentId,
+                        onBack = {},
+                        onNavigateToManual = {},
+                        onNavigateToAI = {},
+                        onNavigateToPromptFicha = {},
+                        onNavigateToEdit = {},
+                        onNavigateToWorkoutBuilder = {},
+                        viewModel = studentDetailsViewModel,
+                    )
+                } else {
+                    WorkoutBuilderScreen(studentId = studentId, onBack = {}, viewModel = workoutViewModel)
+                }
             }
         }
         composeTestRule.runOnIdle { workoutViewModel.loadWorkouts(studentId) }
@@ -114,24 +146,15 @@ class TrainerGoldenPathTest {
         assertEquals(1, logsFlow.value.size)
 
         // Step 3: the trainer reopens the student's screen and sees the logged session.
-        composeTestRule.setContent {
-            MaterialTheme {
-                StudentDetailsScreen(
-                    studentId = studentId,
-                    onBack = {},
-                    onNavigateToManual = {},
-                    onNavigateToAI = {},
-                    onNavigateToPromptFicha = {},
-                    onNavigateToEdit = {},
-                    onNavigateToWorkoutBuilder = {},
-                    viewModel = studentDetailsViewModel,
-                )
-            }
+        composeTestRule.runOnIdle {
+            studentDetailsViewModel.loadStudent(studentId)
+            showStudentDetails = true
         }
-        composeTestRule.runOnIdle { studentDetailsViewModel.loadStudent(studentId) }
         composeTestRule.waitForIdle()
 
-        composeTestRule.onNodeWithText("Supino").assertExists()
+        // "Supino" appears more than once on this screen (the workout list and the load-progression
+        // exercise picker both show it), so count rather than expect a single node.
+        assertTrue(composeTestRule.onAllNodesWithText("Supino").fetchSemanticsNodes().isNotEmpty())
         composeTestRule.onNodeWithText("Nenhuma sessão registrada pelo aluno ainda.").assertDoesNotExist()
     }
 }

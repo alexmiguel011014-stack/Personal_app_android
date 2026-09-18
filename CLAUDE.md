@@ -34,17 +34,23 @@ full build plan and current status (§18 is the KMP migration this layout comes 
 ## Verification commands
 
 - `./gradlew verify assembleDebug` — the one gate: `:app` unit tests + lint, `:shared`'s
-  `commonTest` suite on the JVM (`:shared:testAndroidHostTest`), and *compilation* of both
-  instrumented test sets (`:app:compileDebugAndroidTestKotlin`,
-  `:shared:compileAndroidDeviceTest`), then the APK. `android-ci.yml` runs the same `verify`.
+  `commonTest` suite on the JVM (`:shared:testAndroidHostTest`), and *building* both
+  instrumented test APKs (`:app:assembleDebugAndroidTest`, `:shared:assembleAndroidDeviceTest`
+  — packaging, not just compiling: a duplicate-`META-INF` conflict once slipped past compile),
+  then the app APK. `android-ci.yml` runs the same `verify`.
 - `src/roomTest/kotlin` (Room round trips) only compiles for a device. **Never put those tests
   in `commonTest`**: the Android variant of
   `androidx.sqlite:sqlite-bundled` has no JVM-host native library, so they fail there with
   `UnsatisfiedLinkError`. `src/roomTest/kotlin` is added as a source *directory* to both
   `androidDeviceTest` and `iosTest` (not via `dependsOn` — explicit `dependsOn` edges make KGP
   skip the default hierarchy template, which disconnects `iosMain`).
-- No device/emulator is set up in this environment; anything instrumented or iOS is "compiles,
-  not run" unless GOALS.md says otherwise.
+- Instrumented tests run on the `Medium_Phone` AVD (x86_64, API 37.1, **16 KB page size** —
+  which is why `mockk-android` must stay ≥ 1.14 and Espresso ≥ 3.7: older versions crash on
+  API 35+/16 KB devices) or on a USB phone: `ANDROID_SERIAL=<serial> ./gradlew
+  :shared:connectedAndroidDeviceTest :app:connectedDebugAndroidTest`. Both suites were green on
+  device on 2026-09-17. Gradle *uninstalls* the app afterwards — reinstall the debug APK if a
+  person is mid-flow on that device. Run one emulator at a time; two plus a Gradle build hung
+  the host. iOS is still "compiles, not run".
 
 ## Role routing
 

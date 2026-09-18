@@ -102,10 +102,18 @@ dependencies {
     debugImplementation(libs.androidx.ui.test.manifest)
 }
 
-// GOALS.md §9: one command for the checks that don't need a device (see §11 for why
-// connectedAndroidTest is deliberately excluded — it's a separate CI/local stage, emulator-only).
+// GOALS.md §9/§18m: one command for every check that doesn't need a device — :app unit tests +
+// lint, :shared's commonTest suite on the JVM, and *compilation* of both instrumented test sets
+// (they went stale unnoticed once, §18h). Running them (connectedAndroidTest,
+// :shared:connectedAndroidDeviceTest) stays a separate, emulator-only stage.
 tasks.register("verify") {
     group = "verification"
-    description = "Runs unit tests and lint together (excludes connectedAndroidTest, which needs a device/emulator)."
-    dependsOn("testDebugUnitTest", "lint")
+    description = "Unit tests + lint (:app), shared JVM tests, and instrumented-test compilation — everything that runs without a device."
+    dependsOn(
+        "testDebugUnitTest",
+        "lint",
+        "compileDebugAndroidTestKotlin",
+        ":shared:testAndroidHostTest",
+        ":shared:compileAndroidDeviceTest",
+    )
 }

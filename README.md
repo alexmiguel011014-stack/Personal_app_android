@@ -50,16 +50,16 @@ e geração de fichas assistida por IA.
 git clone git@github.com:alexmiguel011014-stack/Personal_app_android.git
 # Abra no Android Studio, aguarde o Gradle sync e rode :app em um aparelho/emulador.
 
-./gradlew verify assembleDebug            # testes unitários + lint + APK de debug (:app)
-./gradlew :shared:testAndroidHostTest     # testes comuns do :shared na JVM
-./gradlew :app:compileDebugAndroidTestKotlin :shared:compileAndroidDeviceTest  # testes instrumentados (compilação)
+./gradlew verify assembleDebug   # unitários + lint (:app), testes do :shared na JVM,
+                                 # compilação dos testes instrumentados, APK de debug
 ```
 
 Os testes instrumentados (`:app` golden path, `:shared` round-trips do Room) precisam de um
 aparelho/emulador para *rodar*: `connectedAndroidTest` / `:shared:connectedAndroidDeviceTest`.
 
-**iOS:** compila via GitHub Actions (`.github/workflows/ios-ci.yml`, runner macOS). Ainda não há
-projeto Xcode neste repositório; a distribuição planejada é por SideStore (ver `GOALS.md` §18j).
+**iOS:** **pausado por enquanto** (decisão de 2026-09-17). O código compartilhado compila para
+iOS via GitHub Actions (`.github/workflows/ios-ci.yml`, runner macOS), mas ainda não há projeto
+Xcode nem o Firebase iOS SDK linkado; a distribuição planejada é por SideStore (ver `GOALS.md` §18).
 
 ## 📐 Arquitetura
 

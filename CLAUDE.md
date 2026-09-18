@@ -1,4 +1,4 @@
-# CLAUDE.md — Personal Tracker (Kotlin Multiplatform: Android + iOS)
+# CLAUDE.md — Personal Tracker (Kotlin Multiplatform: Android now, iOS paused)
 
 Conventions that aren't obvious from reading the code alone. See [GOALS.md](GOALS.md) for the
 full build plan and current status (§18 is the KMP migration this layout comes from).
@@ -18,7 +18,9 @@ full build plan and current status (§18 is the KMP migration this layout comes 
   (`TrainerGoldenPathTest`, Android-only on purpose, see §18l).
 - Same package names everywhere (`com.example.personalapp.*`) — a file moving between modules
   never changes its imports.
-- iOS: `iosArm64` + `iosSimulatorArm64` only. `iosX64` was dropped deliberately (androidx.room3 /
+- **iOS is paused (user decision, 2026-09-17)** — don't pick up iOS-only GOALS.md items unless
+  told it's resumed. Targets stay declared so `commonMain` keeps compiling for both:
+  `iosArm64` + `iosSimulatorArm64` only. `iosX64` was dropped deliberately (androidx.room3 /
   androidx.sqlite publish no variant for it); don't add it back. Nothing iOS has been run or
   even linked yet from this repo — this Windows dev machine can't build Kotlin/Native Apple
   targets; `.github/workflows/ios-ci.yml` is the only iOS check, and the GitLive Firebase actuals
@@ -31,12 +33,12 @@ full build plan and current status (§18 is the KMP migration this layout comes 
 
 ## Verification commands
 
-- `./gradlew verify assembleDebug` — `:app` unit tests + lint + APK. **Does not compile the
-  instrumented tests**: add `:app:compileDebugAndroidTestKotlin` (it went stale once already).
-- `./gradlew :shared:testAndroidHostTest` — the `commonTest` suite on the JVM (parser, auth
-  resolution, update checker). Run it whenever `:shared` changes; `verify` doesn't.
-- `./gradlew :shared:compileAndroidDeviceTest` — compiles `src/roomTest/kotlin` (Room round
-  trips) for a device. **Never put those tests in `commonTest`**: the Android variant of
+- `./gradlew verify assembleDebug` — the one gate: `:app` unit tests + lint, `:shared`'s
+  `commonTest` suite on the JVM (`:shared:testAndroidHostTest`), and *compilation* of both
+  instrumented test sets (`:app:compileDebugAndroidTestKotlin`,
+  `:shared:compileAndroidDeviceTest`), then the APK. `android-ci.yml` runs the same `verify`.
+- `src/roomTest/kotlin` (Room round trips) only compiles for a device. **Never put those tests
+  in `commonTest`**: the Android variant of
   `androidx.sqlite:sqlite-bundled` has no JVM-host native library, so they fail there with
   `UnsatisfiedLinkError`. `src/roomTest/kotlin` is added as a source *directory* to both
   `androidDeviceTest` and `iosTest` (not via `dependsOn` — explicit `dependsOn` edges make KGP

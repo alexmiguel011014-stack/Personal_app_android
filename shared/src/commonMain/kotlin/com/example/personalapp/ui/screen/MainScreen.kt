@@ -1,15 +1,21 @@
 package com.example.personalapp.ui.screen
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
@@ -160,7 +166,16 @@ private fun ExpandedMainLayout(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Personal APP") },
+                // GOALS.md §22d: a brand mark instead of the plain title added in §20b — "the
+                // 'é um site' cue the user named directly". Expanded-layout only, same as the
+                // footer below; the compact layout keeps its plain app-bar title on purpose.
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.FitnessCenter, contentDescription = null, modifier = Modifier.size(22.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Personal Tracker", style = MaterialTheme.typography.titleLarge)
+                    }
+                },
                 actions = {
                     IconButton(onClick = onLogout) {
                         Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "Sair")
@@ -169,56 +184,88 @@ private fun ExpandedMainLayout(
             )
         }
     ) { padding ->
-        Row(modifier = Modifier.fillMaxSize().padding(padding)) {
-            NavigationRail(modifier = Modifier.fillMaxHeight().width(SidebarWidth)) {
-                MainDestinations.forEach { destination ->
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                NavigationRail(modifier = Modifier.fillMaxHeight().width(SidebarWidth)) {
+                    MainDestinations.forEach { destination ->
+                        NavigationRailItem(
+                            icon = { Icon(destination.icon, contentDescription = destination.label) },
+                            label = { Text(destination.label) },
+                            selected = currentRoute == destination.route,
+                            onClick = { navController.navigateToMainDestination(destination.route, currentRoute) }
+                        )
+                    }
                     NavigationRailItem(
-                        icon = { Icon(destination.icon, contentDescription = destination.label) },
-                        label = { Text(destination.label) },
-                        selected = currentRoute == destination.route,
-                        onClick = { navController.navigateToMainDestination(destination.route, currentRoute) }
+                        icon = { Icon(Icons.Default.Settings, contentDescription = "Configurações") },
+                        label = { Text("Configurações") },
+                        // Settings lives outside this inner graph (it's an outer-NavHost push), so
+                        // it is never the "selected" rail item — it's an action rendered as one.
+                        selected = false,
+                        onClick = onNavigateToSettings
                     )
                 }
-                NavigationRailItem(
-                    icon = { Icon(Icons.Default.Settings, contentDescription = "Configurações") },
-                    label = { Text("Configurações") },
-                    // Settings lives outside this inner graph (it's an outer-NavHost push), so it
-                    // is never the "selected" rail item — it's an action rendered as one.
-                    selected = false,
-                    onClick = onNavigateToSettings
-                )
-            }
-            MainNavHost(
-                navController = navController,
-                onStudentSelected = onStudentSelected,
-                onNavigateToAddStudent = onNavigateToAddStudent,
-                // GOALS.md §21b/§21c: weight(1f), not fillMaxSize(). Inside a Row, fillMaxSize
-                // claims the *full* incoming width instead of what's left after the 240dp rail,
-                // so the content pane was laid out 240dp too wide and pushed off the right edge
-                // — drawn where nobody can see it, which reads as a frozen screen.
-                modifier = Modifier.weight(1f).fillMaxHeight(),
-                studentsContent = {
-                    // GOALS.md §20d: list and details side by side instead of a push.
-                    Row(modifier = Modifier.fillMaxSize()) {
-                        StudentsScreen(
-                            onStudentSelected = onStudentSelected,
-                            onNavigateToAddStudent = onNavigateToAddStudent,
-                            singleColumn = true,
-                            selectedStudentId = selectedStudentId,
-                            modifier = Modifier.width(ListPaneWidth).fillMaxHeight(),
-                        )
-                        VerticalDivider()
-                        // Same fix as above: the detail pane sits next to a fixed 360dp list.
-                        Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                            val studentId = selectedStudentId
-                            if (studentId == null) {
-                                EmptyDetailPane()
-                            } else {
-                                studentDetailPane(studentId)
+                MainNavHost(
+                    navController = navController,
+                    onStudentSelected = onStudentSelected,
+                    onNavigateToAddStudent = onNavigateToAddStudent,
+                    // GOALS.md §21b/§21c: weight(1f), not fillMaxSize(). Inside a Row, fillMaxSize
+                    // claims the *full* incoming width instead of what's left after the 240dp
+                    // rail, so the content pane was laid out 240dp too wide and pushed off the
+                    // right edge — drawn where nobody can see it, which reads as a frozen screen.
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    studentsContent = {
+                        // GOALS.md §20d: list and details side by side instead of a push.
+                        Row(modifier = Modifier.fillMaxSize()) {
+                            StudentsScreen(
+                                onStudentSelected = onStudentSelected,
+                                onNavigateToAddStudent = onNavigateToAddStudent,
+                                singleColumn = true,
+                                selectedStudentId = selectedStudentId,
+                                modifier = Modifier.width(ListPaneWidth).fillMaxHeight(),
+                            )
+                            VerticalDivider()
+                            // Same fix as above: the detail pane sits next to a fixed 360dp list.
+                            Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                                val studentId = selectedStudentId
+                                if (studentId == null) {
+                                    EmptyDetailPane()
+                                } else {
+                                    studentDetailPane(studentId)
+                                }
                             }
                         }
-                    }
-                },
+                    },
+                )
+            }
+            ExpandedFooter()
+        }
+    }
+}
+
+/**
+ * GOALS.md §22d: "apps do not have footers; sites do — which is exactly why it registers."
+ * Expanded-layout only, deliberately light — a phone browser has no room to spare for this.
+ */
+@Composable
+private fun ExpandedFooter() {
+    Surface(tonalElevation = 0.dp, color = MaterialTheme.colorScheme.surfaceVariant) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                "Personal Tracker",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            // Static placeholder, not wired to UpdateChecker.currentVersionName (SettingsScreen's
+            // source of truth) — that lives behind a koinViewModel() this pure-chrome composable
+            // doesn't take. Fine for "nothing heavy"; wire it for real if this needs to stay
+            // accurate without a manual edit per release.
+            Text(
+                "v1.0",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }

@@ -8,6 +8,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.window.ComposeViewport
 import com.example.personalapp.di.webAppModule
 import com.example.personalapp.ui.navigation.RoleRouter
+import com.example.personalapp.ui.theme.AppTheme
 import com.example.personalapp.util.initWebAppCheck
 import dev.gitlive.firebase.Firebase
 import dev.gitlive.firebase.FirebaseOptions
@@ -43,7 +44,9 @@ fun main() {
     initWebAppCheck()
     startKoin { modules(webAppModule) }
     ComposeViewport(document.getElementById("app")!!) {
-        MaterialTheme {
+        // GOALS.md §22b: AppTheme replaces the bare MaterialTheme{} — same palette/shapes as
+        // Android, defined once in ui/theme/AppTheme.kt.
+        AppTheme {
             // GOALS.md §20c: §19f clamped this to a centered 480dp column so the phone-shaped UI
             // wouldn't stretch edge to edge on desktop. That clamp is gone — it would cap the
             // viewport below §20's 840dp breakpoint and stop the dashboard layout ever engaging.

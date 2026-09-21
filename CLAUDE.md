@@ -132,3 +132,25 @@ Reachable today from `StudentDetailsScreen`'s "Ficha Personal" button (dialog: M
 active-workout edit/toggle/delete controls the read-only list on `StudentDetailsScreen` doesn't).
 Two entry points to the same two destinations — not a bug, `WorkoutBuilderScreen` is the fuller
 management view.
+
+## Visual theme (GOALS.md §22)
+
+`shared/src/commonMain/.../ui/theme/AppTheme.kt` is the *one* file for palette and shape —
+`main.kt` (web) and `MainActivity.kt` (Android) both wrap `RoleRouter()`/content in `AppTheme { }`
+instead of a bare `MaterialTheme { }`. Every screen already reads colors via
+`MaterialTheme.colorScheme.*` and radii via `MaterialTheme.shapes.*` (verified by grep — the only
+hardcoded color anywhere in `ui/screen` is `SuccessGreen`, a deliberate fill for a role Material3
+doesn't have), so a palette/shape change belongs in `AppTheme.kt` alone, not spread across
+screens. No dark theme exists yet — out of scope until asked for.
+
+Two gaps `AppTheme.kt`'s `Shapes` does **not** close, so don't assume a future theme edit fixes
+them for free:
+
+- **Material3's `Button` ignores the theme's `Shapes` entirely** — it defaults to a fixed pill
+  shape regardless of what's passed to `MaterialTheme`. Confirmed empirically on Compose
+  Multiplatform 1.11.1 (every other shape token changed on screen; buttons didn't). To get a
+  less-rounded button, pass `shape = MaterialTheme.shapes.medium` explicitly at that `Button` call
+  site — there is no theme-level switch for it.
+- **Elevation → 1dp borders was a stated §22a direction, not implemented.** `AppTheme.kt` defines
+  `Outline`/`OutlineVariant` color tokens for this, but no existing `Card` was changed to use a
+  border instead of its default elevation.

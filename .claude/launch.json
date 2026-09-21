@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web",
+      "runtimeExecutable": "gradlew.bat",
+      "runtimeArgs": [":shared:jsBrowserDevelopmentRun", "--continuous"],
+      "port": 8080
+    }
+  ]
+}

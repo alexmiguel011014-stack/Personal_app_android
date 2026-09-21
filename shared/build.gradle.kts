@@ -151,6 +151,10 @@ kotlin {
             // characters in class names. Revisit if real resource migration is ever needed
             // (rename the folder, or find a Compose Resources config that avoids path-derived
             // names) — not a blocker for §18h otherwise.
+            // GOALS.md §22a: this same folder-space constraint is why the visual-identity pass
+            // (ui/theme/AppTheme.kt) ships no custom font — bundling one needs Compose Resources'
+            // font bytes, which needs this fixed first. Decided by taking the plan's own default
+            // (no custom font, revisit only if asked) rather than renaming the project folder.
             // JetBrains' own multiplatform-published mirror, not androidx.lifecycle directly —
             // the raw androidx.lifecycle:lifecycle-viewmodel-compose has no iOS/Native variant
             // (confirmed: :shared:compileKotlinIosSimulatorArm64 failed dependency resolution

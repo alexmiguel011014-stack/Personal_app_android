@@ -1,15 +1,17 @@
 package com.example.personalapp.ui.screen
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -147,63 +149,87 @@ fun ExerciseProgressionChart(workoutLogs: List<WorkoutLogEntity>, modifier: Modi
 }
 
 @Composable
-fun StudentCard(student: UserEntity, selected: Boolean = false, onClick: () -> Unit) {
+fun StudentListItem(
+    student: UserEntity,
+    selected: Boolean = false,
+    dense: Boolean = false,
+    onClick: () -> Unit,
+) {
     val isFeminino = student.gender == "Feminino"
-    val backgroundColor = if (isFeminino) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.secondaryContainer
-    val onBackgroundColor = if (isFeminino) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onSecondaryContainer
+    // GOALS.md §22c: replaces the old full-row-background StudentCard (a 100dp square Card tinted
+    // secondary/tertiaryContainer — the single biggest source of "everything is lavender" in the
+    // pre-§22 screenshots). Only a small avatar carries the gender distinction now; the row itself
+    // uses a neutral background with a primary-tinted highlight when selected.
+    val avatarColor = if (isFeminino) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.primaryContainer
+    val onAvatarColor = if (isFeminino) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onPrimaryContainer
+    val rowBackground = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else Color.Transparent
+    // Captured outside drawBehind{}: that lambda's receiver is DrawScope, not @Composable, so it
+    // cannot itself read MaterialTheme.colorScheme.
+    val accentColor = MaterialTheme.colorScheme.primary
 
-    Card(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(100.dp)
+            .background(rowBackground)
+            // GOALS.md §20d: which row the detail pane is showing, on the expanded layout — a
+            // left accent bar reads as "selected" in a dense list the way a border did on a card.
+            .drawBehind {
+                if (selected) {
+                    drawRect(color = accentColor, size = size.copy(width = 3.dp.toPx()))
+                }
+            }
             // GOALS.md §20e: pointer cursor on the web build — the cheapest single change that
             // stops a canvas-rendered app feeling like a phone app pasted into a browser.
             .pointerHoverIcon(PointerIcon.Hand)
-            .clickable { onClick() },
-        colors = CardDefaults.cardColors(containerColor = backgroundColor),
-        // GOALS.md §20d: which row the detail pane is showing, on the expanded layout.
-        border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
+            .clickable { onClick() }
+            .padding(horizontal = if (dense) 12.dp else 16.dp, vertical = if (dense) 8.dp else 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            // Marcador de Observação Médica
-            if (student.medicalNotes.isNotBlank()) {
-                Surface(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(8.dp),
-                    color = MaterialTheme.colorScheme.error,
-                    shape = MaterialTheme.shapes.small
-                ) {
+        Box(
+            modifier = Modifier
+                .size(if (dense) 32.dp else 40.dp)
+                .background(avatarColor, shape = CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = student.name.take(1).uppercase(),
+                style = MaterialTheme.typography.labelLarge,
+                color = onAvatarColor,
+            )
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = student.name,
+                    style = if (dense) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Medium,
+                )
+                if (student.medicalNotes.isNotBlank()) {
+                    Spacer(modifier = Modifier.width(6.dp))
                     Icon(
                         Icons.Default.Warning,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp).padding(2.dp),
-                        tint = MaterialTheme.colorScheme.onError
+                        contentDescription = "Observação médica",
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.error,
                     )
                 }
             }
-
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
+            if (student.goal.isNotBlank()) {
                 Text(
-                    text = student.name,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = onBackgroundColor
+                    text = student.goal,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-
-            // GOALS.md §17d: "Meus Alunos" already merges drafts (students/{id}, no account yet)
-            // and linked accounts (users/{uid}) into one list — the actual gap was never the data
-            // model, just this missing visual distinction between the two.
-            Text(
-                text = if (student.linked) "Conectado" else "Cadastrado (aguardando conexão)",
-                style = MaterialTheme.typography.labelSmall,
-                color = onBackgroundColor,
-                modifier = Modifier.align(Alignment.BottomStart).padding(8.dp)
-            )
         }
+        // GOALS.md §17d: "Meus Alunos" already merges drafts (students/{id}, no account yet) and
+        // linked accounts (users/{uid}) into one list — the actual gap was never the data model,
+        // just this visual distinction between the two.
+        Text(
+            text = if (student.linked) "Conectado" else "Aguardando conexão",
+            style = MaterialTheme.typography.labelSmall,
+            color = if (student.linked) SuccessGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }

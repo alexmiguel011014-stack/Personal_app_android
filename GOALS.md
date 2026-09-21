@@ -2939,13 +2939,14 @@ path of all** — the trainer's students will open a link on their phone, not on
       and maximized desktop (sidebar + two-pane). Use the production static bundle, not
       `jsBrowserDevelopmentRun` — §19e recorded that the dev server's HMR is measurably less
       reliable for this kind of check.
-      **Partially done 2026-09-13**: the *logged-out* screen is verified at both widths — at a
-      1024px/DPR-1.25 viewport (819dp, just under the breakpoint) the compact layout is correctly
-      active, and at 1500px (1200dp) the login form renders as a centered 480dp column instead of
-      spanning the monitor. **The logged-in dashboard (sidebar + two-pane) is not verified** and
-      cannot be from this side: `MainScreen` only renders for an authenticated TRAINER, and the
-      session doing the work has no account credentials. Needs the trainer to log in once at a
-      wide window and confirm.
+      **Partially done.** 2026-09-13, logged-out at both widths: at 1024px/DPR-1.25 (819dp, just
+      under the breakpoint) the compact layout is correctly active, and at 1500px (1200dp) the
+      login form renders as a centered 480dp column instead of spanning the monitor.
+      **2026-09-21, logged in (§21a/§21d): confirmed at both desktop widths too** — sidebar +
+      list + "Selecione um aluno" above 840dp, compact bottom-bar layout below it, on the real
+      trainer account. **Still open: the real-phone-browser pass (§20f)** — none of this used an
+      actual phone, and §20f's own items (soft keyboard, touch scroll, viewport chrome) are a
+      distinct runtime from a resized desktop window.
       Two dev-server gotchas worth knowing for whoever runs this next: viewport emulation leaves
       the Compose canvas blank until a reload (it re-measures on load, not on resize), and DPR
       matters — the 840dp breakpoint is ~1050 CSS px at DPR 1.25, not 840.
@@ -2988,15 +2989,16 @@ Suggested: sonnet · high — small surface, but it is a blocking regression and
 below is subtle enough that "it looks fine" is not the same as "it is fixed".
 
 **21a. Reproduce and capture evidence — before changing any code**
-- [ ] **(manual)** Log in on the web build with the real trainer account, browser console open,
-      and capture: (1) whether the "Entrar" spinner ever stops, (2) any red console error
-      (especially a `FirebaseFirestoreException`/`PERMISSION_DENIED` or an uncaught coroutine
-      exception, both of which this project has already produced once — §19c), (3) whether the
-      window is above or below the 840dp breakpoint (~1050 CSS px at DPR 1.25, so a maximized
-      laptop is above it and a half-screen window may not be). Done when: those three facts are
-      written down. **Which of the suspects below applies depends entirely on this** — a stuck
-      spinner points at the data layer, a rendered-but-wrong screen points at layout.
-      Needs the account, so it cannot be done from the session doing the work.
+- [x] **(manual) Done 2026-09-21, on the live GitHub Pages deploy of `c92bbda` (the `weight(1f)`
+      fix's own commit).** Real trainer account, DevTools open. (1) The "Entrar" spinner did not
+      hang — login completed and rendered "Meus Alunos" immediately. (2) No red console error
+      reported. (3) First attempt was a narrower effective width (DevTools docked, eating half
+      the window) and correctly showed the **compact** layout (bottom bar, single column) — not a
+      bug, exactly §20a's designed behavior below 840dp. Closing DevTools and maximizing then
+      showed the **expanded** layout: sidebar, students list, "Selecione um aluno" in the detail
+      pane. **This resolves the suspect question below**: a clean render with no console error
+      and a spinner that stopped rules out Suspect 2 (an uncaught `Flow` exception would either
+      show a red error or leave the spinner spinning forever) — it was Suspect 1 alone.
 
 **21b. Root cause — two concrete candidates, found by reading the §20 diff**
 - [x] **Suspect 1 (strongest, confirmed present in the code): `Modifier.fillMaxSize()` on `Row`
@@ -3013,20 +3015,16 @@ below is subtle enough that "it looks fine" is not the same as "it is fixed".
       definitely gone, but a wrongly-positioned pane and a never-resolving spinner look different
       to a user, and 21a's evidence (which of the two it was) has not been captured yet. Do not
       close §21 on this item alone.
-- [ ] **Suspect 2 (applies if 21a shows a spinner that never stops): an uncaught exception in a
-      `Flow` collected by the trainer screens.** §19c already produced this exact failure mode
-      once (`PERMISSION_DENIED` from a query missing its `trainerId` filter), and §19c's fix
-      covered five methods — `getStudents()` was already correct and was *not* among them, but
-      `FirestoreTrainerRepository.getStudents()` uses `combine(drafts, linked)`, which emits
-      nothing until *both* source flows have emitted at least once and propagates a failure from
-      either one. Verify both underlying queries actually emit for this account. Done when:
-      either ruled out by a clean console, or fixed and the list renders.
-- [ ] Record which suspect it actually was, and explicitly note the other as ruled out —
-      "fixed something and it started working" leaves the next person guessing which.
+- [x] **Suspect 2: ruled out 2026-09-21** — §21a's live login showed a clean console and a
+      spinner that stopped, which is the opposite of what an uncaught `Flow` exception in
+      `combine(drafts, linked)` would produce. `getStudents()` was never touched by this fix and
+      didn't need to be.
+- [x] Recorded: **Suspect 1 (the `fillMaxSize()`/`weight(1f)` bug) was the actual cause**, ruled
+      in by §21a's evidence, not just "fixed something and it started working".
 
 **21c. Fix**
-- [ ] Apply the fix for whichever cause 21b confirms. For Suspect 1 that is `weight(1f)` (plus
-      `fillMaxHeight()` where the child should also stretch vertically) on both `Row` children.
+- [x] Suspect 1 confirmed (21a/21b) — the `weight(1f)`/`fillMaxHeight()` fix already applied is
+      the actual, sufficient fix. No further change needed here.
 - [x] While in `MainScreen`: `StudentsScreen` carries its own `Scaffold` (it owns the FAB), so
       the expanded layout currently nests a `Scaffold` inside the outer one, inside a `Row`.
       **Checked and deliberately left alone**: the inner `Scaffold` only places the FAB at the
@@ -3037,12 +3035,15 @@ below is subtle enough that "it looks fine" is not the same as "it is fixed".
 **21d. Regression check**
 - [x] `./gradlew verify`, `:shared:compileKotlinJs`, `:shared:testAndroidHostTest` green
       (2026-09-13, after the `weight(1f)` fix).
-- [ ] **(manual)** Logged in, on the web build, at a window **above** 840dp: sidebar, students
-      list and detail pane all visible at once, "Selecione um aluno" before picking anyone.
-- [ ] **(manual)** Logged in, at a window **below** 840dp: bottom bar, single column, identical
-      to the Android app — the compact branch is supposed to be untouched by §20.
-- [ ] **(manual)** The Android app still logs in and navigates normally — `MainScreen` is shared
-      code, so a fix here lands on the phone too.
+- [x] **(manual) Done 2026-09-21** — logged in, on the deployed web build, at a window **above**
+      840dp: sidebar (Alunos/Agenda/Configurações), students list, and "Selecione um aluno" in
+      the detail pane, all visible at once. This is also §20g's own long-open "logged-in
+      dashboard... cannot be [verified] from this side" item — closing it here too.
+- [x] **(manual) Done 2026-09-21** — the same session at a narrower effective width (DevTools
+      docked) rendered the compact bottom-bar layout, matching the Android app's shape.
+- [ ] **(manual)** The Android app itself (not the web build) still logs in and navigates
+      normally on a real device — `MainScreen` is shared code, so a fix here lands on the phone
+      too, but this needs an actual Android install to confirm, not just the shared-code review.
 
 ---
 
@@ -3063,9 +3064,9 @@ where the panes sit.
 3. **Site chrome** — a real header with brand identity, and a footer. The app currently opens
    straight into content, the way an app does.
 
-**Blocked on §21.** Not a soft ordering preference: the screens being restyled are the ones
-nobody can currently reach, and "does this still look like an app?" is a judgement that requires
-looking at it.
+**Was blocked on §21; unblocked 2026-09-21** once §21a/§21d confirmed the login fix live. 22a–22e
+built and verified below (compiles/tests green; the human "does it still look like an app?"
+verdict is still the trainer's own call, not this session's — see 22e).
 
 ```mermaid
 flowchart TD
@@ -3093,68 +3094,89 @@ subjective, which means more iteration passes than a typical feature.
       first resolving that: rename the project directory (fixes the root cause once and unblocks
       Compose Resources generally) or keep the built-in typeface and get the "not an app" effect
       from weight/size/letter-spacing/colour instead.
-- [ ] **Decide (needs the user): rename the project folder, or no custom font for now?** Renaming
-      touches `local.properties`, the keystore path in `app/build.gradle.kts`, and every absolute
-      path baked into this machine's setup — cheap in principle, annoying in practice, and
-      entirely the user's call. Default if they don't care either way: **no custom font**, do the
-      other three axes first, and revisit — a custom palette plus tighter density already moves
-      the needle far more than a typeface does.
-- [ ] Pick the actual palette and shape scale before writing any of it: a neutral, low-chroma
-      surface family with one accent (the current purple can stay as the accent if the trainer
-      likes it — the app-ness comes from purple-tinted *surfaces*, not from the accent), corner
-      radius dropped to roughly 4–8dp from Material's default, and elevation replaced by 1dp
-      borders on cards/panes. Done when: the values exist as named constants, not as magic
-      numbers sprinkled across screens.
+- [x] **Decided 2026-09-21 by taking this item's own stated default** (the user was not asked —
+      "no custom font" was already the recorded fallback if they didn't care either way): no
+      folder rename, built-in typeface, "not an app" effect comes from palette/density instead.
+      Revisit if the trainer specifically asks for a custom font later.
+- [x] Palette and shape scale picked and implemented as named constants in
+      `shared/.../ui/theme/AppTheme.kt` (§22b) — indigo accent, neutral slate secondary (replaces
+      Material's default pale-lavender secondaryContainer, the actual source of the old
+      screenshots' purple tint), a distinct teal tertiary, 4–10dp corner radii.
+      **One real limitation found empirically, not assumed**: Material3's `Button` composable
+      does not read its shape from the theme's `Shapes` at all — it defaults to a fixed pill/
+      stadium shape regardless of what `Shapes(...)` is passed to `MaterialTheme`. Confirmed by
+      screenshot on this exact Compose Multiplatform 1.11.1 build: every `Shapes` value changed
+      except buttons, which stayed fully rounded. `Shapes` still reduces every `Card`/`Dialog`/
+      `OutlinedTextField` corner (they do read the theme scale) — buttons specifically would need
+      an explicit `shape = MaterialTheme.shapes.medium` passed at each call site, which was not
+      swept across the app in this pass (recorded as open work in §22c).
+      **Elevation → 1dp borders is not yet swept either** — `Outline`/`OutlineVariant` tokens now
+      exist in `AppTheme.kt` for this, but no existing `Card` was changed to use a border instead
+      of its default elevation. Left for a follow-up pass rather than touching every `Card` call
+      site in this one.
 
 **22b. Theme tokens**
-- [ ] A real `AppTheme` composable (`ui/theme/`) wrapping `MaterialTheme` with an explicit
-      `lightColorScheme(...)` built from 22a's palette, a `Shapes` with the reduced radii, and
-      surface/elevation conventions. Replaces the bare `MaterialTheme { }` currently in
-      `main.kt` (web) and `MainActivity.kt` (Android) — one theme, both platforms.
-- [ ] Sweep the screens for hardcoded Material-default assumptions that will fight the new theme.
-      §5d already did one such pass ("hardcoded colors swept across every screen… replaced with
-      `MaterialTheme.colorScheme` tokens"), so this should be small — verify rather than assume.
-- [ ] Dark theme: explicitly **out of scope** for this pass unless the trainer asks. Recording it
-      so it is a decision, not an omission.
+- [x] `ui/theme/AppTheme.kt` added: `lightColorScheme(...)` from 22a's palette + a reduced-radius
+      `Shapes`, wrapped in one `AppTheme { }` composable. Replaces the bare `MaterialTheme { }` in
+      both `main.kt` (web) and `MainActivity.kt` (Android) — one theme, both platforms, one import
+      each. Elevation conventions (1dp borders) are the one piece **not** carried through — see
+      22a's note.
+- [x] Swept and verified 2026-09-21 (not just assumed): `grep -rn "Color(0x" ui/screen/*.kt` finds
+      exactly one hit, `SuccessGreen` in `Components.kt`, already documented as filling a real
+      Material3 gap (no "success" role exists). §5d's earlier sweep held.
+- [x] Dark theme confirmed out of scope — `AppTheme.kt` has no dark branch, recorded in its own
+      header comment.
 
 **22c. Components and density**
-- [ ] `StudentsScreen`: the 2-column `LazyVerticalGrid` of 100dp `StudentCard`s becomes a dense
-      single-column list of rows (name, objective, status inline), which is also what the §20d
-      list pane wants at 360dp. Done when: the same screen shows meaningfully more students
-      without scrolling, at both viewports.
-- [ ] Replace the circular `FloatingActionButton` ("Cadastrar Aluno") with an ordinary labelled
-      button in the content header — the single most recognisable Android-app signal in the UI.
-- [ ] Tighten default paddings/spacing one step across the trainer screens (16dp → 8/12dp where
-      it does not hurt touch targets on the compact layout — phones still need 48dp targets, so
-      this is a *desktop-density* change gated the same way §20's layout is).
-- [ ] `StudentDetailsScreen` (274 lines) is the densest screen and the one the trainer will stare
-      at most: give it a heading + section structure rather than a stack of cards.
+- [x] `StudentsScreen` rewritten: the old 2-column `LazyVerticalGrid` of 100dp `StudentCard`s
+      (renamed `StudentListItem`, `Components.kt`) is now a dense single-column list of rows —
+      small avatar (still carries the gender distinction that used to tint the whole card),
+      name + goal, a left accent bar for the selected row instead of a border. Used identically
+      by the compact layout (a full-width phone list) and the §20d 360dp desktop pane.
+- [x] `FloatingActionButton` replaced with an ordinary `Button` in a header row next to "Meus
+      Alunos" (shorter label "Novo" on the narrow desktop pane, full "Cadastrar Aluno" elsewhere).
+- [x] Desktop-only padding tightened (16dp → 12/8dp) inside `StudentsScreen`, gated on the same
+      `singleColumn` flag §20d already uses to mean "the desktop list pane" — the compact/phone
+      path is untouched, still full 16dp and the row height stays touch-friendly.
+- [ ] **Not done — scope cut, recorded rather than rushed.** `StudentDetailsScreen` (274 lines: six
+      navigation callbacks, four dialogs, invite-code flow, biometrics/workout/assessment lists)
+      still reads as "a stack of cards", not "a heading + section structure". This screen carries
+      real business logic beyond layout, and reworking its structure in the same pass as the
+      theme/list changes above risked a regression nobody would catch without dedicated
+      attention. Left for its own follow-up pass.
 
 **22d. Site chrome**
-- [ ] A brand header on the expanded layout: product name/logo treatment, not just the plain
-      `TopAppBar` title added in §20b. This is the "é um site" cue the user named directly.
-- [ ] A footer on the expanded layout (version, a "Personal Tracker" line, nothing heavy). Apps
-      do not have footers; sites do — which is exactly why it registers.
-- [ ] Both are expanded-layout only. On a phone browser a header/footer would just eat the
-      screen, and the compact layout is deliberately the app layout (§20a).
+- [x] Brand header: `ExpandedMainLayout`'s `TopAppBar` title is now an icon + "Personal Tracker"
+      wordmark instead of the plain text `TopAppBar` title §20b added.
+- [x] Footer added below the content `Row`, expanded-layout only: "Personal Tracker" / a version
+      string. **The version is a static placeholder** ("v1.0"), not wired to
+      `UpdateChecker.currentVersionName` (`SettingsScreen`'s real source) — that lives behind a
+      `koinViewModel()` this pure-chrome composable doesn't take. Fine for "nothing heavy" today;
+      wire it for real if it needs to track releases without a manual edit.
+- [x] Confirmed both are expanded-layout only — `CompactMainLayout` (the phone/phone-browser path)
+      is untouched, still its original plain-title `Scaffold` + bottom bar.
 
 **22e. Verification**
-- [ ] `./gradlew verify`, `:shared:compileKotlinJs`, `:shared:testAndroidHostTest` green after
-      each of 22b/22c/22d — this touches shared screens, so Android regressions are the risk.
+- [x] Green 2026-09-21 after the 22b/22c/22d batch: `:shared:compileKotlinJs`,
+      `:shared:testAndroidHostTest`, `:app:verify` (unit tests + lint) — all `BUILD SUCCESSFUL`.
+      Also self-checked the pre-login screen live via `:shared:jsBrowserDevelopmentRun` in a
+      local browser: the neutral background, indigo accent and reduced text-field/card radii all
+      render as intended (this is also where the button-shape limitation above was found).
 - [ ] **(manual)** Side-by-side screenshots, before and after, at desktop width — the acceptance
-      criterion here is a human verdict ("ainda parece app?"), so the check is the trainer
-      looking at it, not a passing test. Expect at least one iteration round.
-- [ ] **(manual)** Confirm on a real Android phone that the compact layout still looks right
-      with the new theme — the theme is shared, so this pass *does* change the native app's
-      appearance (unlike §20, which left it alone). If the trainer wants the phone app to keep
-      the current look, that is a real fork: stop and decide before going further.
+      criterion here is a human verdict ("ainda parece app?"), so the check is the trainer looking
+      at it, not a passing test. **Needs the trainer to open the deployed site post-push and say
+      whether this reads as "less app" or not** — expect at least one iteration round regardless.
+- [ ] **(manual)** Confirm on a real Android phone that the compact layout still looks right with
+      the new theme — the theme is shared, so this pass *does* change the native app's appearance
+      (unlike §20, which left it alone). **If the trainer wants the phone app to keep its current
+      look, that is a real fork the two platforms would need — flag it, don't assume the answer.**
 
 **22f. Registration**
-- [ ] `CLAUDE.md`: where the theme lives and that colours/shapes come from `AppTheme` rather than
-      Material defaults, so the next change does not reintroduce hardcoded values.
-- [ ] Record the typography decision from 22a (renamed folder + custom font, or built-in font)
-      next to the existing `compose.components.resources` note in `shared/build.gradle.kts` —
-      that comment is where a future reader will look.
+- [x] `CLAUDE.md` updated: where `AppTheme` lives and that it's the one file to touch for
+      palette/shape changes, plus the button-shape and elevation-vs-border gaps so they aren't
+      silently reopened by a future edit.
+- [x] Typography decision (no rename, built-in font) recorded next to the existing
+      `compose.components.resources` note in `shared/build.gradle.kts`.
 
 ---
 

@@ -749,6 +749,109 @@ If/when any of these become real priorities, treat each as its own `/newgoal` re
 depth needed — e.g. messaging's real-time delivery model, or payment PCI scope — deserves the same
 front-loaded research this file already does for the rest of the app, not a rushed bolt-on).
 
+### Refreshed 2026-09-22 — pulled live from the vendors' own feature pages
+
+The 2026-08-17 table above was built from third-party market surveys and turned out to be a
+*subset*. Re-done by reading TrueCoach's and ABC Trainerize's published feature pages directly
+(truecoach.co/features, trainerize.com/features). Kept as three lists, because "don't have" was
+hiding two very different price tags.
+
+**Don't have, but the data already exists** — these are queries over tables this app already
+writes, not subsystems. Worth knowing that TrueCoach *charges* for the first one:
+
+| Feature | How it falls out of what we have |
+|---|---|
+| Churn/risk alert ("client going quiet") — TrueCoach's "Automated Risk Assessment" | `workout_logs`: last log older than N days |
+| Adherence % | `workout_logs` vs `schedules` |
+| Trainer dashboard metrics | every existing table |
+| Search/filter the student list | nothing new |
+| Archive / pause a student | one boolean on `users` |
+| Reuse a ficha as a template for another student | `workouts` already exists |
+
+**Don't have, and each is a real subsystem or an external dependency:**
+
+| Feature | Why it is expensive |
+|---|---|
+| Exercise video library (TrueCoach ships 3,500) | A content/licensing problem, not a code one — see the exercise-catalog research below |
+| Messaging (1-1, group, voice) | Data model + real-time delivery + likely FCM |
+| Notifications and reminders | FCM — still out of scope per the Product goal |
+| Progress photos | Firebase Storage + upload UI + storage rules + cost |
+| Automated payments | Gateway + webhook + fiscal responsibility (see §23's level-1/level-2 split) |
+| Nutrition: meal plans, macros, MyFitnessPal | An entire new domain |
+| Groups, challenges, leaderboards | Only meaningful at a roster size this trainer doesn't have |
+| Video calls | External service |
+| Wearables (Apple Health, Garmin, WHOOP, OURA) | One integration per vendor |
+| Client self-booking | Needs availability, not just calendar events |
+| Drag-and-drop workout builder | Desktop-only interaction — belongs to the web front (§23) |
+| PDF export of a ficha; in-workout rest timer | Medium, not expensive |
+
+**What this app has that neither of them does** — recorded because it is the actual differentiator
+and it keeps getting rebuilt as if it were table stakes:
+
+- **AI ficha generation across four providers on the trainer's own API key** (§3/§16). Trainerize
+  has an AI workout builder, but it is a paid add-on locked to their model.
+- **Smart Paste** (§15, `WorkoutParser`) — paste a WhatsApp message, get a ficha. Neither vendor
+  has an equivalent; it is the exact workflow of a trainer who already works over WhatsApp.
+- **PAR-Q+ self-assessment behind per-student trainer-granted permission** (§17). Both have
+  generic onboarding forms; neither gates an anamnesis this way.
+
+One correction to the August table: "Public profiles — custom storefront webpage" (TrueCoach) and
+`trainerize.me` prospect booking (Trainerize) mean a **public landing page is a category-standard
+feature, not a vanity item**. That is why §23 includes one.
+
+### Exercise catalog — researched 2026-09-22, dataset chosen, not started
+
+Investigating the "exercise video library" row above turned up a licensing trap worth recording so
+nobody walks into it later: **nearly every "1,000+ exercises with GIFs" repository on GitHub
+descends from the same commercial source, Gym visual (gymvisual.com)**, by way of ExerciseDB.
+`hasaneyldrm/exercises-dataset` is honest about it (MIT covers code/structure/instruction text
+only; media is `© Gym visual`, and its README says to obtain a licence before reuse).
+`mfortini/exercise-library` claims MIT over 1,112 of the same GIFs — stamping MIT on a file does
+not grant rights the author never held. **Do not ship either one's media.**
+
+Chosen instead: **[`yuhonas/free-exercise-db`](https://github.com/yuhonas/free-exercise-db)** —
+Unlicense (genuine public domain), descending from Ollie Jennings' `exercises.json` / Everkinetic,
+so the provenance chain is actually open. Downloaded and surveyed 2026-09-22:
+
+- **876 exercises**, 1.0 MB JSON. Fields: `name, force, level, mechanic, equipment, primaryMuscles,
+  secondaryMuscles, instructions, category, images, id`.
+- 873 of 876 carry **exactly two JPGs** (start and end position), ~72 KB each, 850×567. Real gym
+  photography, not diagrams — visibly dated (the old bodybuilding.com library) but usable.
+- **The images serve over jsDelivr** (`cdn.jsdelivr.net/gh/yuhonas/free-exercise-db@main/exercises/
+  <id>/0.jpg`, verified 200, 7-day cache). **This removes Firebase Storage from the estimate
+  entirely** — store the `id`, build the URL. That is why the "progress photos" row above is
+  expensive and this one is not: these images are somebody else's hosting problem.
+- Filtering to `category = strength` plus real gym equipment (barbell/dumbbell/cable/machine/body
+  only/EZ bar) leaves **446 exercises / 358k characters** — half the dataset, and the half a
+  trainer actually prescribes. The 122 `other` entries are Atlas stones and sleds; the 77 with no
+  equipment are mostly stretching and mobility.
+
+**Schema note, because it is the part that looks like a conversion and is not.** This app's
+`Exercise` (`data/model/Exercise.kt`, stored as `workouts.exercisesJson`) is a **prescription** —
+`sets`, `reps`, `weight`, `restSeconds`. The dataset's record is a **catalog entry** — what the
+movement is. They share only `name`. So the integration is not a mapping but a second layer: add a
+nullable `catalogId: String?` to `Exercise` (null = hand-typed, exactly the pattern
+`muscleActivation` already used in §15c, so nothing existing breaks). Three consequences:
+
+1. `primaryMuscles`/`secondaryMuscles` can **populate `muscleActivation` automatically**, which
+   today depends on the trainer hand-annotating the pasted text (§15c).
+2. The catalog is **static reference data, not trainer-scoped** — so it needs no Firestore sync and
+   no `startListening` registration, and the "three places in lockstep" rule in `CLAUDE.md` does
+   not apply to it.
+3. Smart Paste and the AI builder gain a closed vocabulary to validate against instead of
+   accepting any string.
+
+**Translation cost is in the names, not the instructions.** The 358k characters of instructions are
+a one-off batch job through the four providers already wired into `GenerativeAiService`. The 446
+*names* are the part that needs the trainer's own eyes, because Brazilian gym vernacular is not a
+literal translation — "Barbell Curl" is *rosca direta*, not *rosca com barra*; "Seated Cable Rows"
+is *remada baixa*; "Lat Pulldown" is *puxada frente*; "Leg Press" stays in English. Machine output
+here is wrong in a way any trainer spots instantly. Budget ~30 minutes of the trainer's review, not
+a work day.
+
+Not started, and deliberately **not** part of §23 (which is the web front) — this crosses Android
+and web equally and should become its own section when picked up.
+
 ---
 
 ## 13. Post-MVP Fixes & Validation (2026-08-19, via `/newgoal`)
@@ -3177,6 +3280,236 @@ subjective, which means more iteration passes than a typical feature.
       silently reopened by a future edit.
 - [x] Typography decision (no rename, built-in font) recorded next to the existing
       `compose.components.resources` note in `shared/build.gradle.kts`.
+
+---
+
+## 23. Build — The web front as its own product: React/Next, backend first
+(2026-09-22, via `/newgoal`)
+
+**The request:** "o front do site e do android não precisa ser o mesmo, até pq os sites costumam
+ter caras diferentes. o site que você fez está inteiramente android expandido."
+
+That verdict is correct, and §22 was aimed at the wrong layer. The cause is not palette or corner
+radius — it is the rendering model. Confirmed on the deployed build 2026-09-22 by reading the live
+DOM: the entire page is
+
+```
+DIV#app > DIV > DIV > #shadow-root > DIV > CANVAS
+```
+
+`document.body.innerText` returns an **empty string**; the word "Entrar" does not exist in the
+HTML. Compose Multiplatform's `js` target paints the whole UI into one `<canvas>` via Skiko.
+Measured consequences, all verifiable on the live site:
+
+- no text selection, no Ctrl+F, no copying a student's name
+- Google indexes a blank page — zero SEO
+- password managers and browser autofill cannot see the fields
+- **no URLs**: a student cannot be opened in a new tab, a screen cannot be linked or shared
+- fonts are rasterised by Skia, not the browser's text engine — the reason the text "doesn't read
+  as web"
+- **4.9 MB transferred / 14.5 MB decoded** on first load (`shared.js` 6,095 KB + `.wasm` 8,450 KB)
+
+A strategic fact that pushed the decision: JetBrains' own FAQ states they have shifted focus away
+from JS Canvas to Wasm "due to resource constraints" — `js` is the de-prioritised target, and this
+project cannot move to `wasmJs` because GitLive's Firebase SDK publishes only a `js` variant
+(already recorded in `shared/build.gradle.kts`).
+
+**Decisions, confirmed with the user 2026-09-22:**
+
+1. **Option C — a separate web front in a web stack** (React/Next + the Firebase JS SDK), chosen
+   over forking the Compose UI into a `webMain` source set (keeps every canvas limitation above)
+   and over Compose HTML (real DOM, reuses the Kotlin logic, but loses Material 3 entirely and
+   means hand-building every input, dialog and date picker).
+2. **Mensalidades: level 1 (manual tracking) only — but with a gate** so level 2 (real charging)
+   plugs in later without a model change. See 23c.
+3. **Separate route trees: `/app` (trainer) and `/aluno` (student)**, not one role-switching root.
+   Rejected specifically because one surface serving two audiences is the exact mistake this
+   section exists to undo.
+4. **A simple public landing page is in scope.** Not a vanity item — §12's refresh shows it is a
+   category-standard feature (TrueCoach's "Public profiles", `trainerize.me`).
+5. **The project is called "Personal Tracker".** The user does not care which name; this one is
+   already the `<title>`, the Pages deployment and the expanded top bar. Only `CompactMainLayout`
+   still says "Personal APP" — see 23m.
+
+**The price of Option C, stated plainly so it is never a surprise:** business logic gets a second
+implementation in TypeScript. `commonMain` is 7,617 lines, of which ~2,843 are logic
+(ViewModels, repositories, `FirestoreMappers`, `WorkoutParser`, `GenerativeAiService`). The Kotlin
+copies stay — Android needs them — so the two must be kept in step **by hand**; there is no
+compiler catching a drift. The Kotlin originals are the reference implementation, and any TS port
+that disagrees with them is a bug in the TS port. It also discards the web half of §19–§22: §19's
+js target and deploy plumbing and §21's web-only login fix go away entirely, while §20's adaptive
+layout and §22's theme survive because they live in `commonMain` and Android keeps using them.
+
+**Method, chosen by the user 2026-09-22 — backend first, no CSS.** Build the whole data layer,
+rules and every screen as unstyled HTML, validate it works, and only then design. This is the
+direct lesson of §22: a visual pass over something unproven is wasted twice.
+
+> **The one constraint that makes this method safe:** "simple CSS" must not mean "loose HTML
+> files". Phase 1 is already Next.js with the real component tree — just with no styling at all:
+> bare `<form>`, bare `<table>`, unclassed `<h1>`. If phase 1 is static HTML instead, phase 2
+> stops being a visual pass and becomes a rewrite, which defeats the whole point.
+
+```mermaid
+flowchart TD
+    A[23a. Decisions + stack] --> B[23b. Scaffold: Next.js in web/,\nKotlin-JS build frozen]
+    B --> C[23c. Data model:\npayments + dashboard metrics]
+    C --> D[23d. firestore.rules\nfor both web surfaces]
+    D --> E[23e. TS data layer +\nreimplemented business rules]
+    E --> F[23f. Auth, routing,\n/convite/:code]
+    F --> G[23g. /app unstyled]
+    F --> H[23h. /aluno unstyled]
+    F --> I[23i. landing unstyled]
+    G --> J[23j. VALIDATION GATE]
+    H --> J
+    I --> J
+    J --> K[23k. Visual pass\n-- blocked until 23j passes]
+    K --> L[23l. Deploy cutover]
+    L --> M[23m. Registration]
+```
+
+Suggested: opus · high for 23c–23f — a new data model, security rules and hand-ported business
+rules are where a wrong decision is expensive and quiet. sonnet · medium for 23g–23i, which are
+mechanical CRUD screens once the data layer exists.
+
+**23a. Decisions and stack**
+- [ ] Record the canvas evidence above as the justification, so a future session does not "fix"
+      the look by tuning the theme again.
+- [ ] Confirm Next.js version and whether the App Router is used. Default to the App Router —
+      `/app` and `/aluno` as separate route groups is precisely its model.
+- [ ] Decide the component library **for phase 2 only**, and write the decision down now so phase
+      1 does not accidentally pick one: **shadcn/ui** is the recommendation (components are copied
+      into the repo and owned outright, Tailwind, no inherited look). **MUI is explicitly ruled
+      out** — it is Material Design, the exact visual language this section exists to escape;
+      choosing it would reproduce the problem in a new language.
+
+**23b. Scaffold, and what happens to the Kotlin/JS build**
+- [ ] Next.js project at `web/` in this repo. Same repo, not a separate one — the Firestore schema
+      and `firestore.rules` are shared with Android and must not diverge across repositories.
+- [ ] **Do not delete the Kotlin/JS web build yet.** It works and it is deployed; deleting it
+      first leaves the trainer with nothing while the replacement is half-built. Freeze it: no new
+      web-only work lands in `shared/src/jsMain`, and it keeps deploying until 23l.
+- [ ] Record the eventual removal list so it is a decision, not an oversight: the `js` target in
+      `shared/build.gradle.kts`, `shared/src/jsMain/**`, `web-deploy.yml`/`web-ci.yml`, and
+      `.claude/launch.json`'s `web` entry. Removed at 23l, not before.
+
+**23c. Data model — mensalidades (level 1) and the dashboard's numbers**
+- [ ] New trainer-scoped Firestore collection `payments`, one document **per month per student** —
+      not a "subscription" object. Recurring billing expressed as generated rows keeps history
+      honest and turns "who is late" into a plain query instead of a computed projection.
+- [ ] Document shape: `id, trainerId, studentId, amountCents, currency, dueDate, paidAt?, method?,
+      source, externalId?, note?, createdAt`.
+- [ ] **`amountCents` is an integer.** Money is never a float anywhere in this codebase.
+- [ ] **Status is derived, never stored**: `paidAt != null` → paid; else `dueDate` in the past →
+      overdue; else pending. A stored status drifts away from `paidAt` the first time a write
+      half-fails.
+- [ ] **This is the gate the user asked for.** `source` (`"manual" | "gateway"`) and `externalId`
+      exist from day one even though only `"manual"` is ever written. When level 2 arrives, a
+      gateway webhook writes the *identical* document shape with `source: "gateway"` — a new
+      writer, not a new model, and every existing query keeps working untouched. Level 2 itself
+      (gateway choice, Cloud Function, webhook, fiscal responsibility) stays out of scope and
+      becomes its own section.
+- [ ] Decide whether the Android app shows `payments` at all. Recommendation: **not initially** —
+      it is a desk activity, and leaving it web-only avoids a Kotlin model + sync listener for a
+      screen nobody opens on a phone. Flag it rather than assuming; it is a real product choice.
+- [ ] Specify the dashboard's metrics against collections that already exist, so the home screen
+      needs no new data beyond `payments`: student count and connected-vs-pending split (`users`);
+      sessions logged this week (`workout_logs`); adherence, logged vs scheduled (`workout_logs` ×
+      `schedules`); **students gone quiet**, last log older than N days (`workout_logs`); pending
+      assessment requests (`users.pendingAssessmentRequest`); month revenue and overdue list
+      (`payments`).
+
+**23d. Security rules**
+- [ ] Extend `firestore.rules` for `payments`: a trainer reads/writes only their own
+      `trainerId`-scoped documents. **A student must not read them** — decide explicitly whether a
+      student may see their own payment status; defaulting to "no" until asked is the safe read.
+- [ ] Rules for the student web surface: a student reads their own `users` document, their own
+      `workouts`, `workout_logs`, `biometrics` and `assessments`, and writes only what §17 already
+      permits. This should largely reuse §17's existing rules rather than inventing a parallel set.
+- [ ] Rules for claiming an invite by URL (23f) — the same constraint as the in-app flow: a user
+      can never write their own `role` or `trainerId` (see `CLAUDE.md`'s Role routing note).
+- [ ] **Human-in-the-loop:** publishing rules happens in the Firebase console and cannot be done
+      from here. Same standing pattern as §7/§17 — hand the user the file and wait.
+
+**23e. TypeScript data layer and the ported business rules**
+- [ ] Firebase JS SDK wiring: Auth, Firestore, App Check. The web App Check config already exists
+      and works (§19e/§19g) — reuse those values rather than re-registering the app.
+- [ ] Collection accessors mirroring `FirestoreMappers.kt`'s document shapes exactly. Any
+      disagreement with the Kotlin mapper is a bug in the TS side.
+- [ ] Port `WorkoutParser` (§15, Smart Paste). **Keep its deliberate sets-vs-reps rule** — the
+      smaller of the two numbers is sets, so both `"Supino 3x12"` and `"Biceps 12x4"` mean the
+      same thing. `WorkoutParserTest` is the specification; port the test cases alongside it, or
+      this quietly regresses.
+- [ ] Port `GenerativeAiService`'s OpenAI/DeepSeek/Claude paths. Gemini goes through Firebase AI
+      Logic and is Android-only (`IosGeminiProvider` is already an honest stub) — decide whether
+      web gets Gemini at all, or the same honest stub.
+- [ ] **New security problem Option C introduces, with no equivalent on Android.** The trainer's
+      AI provider key lives in `SettingsDataStore` on-device on Android. In a browser it would sit
+      in `localStorage`, readable by any XSS and by any browser extension. Options: proxy the
+      calls through a Cloud Function so the key never reaches the client; or keep BYO-key on web
+      and state the exposure in the UI. **Do not silently copy the Android approach into the
+      browser** — the threat model is not the same.
+
+**23f. Auth, routing and the invite link**
+- [ ] Login and session, reusing the `stayLoggedIn` semantics documented in `CLAUDE.md` — if the
+      preference is false, actually call `signOut()`; do not leave Firebase's session alive while
+      the UI pretends otherwise.
+- [ ] Role gate: `ADM`/`TRAINER` → `/app`, `STUDENT` → `/aluno`, unclaimed student → the invite
+      flow. Route-level, not a component-level `when`.
+- [ ] **`/convite/<código>`** — the student opens a link, creates an account and lands connected.
+      This is the single clearest thing Option C buys that the canvas build could not do at all,
+      and it is the student-onboarding path, so it is not optional polish.
+
+**23g. `/app` — the trainer surface, unstyled**
+- [ ] Dashboard home with 23c's metrics as a plain list of numbers.
+- [ ] Student list with search and filter, and the student detail view (data + performance charts).
+- [ ] Ficha: list, manual creation, Smart Paste, AI generation.
+- [ ] Schedule. Mensalidades: register, mark paid, overdue list.
+- [ ] Archive/pause a student (one boolean, per §12's cheap-wins list).
+- [ ] **No CSS.** Not "minimal styling" — none. A stylesheet in phase 1 is how phase 1 becomes
+      phase 2 by accident.
+
+**23h. `/aluno` — the student surface, unstyled**
+- [ ] My ficha, log a session, my evolution, PAR-Q+ self-assessment (§17's permission rules still
+      govern what is even offered).
+- [ ] Mobile-first from the first line of markup. The student is on a phone browser essentially
+      always; this surface never inherits the dashboard's layout.
+
+**23i. Public landing, unstyled**
+- [ ] One page: what the service is, and the entry points to login and invite.
+
+**23j. Validation gate — blocks 23k**
+- [ ] Every flow in 23g/23h/23i exercised end to end against real Firestore data, with the browser
+      tooling driving it (DOM, page text, console, network — not screenshots; there is nothing to
+      look at yet, by design).
+- [ ] The trainer runs their own real workflow on the unstyled build and confirms the *data* and
+      the *flows* are right.
+- [ ] Rules verified against a real student account, not just a trainer one. §17's live test
+      failed on exactly this (`assessments/… PERMISSION_DENIED` from unpublished rules) — a
+      trainer-only pass proves nothing about a student's permissions.
+- [ ] **Do not start 23k until this item is checked.** That is the entire point of the method.
+
+**23k. Visual pass — do not start before 23j**
+- [ ] Only now: component library, design tokens, layout, typography.
+- [ ] Reference sites the trainer reacted positively to (2026-09-22): `ui.shadcn.com/blocks` for
+      the dashboard shape (sidebar + metric cards + data table), `truecoach.co` and
+      `trainerize.com` for category language, `linear.app` for density.
+- [ ] Carry §22's findings forward so they are not rediscovered: the "everything is purple" effect
+      came from Material's default containers, and density beat decoration. Both are Material 3
+      lessons, so verify they still apply once Material is gone.
+
+**23l. Deploy cutover**
+- [ ] Deploy the Next.js build. Decide the target — GitHub Pages needs a static export, which
+      constrains the App Router's server features; Vercel/Firebase Hosting do not. Pick based on
+      whether anything server-side is actually needed (the Cloud Function from 23e might decide
+      this).
+- [ ] Only after the new site is live and verified: remove 23b's list.
+
+**23m. Registration**
+- [ ] `CLAUDE.md` gains a web section: `web/` layout, which business rules are hand-ported and
+      where their Kotlin originals live, and the rule that the Kotlin side is authoritative.
+- [ ] Standardise the name to **"Personal Tracker"** — `CompactMainLayout`'s title is the one
+      remaining "Personal APP".
+- [ ] Record the AI-key decision from 23e wherever the final answer lands.
 
 ---
 

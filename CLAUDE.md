@@ -162,3 +162,22 @@ so no palette or corner radius can make it read as a website — §22 tried exac
 verdict afterwards was still "parece app". The fix is GOALS.md §23: a separate React/Next front in
 `web/`. `AppTheme.kt` keeps theming the Android app (and the frozen Kotlin/JS build, until §23l
 removes it); it is no longer the lever for how the website looks.
+
+## Web front (GOALS.md §23) — phase 1, being built
+
+`web/` is a Next.js 16 app (App Router, npm) replacing the Kotlin/JS web build. Two rules hold
+until §23 says otherwise:
+
+- **Phase 1 has no CSS at all** — no stylesheet, no `className`, no inline `style` anywhere under
+  `web/src/`. Screens are built and validated as bare HTML; the visual pass (§23k) is blocked on
+  the §23j validation gate. Don't add "just a little" styling to make a screen presentable — that
+  is exactly how phase 1 turns into phase 2 before anything has been validated.
+- **The Kotlin/JS web build is frozen.** `shared/src/jsMain` and the `js` target keep building and
+  deploying to Pages until §23l, but no new web-only work lands there. Its full removal list — and
+  the two values (the Firebase web config and the App Check site key) that must be carried into
+  `web/` before anything is deleted — is in GOALS.md §23b.
+
+Before writing route code in `web/`, read `web/AGENTS.md`: this Next differs from what models
+remember (global `PageProps`/`LayoutProps` helpers, `params` as a Promise). The full web section —
+which business rules are hand-ported from Kotlin, and where their originals live — comes with
+§23m.

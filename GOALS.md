@@ -3403,14 +3403,73 @@ mechanical CRUD screens once the data layer exists.
       Confirm with them before 23k starts, not after.
 
 **23b. Scaffold, and what happens to the Kotlin/JS build**
-- [ ] Next.js project at `web/` in this repo. Same repo, not a separate one — the Firestore schema
+- [x] Next.js project at `web/` in this repo. Same repo, not a separate one — the Firestore schema
       and `firestore.rules` are shared with Android and must not diverge across repositories.
-- [ ] **Do not delete the Kotlin/JS web build yet.** It works and it is deployed; deleting it
+      **Scaffolded 2026-09-22:** `create-next-app@latest web --typescript --app --src-dir --eslint
+      --no-tailwind --empty --use-npm --disable-git`. `--no-tailwind` and `--empty` are what make
+      phase 1 CSS-free from the first commit (the default template ships Tailwind plus a styled
+      splash page); `--disable-git` because this is already inside a git worktree. The folder-name
+      space (`Personal APP`) that broke `kotlinNpmInstall` in §19f did not bite here — npm derives
+      the package name from `web`, not from the path. Three route stubs, each with its own layout:
+      `/` (23i), `/app` (23g), `/aluno` (23h).
+      **Verified:** `npm run build` (4 static routes); `npx eslint .` exit 0; zero `.css` files
+      emitted under `.next/static`; and driven in the browser against `next start` — the link on
+      `/` navigates to `/app`, each area renders its own layout header, `lang="pt-BR"`, no console
+      errors, **0 stylesheets, 0 `<style>`, 0 elements with `class`** (the only `style` attribute
+      on the page is Next's own `next-route-announcer`, framework accessibility plumbing). And the
+      check this whole section exists for: `document.body.innerText` now returns the page's text,
+      where the canvas build returned an empty string.
+      `web/README.md` replaced — the boilerplate pointed at a wrong path (`app/page.tsx`), offered
+      four package managers, and recommended a deploy target 23l hasn't chosen. The generated
+      `web/AGENTS.md` and `web/CLAUDE.md` (a one-line `@AGENTS.md` import) were kept: they carry
+      Next 16-specific guidance and are directory-scoped, so they add to the root `CLAUDE.md`
+      rather than competing with it. `npm install` warns that `unrs-resolver`'s postinstall script
+      wasn't allowed (npm 11's allow-scripts); lint passes without it, so it was left unapproved.
+- [x] **Do not delete the Kotlin/JS web build yet.** It works and it is deployed; deleting it
       first leaves the trainer with nothing while the replacement is half-built. Freeze it: no new
       web-only work lands in `shared/src/jsMain`, and it keeps deploying until 23l.
-- [ ] Record the eventual removal list so it is a decision, not an oversight: the `js` target in
+      **Done 2026-09-22:** nothing deleted, `web-deploy.yml` untouched and still deploying. The
+      freeze is written into `CLAUDE.md` (new "Web front (GOALS.md §23)" section) so any session
+      in this repo sees it before touching `jsMain`.
+- [x] Record the eventual removal list so it is a decision, not an oversight: the `js` target in
       `shared/build.gradle.kts`, `shared/src/jsMain/**`, `web-deploy.yml`/`web-ci.yml`, and
       `.claude/launch.json`'s `web` entry. Removed at 23l, not before.
+      **Completed 2026-09-22 — the list above was short by five items**, found by grepping for
+      every Kotlin/JS artifact outside `jsMain` rather than trusting it. The full list:
+      - `shared/build.gradle.kts`: the `js { }` target block, the `jsMain.dependencies { }` block,
+        and its own `NodeJsPlugin` hook (the `downloadBaseUrl` workaround near the top)
+      - `shared/src/jsMain/**`
+      - root `build.gradle.kts`: **both** Kotlin/JS hooks — `NodeJsPlugin`'s `downloadBaseUrl`
+        (§19f) and `NodeJsRootPlugin`'s `packageLockMismatchReport` (§19g)
+      - `kotlin-js-store/` — the committed npm lock for Kotlin/JS's own dependencies
+      - `gradle.properties`: `kotlin.js.yarn=false`
+      - `gradle/libs.versions.toml`: the `kotlinxBrowser` version and the `ktor-client-js` /
+        `kotlinx-browser` library entries
+      - `.github/workflows/web-ci.yml` (runs `:shared:compileKotlinJs`) and `web-deploy.yml`
+        (`:shared:jsBrowserDistribution` → Pages)
+      - `.claude/launch.json`'s `web` entry
+      - `CLAUDE.md`: the `main.kt (web)` mention in the Visual theme section, and the freeze notes
+
+      **Carry over before deleting — 23e needs these and they exist nowhere else in the repo:**
+      - the Firebase web app config, `webFirebaseOptions` in `shared/src/jsMain/.../main.kt`
+        (applicationId, apiKey, projectId, storageBucket, gcmSenderId, authDomain)
+      - the reCAPTCHA Enterprise site key for App Check, in
+        `shared/src/jsMain/.../util/WebAppCheck.js.kt`
+
+      Both are public client identifiers by design, not secrets — Firebase's security lives in
+      `firestore.rules` and App Check, and the secret half of the reCAPTCHA key stays in Google
+      Cloud. But they only exist in those two files, so deleting `jsMain` first loses them.
+
+      **Found while completing the list — this one matters for 23l.** The site key's own comment
+      says it was registered for **domain `localhost`**, and on 2026-09-22 the live deploy's
+      console showed `appCheck/recaptcha-error` on `alexmiguel011014-stack.github.io`. That's
+      consistent with the Pages domain never having been added to the key. Login still works live
+      (§21a), so App Check isn't rejecting these requests today — but whatever host 23l picks must
+      be added to the key's allowed domains, and App Check enforcement must not be switched on for
+      web until it is. Two cutover details that follow from how Pages works: deleting
+      `web-deploy.yml` alone changes nothing visible, because Pages keeps serving the last deployed
+      artifact; and if 23l moves to another host, the Pages site has to be unpublished or
+      redirected, or the old canvas build keeps living at the old URL.
 
 **23c. Data model — mensalidades (level 1) and the dashboard's numbers**
 - [ ] New trainer-scoped Firestore collection `payments`, one document **per month per student** —

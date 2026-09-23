@@ -3472,38 +3472,127 @@ mechanical CRUD screens once the data layer exists.
       redirected, or the old canvas build keeps living at the old URL.
 
 **23c. Data model — mensalidades (level 1) and the dashboard's numbers**
-- [ ] New trainer-scoped Firestore collection `payments`, one document **per month per student** —
+
+Built 2026-09-22 as pure TypeScript in `web/src/domain/` (`dates.ts`, `payments.ts`,
+`students.ts`, `metrics.ts`): types that mirror the Firestore documents, plus every derivation the
+dashboard needs. No Firestore calls (that is 23e) and no clock — every "today" is an argument.
+**Verified:** `npm test` → 50 tests, 4 files; `npx eslint .` exit 0; `npm run build` type-checks
+all of it. And, because the whole point of `dates.ts` is that results don't depend on the machine:
+the suite was re-run with every Node process forced into UTC+14 (`Pacific/Kiritimati`) and UTC−10
+(`Pacific/Honolulu`) — 7 processes confirmed in each zone, 50/50 both times. (Setting `TZ` in the
+shell does *not* work on this Windows machine — Node silently ignored it and kept São Paulo; the
+zone has to be set from inside Node, which is how the check was actually done.)
+Test runner: **Vitest 5, alone** — not the six-package recipe in Next's bundled guide, which is
+for React component tests (jsdom, Testing Library); those arrive with the first component test.
+Installing it surfaced a peer conflict with the scaffold's `@types/node@^20`: resolved by aligning
+the types with the actual runtime (`@types/node@^24`, `"engines": {"node": ">=24"}`), not by
+forcing — Node 20 reached end of life in April 2026, and this project runs on Node 24.
+
+- [x] New trainer-scoped Firestore collection `payments`, one document **per month per student** —
       not a "subscription" object. Recurring billing expressed as generated rows keeps history
       honest and turns "who is late" into a plain query instead of a computed projection.
-- [ ] Document shape: `id, trainerId, studentId, amountCents, currency, dueDate, paidAt?, method?,
+      **Modeled:** the id is deterministic, `{studentId}_{YYYY-MM}`, so generating a month's
+      charges twice (two tabs, a reload mid-write) lands on the same documents instead of
+      duplicating them — writers must still create-if-absent, never a blind `set`, or regenerating
+      would wipe a recorded `paidAt`. **Plus a second collection this item didn't foresee:**
+      `billingPlans/{studentId}` (`amountCents`, `dueDay` 1–31 clamped to the month's last day,
+      `active`), the source a monthly charge is generated from. It cannot be fields on
+      `users/{uid}`: **Firestore rules are per document, not per field**, a linked student reads
+      their own users doc, and the trainer decided the student doesn't see their billing (23d).
+      The collections themselves come into existence with 23e's first write and 23d's rules.
+- [x] Document shape: `id, trainerId, studentId, amountCents, currency, dueDate, paidAt?, method?,
       source, externalId?, note?, createdAt`.
-- [ ] **`amountCents` is an integer.** Money is never a float anywhere in this codebase.
-- [ ] **Status is derived, never stored**: `paidAt != null` → paid; else `dueDate` in the past →
+      **Corrected while modeling — no field is optional.** `paidAt`, `method`, `externalId` and
+      `note` are always written, `null` when empty: `where("paidAt", "==", null)` only matches
+      documents where the field *exists* and is null, so a charge saved without it would vanish
+      from every "unpaid" query. And `dueDate` is a calendar date string `"YYYY-MM-DD"`, not an
+      instant — a due date is a day, and storing it as a timestamp is how "due on the 10th"
+      becomes the 9th after a UTC conversion. Instants (`paidAt`, `createdAt`) stay epoch ms, the
+      Kotlin side's convention.
+- [x] **`amountCents` is an integer.** Money is never a float anywhere in this codebase.
+      **Enforced:** `isValidAmountCents` (safe integer > 0) gates charge creation, and
+      `parseAmountCents` turns what the trainer types into cents *without* a float ever existing —
+      `"150,10"` parsed as 150.1 × 100 is 15009.999…, which is exactly the bug it prevents. pt-BR
+      only (`,` decimal, `.` thousands); an ambiguous `"150.50"` is rejected, not guessed.
+- [x] **Status is derived, never stored**: `paidAt != null` → paid; else `dueDate` in the past →
       overdue; else pending. A stored status drifts away from `paidAt` the first time a write
       half-fails.
-- [ ] **This is the gate the user asked for.** `source` (`"manual" | "gateway"`) and `externalId`
+      **Implemented** as `paymentStatus(payment, today)`. Due *today* is pending, not overdue.
+- [x] **This is the gate the user asked for.** `source` (`"manual" | "gateway"`) and `externalId`
       exist from day one even though only `"manual"` is ever written. When level 2 arrives, a
       gateway webhook writes the *identical* document shape with `source: "gateway"` — a new
       writer, not a new model, and every existing query keeps working untouched. Level 2 itself
       (gateway choice, Cloud Function, webhook, fiscal responsibility) stays out of scope and
       becomes its own section.
-- [ ] Decide whether the Android app shows `payments` at all. Recommendation: **not initially** —
+      **In the type, with its meaning pinned:** `source` says which system owns the charge's
+      lifecycle. A manual charge paid by Pix outside the app is still `source: "manual"`,
+      `method: "pix"`; a gateway only ever touches documents it owns.
+- [x] Decide whether the Android app shows `payments` at all. Recommendation: **not initially** —
       it is a desk activity, and leaving it web-only avoids a Kotlin model + sync listener for a
       screen nobody opens on a phone. Flag it rather than assuming; it is a real product choice.
-- [ ] Specify the dashboard's metrics against collections that already exist, so the home screen
+      **Decided by the trainer 2026-09-22: no.** Payments are web-only — no Kotlin model, no
+      SQLDelight table, no sync listener.
+- [x] Specify the dashboard's metrics against collections that already exist, so the home screen
       needs no new data beyond `payments`: student count and connected-vs-pending split (`users`);
       sessions logged this week (`workout_logs`); adherence, logged vs scheduled (`workout_logs` ×
       `schedules`); **students gone quiet**, last log older than N days (`workout_logs`); pending
       assessment requests (`users.pendingAssessmentRequest`); month revenue and overdue list
       (`payments`).
+      **Specified as tested functions in `metrics.ts` — and the spec above was wrong in three
+      places, each found by reading the Kotlin side rather than trusting the plan:**
+      1. **Students are two collections, not `users`.** Drafts the trainer registered live in
+         `students/{id}` (role `"student"`); accounts that claimed an invite live in `users/{uid}`
+         (role `"STUDENT"`, uppercase). And claiming an invite never deletes or marks the draft, so
+         afterwards the same person is in both — **the Kotlin app lists them twice today**
+         (`FirestoreTrainerRepository.getStudents` concatenates with no dedup;
+         `SqlDelightTrainerRepository` mirrors both into one table under different ids). The only
+         link is two hops away: `users/{uid}.inviteCode` → `invites/{code}.draftId` →
+         `students/{draftId}`, and `draftId` is written but never read anywhere. `mergeStudents`
+         takes that map (23e builds it from the trainer's invites) and drops claimed drafts; it
+         never matches by name. The Kotlin-side fix is out of §23's scope and was flagged as a
+         separate task — it touches `firestore.rules` (the claiming student can't write the trainer's
+         `students/{draftId}`), so it needs a rules publish too.
+      2. **A session is not a document.** The Kotlin app writes one `workoutLogs` document per
+         *exercise* (`StudentViewModel.logSession`), each with its own `currentTimeMillis()` taken
+         inside the loop — six exercises, six documents, six timestamps. Counting documents
+         inflates "sessions" six- to tenfold; grouping by timestamp splits one session into many.
+         A session is a **(student, local day) with at least one log** (`trainedDays`). Also: the
+         Firestore collection is `workoutLogs`; `workout_logs` is the SQLDelight table name.
+      3. **Adherence is measured against `users.trainingDays`, not `schedules`.** `schedules`
+         documents are weekly recurring appointment slots (`dayOfWeek`, `hour`) that exist only for
+         students trained in person; `trainingDays` is on every student and is literally "the days
+         this student should train". Both use the Kotlin UI's strings — `"Segunda"`, `"Terça"`, …,
+         `"Sábado"`, `"Domingo"`, accented — so matching is exact (with NFC normalisation, tested).
+         Every trained day counts, planned or not (swapping Monday for Tuesday is still full
+         adherence), capped at 100%, and the window starts no earlier than the day the student
+         joined. Drafts have no adherence — they can't log anything yet.
+
+      Definitions 23g's dashboard should use — proposed, the trainer can change any of them, and
+      all computed in the trainer's zone (`America/Sao_Paulo`, passed explicitly):
+      - **Sessions** = the last 7 days, rolling — not a Monday-to-Sunday week, which reads 0 every
+        Monday morning, exactly when a trainer looks.
+      - **Adherence** = the last 28 days: exactly four of every weekday, where a 7-day window lets a
+        single missed day swing a 3-day plan by 33 points.
+      - **Gone quiet** = linked, joined at least N days ago, no trained day in the last N days
+        (N = 7); never-trained first, then the longest silence.
+      - **Money** = three numbers, not one: *expected* (charges due this month, paid or not),
+        *received* (charges paid this month in the trainer's local calendar, whatever month they
+        were due — a Pix at 23:00 on the 31st is that month's money even though UTC says the 1st),
+        and *overdue* (unpaid past due, any month, oldest first).
 
 **23d. Security rules**
 - [ ] Extend `firestore.rules` for `payments`: a trainer reads/writes only their own
       `trainerId`-scoped documents. **A student must not read them** — decide explicitly whether a
       student may see their own payment status; defaulting to "no" until asked is the safe read.
+      **Decided by the trainer 2026-09-22: no** — a student does not see their own payment status.
+      The same trainer-only rule applies to `billingPlans`, the second collection 23c added; and
+      this decision is precisely why neither can store anything on `users/{uid}`, which the student
+      reads.
 - [ ] Rules for the student web surface: a student reads their own `users` document, their own
-      `workouts`, `workout_logs`, `biometrics` and `assessments`, and writes only what §17 already
+      `workouts`, `workoutLogs`, `biometrics` and `assessments`, and writes only what §17 already
       permits. This should largely reuse §17's existing rules rather than inventing a parallel set.
+      (Collection name corrected 2026-09-22: this item originally said `workout_logs`, which is the
+      SQLDelight table — a rule written for it would match nothing.)
 - [ ] Rules for claiming an invite by URL (23f) — the same constraint as the in-app flow: a user
       can never write their own `role` or `trainerId` (see `CLAUDE.md`'s Role routing note).
 - [ ] **Human-in-the-loop:** publishing rules happens in the Firebase console and cannot be done

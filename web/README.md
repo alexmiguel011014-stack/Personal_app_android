@@ -24,14 +24,21 @@ rewrite it.
 
 ## Run and check
 
-This project uses **npm** (there is a `package-lock.json`; don't mix in another package manager).
+This project uses **npm** (there is a `package-lock.json`; don't mix in another package manager)
+on **Node 24** (`engines` in `package.json`; Node 20 is end-of-life).
 
 ```bash
 npm install
 npm run dev      # http://localhost:3000
+npm test         # Vitest, pure domain logic in src/domain/
 npm run lint
-npm run build    # also generates the route types used by PageProps / LayoutProps
+npm run build    # also type-checks everything and generates the route types for PageProps / LayoutProps
 ```
+
+`src/domain/` holds the data model and every derivation the screens need — pure functions, no
+Firestore, no clock (every "today" is an argument). Read the comments there before touching a
+number on the dashboard: several of them encode findings about how the Kotlin app actually writes
+data (one workout-log document per *exercise*, students split across two collections).
 
 ## Before writing route code
 

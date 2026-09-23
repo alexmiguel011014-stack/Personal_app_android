@@ -154,3 +154,11 @@ them for free:
 - **Elevation → 1dp borders was a stated §22a direction, not implemented.** `AppTheme.kt` defines
   `Outline`/`OutlineVariant` color tokens for this, but no existing `Card` was changed to use a
   border instead of its default elevation.
+
+**The web build's "still looks like an app" problem is not a theme problem — don't try to fix it
+here.** The Kotlin/JS web build paints the entire UI into a single `<canvas>` (confirmed on the
+live DOM 2026-09-22: `document.body.innerText` is an empty string, no text node exists anywhere),
+so no palette or corner radius can make it read as a website — §22 tried exactly that, and the
+verdict afterwards was still "parece app". The fix is GOALS.md §23: a separate React/Next front in
+`web/`. `AppTheme.kt` keeps theming the Android app (and the frozen Kotlin/JS build, until §23l
+removes it); it is no longer the lever for how the website looks.

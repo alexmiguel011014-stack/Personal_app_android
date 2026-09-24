@@ -57,10 +57,22 @@ export interface Student {
   id: string;
   name: string;
   linked: boolean;
+  goal: string;
+  /** Non-empty means the Android list shows its warning icon. */
+  medicalNotes: string;
   trainingDays: string[];
   /** Linked: when the invite was claimed. Draft: when the trainer registered them. */
   createdAt: number;
   pendingAssessmentRequest: boolean;
+}
+
+/**
+ * Case- and accent-insensitive name search: "joao" finds "João", "ANA" finds "Ana Costa". Names are
+ * typed on a phone keyboard and searched on a desktop one, and the two rarely agree on accents.
+ */
+export function matchesSearch(name: string, query: string): boolean {
+  const fold = (text: string) => text.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim();
+  return fold(name).includes(fold(query));
 }
 
 export function mergeStudents(
@@ -81,6 +93,8 @@ export function mergeStudents(
       id: draft.id,
       name: draft.name,
       linked: false,
+      goal: draft.goal,
+      medicalNotes: draft.medicalNotes,
       trainingDays: draft.trainingDays,
       createdAt: draft.createdAt,
       pendingAssessmentRequest: false,
@@ -89,6 +103,8 @@ export function mergeStudents(
     id: account.id,
     name: account.name,
     linked: true,
+    goal: account.goal,
+    medicalNotes: account.medicalNotes,
     trainingDays: account.trainingDays,
     createdAt: account.createdAt,
     pendingAssessmentRequest: account.pendingAssessmentRequest,

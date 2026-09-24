@@ -10,7 +10,7 @@ import {
   type QuerySnapshot,
 } from "firebase/firestore";
 import type { WorkoutLogDoc } from "../domain/metrics";
-import { monthlyCharge, type BillingPlan, type Payment } from "../domain/payments";
+import { monthlyCharge, plansMissingCharge, type BillingPlan, type Payment } from "../domain/payments";
 import { mergeStudents, type LinkedStudentDoc, type Student } from "../domain/students";
 import {
   paymentToFirestore,
@@ -85,6 +85,28 @@ export async function draftIdsForInvites(
     }),
   );
   return new Map(entries.filter((entry) => entry !== null));
+}
+
+/**
+ * The trainer's data with this month's charges guaranteed present — what the dashboard shows.
+ *
+ * Reloads whenever a charge was missing, *whether or not this call created it*. Found in the
+ * browser on 2026-09-24: two loads in flight at once (React's dev double-mount; in production, two
+ * tabs) both read before either wrote; one created the charge, the other found it already there,
+ * created nothing, and — back when the reload depended on having created something — showed a
+ * snapshot without it. The data was right; the screen was stale.
+ */
+export async function loadTrainerView(
+  db: Firestore,
+  trainerId: string,
+  yearMonth: string,
+  now: number,
+): Promise<{ snapshot: TrainerSnapshot; chargesCreated: number }> {
+  const snapshot = await loadTrainerSnapshot(db, trainerId);
+  const missing = plansMissingCharge(snapshot.plans, snapshot.payments, yearMonth);
+  if (missing.length === 0) return { snapshot, chargesCreated: 0 };
+  const chargesCreated = await ensureMonthlyCharges(db, missing, yearMonth, now);
+  return { snapshot: await loadTrainerSnapshot(db, trainerId), chargesCreated };
 }
 
 /**

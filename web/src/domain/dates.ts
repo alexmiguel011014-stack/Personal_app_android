@@ -60,6 +60,20 @@ export function daysInMonth(yearMonth: string): number {
   return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
 
+/** "2026-09-10" as "10/09/2026", the way the trainer reads a date. */
+export function formatDate(date: string): string {
+  const [year, month, day] = date.split("-");
+  return `${day}/${month}/${year}`;
+}
+
+/** "2026-09" as "setembro de 2026". */
+export function formatYearMonth(yearMonth: string): string {
+  const [year, month] = yearMonth.split("-").map(Number);
+  return new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" }).format(
+    Date.UTC(year, month - 1, 1),
+  );
+}
+
 /** Every date from `from` to `to`, both inclusive; empty when `from` is after `to`. */
 export function datesBetween(from: string, to: string): string[] {
   const dates: string[] = [];

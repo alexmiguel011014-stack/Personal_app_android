@@ -5,6 +5,7 @@ import {
   parseAmountCents,
   paymentId,
   paymentStatus,
+  plansMissingCharge,
   type BillingPlan,
 } from "./payments";
 
@@ -58,6 +59,14 @@ describe("monthlyCharge", () => {
 
   it.each([0, 32, 1.5])("rejects dueDay %s", (dueDay) => {
     expect(() => monthlyCharge({ ...plan, dueDay }, "2026-09", 0)).toThrow();
+  });
+});
+
+describe("plansMissingCharge", () => {
+  it("lists the active plans with no charge for the month yet", () => {
+    const plans = [plan, { ...plan, studentId: "s2" }, { ...plan, studentId: "s3", active: false }];
+    expect(plansMissingCharge(plans, [{ id: "s1_2026-09" }], "2026-09").map((p) => p.studentId)).toEqual(["s2"]);
+    expect(plansMissingCharge(plans, [{ id: "s1_2026-09" }, { id: "s2_2026-09" }], "2026-09")).toEqual([]);
   });
 });
 

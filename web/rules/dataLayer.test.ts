@@ -6,7 +6,7 @@ import { connectFirestoreEmulator, doc, getDoc, getFirestore, updateDoc, type Fi
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { claimInvite } from "../src/data/invites";
 import { resolveProfile } from "../src/data/session";
-import { ensureMonthlyCharges, loadTrainerSnapshot } from "../src/data/trainerData";
+import { ensureMonthlyCharges, loadTrainerSnapshot, loadTrainerView } from "../src/data/trainerData";
 
 // GOALS.md §23e: the data layer against the Firestore emulator, through the real rules — the same
 // modular SDK calls the app makes, signed in as a given uid. This is where the three layers meet:
@@ -97,6 +97,31 @@ describe("ensureMonthlyCharges", () => {
       createdAt: 1,
     };
     await expect(ensureMonthlyCharges(signedInAs("trainerB"), [stolenPlan], "2026-09", 1)).rejects.toThrow();
+  });
+});
+
+describe("loadTrainerView (GOALS.md §23g)", () => {
+  it("shows this month's charge even when another load created it — two tabs at once", async () => {
+    await seed({ "users/trainerA": { role: "TRAINER" }, "billingPlans/studentA": plan("studentA") });
+    // Both read before either writes: one creates the charge, the other finds it already there.
+    // Found in the browser — React's dev double-mount did exactly this — and the second one used
+    // to show a snapshot without the charge.
+    const [first, second] = await Promise.all([
+      loadTrainerView(signedInAs("trainerA"), "trainerA", "2026-09", 1),
+      loadTrainerView(signedInAs("trainerA"), "trainerA", "2026-09", 2),
+    ]);
+    expect(first.chargesCreated + second.chargesCreated).toBe(1);
+    for (const view of [first, second]) {
+      expect(view.snapshot.payments.map((p) => p.id)).toEqual(["studentA_2026-09"]);
+    }
+  });
+
+  it("writes nothing when every active plan already has its charge", async () => {
+    await seed({ "users/trainerA": { role: "TRAINER" }, "billingPlans/studentA": plan("studentA") });
+    await loadTrainerView(signedInAs("trainerA"), "trainerA", "2026-09", 1);
+    const again = await loadTrainerView(signedInAs("trainerA"), "trainerA", "2026-09", 2);
+    expect(again.chargesCreated).toBe(0);
+    expect(again.snapshot.payments).toHaveLength(1);
   });
 });
 

@@ -3816,13 +3816,53 @@ yet); eslint clean; static build of all six routes.
       the Android app's "Compartilhar", and the web link needs only its code.
 
 **23g. `/app` — the trainer surface, unstyled**
-- [ ] Dashboard home with 23c's metrics as a plain list of numbers.
+
+In progress — built and committed in parts. Entity pages use query parameters
+(`/app/alunos/detalhe?id=…`), not path segments, because of 23f's static export.
+
+**Part 1 done 2026-09-24 — dashboard and student list, verified in the browser** against the
+emulators, with a seed (`web/scripts/seed-emulators.mjs`) where every student exists to make one
+number checkable by eye, and the expected values written down *before* opening the page. All
+matched on the second attempt: 6 students (4 connected, 2 waiting — the draft Ana's invite
+superseded not counted twice), **4 sessions in 7 days out of 12 per-exercise log documents** in that
+window, 35% adherence (Carla excluded: no planned day since she joined), Bruno gone quiet since the
+12th and Carla — joined two days ago — not flagged, Diego's pending assessment, R$ 270,00 expected /
+R$ 150,00 received / R$ 120,00 overdue. **The first attempt showed R$ 150,00 expected — a real race,
+found here and not by the unit tests:** React's dev double-mount ran two loads at once; both read
+before either wrote, one created Bruno's September charge, the other found it existing, created
+nothing and — since the reload depended on having created something — showed a snapshot without
+it. The database was right (one charge, no duplicate); the screen was stale. In production the
+same happens with two tabs. `loadTrainerView` now reloads whenever a charge was missing, whoever
+created it; an emulator test runs two loads in parallel and fails 3/3 against the old logic, passes
+3/3 against the new. (One dev-only leftover: the "N cobranças geradas agora" notice usually doesn't
+show under the double-mount, because the run that survives is the one that found the charge already
+there; the numbers are right regardless.) Every console error in the session accounted for: the
+deliberate wrong-password 400, a lookup 400 for an account the emulator reset had deleted, HMR
+reconnects across a dev-server restart, and two 409s — the race's transaction contention, retried
+by the SDK. 103 unit + 58 emulator tests, eslint and tsc clean.
+
+- [x] Dashboard home with 23c's metrics as a plain list of numbers.
+      **`/app`**, with §23c's windows. Opening it is what keeps mensalidades current:
+      `loadTrainerView` creates this month's charge for any active plan missing one (and skips the
+      transactions entirely when nothing is missing). "Today" is taken once per load in the
+      browser's own zone — the trainer's calendar — so every figure on screen agrees. A
+      permission error names the likeliest cause at this stage: §23d's rules not yet published.
 - [ ] Student list with search and filter, and the student detail view (data + performance charts).
+      **List done (part 1):** `/app/alunos` — name, goal, connection and a medical-restriction flag
+      (what the Android list shows), accent- and case-insensitive search ("ALVES" finds Bruno
+      Alves), filter by connection, sorted by pt-BR collation. Detail view still to build.
 - [ ] Ficha: list, manual creation, Smart Paste, AI generation.
 - [ ] Schedule. Mensalidades: register, mark paid, overdue list.
+      (The overdue list is on the dashboard already; registering plans and marking paid is not.)
 - [ ] Archive/pause a student (one boolean, per §12's cheap-wins list).
+      **Needs a decision before it's built:** a linked student's boolean would live on `users/{uid}`,
+      where the trainer's update rule allows only a fixed field list — so it needs a rules change
+      (another publish), and the Android app, which doesn't know the field, would keep listing
+      archived students. Worth batching with the next rules change rather than shipping alone.
 - [ ] **No CSS.** Not "minimal styling" — none. A stylesheet in phase 1 is how phase 1 becomes
       phase 2 by accident.
+      **Holding so far:** every page under `web/src` is bare HTML — no stylesheet, `className` or
+      `style` anywhere.
 
 **23h. `/aluno` — the student surface, unstyled**
 - [ ] My ficha, log a session, my evolution, PAR-Q+ self-assessment (§17's permission rules still

@@ -106,11 +106,34 @@ export function monthlyCharge(plan: BillingPlan, yearMonth: string, now: number)
   };
 }
 
+/** Active plans that have no charge for `yearMonth` among `payments` yet. */
+export function plansMissingCharge(
+  plans: readonly BillingPlan[],
+  payments: readonly Pick<Payment, "id">[],
+  yearMonth: string,
+): BillingPlan[] {
+  const existing = new Set(payments.map((payment) => payment.id));
+  return plans.filter((plan) => plan.active && !existing.has(paymentId(plan.studentId, yearMonth)));
+}
+
 /** Derived, never stored: a stored status drifts away from paidAt the first time a write half-fails. */
 export function paymentStatus(payment: Pick<Payment, "paidAt" | "dueDate">, today: string): PaymentStatus {
   if (payment.paidAt !== null) return "paid";
   // Due today is not late yet.
   return payment.dueDate < today ? "overdue" : "pending";
+}
+
+const BRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+
+/**
+ * Integer cents as "R$ 150,10". The amount goes to Intl as an exact decimal string, never as
+ * cents / 100 — keeping "money is never a float" true even on the way to the screen.
+ */
+export function formatCents(cents: number): string {
+  const sign = cents < 0 ? "-" : "";
+  const abs = Math.abs(cents);
+  const exact = `${sign}${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, "0")}`;
+  return BRL.format(exact as `${number}`);
 }
 
 /**

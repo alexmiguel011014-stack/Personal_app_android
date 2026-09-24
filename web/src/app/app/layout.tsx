@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { RequireArea } from "../RequireArea";
 import { SignOutButton } from "../SignOutButton";
 
@@ -15,6 +16,16 @@ export default function TrainerLayout({ children }: LayoutProps<"/app">) {
         <p>
           Personal Tracker — treinador <SignOutButton />
         </p>
+        <nav>
+          <ul>
+            <li>
+              <Link href="/app">Painel</Link>
+            </li>
+            <li>
+              <Link href="/app/alunos">Alunos</Link>
+            </li>
+          </ul>
+        </nav>
       </header>
       {children}
     </RequireArea>

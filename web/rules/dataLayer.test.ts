@@ -4,6 +4,8 @@ import { initializeTestEnvironment, type RulesTestEnvironment } from "@firebase/
 import { deleteApp, initializeApp, type FirebaseApp } from "firebase/app";
 import { connectFirestoreEmulator, doc, getDoc, getFirestore, updateDoc, type Firestore } from "firebase/firestore";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { claimInvite } from "../src/data/invites";
+import { resolveProfile } from "../src/data/session";
 import { ensureMonthlyCharges, loadTrainerSnapshot } from "../src/data/trainerData";
 
 // GOALS.md §23e: the data layer against the Firestore emulator, through the real rules — the same
@@ -95,6 +97,73 @@ describe("ensureMonthlyCharges", () => {
       createdAt: 1,
     };
     await expect(ensureMonthlyCharges(signedInAs("trainerB"), [stolenPlan], "2026-09", 1)).rejects.toThrow();
+  });
+});
+
+describe("claimInvite and resolveProfile (GOALS.md §23f)", () => {
+  const CODE = "AB12CD34";
+  const invite = {
+    trainerId: "trainerA",
+    used: false,
+    createdAt: 1,
+    draftId: "draft1",
+    name: "Maria",
+    gender: "Feminino",
+    trainingDays: ["Segunda"],
+  };
+
+  async function read(path: string): Promise<Record<string, unknown> | undefined> {
+    let data: Record<string, unknown> | undefined;
+    await env.withSecurityRulesDisabled(async (context) => {
+      data = (await context.firestore().doc(path).get()).data();
+    });
+    return data;
+  }
+
+  it("creates the student's account from the invite and marks it used, in one transaction", async () => {
+    await seed({ "users/trainerA": { role: "TRAINER" }, [`invites/${CODE}`]: invite });
+    const result = await claimInvite(signedInAs("newStudent"), "newStudent", CODE, 5);
+    expect(result).toEqual({ ok: true, trainerId: "trainerA" });
+    expect(await read("users/newStudent")).toMatchObject({
+      role: "STUDENT",
+      trainerId: "trainerA",
+      inviteCode: CODE,
+      name: "Maria",
+      gender: "Feminino",
+      phone: "",
+      trainingDays: ["Segunda"],
+      createdAt: 5,
+    });
+    expect((await read(`invites/${CODE}`))?.used).toBe(true);
+    expect(await resolveProfile(signedInAs("newStudent"), "newStudent")).toEqual({ role: "STUDENT", trainerId: "trainerA" });
+  });
+
+  it.each([
+    ["an unknown code", {}, "Código de convite inválido"],
+    ["a used invite", { [`invites/${CODE}`]: { ...invite, used: true } }, "Código de convite já utilizado"],
+  ])("refuses %s with the app's own message", async (_label, documents, message) => {
+    await seed({ "users/trainerA": { role: "TRAINER" }, ...documents });
+    expect(await claimInvite(signedInAs("newStudent"), "newStudent", CODE, 5)).toEqual({ ok: false, message });
+  });
+
+  it("explains, instead of showing Firebase's error, when the account already belongs to a trainer", async () => {
+    await seed({
+      "users/trainerA": { role: "TRAINER" },
+      [`invites/${CODE}`]: invite,
+      "users/taken": { role: "STUDENT", trainerId: "trainerB", inviteCode: "OLD", name: "Maria", createdAt: 1 },
+    });
+    expect(await claimInvite(signedInAs("taken"), "taken", CODE, 5)).toEqual({
+      ok: false,
+      message: "Esta conta já está vinculada a um perfil existente — fale com o administrador.",
+    });
+    expect((await read(`invites/${CODE}`))?.used).toBe(false);
+  });
+
+  it("resolves a trainer, and an account with no document yet as an unclaimed student", async () => {
+    await seed({ "users/trainerA": { role: "TRAINER" } });
+    expect(await resolveProfile(signedInAs("trainerA"), "trainerA")).toEqual({ role: "TRAINER", trainerId: null });
+    // Reading one's own users/{uid} before it exists must be allowed, or a new account can't load.
+    expect(await resolveProfile(signedInAs("brandNew"), "brandNew")).toEqual({ role: "STUDENT", trainerId: null });
   });
 });
 

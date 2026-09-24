@@ -11,6 +11,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run --dir src",
+    "seed:emulators": "node scripts/seed-emulators.mjs",
     "test:rules": "firebase emulators:exec --config ../firebase.json --project demo-personal-tracker --only firestore \"vitest run --dir rules --testTimeout=30000 --no-file-parallelism\""
   },
   "dependencies": {

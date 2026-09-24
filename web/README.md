@@ -16,11 +16,19 @@ rewrite it.
 | URL | Directory | Who |
 |---|---|---|
 | `/` | `src/app/page.tsx` | Public landing (§23i) |
+| `/entrar` | `src/app/entrar/` | Login, for anyone with an account (§23f) |
+| `/convite?c=CODE` | `src/app/convite/` | A student's first visit: create an account, claim the invite (§23f) |
 | `/app` | `src/app/app/` | Trainer (§23g) — dense, desktop-first |
 | `/aluno` | `src/app/aluno/` | Student (§23h) — mobile-first |
 
 `src/app/app/` is not a typo: the outer `app/` is the App Router directory, the inner one is the
-`/app` URL segment. `/app` and `/aluno` have separate layouts on purpose — see §23's decisions.
+`/app` URL segment. `/app` and `/aluno` have separate layouts on purpose — see §23's decisions —
+and each guards itself (`RequireArea`): whoever belongs elsewhere is sent there.
+
+**This is a static export** (`output: "export"`): no server exists in production, so no Server
+Actions, route handlers, cookies, redirects or dynamic path segments — Next refuses them even in
+`next dev`. That is why the invite link carries its code as `?c=` rather than in the path. All auth
+and data run in the browser through the Firebase client SDK; `firestore.rules` is the security.
 
 ## Run and check
 
@@ -51,9 +59,17 @@ layer (`src/data/`) reading and writing *through* those rules as a signed-in use
 model (`src/domain/`), the rules and the converters all have to agree for a write to land. Files
 run one at a time (`--no-file-parallelism`): they share one emulator and each clears it.
 
-To run the app itself against the emulators instead of production, start them
-(`npx firebase emulators:start --config ../firebase.json --project demo-personal-tracker`) and set
-`NEXT_PUBLIC_FIREBASE_EMULATORS=true` for `npm run dev`.
+### Running the app on fake data
+
+Everything can be exercised without touching the real Firebase project:
+
+```bash
+npx firebase emulators:start --config ../firebase.json --project demo-personal-tracker --only auth,firestore
+npm run seed:emulators                              # a trainer, a draft student and its invite
+NEXT_PUBLIC_FIREBASE_EMULATORS=true npm run dev     # the app, pointed at the emulators
+```
+
+The seed prints the trainer's login and the invite link. Re-running it wipes both emulators first.
 
 Needs **Java 21** (Firebase CLI 15 dropped older Javas for the emulators). If `java -version`
 says something older, point `JAVA_HOME` and `PATH` at a JDK 21 for that command — on the main

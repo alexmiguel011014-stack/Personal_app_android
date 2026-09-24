@@ -3355,7 +3355,7 @@ flowchart TD
     B --> C[23c. Data model:\npayments + dashboard metrics]
     C --> D[23d. firestore.rules\nfor both web surfaces]
     D --> E[23e. TS data layer +\nreimplemented business rules]
-    E --> F[23f. Auth, routing,\n/convite/:code]
+    E --> F[23f. Auth, routing,\n/convite?c=code]
     F --> G[23g. /app unstyled]
     F --> H[23h. /aluno unstyled]
     F --> I[23i. landing unstyled]
@@ -3657,7 +3657,7 @@ libraries); all are dev-only — `npm audit --omit=dev` reports 0 for what ships
       doc names it after the batch — nobody can burn someone else's invite. And a claim (create or
       the §13d re-claim) could arrive with `canSelfAssess` / `canLogBiometrics` already switched on;
       the self-update branch froze those flags, but not the claim. Now it can't. A
-      `/convite/<code>` link gets seen by more eyes than a typed code (chat previews, browser
+      `/convite?c=<code>` link gets seen by more eyes than a typed code (chat previews, browser
       history), which is what made these worth closing now.
 - [ ] **Human-in-the-loop:** publishing rules happens in the Firebase console and cannot be done
       from here. Same standing pattern as §7/§17 — hand the user the file and wait.
@@ -3755,14 +3755,65 @@ data layer); eslint clean, no warnings; clean `next build` type-checks all of it
       needs the Blaze plan).
 
 **23f. Auth, routing and the invite link**
-- [ ] Login and session, reusing the `stayLoggedIn` semantics documented in `CLAUDE.md` — if the
+
+Done 2026-09-24. **One structural decision made here, because it fixes the invite link's shape:
+the site is a static export** (`output: "export"` in `web/next.config.ts`). Phase 1 needs no
+server — auth and data are the Firebase client SDK in the browser, and security is
+`firestore.rules` — and a static build deploys to any host 23l picks, including where the site
+lives today (GitHub Pages). It also makes Next fail fast, in `next dev` too, on anything that would
+need a server (Server Actions, route handlers reading the request, cookies, redirects, dynamic
+routes without `generateStaticParams`; see `node_modules/next/dist/docs/01-app/02-guides/
+static-exports.md`). Its cost: a path segment whose value isn't known at build time needs a server,
+so **the invite link is `/convite?c=CODE`, not `/convite/CODE`**. Invites are single-use and
+short-lived, so no link of value exists in the old shape. Reversible by deleting one line, if 23l
+ever picks a server-rendered host.
+
+**Verified end to end in the browser**, against the Auth + Firestore emulators with the §23d/§23e
+rules loaded (`npm run seed:emulators` sets up a trainer, a draft and its invite; the app runs with
+`NEXT_PUBLIC_FIREBASE_EMULATORS=true`) — every network call went to `127.0.0.1`, none to the real
+project: the invite link with the code in lowercase (normalised to `AB12CD34`, as the Android field
+does) → create an account → the claim → landed on `/aluno`; the emulator then showed the invite
+`used: true` and a `STUDENT` account with the trainer's id and the invite's pre-filled name. The
+student sent to `/app` bounced to `/aluno`; "Sair" went to `/entrar`; a wrong password showed "E-mail
+ou senha incorretos."; the trainer's login — with the e-mail padded with spaces and a trailing tab,
+the bug found on the Android emulator on 2026-09-17 — landed on `/app`; the trainer sent to `/aluno`
+bounced to `/app`; reopening the used invite with a new account showed "Código de convite já
+utilizado" and left that account signed in, unclaimed, able to try another code — as on Android.
+Console: dev-server noise plus the one expected 400 (the wrong-password request). Plus `npm test` →
+98 unit tests (role mapping, routing, messages) and `npm run test:rules` → 56 emulator tests (the
+claim through the real rules, its refusal messages, the profile read of an account with no document
+yet); eslint clean; static build of all six routes.
+
+- [x] Login and session, reusing the `stayLoggedIn` semantics documented in `CLAUDE.md` — if the
       preference is false, actually call `signOut()`; do not leave Firebase's session alive while
       the UI pretends otherwise.
-- [ ] Role gate: `ADM`/`TRAINER` → `/app`, `STUDENT` → `/aluno`, unclaimed student → the invite
+      **Same invariant, kept by construction instead of by a sign-out at startup:** "Manter
+      conectado" maps onto Firebase's own persistence — checked is `browserLocalPersistence`,
+      unchecked is `browserSessionPersistence`, a session that ends with the tab. So there is
+      never a Firebase session alive that the UI pretends isn't there, and nothing to sign out of
+      on the next visit. Default unchecked, as on Android. Also: the e-mail is trimmed (the
+      2026-09-17 bug), "Esqueci minha senha" sends Firebase's reset e-mail with a message that
+      doesn't reveal whether the account exists, and the fields are real form fields (`type=email`,
+      `autocomplete`) — so the browser's password manager works, one of the things the canvas
+      build couldn't do.
+- [x] Role gate: `ADM`/`TRAINER` → `/app`, `STUDENT` → `/aluno`, unclaimed student → the invite
       flow. Route-level, not a component-level `when`.
-- [ ] **`/convite/<código>`** — the student opens a link, creates an account and lands connected.
+      **Each area's layout guards itself** (`RequireArea`), fed by `destinationFor` — a port of
+      `RoleRouter`'s `when` over `AuthRepository.resolveRole` (role uppercased; a missing document
+      or unknown value reads as `STUDENT`; a `NONE` account gets the Android LoginScreen's "no role
+      assigned yet" message). One difference by design: an ADM lands on `/app`, since the Android
+      admin dashboard has no web counterpart in §23. The gate is navigation, not security — the
+      data is protected by `firestore.rules`.
+- [x] **`/convite/<código>`** — the student opens a link, creates an account and lands connected.
       This is the single clearest thing Option C buys that the canvas build could not do at all,
       and it is the student-onboarding path, so it is not optional polish.
+      **Built as `/convite?c=CODE`** (static export, above). `claimInvite` ports
+      `AuthRepository.claimInvite` — the same transaction, document and messages, including the
+      translation of a permission error into "Esta conta já está vinculada a um perfil existente —
+      fale com o administrador." A signed-in trainer, an already-connected student and an
+      unclaimed account each get their own screen; a link without a code offers a field to type it.
+      The generator of these links is the trainer's screen (23g) — until then an invite comes from
+      the Android app's "Compartilhar", and the web link needs only its code.
 
 **23g. `/app` — the trainer surface, unstyled**
 - [ ] Dashboard home with 23c's metrics as a plain list of numbers.
@@ -3807,6 +3858,12 @@ data layer); eslint clean, no warnings; clean `next build` type-checks all of it
       constrains the App Router's server features; Vercel/Firebase Hosting do not. Pick based on
       whether anything server-side is actually needed (the Cloud Function from 23e might decide
       this).
+      **Narrowed 2026-09-24:** 23e's decision removed the Cloud Function (no AI calls on the web),
+      and 23f made the site a static export — so this is now a free choice of *static* host, with
+      no technical constraint left. Two things to carry into it: on GitHub Pages the site is served
+      under `/Personal_app_android/`, which needs `basePath`/`assetPrefix` in `next.config.ts`
+      (Firebase Hosting serves at the root and doesn't); and the chosen domain must be added to
+      the App Check reCAPTCHA key (23b's finding).
 - [ ] Only after the new site is live and verified: remove 23b's list.
 
 **23m. Registration**

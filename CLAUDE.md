@@ -177,6 +177,17 @@ until §23 says otherwise:
   the two values (the Firebase web config and the App Check site key) that must be carried into
   `web/` before anything is deleted — is in GOALS.md §23b.
 
+Two more web conventions (§23f) that differ from Android on purpose:
+
+- **The site is a static export** (`output: "export"`): there is no server in production, and Next
+  refuses server features even in `next dev`. Auth and data are the Firebase client SDK in the
+  browser; `firestore.rules` is the security. Hence the invite link `/convite?c=CODE` — a path
+  segment unknown at build time would need a server.
+- **"Manter conectado" is Firebase persistence, not a preference plus a sign-out.** Checked is
+  `browserLocalPersistence`, unchecked is `browserSessionPersistence` (the session ends with the
+  tab). That keeps the invariant the Android code protects above — Firebase never holds a session
+  the UI pretends isn't there — by construction. Don't port the Android startup sign-out to the web.
+
 Before writing route code in `web/`, read `web/AGENTS.md`: this Next differs from what models
 remember (global `PageProps`/`LayoutProps` helpers, `params` as a Promise). The full web section —
 which business rules are hand-ported from Kotlin, and where their originals live — comes with

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { SessionProvider } from "./SessionProvider";
 
 // GOALS.md §23: phase 1 is deliberately unstyled — no stylesheet, no className, no inline style
 // anywhere under src/. The visual pass is 23k and is blocked on the 23j validation gate. A
@@ -11,7 +12,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="pt-BR">
-      <body>{children}</body>
+      <body>
+        <SessionProvider>{children}</SessionProvider>
+      </body>
     </html>
   );
 }

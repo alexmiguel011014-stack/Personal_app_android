@@ -3581,22 +3581,90 @@ forcing — Node 20 reached end of life in April 2026, and this project runs on 
         and *overdue* (unpaid past due, any month, oldest first).
 
 **23d. Security rules**
-- [ ] Extend `firestore.rules` for `payments`: a trainer reads/writes only their own
+
+Done 2026-09-24, and it started with a near miss worth reading before anyone touches
+`firestore.rules` again. **The two KMP lines each implemented §17 on their own, and their rules
+files diverged.** What the trainer published on 2026-09-21 is the Android line's version
+(`claude/tarefas-abertas-front-9834f6`, commit `af2b9b0`), which makes `canSelfAssess` /
+`canLogBiometrics` immutable for the student and ties clearing `pendingAssessmentRequest` to the
+assessment batch. This branch still had its own older §17 rules, where a student could grant
+themselves both permissions with a plain update. Had 23d been written on top of this branch's file
+and published, that hole would have gone back into production. So the first commit only synced
+this file to the published version, byte for byte (`b9c19ac`), and 23d's changes sit on top of it,
+where their diff against production is readable. **This branch's `firestore.rules` is now the one
+to publish; the Android branch's copy is behind it and must not be published again** — that would
+drop the rules for `payments`/`billingPlans` (so the web's charges would be denied) and reopen the
+holes below.
+
+**Verified against the real Firestore emulator:** `npm run test:rules` → 47 tests, all green
+(`web/rules/firestore.rules.test.ts`; emulator via `firebase.json` at the repo root, a `demo-`
+project id so it never reaches the real project, Java 21 — this machine's PATH has Java 8; the JDK
+21 Gradle already provisioned under `~/.gradle/jdks/` is used for the command, nothing installed
+system-wide). **And the proof the tests mean something:** `assertFails` passes on *any* failure, so
+the same suite was run against the published rules (`RULES_FILE=…`) — 13 tests fail there, exactly
+the ones encoding a new guarantee, and the other 34 pass on both, including the Android app's real
+flows (its claim transaction and its assessment batch), reproduced as the app writes them.
+`firebase-tools` pulls in 5 moderate advisories (OpenTelemetry, `uuid`, via Google Cloud client
+libraries); all are dev-only — `npm audit --omit=dev` reports 0 for what ships to the browser.
+
+- [x] Extend `firestore.rules` for `payments`: a trainer reads/writes only their own
       `trainerId`-scoped documents. **A student must not read them** — decide explicitly whether a
       student may see their own payment status; defaulting to "no" until asked is the safe read.
       **Decided by the trainer 2026-09-22: no** — a student does not see their own payment status.
       The same trainer-only rule applies to `billingPlans`, the second collection 23c added; and
       this decision is precisely why neither can store anything on `users/{uid}`, which the student
       reads.
-- [ ] Rules for the student web surface: a student reads their own `users` document, their own
+      **Done, and stricter than planned — the rules now enforce 23c's model server-side**, so it no
+      longer depends on every client behaving: the exact field set (every field present, `paidAt`
+      explicitly null — a missing field would drop the charge from unpaid queries; no stored
+      `status`; no `id` field, the document id carries it as in `FirestoreMappers.kt`, which 23e's
+      converter must match), `amountCents` an integer > 0, `BRL` only, a real `YYYY-MM-DD` due date,
+      the method from a fixed list, and the document id equal to `{studentId}_{month of dueDate}`.
+      Clients may only create `source: "manual"` charges (a level-2 gateway would write through the
+      Admin SDK, which bypasses rules); a gateway-owned charge can't be edited or deleted from a
+      client. Updates may change the amount, the due day *within* the month (the id encodes the
+      month), and settlement — including undoing a mistaken "paid". `billingPlans/{studentId}`:
+      trainer-only, doc id = studentId, `dueDay` 1–31.
+- [x] Rules for the student web surface: a student reads their own `users` document, their own
       `workouts`, `workoutLogs`, `biometrics` and `assessments`, and writes only what §17 already
       permits. This should largely reuse §17's existing rules rather than inventing a parallel set.
       (Collection name corrected 2026-09-22: this item originally said `workout_logs`, which is the
       SQLDelight table — a rule written for it would match nothing.)
-- [ ] Rules for claiming an invite by URL (23f) — the same constraint as the in-app flow: a user
+      **The existing rules already cover the reads** (tested: own profile, own *assigned* fichas
+      only, the query `/aluno` will run). The web does change the threat model, though: in the
+      Android app, abusing a permissive rule means modifying the app; in a browser, the Firebase SDK
+      is already loaded on the page and the console is one keystroke away. Three gaps in the
+      published rules were closed for that reason, each with a test that fails against the
+      published version:
+      1. A student could edit their own `inviteCode` and `createdAt` — harmless until 23c, which made
+         them the inputs for dropping a claimed draft and for the adherence and "gone quiet"
+         windows. Now immutable for the student.
+      2. §17's rule says the request flag may be cleared "only in the same batch that creates the
+         assessment", but it only checked `existsAfter` — pointing `lastAssessmentId` at an *older*
+         assessment dismissed the trainer's request without submitting anything. Now it must not
+         have existed before the batch (`!exists` + `existsAfter`); the Android app's real batch
+         still passes.
+      3. `workoutLogs` updates checked only the *new* `studentId`, so one student could overwrite
+         another's log and re-attribute it to themselves. Now the existing document must be theirs.
+- [x] Rules for claiming an invite by URL (23f) — the same constraint as the in-app flow: a user
       can never write their own `role` or `trainerId` (see `CLAUDE.md`'s Role routing note).
+      **Same transaction as the app, so same rules — and two gaps closed in them.** The invite was
+      not single-use: the create rule checked the invite was unused but not that the same write
+      marked it used, so a claim could leave it open for the next person. Now the batch must leave
+      it used (`getAfter`), and marking an invite used is only accepted when the caller's own users
+      doc names it after the batch — nobody can burn someone else's invite. And a claim (create or
+      the §13d re-claim) could arrive with `canSelfAssess` / `canLogBiometrics` already switched on;
+      the self-update branch froze those flags, but not the claim. Now it can't. A
+      `/convite/<code>` link gets seen by more eyes than a typed code (chat previews, browser
+      history), which is what made these worth closing now.
 - [ ] **Human-in-the-loop:** publishing rules happens in the Firebase console and cannot be done
       from here. Same standing pattern as §7/§17 — hand the user the file and wait.
+      **File ready 2026-09-24** — publish **this branch's** `firestore.rules`, not the Android
+      branch's copy (see the note at the top of 23d). Safe to publish before the web uses any of
+      it: the new collections are unused until 23g, and every flow the Android app runs today
+      passes against it (the 34 shared tests). Copy-paste in the console as before, or — now that
+      `firebase.json` exists — `firebase deploy --only firestore:rules --project personalapp-88129`
+      after `firebase login` (the trainer's own credentials; not something this session can do).
 
 **23e. TypeScript data layer and the ported business rules**
 - [ ] Firebase JS SDK wiring: Auth, Firestore, App Check. The web App Check config already exists

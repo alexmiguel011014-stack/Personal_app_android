@@ -181,3 +181,18 @@ Before writing route code in `web/`, read `web/AGENTS.md`: this Next differs fro
 remember (global `PageProps`/`LayoutProps` helpers, `params` as a Promise). The full web section —
 which business rules are hand-ported from Kotlin, and where their originals live — comes with
 §23m.
+
+## Security rules (`firestore.rules`)
+
+One Firestore database serves every client (Android, web, iOS), so there is one live rules file —
+published by hand by the trainer (console copy-paste, or `firebase deploy --only firestore:rules`
+with their own login). **The two KMP lines each carry a copy, and the copies diverged**: GOALS.md
+§23d found this branch's copy was an older §17 version with a privilege hole the published one
+had already closed. As of 2026-09-24 the copy on **`feature/kmp-web`** is the one to publish (the
+published version plus §23d); the Android branch's copy is behind it. Never publish a copy without
+diffing it against what's live.
+
+Every rules change gets a test in `web/rules/firestore.rules.test.ts`, run against the local
+emulator with `npm run test:rules` from `web/` (Java 21; see `web/README.md`). `assertFails`
+passes on *any* failure, so a new "rejects X" test proves nothing until it's been seen failing
+against the old rules: `RULES_FILE=<published copy> npm run test:rules` does exactly that.

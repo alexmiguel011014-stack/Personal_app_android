@@ -40,6 +40,23 @@ Firestore, no clock (every "today" is an argument). Read the comments there befo
 number on the dashboard: several of them encode findings about how the Kotlin app actually writes
 data (one workout-log document per *exercise*, students split across two collections).
 
+### Security rules tests
+
+```bash
+npm run test:rules   # the repo-root firestore.rules against the local Firestore emulator
+```
+
+Needs **Java 21** (Firebase CLI 15 dropped older Javas for the emulators). If `java -version`
+says something older, point `JAVA_HOME` and `PATH` at a JDK 21 for that command — on the main
+dev machine, Gradle already provisioned one under `~/.gradle/jdks/`. The first run downloads the
+Firestore emulator jar from Google. The project id is `demo-personal-tracker`: the `demo-`
+prefix keeps the emulator from ever touching the real Firebase project.
+
+`RULES_FILE=<path> npm run test:rules` runs the same suite against another rules file — for
+example the version currently published, to see exactly which guarantees a candidate adds.
+Because `assertFails` passes on *any* failure, that comparison is also what proves each test
+actually discriminates.
+
 ## Before writing route code
 
 This is Next.js 16, and it differs from what most tutorials and AI models remember. See

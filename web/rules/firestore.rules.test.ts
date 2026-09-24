@@ -140,6 +140,24 @@ describe("payments", () => {
     await assertFails(as(TRAINER_A).doc(`payments/${ID}`).set(data));
   });
 
+  it("lets the owning trainer ask whether a charge exists yet — the read create-if-absent makes", async () => {
+    await seed((db) =>
+      db.doc(`billingPlans/${STUDENT_A}`).set({
+        studentId: STUDENT_A,
+        trainerId: TRAINER_A,
+        amountCents: 15000,
+        currency: "BRL",
+        dueDay: 10,
+        active: true,
+        createdAt: 1,
+      }),
+    );
+    await assertSucceeds(as(TRAINER_A).doc(`payments/${ID}`).get()); // not created yet
+    await assertFails(as(TRAINER_B).doc(`payments/${ID}`).get());
+    // No plan for this student: no answer, so no probing for other trainers' students.
+    await assertFails(as(TRAINER_A).doc(`payments/${STUDENT_A2}_2026-09`).get());
+  });
+
   it("rejects a document id that isn't {studentId}_{month of dueDate}", async () => {
     const db = as(TRAINER_A);
     await assertFails(db.doc(`payments/${STUDENT_A}_2026-10`).set(charge()));

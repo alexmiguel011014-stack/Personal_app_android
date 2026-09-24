@@ -11,7 +11,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run --dir src",
-    "test:rules": "firebase emulators:exec --config ../firebase.json --project demo-personal-tracker --only firestore \"vitest run --dir rules --testTimeout=30000\""
+    "test:rules": "firebase emulators:exec --config ../firebase.json --project demo-personal-tracker --only firestore \"vitest run --dir rules --testTimeout=30000 --no-file-parallelism\""
   },
   "dependencies": {
     "firebase": "^12.19.0",

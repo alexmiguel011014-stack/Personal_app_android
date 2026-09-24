@@ -3596,14 +3596,16 @@ to publish; the Android branch's copy is behind it and must not be published aga
 drop the rules for `payments`/`billingPlans` (so the web's charges would be denied) and reopen the
 holes below.
 
-**Verified against the real Firestore emulator:** `npm run test:rules` → 47 tests, all green
+**Verified against the real Firestore emulator:** `npm run test:rules` → 48 rules tests, all green
 (`web/rules/firestore.rules.test.ts`; emulator via `firebase.json` at the repo root, a `demo-`
 project id so it never reaches the real project, Java 21 — this machine's PATH has Java 8; the JDK
 21 Gradle already provisioned under `~/.gradle/jdks/` is used for the command, nothing installed
 system-wide). **And the proof the tests mean something:** `assertFails` passes on *any* failure, so
-the same suite was run against the published rules (`RULES_FILE=…`) — 13 tests fail there, exactly
-the ones encoding a new guarantee, and the other 34 pass on both, including the Android app's real
-flows (its claim transaction and its assessment batch), reproduced as the app writes them.
+the same suite was run against the published rules (`RULES_FILE=…`) — 14 rules tests fail there,
+exactly the ones encoding a new guarantee, and the other 34 pass on both, including the Android
+app's real flows (its claim transaction and its assessment batch), reproduced as the app writes
+them. (The 48th test and one rules change came from 23e — see there. Counting 23e's 3 data-layer
+tests, which run in the same suite: 16 fail against the published rules, 35 pass on both.)
 `firebase-tools` pulls in 5 moderate advisories (OpenTelemetry, `uuid`, via Google Cloud client
 libraries); all are dev-only — `npm audit --omit=dev` reports 0 for what ships to the browser.
 
@@ -3661,29 +3663,96 @@ libraries); all are dev-only — `npm audit --omit=dev` reports 0 for what ships
       from here. Same standing pattern as §7/§17 — hand the user the file and wait.
       **File ready 2026-09-24** — publish **this branch's** `firestore.rules`, not the Android
       branch's copy (see the note at the top of 23d). Safe to publish before the web uses any of
-      it: the new collections are unused until 23g, and every flow the Android app runs today
-      passes against it (the 34 shared tests). Copy-paste in the console as before, or — now that
-      `firebase.json` exists — `firebase deploy --only firestore:rules --project personalapp-88129`
-      after `firebase login` (the trainer's own credentials; not something this session can do).
+      it: every flow the Android app runs today passes against it (the 34 shared tests). **Sent to
+      the trainer twice the same day:** the first copy (commit `b25adab`) lacked the
+      missing-charge read that 23e found; the second (with 23e's commit) supersedes it, and
+      publishing the first one first does no harm. **This is now a prerequisite for 23j, not
+      optional polish:** `loadTrainerSnapshot` queries `payments` and `billingPlans`, which the
+      published rules deny outright (no rules = default deny), so the trainer dashboard cannot load
+      against production until this is published — the emulator run against the published rules
+      shows exactly that. Copy-paste in the console as before, or — now that `firebase.json`
+      exists — `firebase deploy --only firestore:rules --project personalapp-88129` after
+      `firebase login` (the trainer's own credentials; not something this session can do).
 
 **23e. TypeScript data layer and the ported business rules**
-- [ ] Firebase JS SDK wiring: Auth, Firestore, App Check. The web App Check config already exists
+
+Done 2026-09-24. **"The Kotlin side is the reference" first needed an answer to *which* Kotlin**,
+because §23d had just found the two KMP lines diverged. Compared before porting anything: the
+document shapes both lines write are the same (same field names, same defaults) — the Android
+line's `FirestoreMappers.kt` differs in *how* it reads (a lenient `fieldOrNull`: a wrongly-typed
+field reads as its default instead of throwing), which the web adopts. `WorkoutParser.kt` and its
+test differ only cosmetically; `PromptFichaViewModel` differs only in how it loads the template;
+and the two prompt assets are byte-identical across lines (the Android line moved them to
+`composeResources/files/`). So every port below matches what the phone runs.
+
+**Verified:** `npm test` → 93 unit tests; `npm run test:rules` → 51 emulator tests (48 rules + 3
+data layer); eslint clean, no warnings; clean `next build` type-checks all of it.
+
+- [x] Firebase JS SDK wiring: Auth, Firestore, App Check. The web App Check config already exists
       and works (§19e/§19g) — reuse those values rather than re-registering the app.
-- [ ] Collection accessors mirroring `FirestoreMappers.kt`'s document shapes exactly. Any
+      **`web/src/data/firebase.ts`** — one browser-only `getFirebase()`; everything else takes a
+      `Firestore` as a parameter, so the same code runs against production, the emulators and the
+      tests. The Firebase web config and the App Check site key are carried over from `jsMain`
+      into `web/src/data/firebaseConfig.ts` — the two values §23b said must survive §23l — with the
+      note that they're public identifiers, not secrets. `NEXT_PUBLIC_FIREBASE_EMULATORS=true`
+      points the app at the local emulators under the demo project (App Check skipped there; the
+      emulators don't enforce it). Its runtime behaviour gets exercised by 23f's login, in the
+      browser; here it is covered by the type-check only.
+- [x] Collection accessors mirroring `FirestoreMappers.kt`'s document shapes exactly. Any
       disagreement with the Kotlin mapper is a bug in the TS side.
-- [ ] Port `WorkoutParser` (§15, Smart Paste). **Keep its deliberate sets-vs-reps rule** — the
+      **`web/src/data/converters.ts`** — drafts, linked students, workout logs, payments and billing
+      plans: the Kotlin defaults, the Android line's leniency, and payment writes that produce
+      exactly the field set the rules accept (all eleven fields, nulls explicit, no `id`).
+      **`web/src/data/trainerData.ts`** — `loadTrainerSnapshot` runs the same queries the Kotlin
+      app does (so no new composite index), fetches each invite by code to build the dedup map
+      (the rules forbid listing invites), and hands it all to 23c's pure functions;
+      `ensureMonthlyCharges` does create-if-absent in a transaction. Readers and writers for
+      workouts, schedules, biometrics and assessments land with the screens that use them
+      (23g/23h), on the same conventions — built and tested where they're used, not ahead.
+      **The emulator test caught a real rules bug, predicted before it ran:** create-if-absent
+      has to *read* the charge first, and for a charge that doesn't exist yet `resource` is null,
+      so `isOwningTrainer(resource.data.trainerId)` denied the read — monthly charges could never
+      have been generated. The payments read rule now takes ownership of a missing charge from the
+      plan it would be generated from (`billingPlans/{studentId}` — no plan, no answer, so no
+      probing). Against the previous §23d candidate, exactly the two tests covering this fail.
+- [x] Port `WorkoutParser` (§15, Smart Paste). **Keep its deliberate sets-vs-reps rule** — the
       smaller of the two numbers is sets, so both `"Supino 3x12"` and `"Biceps 12x4"` mean the
       same thing. `WorkoutParserTest` is the specification; port the test cases alongside it, or
       this quietly regresses.
-- [ ] Port `GenerativeAiService`'s OpenAI/DeepSeek/Claude paths. Gemini goes through Firebase AI
+      **Ported to `web/src/domain/workoutParser.ts` with all 15 `WorkoutParserTest.kt` cases.**
+      Copying the regexes literally would have changed behaviour *without any error*: Java's
+      `[^]]` means "anything but `]`", while in JavaScript `[^]` means "any character" — a mutation
+      run with the literal regex compiled fine and failed 5 tests, 3 of them original Kotlin
+      cases. Java's `\s` is ASCII-only, so the phone skips a line joined by the no-break space
+      WhatsApp copies (U+00A0); the web does the same rather than parse text the phone rejects —
+      normalising it would have to happen on both platforms at once. Kotlin's 32-bit
+      `toIntOrNull` and its whitespace set (it keeps a byte-order mark JavaScript's `trim` strips)
+      are mirrored in `web/src/domain/kotlin.ts`. **One deliberate difference:** a `NaN` or
+      `Infinity` muscle coefficient is rejected — Kotlin accepts it and then can't serialize the
+      ficha (kotlinx refuses NaN by default). `exercisesJson` / `performedSetsJson` are written the
+      way kotlinx writes them (nulls omitted) and read the way it reads them (one malformed element
+      fails the whole list).
+- [x] Port `GenerativeAiService`'s OpenAI/DeepSeek/Claude paths. Gemini goes through Firebase AI
       Logic and is Android-only (`IosGeminiProvider` is already an honest stub) — decide whether
       web gets Gemini at all, or the same honest stub.
-- [ ] **New security problem Option C introduces, with no equivalent on Android.** The trainer's
+      **Superseded by the trainer's decision, 2026-09-24:** the web gets the §15 prompt flow, not
+      direct AI calls — the trainer copies the prompt into whichever AI app they already use and
+      pastes the reply into Smart Paste. `web/src/domain/fichaPrompt.ts` ports
+      `PromptFichaViewModel.buildPrompt` exactly, including a Kotlin quirk worth knowing:
+      `trimIndent()` runs *after* interpolation, so a multi-line medical note keeps the whole
+      profile block indented on the phone — reproduced so both build the same prompt. The template
+      is spliced with split/join, not `replace`, because `$&` in the table would be read as a
+      replacement pattern. The templates stay single-sourced in `app/src/main/assets/` (the tests
+      read them there); how the page loads them is 23g's call. Direct generation stays on Android.
+- [x] **New security problem Option C introduces, with no equivalent on Android.** The trainer's
       AI provider key lives in `SettingsDataStore` on-device on Android. In a browser it would sit
       in `localStorage`, readable by any XSS and by any browser extension. Options: proxy the
       calls through a Cloud Function so the key never reaches the client; or keep BYO-key on web
       and state the exposure in the UI. **Do not silently copy the Android approach into the
       browser** — the threat model is not the same.
+      **Resolved by the same decision:** no provider key ever reaches the browser, because the web
+      makes no AI calls at all. A Cloud Function proxy stays possible later as its own item (it
+      needs the Blaze plan).
 
 **23f. Auth, routing and the invite link**
 - [ ] Login and session, reusing the `stayLoggedIn` semantics documented in `CLAUDE.md` — if the

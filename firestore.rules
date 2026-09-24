@@ -281,7 +281,14 @@ service cloud.firestore {
           d.createdAt is int;
       }
 
-      allow read: if isOwningTrainer(resource.data.trainerId);
+      // A charge that doesn't exist yet has no resource.data to check — and that is exactly the
+      // read create-if-absent makes (ensureMonthlyCharges reads inside a transaction before
+      // creating). For a missing charge, ownership comes from the plan it would be generated from:
+      // the id starts with the studentId, and billingPlans/{studentId} names the trainer. No plan,
+      // no answer — so nobody can probe other trainers' students.
+      allow read: if resource == null
+        ? isOwningTrainer(get(/databases/$(database)/documents/billingPlans/$(paymentId.split('_')[0])).data.trainerId)
+        : isOwningTrainer(resource.data.trainerId);
       allow create: if isOwningTrainer(request.resource.data.trainerId) &&
         isPayment(request.resource.data) &&
         paymentId == request.resource.data.studentId + '_' + yearMonthOf(request.resource.data.dueDate) &&

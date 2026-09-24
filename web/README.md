@@ -40,11 +40,20 @@ Firestore, no clock (every "today" is an argument). Read the comments there befo
 number on the dashboard: several of them encode findings about how the Kotlin app actually writes
 data (one workout-log document per *exercise*, students split across two collections).
 
-### Security rules tests
+### Emulator tests (security rules + data layer)
 
 ```bash
-npm run test:rules   # the repo-root firestore.rules against the local Firestore emulator
+npm run test:rules   # everything in rules/, against the local Firestore emulator
 ```
+
+`rules/` holds what needs a real Firestore: the repo-root `firestore.rules` itself, and the data
+layer (`src/data/`) reading and writing *through* those rules as a signed-in user — where the
+model (`src/domain/`), the rules and the converters all have to agree for a write to land. Files
+run one at a time (`--no-file-parallelism`): they share one emulator and each clears it.
+
+To run the app itself against the emulators instead of production, start them
+(`npx firebase emulators:start --config ../firebase.json --project demo-personal-tracker`) and set
+`NEXT_PUBLIC_FIREBASE_EMULATORS=true` for `npm run dev`.
 
 Needs **Java 21** (Firebase CLI 15 dropped older Javas for the emulators). If `java -version`
 says something older, point `JAVA_HOME` and `PATH` at a JDK 21 for that command — on the main

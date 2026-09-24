@@ -11,7 +11,7 @@ import {
 } from "firebase/firestore";
 import type { WorkoutLogDoc } from "../domain/metrics";
 import { monthlyCharge, plansMissingCharge, type BillingPlan, type Payment } from "../domain/payments";
-import { mergeStudents, type LinkedStudentDoc, type Student } from "../domain/students";
+import { mergeStudents, type DraftStudentDoc, type LinkedStudentDoc, type Student } from "../domain/students";
 import {
   paymentToFirestore,
   toBillingPlan,
@@ -25,7 +25,11 @@ import {
 // runs (so no new composite index is needed), handed to the pure functions in ../domain.
 
 export interface TrainerSnapshot {
+  /** Drafts and accounts merged, claimed drafts dropped — the list and the dashboard's view. */
   students: Student[];
+  /** The full documents behind `students`, for the detail page and its writes. */
+  drafts: DraftStudentDoc[];
+  linked: LinkedStudentDoc[];
   logs: WorkoutLogDoc[];
   payments: Payment[];
   plans: BillingPlan[];
@@ -54,13 +58,12 @@ export async function loadTrainerSnapshot(db: Firestore, trainerId: string): Pro
     getDocs(byTrainer("payments")),
     getDocs(byTrainer("billingPlans")),
   ]);
+  const draftStudents = mapDocs(drafts, toDraftStudent);
   const linkedStudents = mapDocs(linked, toLinkedStudent);
   return {
-    students: mergeStudents(
-      mapDocs(drafts, toDraftStudent),
-      linkedStudents,
-      await draftIdsForInvites(db, linkedStudents),
-    ),
+    students: mergeStudents(draftStudents, linkedStudents, await draftIdsForInvites(db, linkedStudents)),
+    drafts: draftStudents,
+    linked: linkedStudents,
     logs: mapDocs(logs, toWorkoutLog),
     payments: mapDocs(payments, toPayment),
     plans: mapDocs(plans, toBillingPlan),

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { matchesSearch } from "../../../domain/students";
 import { useSession } from "../../SessionProvider";
@@ -42,6 +43,9 @@ function Students({ trainerId }: { trainerId: string }) {
     <main>
       <h1>Alunos</h1>
       <p>
+        <Link href="/app/alunos/novo">Cadastrar aluno</Link>
+      </p>
+      <p>
         <label>
           Buscar{" "}
           <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -73,7 +77,9 @@ function Students({ trainerId }: { trainerId: string }) {
           <tbody>
             {shown.map((s) => (
               <tr key={s.id}>
-                <td>{s.name}</td>
+                <td>
+                  <Link href={`/app/alunos/detalhe?id=${encodeURIComponent(s.id)}`}>{s.name}</Link>
+                </td>
                 <td>{s.goal || "—"}</td>
                 <td>{s.linked ? "Conectado" : "Aguardando conexão"}</td>
                 <td>{s.medicalNotes.trim() !== "" ? "Sim" : "—"}</td>

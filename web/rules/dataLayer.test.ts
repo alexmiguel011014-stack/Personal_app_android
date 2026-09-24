@@ -5,6 +5,14 @@ import { deleteApp, initializeApp, type FirebaseApp } from "firebase/app";
 import { connectFirestoreEmulator, doc, getDoc, getFirestore, updateDoc, type Firestore } from "firebase/firestore";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { claimInvite } from "../src/data/invites";
+import {
+  createDraftStudent,
+  generateInvite,
+  requestAssessment,
+  setStudentPermissions,
+  updateStudentProfile,
+} from "../src/data/students";
+import { emptyProfile } from "../src/domain/studentProfile";
 import { resolveProfile } from "../src/data/session";
 import { ensureMonthlyCharges, loadTrainerSnapshot, loadTrainerView } from "../src/data/trainerData";
 
@@ -97,6 +105,80 @@ describe("ensureMonthlyCharges", () => {
       createdAt: 1,
     };
     await expect(ensureMonthlyCharges(signedInAs("trainerB"), [stolenPlan], "2026-09", 1)).rejects.toThrow();
+  });
+});
+
+describe("a trainer's writes to students (GOALS.md §23g)", () => {
+  const profile = { ...emptyProfile(), name: "Ana Costa", trainingDays: ["Segunda", "Quarta"] };
+
+  async function read(path: string): Promise<Record<string, unknown> | undefined> {
+    let data: Record<string, unknown> | undefined;
+    await env.withSecurityRulesDisabled(async (context) => {
+      data = (await context.firestore().doc(path).get()).data();
+    });
+    return data;
+  }
+
+  it("creates a draft, invites it, and the invite claims into an account with the draft's profile", async () => {
+    await seed({ "users/trainerA": { role: "TRAINER" } });
+    const db = signedInAs("trainerA");
+    const id = await createDraftStudent(db, "trainerA", profile, 5);
+    expect(await read(`students/${id}`)).toMatchObject({ trainerId: "trainerA", name: "Ana Costa", role: "student", createdAt: 5 });
+
+    const snapshot = await loadTrainerSnapshot(db, "trainerA");
+    const code = await generateInvite(db, "trainerA", snapshot.drafts[0], 6);
+    expect(await read(`invites/${code}`)).toMatchObject({ trainerId: "trainerA", used: false, draftId: id, name: "Ana Costa" });
+
+    // The web's own invite, claimed through the web's own claim: the whole loop without the phone.
+    expect(await claimInvite(signedInAs("ana-uid"), "ana-uid", code, 7)).toEqual({ ok: true, trainerId: "trainerA" });
+    const after = await loadTrainerSnapshot(db, "trainerA");
+    expect(after.students.map((s) => [s.name, s.linked])).toEqual([["Ana Costa", true]]);
+  });
+
+  it("gets a fresh code when the first one is already taken", async () => {
+    await seed({
+      "users/trainerA": { role: "TRAINER" },
+      "invites/TAKEN000": { trainerId: "trainerB", used: false, createdAt: 1 },
+    });
+    const db = signedInAs("trainerA");
+    await createDraftStudent(db, "trainerA", profile, 5);
+    const [draft] = (await loadTrainerSnapshot(db, "trainerA")).drafts;
+    const codes = ["TAKEN000", "FRESH001"];
+    expect(await generateInvite(db, "trainerA", draft, 6, () => codes.shift() ?? "FRESH002")).toBe("FRESH001");
+    expect((await read("invites/TAKEN000"))?.trainerId).toBe("trainerB"); // untouched
+  });
+
+  it("edits a draft whole and a connected account by merge, grants permissions and requests an assessment", async () => {
+    await seed({
+      "users/trainerA": { role: "TRAINER" },
+      "users/linked": {
+        role: "STUDENT",
+        trainerId: "trainerA",
+        inviteCode: "X",
+        name: "Bruno",
+        createdAt: 1,
+        canSelfAssess: false,
+        canLogBiometrics: false,
+        pendingAssessmentRequest: false,
+      },
+    });
+    const db = signedInAs("trainerA");
+    const draftId = await createDraftStudent(db, "trainerA", profile, 5);
+    const { drafts, linked } = await loadTrainerSnapshot(db, "trainerA");
+
+    await updateStudentProfile(db, "trainerA", { kind: "draft", doc: drafts[0] }, { ...profile, goal: "Força" });
+    expect(await read(`students/${draftId}`)).toMatchObject({ goal: "Força", createdAt: 5 });
+
+    await updateStudentProfile(db, "trainerA", { kind: "linked", doc: linked[0] }, { ...profile, name: "Bruno Alves" });
+    expect(await read("users/linked")).toMatchObject({ name: "Bruno Alves", role: "STUDENT", inviteCode: "X", createdAt: 1 });
+
+    await setStudentPermissions(db, "linked", true, true);
+    await requestAssessment(db, "linked");
+    expect(await read("users/linked")).toMatchObject({
+      canSelfAssess: true,
+      canLogBiometrics: true,
+      pendingAssessmentRequest: true,
+    });
   });
 });
 

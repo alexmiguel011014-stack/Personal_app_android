@@ -3850,7 +3850,28 @@ by the SDK. 103 unit + 58 emulator tests, eslint and tsc clean.
 - [ ] Student list with search and filter, and the student detail view (data + performance charts).
       **List done (part 1):** `/app/alunos` — name, goal, connection and a medical-restriction flag
       (what the Android list shows), accent- and case-insensitive search ("ALVES" finds Bruno
-      Alves), filter by connection, sorted by pt-BR collation. Detail view still to build.
+      Alves), filter by connection, sorted by pt-BR collation.
+      **Registration, invite and the detail's data done (part 2, 2026-09-24):** `/app/alunos/novo`
+      and `/app/alunos/detalhe?id=` port the Android add/edit forms and `SqlDelightTrainerRepository`'s
+      writes field for field — including a value that would have gone wrong unnoticed: the Android
+      form stores intermediate level as the abbreviation **`"Interm."`**, so the web stores exactly
+      that. A draft's page generates the invite link (the Android code format, 8 uppercase hex; a
+      taken code comes back as permission-denied from the rules and gets a fresh one); a connected
+      student's page carries §17's permissions and the assessment request. **The whole onboarding
+      loop now runs on the web alone, verified in the browser against the emulators:** register
+      Júlia (the form refused her until a training day was picked, as Android does) → generate her
+      link → sign out → open it, create her account → back as the trainer, she's listed once, as
+      connected (her draft superseded) → grant self-assessment → request one → the dashboard lists
+      her under pending assessments. The emulator then showed her account in exactly the shape the
+      phone reads (`"Interm."`, `["Terça", "Quinta"]`, the invite code, the §17 flags). The same loop
+      is an emulator test (create → invite → claim → one connected student), plus rules-level tests
+      for the draft rewrite, the account merge, the permissions and the request.
+      **Left out on purpose:** the Android form's optional first measurement (weight/height into
+      `biometrics`) — those are Doubles on the Kotlin side, a whole number from JavaScript lands in
+      Firestore as an integer, and whether the phone's lenient reader then shows it or shows 0 is
+      unverified; measurements come with the evolution part once that's settled. And deleting a
+      student — on Android it deletes a connected student's own profile document; destructive, and
+      nothing in §23 asks for it. Still to build: the performance charts (as tables, phase 1).
 - [ ] Ficha: list, manual creation, Smart Paste, AI generation.
 - [ ] Schedule. Mensalidades: register, mark paid, overdue list.
       (The overdue list is on the dashboard already; registering plans and marking paid is not.)

@@ -3872,7 +3872,39 @@ by the SDK. 103 unit + 58 emulator tests, eslint and tsc clean.
       unverified; measurements come with the evolution part once that's settled. And deleting a
       student — on Android it deletes a connected student's own profile document; destructive, and
       nothing in §23 asks for it. Still to build: the performance charts (as tables, phase 1).
-- [ ] Ficha: list, manual creation, Smart Paste, AI generation.
+- [x] Ficha: list, manual creation, Smart Paste, AI generation.
+      **Done (part 3, 2026-09-24).** A student's page lists their fichas with
+      `WorkoutBuilderScreen`'s controls (edit, activate/deactivate, delete after a confirmation).
+      `/app/fichas/editar?aluno=…[&id=…]` is `PromptFichaScreen` and `ManualWorkoutScreen` on one
+      page: copy the §15 prompt (23e's port, fed by the Android asset files — `predev`/`prebuild`
+      copy them into `public/prompt/`, generated and gitignored, so there is still one copy), paste
+      the AI's reply into Smart Paste, add or remove exercises by hand, read the effective volume per
+      muscle, save. Saves port `withDerivedStatus`: active means `status: "assigned"`, the only
+      fichas the rules let a student read — skip it and every web-made ficha is invisible on the
+      phone (an emulator test runs the phone's own student query and fails when it's skipped).
+      Smart Paste matches both Android screens, including a detail easy to miss: a recognised name
+      fills the name only while it's blank.
+      **Stricter than Android, on purpose: new fichas only for a connected student.** A ficha is
+      keyed to the student's id, and claiming an invite gives the student a new one (their
+      account's uid), so a ficha made for a draft stays on the draft and the student never sees it.
+      Android allows it; the web says on screen why not. Same root as the duplicate-student task.
+      **Verified in the browser against the emulators:** a draft's page and a direct editor URL both
+      refuse a new ficha, with the reason; saving an empty ficha shows both errors; the prompt came
+      out with the profile and the request in the Kotlin shape; an AI reply wrapped in prose filled
+      "Ficha A" and three exercises (the reps-first "Biceps 12x4" as 4×12), with Peitoral 4,0 /
+      Costas 3,0 / Delt.ant 2,0 / Bíceps 1,5 effective sets; a non-numeric set count was refused;
+      add, remove, save → listed as active since today, and the emulator held exactly
+      `WorkoutEntity.toFirestoreMap`'s fields (integer times, a kotlinx-readable `exercisesJson`);
+      deactivate → `draft` with `assignedAt` null; activate again; edit — a second paste replaced
+      the exercises but not the typed name, the name saved trimmed, same document, `createdAt` kept;
+      delete, cancelled once, then confirmed. **Not verifiable here:** the in-app browser denies
+      clipboard writes outright, so "Copiar prompt" showed its fallback (the prompt in a box, to
+      copy by hand); the copy itself is for 23j, in a real browser. 122 unit + 63 emulator tests,
+      eslint and tsc clean, static build of ten routes.
+      **Found, for the next rules change:** `workouts` create checks the trainer but not that the
+      student is theirs, and the phone's student query doesn't filter by trainer — a trainer who
+      knew another trainer's student's uid could put a ficha in that student's app. uids aren't
+      discoverable, so the risk is low; batch it with the archive change below.
 - [ ] Schedule. Mensalidades: register, mark paid, overdue list.
       (The overdue list is on the dashboard already; registering plans and marking paid is not.)
 - [ ] Archive/pause a student (one boolean, per §12's cheap-wins list).
@@ -3923,8 +3955,10 @@ by the SDK. 103 unit + 58 emulator tests, eslint and tsc clean.
       and 23f made the site a static export — so this is now a free choice of *static* host, with
       no technical constraint left. Two things to carry into it: on GitHub Pages the site is served
       under `/Personal_app_android/`, which needs `basePath`/`assetPrefix` in `next.config.ts`
-      (Firebase Hosting serves at the root and doesn't); and the chosen domain must be added to
-      the App Check reCAPTCHA key (23b's finding).
+      (Firebase Hosting serves at the root and doesn't) — and then the one hand-written fetch of a
+      `public/` file, `web/src/data/promptAssets.ts`, needs the same prefix, since Next doesn't add
+      it to `fetch`; and the chosen domain must be added to the App Check reCAPTCHA key (23b's
+      finding).
 - [ ] Only after the new site is live and verified: remove 23b's list.
 
 **23m. Registration**

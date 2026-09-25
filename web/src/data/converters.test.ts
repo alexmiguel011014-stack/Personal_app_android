@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { monthlyCharge } from "../domain/payments";
+import type { Workout } from "../domain/workouts";
 import {
   paymentToFirestore,
   toBillingPlan,
   toDraftStudent,
   toLinkedStudent,
   toPayment,
+  toWorkout,
   toWorkoutLog,
+  workoutToFirestore,
 } from "./converters";
 
 describe("toDraftStudent / toLinkedStudent — FirestoreMappers' defaults and leniency", () => {
@@ -55,6 +58,56 @@ describe("toWorkoutLog", () => {
       performedSetsJson: "[]",
       note: null,
     });
+  });
+});
+
+describe("toWorkout / workoutToFirestore — FirestoreMappers' workout mapping", () => {
+  const workout: Workout = {
+    id: "w1",
+    trainerId: "trainerA",
+    studentId: "s1",
+    name: "Ficha A",
+    isActive: true,
+    exercises: [
+      { name: "Supino", sets: 3, reps: "12", weight: null, restSeconds: null, notes: null, muscleActivation: { Peitoral: 1 } },
+    ],
+    createdAt: 5,
+    status: "assigned",
+    assignedAt: 6,
+  };
+
+  it("writes WorkoutEntity.toFirestoreMap's fields and reads them back", () => {
+    const data = workoutToFirestore(workout, "trainerA");
+    expect(data).toEqual({
+      trainerId: "trainerA",
+      studentId: "s1",
+      name: "Ficha A",
+      isActive: true,
+      exercisesJson: '[{"name":"Supino","sets":3,"reps":"12","muscleActivation":{"Peitoral":1}}]',
+      createdAt: 5,
+      status: "assigned",
+      assignedAt: 6,
+    });
+    expect(toWorkout("w1", data)).toEqual(workout);
+  });
+
+  it("defaults the rest and reads malformed exercisesJson as no exercises, like the Kotlin try/catch", () => {
+    expect(toWorkout("w1", { studentId: "s1", name: "Ficha A", exercisesJson: "{not json" })).toEqual({
+      id: "w1",
+      trainerId: "",
+      studentId: "s1",
+      name: "Ficha A",
+      isActive: true,
+      exercises: [],
+      createdAt: 0,
+      status: "draft",
+      assignedAt: null,
+    });
+  });
+
+  it("skips a document without a student or a name", () => {
+    expect(toWorkout("w1", { name: "Ficha A" })).toBeNull();
+    expect(toWorkout("w1", { studentId: "s1", name: 7 })).toBeNull();
   });
 });
 

@@ -1,4 +1,6 @@
+import { decodeExercises, encodeExercises } from "../domain/exercise";
 import type { WorkoutLogDoc } from "../domain/metrics";
+import type { Workout } from "../domain/workouts";
 import type { BillingPlan, Payment, PaymentMethod, PaymentSource } from "../domain/payments";
 import type { DraftStudentDoc, LinkedStudentDoc } from "../domain/students";
 
@@ -97,6 +99,39 @@ export function toWorkoutLog(id: string, data: Data): WorkoutLogDoc | null {
     date: int(data, "date") ?? 0,
     performedSetsJson: str(data, "performedSetsJson") ?? "[]",
     note: str(data, "note"),
+  };
+}
+
+/** `workouts/{id}` — FirestoreMappers.toWorkoutEntity. */
+export function toWorkout(id: string, data: Data): Workout | null {
+  const studentId = str(data, "studentId");
+  const name = str(data, "name");
+  if (studentId === null || name === null) return null;
+  return {
+    id,
+    trainerId: str(data, "trainerId") ?? "",
+    studentId,
+    name,
+    isActive: bool(data, "isActive") ?? true,
+    // Malformed JSON reads as no exercises, as the Kotlin mapper's try/catch does.
+    exercises: decodeExercises(str(data, "exercisesJson")),
+    createdAt: int(data, "createdAt") ?? 0,
+    status: data.status === "assigned" ? "assigned" : "draft",
+    assignedAt: int(data, "assignedAt"),
+  };
+}
+
+/** `WorkoutEntity.toFirestoreMap(trainerId)` — the id stays the document id. */
+export function workoutToFirestore(workout: Workout, trainerId: string): Data {
+  return {
+    trainerId,
+    studentId: workout.studentId,
+    name: workout.name,
+    isActive: workout.isActive,
+    exercisesJson: encodeExercises(workout.exercises),
+    createdAt: workout.createdAt,
+    status: workout.status,
+    assignedAt: workout.assignedAt,
   };
 }
 

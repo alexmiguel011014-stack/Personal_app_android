@@ -1,8 +1,19 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { initializeTestEnvironment, type RulesTestEnvironment } from "@firebase/rules-unit-testing";
+import { assertFails, initializeTestEnvironment, type RulesTestEnvironment } from "@firebase/rules-unit-testing";
 import { deleteApp, initializeApp, type FirebaseApp } from "firebase/app";
-import { connectFirestoreEmulator, doc, getDoc, getFirestore, updateDoc, type Firestore } from "firebase/firestore";
+import {
+  collection,
+  connectFirestoreEmulator,
+  doc,
+  getDoc,
+  getDocs,
+  getFirestore,
+  query,
+  updateDoc,
+  where,
+  type Firestore,
+} from "firebase/firestore";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { claimInvite } from "../src/data/invites";
 import {
@@ -15,6 +26,7 @@ import {
 import { emptyProfile } from "../src/domain/studentProfile";
 import { resolveProfile } from "../src/data/session";
 import { ensureMonthlyCharges, loadTrainerSnapshot, loadTrainerView } from "../src/data/trainerData";
+import { deleteWorkout, loadStudentWorkouts, newWorkout, saveWorkout } from "../src/data/workouts";
 
 // GOALS.md §23e: the data layer against the Firestore emulator, through the real rules — the same
 // modular SDK calls the app makes, signed in as a given uid. This is where the three layers meet:
@@ -306,5 +318,69 @@ describe("loadTrainerSnapshot", () => {
       ["maria-uid", true],
     ]);
     expect(snapshot.logs.map((l) => l.id)).toEqual(["l1"]);
+  });
+});
+
+describe("fichas (GOALS.md §23g)", () => {
+  const exercises = [
+    { name: "Supino", sets: 3, reps: "12", weight: null, restSeconds: null, notes: null, muscleActivation: null },
+  ];
+
+  function stored(overrides: Record<string, unknown>): Record<string, unknown> {
+    return {
+      trainerId: "trainerA",
+      studentId: "s1",
+      name: "Ficha A",
+      isActive: true,
+      exercisesJson: "[]",
+      createdAt: 1,
+      status: "assigned",
+      assignedAt: 1,
+      ...overrides,
+    };
+  }
+
+  it("saves a ficha the student sees while it's active, and stops seeing once it's deactivated", async () => {
+    await seed({
+      "users/trainerA": { role: "TRAINER" },
+      "users/s1": { role: "STUDENT", trainerId: "trainerA", inviteCode: "X", name: "Ana", createdAt: 1 },
+    });
+    const trainer = signedInAs("trainerA");
+    const saved = await saveWorkout(trainer, "trainerA", newWorkout("trainerA", "s1", "Ficha A", exercises, 100), 100);
+    expect(saved).toMatchObject({ status: "assigned", assignedAt: 100 });
+
+    // The phone's student query (StudentRepository), through the real rules.
+    const student = signedInAs("s1");
+    const visible = async () => {
+      const found = await getDocs(
+        query(collection(student, "workouts"), where("studentId", "==", "s1"), where("status", "==", "assigned")),
+      );
+      return found.docs.map((d) => d.id);
+    };
+    expect(await visible()).toEqual([saved.id]);
+
+    await saveWorkout(trainer, "trainerA", { ...saved, isActive: false }, 200);
+    expect(await visible()).toEqual([]);
+    await assertFails(getDoc(doc(student, "workouts", saved.id)));
+    expect(await loadStudentWorkouts(trainer, "trainerA", "s1")).toEqual([
+      { ...saved, isActive: false, status: "draft", assignedAt: null },
+    ]);
+  });
+
+  it("lists only this trainer's fichas for the student, newest first; deletes only their own", async () => {
+    await seed({
+      "users/trainerA": { role: "TRAINER" },
+      "users/trainerB": { role: "TRAINER" },
+      "workouts/old": stored({ createdAt: 1 }),
+      "workouts/new": stored({ createdAt: 2, isActive: false, status: "draft", assignedAt: null }),
+      "workouts/other-student": stored({ studentId: "s2" }),
+      "workouts/other-trainer": stored({ trainerId: "trainerB" }),
+    });
+    const trainer = signedInAs("trainerA");
+    expect((await loadStudentWorkouts(trainer, "trainerA", "s1")).map((w) => w.id)).toEqual(["new", "old"]);
+
+    await assertFails(deleteWorkout(trainer, "other-trainer"));
+    await deleteWorkout(trainer, "old");
+    expect((await loadStudentWorkouts(trainer, "trainerA", "s1")).map((w) => w.id)).toEqual(["new"]);
   });
 });

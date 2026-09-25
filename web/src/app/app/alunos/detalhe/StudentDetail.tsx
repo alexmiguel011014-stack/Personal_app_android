@@ -15,9 +15,10 @@ import type { StudentProfile } from "../../../../domain/studentProfile";
 import { useSession } from "../../../SessionProvider";
 import { useTrainerData } from "../../useTrainerData";
 import { StudentForm } from "../StudentForm";
+import { WorkoutsSection } from "./WorkoutsSection";
 
 // GOALS.md §23g: a student's page — profile, and either the invite (a draft) or the §17 permissions
-// (a connected account). Fichas, evolution and assessments join it in the next parts.
+// (a connected account), then the fichas. Evolution and assessments join it in the next parts.
 
 export function StudentDetail() {
   const { session } = useSession();
@@ -120,8 +121,15 @@ function Detail({ trainerId, studentId }: { trainerId: string; studentId: string
         <PermissionsSection studentId={student.doc.id} account={student.doc} onChanged={reload} />
       )}
 
+      <WorkoutsSection
+        trainerId={trainerId}
+        studentId={student.doc.id}
+        connected={student.kind === "linked"}
+        timeZone={data.timeZone}
+      />
+
       <section>
-        <h2>Fichas, evolução e avaliações</h2>
+        <h2>Evolução e avaliações</h2>
         <p>Em construção (GOALS.md §23g, próximas partes).</p>
       </section>
     </main>

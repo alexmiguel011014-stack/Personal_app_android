@@ -6,7 +6,9 @@
     "node": ">=24"
   },
   "scripts": {
+    "predev": "node scripts/copy-prompt-assets.mjs",
     "dev": "next dev",
+    "prebuild": "node scripts/copy-prompt-assets.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",

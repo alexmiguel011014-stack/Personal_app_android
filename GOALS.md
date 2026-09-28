@@ -3594,7 +3594,7 @@ this file to the published version, byte for byte (`b9c19ac`), and 23d's changes
 where their diff against production is readable. **This branch's `firestore.rules` is now the one
 to publish; the Android branch's copy is behind it and must not be published again** — that would
 drop the rules for `payments`/`billingPlans` (so the web's charges would be denied) and reopen the
-holes below.
+holes below. (Published 2026-09-28 — see the last item.)
 
 **Verified against the real Firestore emulator:** `npm run test:rules` → 48 rules tests, all green
 (`web/rules/firestore.rules.test.ts`; emulator via `firebase.json` at the repo root, a `demo-`
@@ -3659,8 +3659,13 @@ libraries); all are dev-only — `npm audit --omit=dev` reports 0 for what ships
       the self-update branch froze those flags, but not the claim. Now it can't. A
       `/convite?c=<code>` link gets seen by more eyes than a typed code (chat previews, browser
       history), which is what made these worth closing now.
-- [ ] **Human-in-the-loop:** publishing rules happens in the Firebase console and cannot be done
+- [x] **Human-in-the-loop:** publishing rules happens in the Firebase console and cannot be done
       from here. Same standing pattern as §7/§17 — hand the user the file and wait.
+      **Published by the trainer on 2026-09-28** — this branch's file as of 23e (`004a029`), which
+      nothing after it changed, sent again that day. The live rules are now this branch's copy.
+      Not read back from here (that needs the trainer's login): the first trainer-side check in 23j
+      is the confirmation, since the dashboard only loads under these rules — under the old ones it
+      shows its "regras do §23d já foram publicadas?" message instead.
       **File ready 2026-09-24** — publish **this branch's** `firestore.rules`, not the Android
       branch's copy (see the note at the top of 23d). Safe to publish before the web uses any of
       it: every flow the Android app runs today passes against it (the 34 shared tests). **Sent to

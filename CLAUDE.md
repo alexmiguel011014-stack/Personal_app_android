@@ -245,9 +245,10 @@ One Firestore database serves every client (Android, web, iOS), so there is one 
 published by hand by the trainer (console copy-paste, or `firebase deploy --only firestore:rules`
 with their own login). **The two KMP lines each carry a copy, and the copies diverged**: GOALS.md
 §23d found this branch's copy was an older §17 version with a privilege hole the published one
-had already closed. As of 2026-09-24 the copy on **`feature/kmp-web`** is the one to publish (the
-published version plus §23d); the Android branch's copy is behind it. Never publish a copy without
-diffing it against what's live.
+had already closed. **Since 2026-09-28 the live rules are the copy on `feature/kmp-web`** (the
+Android line's `af2b9b0` plus §23d, last changed in `004a029`); the Android branch's copy is behind
+it and must not be published — it would drop `payments`/`billingPlans` and reopen §23d's holes.
+Never publish a copy without diffing it against what's live.
 
 Every rules change gets a test in `web/rules/firestore.rules.test.ts`, run against the local
 emulator with `npm run test:rules` from `web/` (Java 21; see `web/README.md`). `assertFails`

@@ -172,7 +172,8 @@ function InviteSection({ trainerId, student }: { trainerId: string; student: Ext
     setStatus(null);
     try {
       const code = await generateInvite(getFirebase().db, trainerId, student.doc, Date.now());
-      setLink(`${window.location.origin}/convite?c=${code}`);
+      // The basePath by hand (a full URL, not a Link), and the trailing slash trailingSlash implies.
+      setLink(`${window.location.origin}${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/convite/?c=${code}`);
     } catch {
       setStatus("Não foi possível gerar o convite. Tente de novo.");
     }

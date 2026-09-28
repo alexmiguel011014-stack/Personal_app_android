@@ -8,8 +8,8 @@ export interface PromptAssets {
 }
 
 async function fetchText(name: string): Promise<string> {
-  // Root-relative: a basePath (GOALS.md §23l, GitHub Pages) would have to be prefixed here by hand.
-  const response = await fetch(`/prompt/${name}`);
+  // Next doesn't prefix fetch() with the basePath (GOALS.md §23l, GitHub Pages) — done by hand.
+  const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/prompt/${name}`);
   if (!response.ok) throw new Error(`Couldn't load ${name}: ${response.status}`);
   return response.text();
 }

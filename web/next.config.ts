@@ -8,6 +8,12 @@ const nextConfig: NextConfig = {
   // request, cookies, redirects/rewrites, dynamic routes without generateStaticParams) — which is
   // why the invite link is /convite?c=CODE rather than /convite/CODE.
   output: "export",
+  // GOALS.md §23l: GitHub Pages serves this repo's site under /Personal_app_android/, so the deploy
+  // builds with NEXT_PUBLIC_BASE_PATH=/Personal_app_android; locally it's empty. Next prefixes links
+  // and assets itself; the two hand-built URLs (prompt assets, invite link) read the same variable.
+  basePath: process.env.NEXT_PUBLIC_BASE_PATH ?? "",
+  // /me/index.html rather than /me.html: a directory index is served by any static host.
+  trailingSlash: true,
 };
 
 export default nextConfig;

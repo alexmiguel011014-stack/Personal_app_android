@@ -4,6 +4,7 @@ import { decodeExercises, encodeExercises } from "../domain/exercise";
 import type { WorkoutLogDoc } from "../domain/metrics";
 import type { Workout } from "../domain/workouts";
 import type { BillingPlan, Payment, PaymentMethod, PaymentSource } from "../domain/payments";
+import type { Schedule } from "../domain/schedules";
 import type { DraftStudentDoc, LinkedStudentDoc } from "../domain/students";
 
 // GOALS.md §23e: Firestore document ⇄ domain type, mirroring FirestoreMappers.kt. Same field names,
@@ -170,6 +171,24 @@ export function biometricToFirestore(biometric: Biometric, trainerId: string): D
     bodyFat: biometric.bodyFat,
     date: biometric.date,
   };
+}
+
+/** `schedules/{id}` — FirestoreMappers.toScheduleEntity. */
+export function toSchedule(id: string, data: Data): Schedule | null {
+  const studentId = str(data, "studentId");
+  if (studentId === null) return null;
+  return {
+    id,
+    trainerId: str(data, "trainerId") ?? "",
+    studentId,
+    dayOfWeek: str(data, "dayOfWeek") ?? "",
+    hour: str(data, "hour") ?? "",
+  };
+}
+
+/** `ScheduleEntity.toFirestoreMap(trainerId)` — the id stays the document id. */
+export function scheduleToFirestore(schedule: Schedule, trainerId: string): Data {
+  return { trainerId, studentId: schedule.studentId, dayOfWeek: schedule.dayOfWeek, hour: schedule.hour };
 }
 
 /** `assessments/{id}` — FirestoreMappers.toAssessmentEntity. */

@@ -1,6 +1,11 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { assertFails, initializeTestEnvironment, type RulesTestEnvironment } from "@firebase/rules-unit-testing";
+import {
+  assertFails,
+  assertSucceeds,
+  initializeTestEnvironment,
+  type RulesTestEnvironment,
+} from "@firebase/rules-unit-testing";
 import { deleteApp, initializeApp, type FirebaseApp } from "firebase/app";
 import {
   collection,
@@ -29,6 +34,7 @@ import { ensureMonthlyCharges, loadTrainerSnapshot, loadTrainerView } from "../s
 import { deleteWorkout, loadStudentWorkouts, newWorkout, saveWorkout } from "../src/data/workouts";
 import { addBiometric, loadStudentBiometrics } from "../src/data/biometrics";
 import { loadStudentAssessments } from "../src/data/assessments";
+import { bookSlot, loadSchedules, removeBooking } from "../src/data/schedules";
 
 // GOALS.md §23e: the data layer against the Firestore emulator, through the real rules — the same
 // modular SDK calls the app makes, signed in as a given uid. This is where the three layers meet:
@@ -422,5 +428,26 @@ describe("measurements and self-assessments (GOALS.md §23g)", () => {
     ]);
     expect(await loadStudentAssessments(signedInAs("trainerB"), "trainerB", "s1")).toEqual([]);
     await assertFails(getDocs(query(collection(signedInAs("trainerB"), "assessments"), where("studentId", "==", "s1"))));
+  });
+});
+
+describe("the agenda (GOALS.md §23g)", () => {
+  it("books and removes a slot; the booked student can read it, another trainer can't touch it", async () => {
+    await seed({
+      "users/trainerA": { role: "TRAINER" },
+      "users/trainerB": { role: "TRAINER" },
+      "users/s1": { role: "STUDENT", trainerId: "trainerA", inviteCode: "X", name: "Ana", createdAt: 1 },
+    });
+    const trainer = signedInAs("trainerA");
+    const booked = await bookSlot(trainer, "trainerA", "s1", "Segunda", "08h");
+    expect(await loadSchedules(trainer, "trainerA")).toEqual([booked]);
+    await assertSucceeds(getDoc(doc(signedInAs("s1"), "schedules", booked.id)));
+
+    const other = signedInAs("trainerB");
+    expect(await loadSchedules(other, "trainerB")).toEqual([]);
+    await assertFails(removeBooking(other, booked.id));
+
+    await removeBooking(trainer, booked.id);
+    expect(await loadSchedules(trainer, "trainerA")).toEqual([]);
   });
 });

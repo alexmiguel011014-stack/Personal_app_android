@@ -14,9 +14,11 @@
 //          sessions this week, each written as three per-exercise log documents (the dashboard must
 //          say 3 sessions, not 9); her charge for this month exists and is paid (the plan must not
 //          duplicate it). On her page: two measurements, and loads that go up session by session.
+//          In the agenda: 07h on each of her training days.
 //   Bruno  hasn't trained in 12 days (gone quiet); last month's charge is unpaid (overdue); his
 //          active plan has no charge this month yet — opening the dashboard creates it. On his page:
-//          a PAR-Q+ with one "sim" (bone/joint), which must show flagged.
+//          a PAR-Q+ with one "sim" (bone/joint), which must show flagged. In the agenda: 18h on his
+//          training days.
 //   Carla  joined two days ago and hasn't trained — must NOT show as gone quiet.
 //   Diego  has a pending assessment request and no training plan.
 //   Maria  a draft with an open invite (the /convite flow).
@@ -134,6 +136,10 @@ try {
     [`billingPlans/${bruno}`, { studentId: bruno, trainerId, amountCents: 12000, currency: "BRL", dueDay: 28, active: true, createdAt: morningOf(59) }],
     [`payments/${ana}_${thisMonth}`, charge(ana, `${thisMonth}-01`, 15000, now)],
     [`payments/${bruno}_${lastMonth}`, charge(bruno, `${lastMonth}-05`, 12000, null)],
+
+    // The agenda: one document per weekly slot, as TrainerViewModel.bookSlot writes it.
+    ...[["Segunda", ana, "07h"], ["Quarta", ana, "07h"], ["Sexta", ana, "07h"], ["Terça", bruno, "18h"], ["Quinta", bruno, "18h"]]
+      .map(([dayOfWeek, studentId, hour]) => [`schedules/${studentId}-${dayOfWeek}`, { trainerId, studentId, dayOfWeek, hour }]),
 
     // The student page: Ana's measurements — the first as the Android add-student form writes it,
     // with a height — and Bruno's self-assessment.

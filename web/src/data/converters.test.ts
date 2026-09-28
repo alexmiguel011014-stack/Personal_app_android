@@ -4,12 +4,14 @@ import type { Workout } from "../domain/workouts";
 import {
   biometricToFirestore,
   paymentToFirestore,
+  scheduleToFirestore,
   toAssessment,
   toBiometric,
   toBillingPlan,
   toDraftStudent,
   toLinkedStudent,
   toPayment,
+  toSchedule,
   toWorkout,
   toWorkoutLog,
   workoutToFirestore,
@@ -133,6 +135,26 @@ describe("toBiometric / biometricToFirestore — FirestoreMappers' biometric map
       date: 0,
     });
     expect(toBiometric("b1", { weight: 72 })).toBeNull();
+  });
+});
+
+describe("toSchedule / scheduleToFirestore — FirestoreMappers' schedule mapping", () => {
+  it("writes ScheduleEntity.toFirestoreMap's fields and reads them back", () => {
+    const schedule = { id: "x", trainerId: "t1", studentId: "s1", dayOfWeek: "Segunda", hour: "08h" };
+    const data = scheduleToFirestore(schedule, "t1");
+    expect(data).toEqual({ trainerId: "t1", studentId: "s1", dayOfWeek: "Segunda", hour: "08h" });
+    expect(toSchedule("x", data)).toEqual(schedule);
+  });
+
+  it("needs a student, and defaults the rest to empty", () => {
+    expect(toSchedule("x", { dayOfWeek: "Segunda" })).toBeNull();
+    expect(toSchedule("x", { studentId: "s1", hour: 8 })).toEqual({
+      id: "x",
+      trainerId: "",
+      studentId: "s1",
+      dayOfWeek: "",
+      hour: "",
+    });
   });
 });
 

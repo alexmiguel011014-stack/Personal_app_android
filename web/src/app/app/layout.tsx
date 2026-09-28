@@ -24,6 +24,9 @@ export default function TrainerLayout({ children }: LayoutProps<"/app">) {
             <li>
               <Link href="/app/alunos">Alunos</Link>
             </li>
+            <li>
+              <Link href="/app/agenda">Agenda</Link>
+            </li>
           </ul>
         </nav>
       </header>

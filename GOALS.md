@@ -3933,10 +3933,25 @@ by the SDK. 103 unit + 58 emulator tests, eslint and tsc clean.
       eslint and tsc clean, static build of ten routes.
       **Found, for the next rules change:** `workouts` create checks the trainer but not that the
       student is theirs, and the phone's student query doesn't filter by trainer — a trainer who
-      knew another trainer's student's uid could put a ficha in that student's app. uids aren't
-      discoverable, so the risk is low; batch it with the archive change below.
+      knew another trainer's student's uid could put a ficha in that student's app. `biometrics`
+      and `schedules` have the same shape. uids aren't discoverable, so the risk is low; batch it
+      with the archive change below.
 - [ ] Schedule. Mensalidades: register, mark paid, overdue list.
       (The overdue list is on the dashboard already; registering plans and marking paid is not.)
+      **Schedule done (part 5, 2026-09-28):** `/app/agenda` ("Agenda" in the nav) is
+      `ScheduleScreen` as one table — Segunda to Domingo across, 06h to 21h down, the day's count in
+      each header (the phone's "N agendados"). Pick a student, then "Agendar" in a free slot; each
+      booking is a `schedules` document in `ScheduleEntity`'s exact shape. Two additions: "Remover"
+      (the phone's repository has the delete, its screen never offers it — a wrong booking couldn't
+      be undone), and a slot shows every booking in it (the phone shows the first it finds; two
+      devices can book the same slot at once, and none should hide). Only connected students can be
+      booked, for the reason fichas can't go to a draft. **Verified in the browser against the
+      emulators** (the seed books Ana 07h on her three days, Bruno 18h on his two): the five
+      bookings in the right cells, 107 free slots with "Agendar" disabled until a student is picked,
+      the picker listing only the four connected students; booking Carla on Segunda 08h → the cell
+      and "Segunda (2)", the emulator holding `{dayOfWeek: "Segunda", hour: "08h"}`; "Remover" →
+      free again. Emulator test: the booked student can read their slot, another trainer can't
+      remove it. 150 unit + 66 emulator tests.
 - [ ] Archive/pause a student (one boolean, per §12's cheap-wins list).
       **Needs a decision before it's built:** a linked student's boolean would live on `users/{uid}`,
       where the trainer's update rule allows only a fixed field list — so it needs a rules change

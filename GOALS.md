@@ -4041,7 +4041,17 @@ which reads `payments`/`billingPlans` and so needs §23d published (already 23j'
       (text fields and selects fill fine). 178 unit + 73 emulator tests, eslint and tsc clean.
 
 **23i. Public landing, unstyled**
-- [ ] One page: what the service is, and the entry points to login and invite.
+- [x] One page: what the service is, and the entry points to login and invite.
+      **Done 2026-09-28.** `/` says what Personal Tracker is, then one section per audience — what
+      the trainer gets (dashboard, fichas with the AI they already use, each student's evolution,
+      agenda and mensalidades) and what the student gets — with the ways in: "Entrar" (header and
+      the trainer's section) and, for students, "Tenho um código de convite" (`/convite`) or "Já
+      tenho conta". Static on purpose: the build's `out/index.html` carries all of it, for a
+      first visit or a search engine; the only client code is a shortcut for someone already
+      signed in ("Ir para o painel" / "Ir para as minhas fichas" / "Usar um código de convite",
+      from `destinationFor`), shown to nobody else. Verified in the browser against the
+      emulators: nothing for a visitor, the trainer's and the student's shortcut each pointing at
+      their area.
 
 **23j. Validation gate — blocks 23k**
 - [ ] Every flow in 23g/23h/23i exercised end to end against real Firestore data, with the browser

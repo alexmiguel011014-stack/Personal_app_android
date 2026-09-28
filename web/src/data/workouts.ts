@@ -17,6 +17,20 @@ export async function loadStudentWorkouts(db: Firestore, trainerId: string, stud
     .sort((a, b) => b.createdAt - a.createdAt);
 }
 
+/**
+ * The signed-in student's own fichas — StudentRepository.getMyWorkouts' query exactly: assigned
+ * ones only, which is also all firestore.rules let them read. Sorted by name ("Ficha A", "Ficha B").
+ */
+export async function loadMyWorkouts(db: Firestore, studentId: string): Promise<Workout[]> {
+  const snapshot = await getDocs(
+    query(collection(db, "workouts"), where("studentId", "==", studentId), where("status", "==", "assigned")),
+  );
+  return snapshot.docs
+    .map((document) => toWorkout(document.id, document.data()))
+    .filter((workout) => workout !== null)
+    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+}
+
 /** A new ficha, active from the start — both Android creation screens pass isActive = true. */
 export function newWorkout(trainerId: string, studentId: string, name: string, exercises: Exercise[], now: number): Workout {
   return {

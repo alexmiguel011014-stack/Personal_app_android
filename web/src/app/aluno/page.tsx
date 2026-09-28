@@ -1,10 +1,73 @@
-// GOALS.md §23h: the student's home — their ficha, logging a session, their evolution. Stub
-// until the data layer (23e) exists.
+"use client";
+
+import Link from "next/link";
+import { useSession } from "../SessionProvider";
+import { useStudentData } from "./useStudentData";
+
+// GOALS.md §23h: the student's home — StudentWorkoutsScreen: the fichas their trainer assigned,
+// each with its exercises and "Registrar treino de hoje", plus the pending-assessment banner the
+// phone shows when the trainer has asked for one.
+
 export default function StudentHome() {
+  const { session } = useSession();
+  if (session.status !== "signedIn") return null;
+  return <Home uid={session.uid} />;
+}
+
+function Home({ uid }: { uid: string }) {
+  const { data, reload } = useStudentData(uid);
+
+  if (data.status === "loading") return <p>Carregando…</p>;
+  if (data.status === "error") {
+    return (
+      <main>
+        <p role="alert">{data.message}</p>
+        <button type="button" onClick={reload}>
+          Tentar de novo
+        </button>
+      </main>
+    );
+  }
+
+  const { profile, workouts } = data;
   return (
     <main>
-      <h1>Minha ficha</h1>
-      <p>Em construção (GOALS.md §23h).</p>
+      <h1>Minhas fichas</h1>
+      <p>Olá, {profile.name.split(" ")[0]}!</p>
+
+      {profile.pendingAssessmentRequest && profile.canSelfAssess && (
+        <section>
+          <h2>Autoavaliação pendente</h2>
+          <p>Seu personal pediu que você responda uma autoavaliação rápida.</p>
+          <p>
+            <Link href="/aluno/avaliacao">Responder agora</Link>
+          </p>
+        </section>
+      )}
+
+      {workouts.length === 0 ? (
+        <p>Nenhuma ficha atribuída ainda. Fale com seu personal.</p>
+      ) : (
+        workouts.map((workout) => (
+          <article key={workout.id}>
+            <h2>{workout.name}</h2>
+            <details>
+              <summary>{workout.exercises.length} exercícios</summary>
+              <ol>
+                {workout.exercises.map((exercise, index) => (
+                  <li key={index}>
+                    {exercise.name} — {exercise.sets}x{exercise.reps}
+                    {exercise.weight ? ` · ${exercise.weight}` : ""}
+                  </li>
+                ))}
+              </ol>
+            </details>
+            <p>
+              <Link href={`/aluno/treino?ficha=${encodeURIComponent(workout.id)}`}>Registrar treino de hoje</Link>
+            </p>
+          </article>
+        ))
+      )}
     </main>
   );
 }

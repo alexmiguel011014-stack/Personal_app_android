@@ -18,7 +18,7 @@ import { StudentForm } from "../StudentForm";
 import { AssessmentsSection } from "./AssessmentsSection";
 import { BillingSection } from "./BillingSection";
 import { MeasurementsSection } from "./MeasurementsSection";
-import { ProgressSection } from "./ProgressSection";
+import { ProgressSection } from "../../../_shared/ProgressSection";
 import { WorkoutsSection } from "./WorkoutsSection";
 
 // GOALS.md §23g: a student's page — profile, and either the invite (a draft) or the §17 permissions

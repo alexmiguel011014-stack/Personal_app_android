@@ -14,13 +14,14 @@
 //          sessions this week, each written as three per-exercise log documents (the dashboard must
 //          say 3 sessions, not 9); her charge for this month exists and is paid (the plan must not
 //          duplicate it). On her page: two measurements, and loads that go up session by session.
-//          In the agenda: 07h on each of her training days.
+//          In the agenda: 07h on each of her training days. Logged in (ana@teste.dev): one assigned
+//          ficha — and one inactive she must not see — and she may record her own measurements.
 //   Bruno  hasn't trained in 12 days (gone quiet); last month's charge is unpaid (overdue); his
 //          active plan has no charge this month yet — opening the dashboard creates it. On his page:
 //          a PAR-Q+ with one "sim" (bone/joint), which must show flagged. In the agenda: 18h on his
 //          training days.
 //   Carla  joined two days ago and hasn't trained — must NOT show as gone quiet.
-//   Diego  has a pending assessment request and no training plan.
+//   Diego  has a pending assessment request and no training plan; logged in, he may answer it.
 //   Maria  a draft with an open invite (the /convite flow).
 //   Pedro  a draft with no invite.
 
@@ -116,14 +117,18 @@ try {
     // Ana: claimed invite ANA00001, which was minted from draft-ana.
     ["students/draft-ana", { trainerId, role: "student", ...profile("Ana Costa"), createdAt: morningOf(60) }],
     ["invites/ANA00001", { trainerId, used: true, createdAt: morningOf(60), draftId: "draft-ana", ...profile("Ana Costa") }],
-    linked("Ana Costa", ana, "ANA00001", morningOf(59), { trainingDays: ["Segunda", "Quarta", "Sexta"] }),
+    linked("Ana Costa", ana, "ANA00001", morningOf(59), { trainingDays: ["Segunda", "Quarta", "Sexta"], canLogBiometrics: true }),
     linked("Bruno Alves", bruno, "BRU00001", morningOf(59), {
       gender: "Masculino",
       trainingDays: ["Terça", "Quinta"],
       medicalNotes: "Hérnia de disco L4-L5 — evitar carga axial",
     }),
     linked("Carla Dias", carla, "CAR00001", morningOf(2), { trainingDays: ["Segunda"] }),
-    linked("Diego Rocha", diego, "DIE00001", morningOf(59), { gender: "Masculino", pendingAssessmentRequest: true }),
+    linked("Diego Rocha", diego, "DIE00001", morningOf(59), {
+      gender: "Masculino",
+      pendingAssessmentRequest: true,
+      canSelfAssess: true,
+    }),
 
     // Maria: a draft with an open invite; Pedro: a draft without one.
     ["students/draft-maria", { trainerId, role: "student", ...profile("Maria Souza"), createdAt: now }],
@@ -136,6 +141,10 @@ try {
     [`billingPlans/${bruno}`, { studentId: bruno, trainerId, amountCents: 12000, currency: "BRL", dueDay: 28, active: true, createdAt: morningOf(59) }],
     [`payments/${ana}_${thisMonth}`, charge(ana, `${thisMonth}-01`, 15000, now)],
     [`payments/${bruno}_${lastMonth}`, charge(bruno, `${lastMonth}-05`, 12000, null)],
+
+    // Ana's fichas: the one her logs belong to, assigned; and an inactive one she must not see.
+    ["workouts/ficha-a", ficha(ana, "Ficha A", true)],
+    ["workouts/ficha-b", ficha(ana, "Ficha B — em revisão", false)],
 
     // The agenda: one document per weekly slot, as TrainerViewModel.bookSlot writes it.
     ...[["Segunda", ana, "07h"], ["Quarta", ana, "07h"], ["Sexta", ana, "07h"], ["Terça", bruno, "18h"], ["Quinta", bruno, "18h"]]
@@ -166,6 +175,24 @@ try {
       },
     ],
   ]);
+
+  // As SqlDelightTrainerRepository saves a ficha: status and assignedAt follow isActive.
+  function ficha(studentId, name, isActive) {
+    return {
+      trainerId,
+      studentId,
+      name,
+      isActive,
+      exercisesJson: JSON.stringify([
+        { name: "Supino", sets: 3, reps: "12" },
+        { name: "Remada", sets: 3, reps: "12" },
+        { name: "Agachamento", sets: 4, reps: "10", weight: "40kg" },
+      ]),
+      createdAt: morningOf(30),
+      status: isActive ? "assigned" : "draft",
+      assignedAt: isActive ? morningOf(30) : null,
+    };
+  }
 
   function charge(studentId, dueDate, amountCents, paidAt) {
     return {

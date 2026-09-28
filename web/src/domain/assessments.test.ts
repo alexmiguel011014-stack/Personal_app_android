@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { PAR_Q, decodeParQAnswers, flaggedQuestions, type Assessment } from "./assessments";
+import {
+  PAR_Q,
+  decodeParQAnswers,
+  emptyAnswers,
+  encodeParQAnswers,
+  flaggedQuestions,
+  type Assessment,
+} from "./assessments";
 
 function assessment(parQAnswers: Record<string, boolean>): Assessment {
   return {
@@ -34,6 +41,19 @@ describe("flaggedQuestions", () => {
       "medication",
       "other_reason",
     ]);
+  });
+});
+
+describe("emptyAnswers / encodeParQAnswers — what the phone writes", () => {
+  it("starts with every question answered 'Não'", () => {
+    expect(Object.values(emptyAnswers())).toEqual([false, false, false, false, false, false, false]);
+  });
+
+  it("writes every question, in the questionnaire's order, and nothing else", () => {
+    const json = encodeParQAnswers({ medication: true, heart_condition: false, stray: true });
+    expect(Object.keys(JSON.parse(json))).toEqual(PAR_Q.map((question) => question.key));
+    expect(decodeParQAnswers(json)).toMatchObject({ medication: true, heart_condition: false, dizziness: false });
+    expect(json).not.toContain("stray");
   });
 });
 

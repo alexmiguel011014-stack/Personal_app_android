@@ -3998,10 +3998,47 @@ by the SDK. 103 unit + 58 emulator tests, eslint and tsc clean.
       `style` anywhere.
 
 **23h. `/aluno` — the student surface, unstyled**
-- [ ] My ficha, log a session, my evolution, PAR-Q+ self-assessment (§17's permission rules still
+
+Done 2026-09-28. Ports of the phone's student screens, through `StudentRepository`'s exact queries
+and writes. **They already work under the rules published today (af2b9b0)** — run against that copy
+(`RULES_FILE`), every student-side emulator test passes; what fails there is the trainer side,
+which reads `payments`/`billingPlans` and so needs §23d published (already 23j's prerequisite).
+
+- [x] My ficha, log a session, my evolution, PAR-Q+ self-assessment (§17's permission rules still
       govern what is even offered).
-- [ ] Mobile-first from the first line of markup. The student is on a phone browser essentially
+      **`/aluno`** (StudentWorkoutsScreen): the assigned fichas only — the phone's query, and all
+      the rules let a student read — each with its exercises in a `<details>` and "Registrar treino
+      de hoje"; plus the pending-assessment banner when the trainer asked and self-assessment is
+      granted. **`/aluno/treino?ficha=`** (StudentLogSessionScreen): rows of weight and reps per
+      exercise; on save, one `workoutLogs` document per exercise with a complete row, in
+      `WorkoutLogEntity`'s shape — in one batch, so a session saves whole or not at all. Kept from
+      the phone: rows keyed by exercise name, `setNumber` = the row's position (a skipped row
+      leaves a gap), weight as free text. Changed on purpose: rows start at the ficha's target set
+      count (the phone starts at one); zero reps don't count; and **a plain comma decimal is saved
+      with a dot** — a Brazilian phone keyboard types "32,5", which the progression can't read on
+      either platform (part 4's open question), so what the web writes is readable everywhere.
+      **`/aluno/evolucao`** (StudentEvolutionScreen): own measurements, "Registrar medida" only
+      while `canLogBiometrics` (hidden, not disabled — the rules are the gate), and the same
+      progression and recent-activity tables as the trainer's page (moved to `app/_shared/`).
+      **`/aluno/avaliacao`** (StudentAssessmentScreen): the seven PAR-Q+ questions as Sim/Não
+      radios, goal, level and training days prefilled from the profile; one batch writes the
+      assessment and clears the request (`lastAssessmentId`), which the rules require.
+- [x] Mobile-first from the first line of markup. The student is on a phone browser essentially
       always; this surface never inherits the dashboard's layout.
+      Its own layout (two links, the phone's two tabs), one column, no wide tables, `inputMode`
+      on every number field so a phone opens the numeric keyboard. **Verified at 375 px, against
+      the emulators** (the seed now gives Ana an assigned and an inactive ficha plus measurement
+      permission, and lets Diego answer his pending request): no horizontal scroll on any page;
+      Ana saw only "Ficha A"; logged Supino 32,5×12 and 32,5×10 (the middle row blank) and
+      Agachamento 40×10 plus a 0-rep row → exactly two documents, `"32.5"` with set numbers 1 and
+      3, the 0-rep row dropped, Remada absent; her progression then showed today's 32,5 kg, her own
+      "71,8" measurement listed first; her assessment page said none pending. Diego saw the banner
+      and answered with one "sim" (medication), "Interm." and Terça/Quinta → the banner gone, and
+      the trainer's page showed it flagged, newest first. Trainer side: the dashboard's pending
+      list emptied; Ana's page showed her session and measurement. **One testing lesson:** the
+      browser tool's form fill sets radios and checkboxes in the DOM without the click React
+      listens for, so the first attempt submitted the defaults — redone with real element clicks
+      (text fields and selects fill fine). 178 unit + 73 emulator tests, eslint and tsc clean.
 
 **23i. Public landing, unstyled**
 - [ ] One page: what the service is, and the entry points to login and invite.

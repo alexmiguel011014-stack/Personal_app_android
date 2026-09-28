@@ -113,6 +113,19 @@ export function toWorkoutLog(id: string, data: Data): WorkoutLogDoc | null {
   };
 }
 
+/** `WorkoutLogEntity.toFirestoreMap(trainerId)` — the id stays the document id. */
+export function workoutLogToFirestore(log: WorkoutLogDoc): Data {
+  return {
+    trainerId: log.trainerId,
+    studentId: log.studentId,
+    workoutId: log.workoutId,
+    exerciseName: log.exerciseName,
+    date: log.date,
+    performedSetsJson: log.performedSetsJson,
+    note: log.note,
+  };
+}
+
 /** `workouts/{id}` — FirestoreMappers.toWorkoutEntity. */
 export function toWorkout(id: string, data: Data): Workout | null {
   const studentId = str(data, "studentId");

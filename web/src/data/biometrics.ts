@@ -15,6 +15,29 @@ export async function loadStudentBiometrics(db: Firestore, trainerId: string, st
     .sort((a, b) => b.date - a.date);
 }
 
+/** The signed-in student's own measurements, newest first — StudentRepository.getMyBiometrics. */
+export async function loadMyBiometrics(db: Firestore, studentId: string): Promise<Biometric[]> {
+  const snapshot = await getDocs(query(collection(db, "biometrics"), where("studentId", "==", studentId)));
+  return snapshot.docs
+    .map((document) => toBiometric(document.id, document.data()))
+    .filter((biometric) => biometric !== null)
+    .sort((a, b) => b.date - a.date);
+}
+
+/**
+ * StudentViewModel.logOwnBiometric: the student's own measurement, attributed to their trainer.
+ * firestore.rules allow it only while the trainer has granted canLogBiometrics.
+ */
+export async function logOwnBiometric(
+  db: Firestore,
+  studentId: string,
+  trainerId: string,
+  measurement: { weight: number; bodyFat: number },
+  now: number,
+): Promise<Biometric> {
+  return addBiometric(db, trainerId, studentId, measurement, now);
+}
+
 /**
  * StudentDetailsViewModel.addBiometric, minus a bug: the phone fills `height` by parsing the
  * student's *medical notes* as a number, so it's 0 unless the notes happen to be one. Height is

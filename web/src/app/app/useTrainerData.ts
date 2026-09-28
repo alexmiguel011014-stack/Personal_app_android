@@ -4,7 +4,8 @@ import { FirebaseError } from "firebase/app";
 import { useCallback, useEffect, useState } from "react";
 import { getFirebase } from "../../data/firebase";
 import { loadTrainerSnapshot, loadTrainerView, type TrainerSnapshot } from "../../data/trainerData";
-import { DEFAULT_TIME_ZONE, localDate, yearMonth } from "../../domain/dates";
+import { localDate, yearMonth } from "../../domain/dates";
+import { browserTimeZone } from "../_shared/browserTimeZone";
 
 // GOALS.md §23g: loads what the trainer's screens show. With `ensureCharges`, it first creates this
 // month's charge for every active billing plan that doesn't have one yet (idempotent, see
@@ -21,11 +22,6 @@ export type TrainerData =
       today: string;
       timeZone: string;
     };
-
-/** The trainer's own calendar: the browser's zone, which is where they are. */
-export function browserTimeZone(): string {
-  return Intl.DateTimeFormat().resolvedOptions().timeZone || DEFAULT_TIME_ZONE;
-}
 
 function describe(error: unknown): string {
   if (error instanceof FirebaseError && error.code === "permission-denied") {

@@ -43,6 +43,16 @@ export function flaggedQuestions(assessment: Assessment): ParQQuestion[] {
   return PAR_Q.filter((question) => assessment.parQAnswers[question.key] === true);
 }
 
+/** Every question answered "Não" — how the phone's form starts. */
+export function emptyAnswers(): Record<string, boolean> {
+  return Object.fromEntries(PAR_Q.map((question) => [question.key, false]));
+}
+
+/** `parQAnswersJson` as the phone writes it: every question, in the questionnaire's order. */
+export function encodeParQAnswers(answers: Readonly<Record<string, boolean>>): string {
+  return JSON.stringify(Object.fromEntries(PAR_Q.map((question) => [question.key, answers[question.key] === true])));
+}
+
 /**
  * `parQAnswersJson` read as the Kotlin mapper reads it: kotlinx decodes a Map<String, Boolean> or
  * throws, and the mapper turns a throw into an empty map — so anything but an object whose every

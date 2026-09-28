@@ -7,10 +7,9 @@ import type { DraftStudentDoc, LinkedStudentDoc } from "../domain/students";
 // SqlDelightTrainerRepository's insertUser / updateUser / setStudentPermission /
 // requestAssessment / generateInvite: the same documents and fields the phone writes.
 //
-// Not ported yet: addStudent's optional first measurement (weight/height into `biometrics`). Those
-// are Doubles on the Kotlin side, and a whole number written from JavaScript lands in Firestore as
-// an integer; whether the phone's lenient reader turns that into a Double or into 0 is unverified,
-// so measurements get written only once that's settled (the evolution part of §23g).
+// Left out on purpose: addStudent's optional first measurement. A draft's measurement stays on the
+// draft's id and the student never sees it once they connect, so on the web measurements are
+// recorded after the claim, from the student's page (§23g, part 4).
 
 export type TrainerStudent = { kind: "draft"; doc: DraftStudentDoc } | { kind: "linked"; doc: LinkedStudentDoc };
 

@@ -1,4 +1,6 @@
 import { doc, getDoc, type Firestore } from "firebase/firestore";
+import type { LinkedStudentDoc } from "../domain/students";
+import { toLinkedStudent } from "./converters";
 
 // GOALS.md §23f: who the signed-in person is, and where they belong — ports of
 // AuthRepository.resolveRole and RoleRouter's `when`.
@@ -30,6 +32,12 @@ export function profileFrom(data: Record<string, unknown> | undefined): Profile 
   const role = ROLES.includes(raw as UserRole) ? (raw as UserRole) : "STUDENT";
   const trainerId = typeof data?.trainerId === "string" ? data.trainerId : null;
   return { role, trainerId };
+}
+
+/** A connected student's own profile — StudentRepository.getMyProfile, read once. */
+export async function loadMyProfile(db: Firestore, uid: string): Promise<LinkedStudentDoc | null> {
+  const snapshot = await getDoc(doc(db, "users", uid));
+  return snapshot.exists() ? toLinkedStudent(uid, snapshot.data()) : null;
 }
 
 /** Reading one's own users/{uid} is allowed even before it exists (firestore.rules self-read). */

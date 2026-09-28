@@ -1,15 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { formatKg } from "../../../../domain/biometrics";
-import { formatDate, formatDateTime, localDate } from "../../../../domain/dates";
-import { decodePerformedSets } from "../../../../domain/exercise";
-import type { WorkoutLogDoc } from "../../../../domain/metrics";
-import { formatSets, loadProgression, loggedExercises, recentLogs } from "../../../../domain/progression";
+import { formatKg } from "../../domain/biometrics";
+import { formatDate, formatDateTime, localDate } from "../../domain/dates";
+import { decodePerformedSets } from "../../domain/exercise";
+import type { WorkoutLogDoc } from "../../domain/metrics";
+import { formatSets, loadProgression, loggedExercises, recentLogs } from "../../domain/progression";
 
-// GOALS.md §23g: the phone's "Progressão de Carga" chart as a table — pick an exercise, see its
-// heaviest set per session — and its "Atividade Recente" list. `logs` are this student's, already
-// loaded with the trainer's data.
+// GOALS.md §23g/§23h: the phone's "Progressão de Carga" chart as a table — pick an exercise, see its
+// heaviest set per session — and its "Atividade Recente" list, from one student's logs. Shared by
+// the trainer's page for that student and the student's own evolution, as ExerciseProgressionChart
+// is on the phone. (`_shared` — the underscore keeps the folder out of the routes.)
 
 export function ProgressSection({ logs, timeZone }: { logs: readonly WorkoutLogDoc[]; timeZone: string }) {
   const exercises = loggedExercises(logs);
@@ -64,7 +65,7 @@ export function ProgressSection({ logs, timeZone }: { logs: readonly WorkoutLogD
       <section>
         <h2>Atividade recente</h2>
         {logs.length === 0 ? (
-          <p>Nenhuma sessão registrada pelo aluno ainda.</p>
+          <p>Nenhuma sessão registrada ainda.</p>
         ) : (
           <table>
             <thead>

@@ -29,11 +29,13 @@ import {
   updateStudentProfile,
 } from "../src/data/students";
 import { emptyProfile } from "../src/domain/studentProfile";
-import { resolveProfile } from "../src/data/session";
+import { loadMyProfile, resolveProfile } from "../src/data/session";
 import { ensureMonthlyCharges, loadTrainerSnapshot, loadTrainerView } from "../src/data/trainerData";
-import { deleteWorkout, loadStudentWorkouts, newWorkout, saveWorkout } from "../src/data/workouts";
-import { addBiometric, loadStudentBiometrics } from "../src/data/biometrics";
-import { loadStudentAssessments } from "../src/data/assessments";
+import { deleteWorkout, loadMyWorkouts, loadStudentWorkouts, newWorkout, saveWorkout } from "../src/data/workouts";
+import { addBiometric, loadMyBiometrics, loadStudentBiometrics, logOwnBiometric } from "../src/data/biometrics";
+import { loadStudentAssessments, submitAssessment } from "../src/data/assessments";
+import { loadMyLogs, logSession } from "../src/data/workoutLogs";
+import { PAR_Q } from "../src/domain/assessments";
 import { bookSlot, loadSchedules, removeBooking } from "../src/data/schedules";
 import { adjustCharge, createPlan, markPaid, setPlanActive, undoPayment, updatePlan } from "../src/data/billing";
 
@@ -485,5 +487,95 @@ describe("managing mensalidades (GOALS.md §23g)", () => {
     expect((await getDoc(charge)).data()).toMatchObject({ amountCents: 12000, dueDate: "2026-09-20" });
     await assertFails(adjustCharge(db, "s1_2026-09", 12000, "2026-10-01"));
     await assertFails(markPaid(signedInAs("trainerB"), "s1_2026-09", 1, "cash", null));
+  });
+});
+
+describe("the student's own area (GOALS.md §23h)", () => {
+  function student(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      role: "STUDENT",
+      trainerId: "trainerA",
+      inviteCode: "X",
+      name: "Ana Costa",
+      createdAt: 1,
+      canSelfAssess: false,
+      canLogBiometrics: false,
+      pendingAssessmentRequest: false,
+      ...overrides,
+    };
+  }
+  const ficha = {
+    trainerId: "trainerA",
+    studentId: "s1",
+    isActive: true,
+    exercisesJson: "[]",
+    createdAt: 1,
+    status: "assigned",
+    assignedAt: 1,
+  };
+
+  it("reads their profile and their assigned fichas only, by name", async () => {
+    await seed({
+      "users/trainerA": { role: "TRAINER" },
+      "users/s1": student(),
+      "workouts/b": { ...ficha, name: "Ficha B" },
+      "workouts/a": { ...ficha, name: "Ficha A" },
+      "workouts/draft": { ...ficha, name: "Rascunho", isActive: false, status: "draft", assignedAt: null },
+    });
+    const db = signedInAs("s1");
+    expect(await loadMyProfile(db, "s1")).toMatchObject({ name: "Ana Costa", trainerId: "trainerA" });
+    expect((await loadMyWorkouts(db, "s1")).map((w) => w.name)).toEqual(["Ficha A", "Ficha B"]);
+  });
+
+  it("logs a session — one document per exercise, for their own trainer — which the trainer sees", async () => {
+    await seed({ "users/trainerA": { role: "TRAINER" }, "users/s1": student() });
+    const db = signedInAs("s1");
+    const entries: [string, { setNumber: number; weight: string; reps: number }[]][] = [
+      ["Supino", [{ setNumber: 1, weight: "20", reps: 12 }]],
+      ["Remada", [{ setNumber: 1, weight: "30", reps: 10 }]],
+    ];
+    await logSession(db, "s1", "trainerA", "w1", entries, 1_000);
+    expect((await loadMyLogs(db, "s1")).map((l) => [l.exerciseName, l.date]).sort()).toEqual([
+      ["Remada", 1_001],
+      ["Supino", 1_000],
+    ]);
+    const { logs } = await loadTrainerSnapshot(signedInAs("trainerA"), "trainerA");
+    expect(logs).toHaveLength(2);
+
+    // Attributed to someone else's trainer: refused, and the batch writes nothing.
+    await assertFails(logSession(db, "s1", "trainerB", "w1", entries, 2_000));
+    expect(await loadMyLogs(db, "s1")).toHaveLength(2);
+  });
+
+  it("records their own measurement only while the trainer allows it", async () => {
+    await seed({ "users/trainerA": { role: "TRAINER" }, "users/s1": student() });
+    await assertFails(logOwnBiometric(signedInAs("s1"), "s1", "trainerA", { weight: 70, bodyFat: 0 }, 1));
+
+    await seed({ "users/s1": student({ canLogBiometrics: true }) });
+    await logOwnBiometric(signedInAs("s1"), "s1", "trainerA", { weight: 70.5, bodyFat: 18 }, 2);
+    expect((await loadMyBiometrics(signedInAs("s1"), "s1")).map((b) => b.weight)).toEqual([70.5]);
+  });
+
+  it("answers a requested self-assessment: one assessment, and the request cleared with it", async () => {
+    await seed({
+      "users/trainerA": { role: "TRAINER" },
+      "users/s1": student({ canSelfAssess: true, pendingAssessmentRequest: true }),
+    });
+    const db = signedInAs("s1");
+    const answers = { ...Object.fromEntries(PAR_Q.map((q) => [q.key, false])), bone_joint: true };
+    const id = await submitAssessment(db, "s1", "trainerA", answers, { goal: "Hipertrofia", experienceLevel: "Interm.", trainingDays: ["Terça"] }, 5);
+
+    expect(await loadMyProfile(db, "s1")).toMatchObject({ pendingAssessmentRequest: false });
+    expect((await getDoc(doc(db, "users", "s1"))).get("lastAssessmentId")).toBe(id);
+    const [sent] = await loadStudentAssessments(signedInAs("trainerA"), "trainerA", "s1");
+    expect(sent).toMatchObject({ id, submittedAt: 5, goal: "Hipertrofia", experienceLevel: "Interm.", trainingDays: ["Terça"] });
+    expect(sent.parQAnswers.bone_joint).toBe(true);
+  });
+
+  it("can't send one without self-assessment granted", async () => {
+    await seed({ "users/trainerA": { role: "TRAINER" }, "users/s1": student({ pendingAssessmentRequest: true }) });
+    await assertFails(
+      submitAssessment(signedInAs("s1"), "s1", "trainerA", {}, { goal: "", experienceLevel: "", trainingDays: [] }, 5),
+    );
   });
 });

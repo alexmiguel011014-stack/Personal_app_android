@@ -14,6 +14,7 @@ import {
   toSchedule,
   toWorkout,
   toWorkoutLog,
+  workoutLogToFirestore,
   workoutToFirestore,
 } from "./converters";
 
@@ -63,6 +64,22 @@ describe("toWorkoutLog", () => {
       performedSetsJson: "[]",
       note: null,
     });
+  });
+
+  it("round-trips WorkoutLogEntity.toFirestoreMap's fields", () => {
+    const log = {
+      id: "l1",
+      trainerId: "t1",
+      studentId: "s1",
+      workoutId: "w1",
+      exerciseName: "Supino",
+      date: 5,
+      performedSetsJson: '[{"setNumber":1,"weight":"20","reps":12}]',
+      note: null,
+    };
+    const data = workoutLogToFirestore(log);
+    expect(Object.keys(data)).toEqual(["trainerId", "studentId", "workoutId", "exerciseName", "date", "performedSetsJson", "note"]);
+    expect(toWorkoutLog("l1", data)).toEqual(log);
   });
 });
 

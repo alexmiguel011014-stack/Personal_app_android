@@ -4089,11 +4089,24 @@ which reads `payments`/`billingPlans` and so needs §23d published (already 23j'
 - [ ] Only after the new site is live and verified: remove 23b's list.
 
 **23m. Registration**
-- [ ] `CLAUDE.md` gains a web section: `web/` layout, which business rules are hand-ported and
+- [x] `CLAUDE.md` gains a web section: `web/` layout, which business rules are hand-ported and
       where their Kotlin originals live, and the rule that the Kotlin side is authoritative.
-- [ ] Standardise the name to **"Personal Tracker"** — `CompactMainLayout`'s title is the one
+      **Done 2026-09-28:** "Web front (GOALS.md §23)" now has the layout of `web/`, the rule (the
+      Android line in production is the reference; a web-only difference must change nothing the
+      phone reads), and a table of every hand port against its Kotlin original — each path
+      checked to exist on `claude/tarefas-abertas-front-9834f6`.
+- [x] Standardise the name to **"Personal Tracker"** — `CompactMainLayout`'s title is the one
       remaining "Personal APP".
-- [ ] Record the AI-key decision from 23e wherever the final answer lands.
+      **Done on this branch**, plus one this item missed: the launcher label (`app_name` in
+      `strings.xml`), whose note in `store-listing/listing-copy.md` is updated to match. Both are
+      string-only changes, not rebuilt with Gradle. **Not done on the Android line in production**
+      (`claude/tarefas-abertas-front-9834f6`), whose top bar and launcher label still say "Personal
+      APP" — a visible change on the installed app, for that branch's next release. What stays
+      "Personal APP" on purpose: the root Gradle project name and the folder, which are not
+      user-facing (§19f is why renaming them costs more than it's worth).
+- [x] Record the AI-key decision from 23e wherever the final answer lands.
+      **In `CLAUDE.md`'s web section:** no AI provider key ever reaches the browser; the web builds
+      the §15 prompt and reads the pasted reply; direct generation stays on Android.
 
 ---
 

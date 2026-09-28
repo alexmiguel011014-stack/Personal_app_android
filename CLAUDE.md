@@ -163,9 +163,10 @@ verdict afterwards was still "parece app". The fix is GOALS.md §23: a separate 
 `web/`. `AppTheme.kt` keeps theming the Android app (and the frozen Kotlin/JS build, until §23l
 removes it); it is no longer the lever for how the website looks.
 
-## Web front (GOALS.md §23) — phase 1, being built
+## Web front (GOALS.md §23)
 
-`web/` is a Next.js 16 app (App Router, npm) replacing the Kotlin/JS web build. Two rules hold
+`web/` is a Next.js 16 app (App Router, npm) replacing the Kotlin/JS web build. Phase 1 — every
+screen, unstyled — is built (§23d–§23i); it now waits on the §23j validation gate. Two rules hold
 until §23 says otherwise:
 
 - **Phase 1 has no CSS at all** — no stylesheet, no `className`, no inline `style` anywhere under
@@ -189,9 +190,54 @@ Two more web conventions (§23f) that differ from Android on purpose:
   the UI pretends isn't there — by construction. Don't port the Android startup sign-out to the web.
 
 Before writing route code in `web/`, read `web/AGENTS.md`: this Next differs from what models
-remember (global `PageProps`/`LayoutProps` helpers, `params` as a Promise). The full web section —
-which business rules are hand-ported from Kotlin, and where their originals live — comes with
-§23m.
+remember (global `PageProps`/`LayoutProps` helpers, `params` as a Promise).
+
+**Layout.** `src/domain/` is pure TypeScript — the model and every derivation, no Firestore, no
+clock (every "today" and time zone is an argument) — with a unit test beside each file.
+`src/data/` talks to Firestore through the modular SDK; `converters.ts` is the one place a document
+becomes a domain type. `src/app/` holds the routes: `/` (landing), `/entrar`, `/convite?c=`, the
+trainer's `/app/*` and the student's `/aluno/*`, each area with its own layout and gate
+(`RequireArea`); `app/_shared/` has the few pieces both use (the underscore keeps it out of the
+routes). `rules/` has the emulator tests — the rules themselves, and the data layer run through
+them. `scripts/` seeds the emulators with fake data and copies the ficha prompt's assets.
+
+**The Kotlin side is authoritative.** The phone writes and reads back the same documents, so the web
+stores exactly what the Android line in production (`claude/tarefas-abertas-front-9834f6`) stores:
+same fields, types, defaults and read leniency. When the two disagree, the web is wrong. A web-only
+difference is allowed only when it changes nothing the phone reads — stricter input validation,
+trimming, a comma decimal saved with a dot — and each one is commented where it happens and
+recorded in GOALS.md §23. Where Kotlin/JVM standard-library behaviour differs from JavaScript's
+(whitespace sets, `toIntOrNull`'s 32-bit range, `toDoubleOrNull`'s padding, Java's ASCII-only `\s`,
+`trimIndent` after interpolation), `src/domain/kotlin.ts` reproduces the Kotlin side. The hand
+ports and their originals (paths under `shared/src/commonMain/kotlin/com/example/personalapp/` on
+that branch):
+
+| `web/src/` | Kotlin original |
+|---|---|
+| `domain/workoutParser.ts` (Smart Paste) | `util/WorkoutParser.kt`; its tests port `WorkoutParserTest.kt` |
+| `domain/fichaPrompt.ts` | `PromptFichaViewModel.buildPrompt`; template and volume table are `app/src/main/assets/`, copied by `scripts/copy-prompt-assets.mjs` |
+| `data/converters.ts` | `data/repository/FirestoreMappers.kt` (including `fieldOrNull`'s leniency) |
+| `domain/exercise.ts` | `data/model/Exercise.kt`, `PerformedSet.kt` (the kotlinx JSON in `exercisesJson`/`performedSetsJson`) |
+| `domain/workouts.ts`, `data/workouts.ts` | `TrainerRepository`'s status derivation; `PromptFichaScreen`/`ManualWorkoutScreen` save and paste rules |
+| `data/session.ts`, `data/invites.ts` | `AuthRepository.resolveRole` and `RoleRouter`; `AuthRepository.claimInvite` |
+| `domain/studentProfile.ts`, `data/students.ts` | `AddStudentScreen`/`EditStudentScreen`; `TrainerRepository`'s user writes |
+| `domain/assessments.ts`, `data/assessments.ts` | `AssessmentEntity.kt` (`ParQ.QUESTIONS`); `StudentRepository.submitAssessment` |
+| `domain/sessionLog.ts`, `data/workoutLogs.ts` | `StudentLogSessionScreen`; `StudentViewModel.logSession` |
+| `domain/biometrics.ts`, `data/biometrics.ts` | `AddBiometricDialog`; `StudentViewModel.logOwnBiometric` |
+| `domain/progression.ts` | `ExerciseProgressionChart` |
+| `domain/schedules.ts`, `data/schedules.ts` | `ScheduleScreen`; `TrainerViewModel.bookSlot` |
+
+Web-only, with no Kotlin original: mensalidades (`domain/payments.ts`, `domain/billing.ts` — the
+trainer decided the phone doesn't show payments) and the dashboard's numbers (`domain/metrics.ts`,
+`domain/dashboard.ts`).
+
+**No AI provider key ever reaches the browser** (decided 2026-09-24, GOALS.md §23e): the web builds
+the §15 prompt for the trainer to paste into whichever AI app they use, and reads the reply back
+with Smart Paste. Direct generation (`GenerativeAiService`, BYO keys, Firebase AI Logic) stays on
+Android; a server-side proxy would be its own item (a Cloud Function, which needs the Blaze plan).
+
+Checks, from `web/`: `npm test`, `npm run lint`, `npx tsc --noEmit` (run `npx next typegen` first
+on a fresh checkout), `npm run build`, and `npm run test:rules` (emulators, Java 21).
 
 ## Security rules (`firestore.rules`)
 

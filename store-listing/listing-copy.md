@@ -1,8 +1,7 @@
 # Texto de listagem — Google Play Console
 
-> Rascunho para colar em **Play Console → Presença na loja → Ficha da loja principal**. Ajuste o
-> nome do app se `Personal APP` (valor atual de `app_name` em `strings.xml`) não for o nome final
-> de marca — esse é o nome que aparece na Play Store, vale a pena decidir antes de publicar.
+> Rascunho para colar em **Play Console → Presença na loja → Ficha da loja principal**. O nome de
+> marca é **Personal Tracker** — o mesmo de `app_name` em `strings.xml` e do site (GOALS.md §23m).
 
 ## Título do app (30 caracteres)
 

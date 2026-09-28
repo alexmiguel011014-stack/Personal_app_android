@@ -113,7 +113,7 @@ private fun CompactMainLayout(
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("Personal APP") },
+                title = { Text("Personal Tracker") },
                 actions = {
                     IconButton(onClick = onNavigateToSettings) {
                         Icon(Icons.Default.Settings, contentDescription = "Configurações")

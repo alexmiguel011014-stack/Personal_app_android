@@ -41,16 +41,27 @@ export function toIntOrNull(text: string): number | null {
 }
 
 /**
- * String.toDoubleOrNull() for the decimal forms Kotlin accepts: optional sign, digits with an
- * optional fraction ("1", "1.", ".5"), an optional exponent, and Java's optional f/F/d/D suffix.
+ * String.toDoubleOrNull() (and toFloatOrNull()) for the decimal forms Kotlin accepts: optional
+ * sign, digits with an optional fraction ("1", "1.", ".5"), an optional exponent, and Java's
+ * optional f/F/d/D suffix — padded, as on the JVM, by any ASCII control characters and spaces
+ * (" 22.5" reads as 22.5 there, unlike toIntOrNull, which takes no padding at all).
  *
  * One deliberate difference: Kotlin also accepts "NaN", "Infinity" and hex floats. Those are
  * rejected here, because a NaN or Infinity can't round-trip through the phone's own JSON (kotlinx
  * refuses to encode them by default) — accepting one would put an unsavable value into a ficha.
  */
 export function toDoubleOrNull(text: string): number | null {
-  const match = /^([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)[fFdD]?$/.exec(text);
+  const match = /^([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)[fFdD]?$/.exec(stripJvmPadding(text));
   return match ? Number(match[1]) : null;
+}
+
+// What Java's floating-point parsing skips around a number: every character up to U+0020.
+function stripJvmPadding(text: string): string {
+  let start = 0;
+  let end = text.length;
+  while (start < end && text.charCodeAt(start) <= 0x20) start++;
+  while (end > start && text.charCodeAt(end - 1) <= 0x20) end--;
+  return text.slice(start, end);
 }
 
 /**

@@ -15,10 +15,14 @@ import type { StudentProfile } from "../../../../domain/studentProfile";
 import { useSession } from "../../../SessionProvider";
 import { useTrainerData } from "../../useTrainerData";
 import { StudentForm } from "../StudentForm";
+import { AssessmentsSection } from "./AssessmentsSection";
+import { MeasurementsSection } from "./MeasurementsSection";
+import { ProgressSection } from "./ProgressSection";
 import { WorkoutsSection } from "./WorkoutsSection";
 
 // GOALS.md §23g: a student's page — profile, and either the invite (a draft) or the §17 permissions
-// (a connected account), then the fichas. Evolution and assessments join it in the next parts.
+// (a connected account), then fichas, self-assessments, measurements and training progress. A draft
+// shows only what it can have: it has no account, so no sessions or self-assessments of its own.
 
 export function StudentDetail() {
   const { session } = useSession();
@@ -128,10 +132,23 @@ function Detail({ trainerId, studentId }: { trainerId: string; studentId: string
         timeZone={data.timeZone}
       />
 
-      <section>
-        <h2>Evolução e avaliações</h2>
-        <p>Em construção (GOALS.md §23g, próximas partes).</p>
-      </section>
+      {student.kind === "linked" && (
+        <AssessmentsSection trainerId={trainerId} studentId={student.doc.id} timeZone={data.timeZone} />
+      )}
+
+      <MeasurementsSection
+        trainerId={trainerId}
+        studentId={student.doc.id}
+        connected={student.kind === "linked"}
+        timeZone={data.timeZone}
+      />
+
+      {student.kind === "linked" && (
+        <ProgressSection
+          logs={data.snapshot.logs.filter((log) => log.studentId === student.doc.id)}
+          timeZone={data.timeZone}
+        />
+      )}
     </main>
   );
 }

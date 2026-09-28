@@ -66,6 +66,21 @@ export function formatDate(date: string): string {
   return `${day}/${month}/${year}`;
 }
 
+const timeFormatters = new Map<string, Intl.DateTimeFormat>();
+
+/** The instant `ms` as "30/09/2026 22:30" in `timeZone` — the phone's formatDateTime. */
+export function formatDateTime(ms: number, timeZone: string = DEFAULT_TIME_ZONE): string {
+  let formatter = timeFormatters.get(timeZone);
+  if (!formatter) {
+    // h23, so midnight is "00:05" — some engines write "24:05" with hour12: false.
+    formatter = new Intl.DateTimeFormat("en-US", { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+    timeFormatters.set(timeZone, formatter);
+  }
+  const parts = formatter.formatToParts(ms);
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value;
+  return `${formatDate(localDate(ms, timeZone))} ${part("hour")}:${part("minute")}`;
+}
+
 /** "2026-09" as "setembro de 2026". */
 export function formatYearMonth(yearMonth: string): string {
   const [year, month] = yearMonth.split("-").map(Number);

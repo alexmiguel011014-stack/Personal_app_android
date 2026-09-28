@@ -43,6 +43,9 @@ npm run lint
 npm run build    # also type-checks everything and generates the route types for PageProps / LayoutProps
 ```
 
+A bare `npx tsc --noEmit` on a fresh checkout fails with `Cannot find name 'LayoutProps'`: those
+global types are generated. Run `npx next typegen` (or any `dev`/`build`) once first.
+
 `src/domain/` holds the data model and every derivation the screens need — pure functions, no
 Firestore, no clock (every "today" is an argument). Read the comments there before touching a
 number on the dashboard: several of them encode findings about how the Kotlin app actually writes

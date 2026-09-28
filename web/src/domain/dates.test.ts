@@ -1,11 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { WEEKDAYS, addDays, datesBetween, daysInMonth, localDate, weekdayOf } from "./dates";
+import { WEEKDAYS, addDays, datesBetween, daysInMonth, formatDateTime, localDate, weekdayOf } from "./dates";
 
 describe("localDate", () => {
   it("uses the given zone, not UTC: 01:30Z on the 1st is still the 30th in São Paulo", () => {
     const instant = Date.parse("2026-10-01T01:30:00Z");
     expect(localDate(instant, "America/Sao_Paulo")).toBe("2026-09-30");
     expect(localDate(instant, "UTC")).toBe("2026-10-01");
+  });
+});
+
+describe("formatDateTime", () => {
+  it("writes the phone's dd/MM/yyyy HH:mm in the given zone", () => {
+    const instant = Date.parse("2026-10-01T01:30:00Z");
+    expect(formatDateTime(instant, "America/Sao_Paulo")).toBe("30/09/2026 22:30");
+    expect(formatDateTime(instant, "UTC")).toBe("01/10/2026 01:30");
+  });
+
+  it("writes midnight as 00, never 24", () => {
+    expect(formatDateTime(Date.parse("2026-10-01T03:05:00Z"), "America/Sao_Paulo")).toBe("01/10/2026 00:05");
   });
 });
 

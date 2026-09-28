@@ -1,3 +1,5 @@
+import { decodeParQAnswers, type Assessment } from "../domain/assessments";
+import type { Biometric } from "../domain/biometrics";
 import { decodeExercises, encodeExercises } from "../domain/exercise";
 import type { WorkoutLogDoc } from "../domain/metrics";
 import type { Workout } from "../domain/workouts";
@@ -10,8 +12,8 @@ import type { DraftStudentDoc, LinkedStudentDoc } from "../domain/students";
 // reads as its default instead of failing the whole screen. A document missing what identifies it
 // (a student's name, a log's studentId) is skipped, as the Kotlin mappers return null for it.
 //
-// Readers and writers for workouts, schedules, biometrics and assessments land with the screens
-// that use them (§23g/§23h), on these same conventions.
+// Readers and writers for the other collections land with the screens that use them (§23g/§23h),
+// on these same conventions.
 
 type Data = Record<string, unknown>;
 
@@ -20,10 +22,18 @@ function str(data: Data, key: string): string | null {
   return typeof value === "string" ? value : null;
 }
 
-// Epoch-ms Longs on the Kotlin side: a non-integer reads as missing, as GitLive's Long decode would.
+// Longs on the Kotlin side (epoch ms, cents). Stricter than the phone on purpose: GitLive's Long
+// decode truncates any number (decoders.kt), while a non-integer reads as missing here — for money
+// that's the point, and no client writes a fractional timestamp.
 function int(data: Data, key: string): number | null {
   const value = data[key];
   return Number.isInteger(value) ? (value as number) : null;
+}
+
+// Doubles on the Kotlin side: any finite number, integer or not.
+function num(data: Data, key: string): number | null {
+  const value = data[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function bool(data: Data, key: string): boolean | null {
@@ -132,6 +142,50 @@ export function workoutToFirestore(workout: Workout, trainerId: string): Data {
     createdAt: workout.createdAt,
     status: workout.status,
     assignedAt: workout.assignedAt,
+  };
+}
+
+/** `biometrics/{id}` — FirestoreMappers.toBiometricEntity. */
+export function toBiometric(id: string, data: Data): Biometric | null {
+  const studentId = str(data, "studentId");
+  if (studentId === null) return null;
+  return {
+    id,
+    trainerId: str(data, "trainerId") ?? "",
+    studentId,
+    weight: num(data, "weight") ?? 0,
+    height: num(data, "height") ?? 0,
+    bodyFat: num(data, "bodyFat") ?? 0,
+    date: int(data, "date") ?? 0,
+  };
+}
+
+/** `BiometricEntity.toFirestoreMap(trainerId)` — the id stays the document id. */
+export function biometricToFirestore(biometric: Biometric, trainerId: string): Data {
+  return {
+    trainerId,
+    studentId: biometric.studentId,
+    weight: biometric.weight,
+    height: biometric.height,
+    bodyFat: biometric.bodyFat,
+    date: biometric.date,
+  };
+}
+
+/** `assessments/{id}` — FirestoreMappers.toAssessmentEntity. */
+export function toAssessment(id: string, data: Data): Assessment | null {
+  const studentId = str(data, "studentId");
+  const trainerId = str(data, "trainerId");
+  if (studentId === null || trainerId === null) return null;
+  return {
+    id,
+    studentId,
+    trainerId,
+    submittedAt: int(data, "submittedAt") ?? 0,
+    parQAnswers: decodeParQAnswers(str(data, "parQAnswersJson")),
+    goal: str(data, "goal") ?? "",
+    experienceLevel: str(data, "experienceLevel") ?? "",
+    trainingDays: stringList(data, "trainingDays") ?? [],
   };
 }
 

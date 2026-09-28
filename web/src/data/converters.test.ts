@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { monthlyCharge } from "../domain/payments";
 import type { Workout } from "../domain/workouts";
 import {
+  biometricToFirestore,
   paymentToFirestore,
+  toAssessment,
+  toBiometric,
   toBillingPlan,
   toDraftStudent,
   toLinkedStudent,
@@ -108,6 +111,64 @@ describe("toWorkout / workoutToFirestore — FirestoreMappers' workout mapping",
   it("skips a document without a student or a name", () => {
     expect(toWorkout("w1", { name: "Ficha A" })).toBeNull();
     expect(toWorkout("w1", { studentId: "s1", name: 7 })).toBeNull();
+  });
+});
+
+describe("toBiometric / biometricToFirestore — FirestoreMappers' biometric mapping", () => {
+  it("writes BiometricEntity.toFirestoreMap's fields and reads them back", () => {
+    const biometric = { id: "b1", trainerId: "t1", studentId: "s1", weight: 72.5, height: 0, bodyFat: 18, date: 5 };
+    const data = biometricToFirestore(biometric, "t1");
+    expect(data).toEqual({ trainerId: "t1", studentId: "s1", weight: 72.5, height: 0, bodyFat: 18, date: 5 });
+    expect(toBiometric("b1", data)).toEqual(biometric);
+  });
+
+  it("defaults the numbers to 0, as the Kotlin mapper does, and needs a student", () => {
+    expect(toBiometric("b1", { studentId: "s1", weight: "72", bodyFat: Infinity })).toEqual({
+      id: "b1",
+      trainerId: "",
+      studentId: "s1",
+      weight: 0,
+      height: 0,
+      bodyFat: 0,
+      date: 0,
+    });
+    expect(toBiometric("b1", { weight: 72 })).toBeNull();
+  });
+});
+
+describe("toAssessment — FirestoreMappers.toAssessmentEntity", () => {
+  it("reads a student's submission", () => {
+    expect(
+      toAssessment("a1", {
+        studentId: "s1",
+        trainerId: "t1",
+        submittedAt: 9,
+        parQAnswersJson: '{"medication":true}',
+        goal: "Hipertrofia",
+        experienceLevel: "Interm.",
+        trainingDays: ["Terça"],
+      }),
+    ).toEqual({
+      id: "a1",
+      studentId: "s1",
+      trainerId: "t1",
+      submittedAt: 9,
+      parQAnswers: { medication: true },
+      goal: "Hipertrofia",
+      experienceLevel: "Interm.",
+      trainingDays: ["Terça"],
+    });
+  });
+
+  it("needs both the student and the trainer, and defaults the rest", () => {
+    expect(toAssessment("a1", { studentId: "s1" })).toBeNull();
+    expect(toAssessment("a1", { trainerId: "t1" })).toBeNull();
+    expect(toAssessment("a1", { studentId: "s1", trainerId: "t1", trainingDays: [1] })).toMatchObject({
+      submittedAt: 0,
+      parQAnswers: {},
+      goal: "",
+      trainingDays: [],
+    });
   });
 });
 

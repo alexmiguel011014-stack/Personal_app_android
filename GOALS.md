@@ -3847,7 +3847,7 @@ by the SDK. 103 unit + 58 emulator tests, eslint and tsc clean.
       transactions entirely when nothing is missing). "Today" is taken once per load in the
       browser's own zone — the trainer's calendar — so every figure on screen agrees. A
       permission error names the likeliest cause at this stage: §23d's rules not yet published.
-- [ ] Student list with search and filter, and the student detail view (data + performance charts).
+- [x] Student list with search and filter, and the student detail view (data + performance charts).
       **List done (part 1):** `/app/alunos` — name, goal, connection and a medical-restriction flag
       (what the Android list shows), accent- and case-insensitive search ("ALVES" finds Bruno
       Alves), filter by connection, sorted by pt-BR collation.
@@ -3871,7 +3871,37 @@ by the SDK. 103 unit + 58 emulator tests, eslint and tsc clean.
       Firestore as an integer, and whether the phone's lenient reader then shows it or shows 0 is
       unverified; measurements come with the evolution part once that's settled. And deleting a
       student — on Android it deletes a connected student's own profile document; destructive, and
-      nothing in §23 asks for it. Still to build: the performance charts (as tables, phase 1).
+      nothing in §23 asks for it.
+      **Performance done (part 4, 2026-09-28) — the phone's charts as tables, phase 1:** a connected
+      student's page adds "Autoavaliações" (every PAR-Q+ sent, newest first, the "sim" answers
+      spelled out with their questions), "Medidas" (all measurements, newest first, plus "Nova
+      medida"), "Progressão de carga" (pick an exercise, see each session's heaviest set) and
+      "Atividade recente" (the last ten logs with their sets). A draft's page shows only its
+      measurements — it has no account, so no sessions or self-assessments of its own.
+      **The int/Double question is settled:** GitLive 2.7.0's decoder reads any `Number` as a Double
+      (`decoders.kt`, `is Number -> value.toDouble()`), so a whole number written from JavaScript —
+      stored as a Firestore integer — shows on the phone as the same value. Measurements are now
+      written from the web, in `BiometricEntity`'s exact field set. Two things it does differently,
+      on purpose: `height` is 0 (the Android trainer path fills it by parsing the student's
+      *medical notes* as a number — a bug, harmless since height is never shown, and the student's
+      own path already writes 0); and a comma decimal ("72,5") is accepted, as the Android
+      add-student form does and its measurement dialog doesn't. **New measurements only for a
+      connected student**, for the reason fichas are (below) — which is also why the web's
+      registration form has no first measurement: it would land on the draft.
+      **Kept identical to the phone, for the trainer to judge in 23j:** a set's load counts in the
+      progression only if the phone's `toFloatOrNull` reads it — "22.5" yes, **"22,5" no** — so the
+      table and the phone's chart agree. A student typing Brazilian decimals has those sets silently
+      left out on both; whether to accept commas is a decision for both platforms at once.
+      **Verified in the browser against the emulators** (the seed now has Ana's measurements, loads
+      rising 1 kg a day with a comma-typed second set, and Bruno's PAR-Q+ with one "sim"), expected
+      values written down first — all matched: Ana's progression 20 → 22 → 24 → 27 → 29 → 31 kg (the
+      comma sets ignored), switching exercise; her last ten logs newest first ("31x12 · 33,5x10");
+      her measurements; "abc" refused, "72,5" saved — the emulator held `weight` 72.5 and `height`/
+      `bodyFat` as integer 0, `BiometricEntity`'s fields exactly; Bruno's assessment flagged with
+      the bone/joint question; Maria's draft page with no assessments or progress, and measurements
+      blocked with the reason. Emulator tests: the phone's own student query sees a web-recorded
+      measurement; another trainer can't list a student's assessments. 144 unit + 65 emulator
+      tests, eslint and tsc clean, static build.
 - [x] Ficha: list, manual creation, Smart Paste, AI generation.
       **Done (part 3, 2026-09-24).** A student's page lists their fichas with
       `WorkoutBuilderScreen`'s controls (edit, activate/deactivate, delete after a confirmation).

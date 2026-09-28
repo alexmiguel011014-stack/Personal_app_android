@@ -13,9 +13,10 @@
 //   Ana    claimed an invite (her draft must NOT be counted again); trains Seg/Qua/Sex, three
 //          sessions this week, each written as three per-exercise log documents (the dashboard must
 //          say 3 sessions, not 9); her charge for this month exists and is paid (the plan must not
-//          duplicate it).
+//          duplicate it). On her page: two measurements, and loads that go up session by session.
 //   Bruno  hasn't trained in 12 days (gone quiet); last month's charge is unpaid (overdue); his
-//          active plan has no charge this month yet — opening the dashboard creates it.
+//          active plan has no charge this month yet — opening the dashboard creates it. On his page:
+//          a PAR-Q+ with one "sim" (bone/joint), which must show flagged.
 //   Carla  joined two days ago and hasn't trained — must NOT show as gone quiet.
 //   Diego  has a pending assessment request and no training plan.
 //   Maria  a draft with an open invite (the /convite flow).
@@ -133,6 +134,31 @@ try {
     [`billingPlans/${bruno}`, { studentId: bruno, trainerId, amountCents: 12000, currency: "BRL", dueDay: 28, active: true, createdAt: morningOf(59) }],
     [`payments/${ana}_${thisMonth}`, charge(ana, `${thisMonth}-01`, 15000, now)],
     [`payments/${bruno}_${lastMonth}`, charge(bruno, `${lastMonth}-05`, 12000, null)],
+
+    // The student page: Ana's measurements — the first as the Android add-student form writes it,
+    // with a height — and Bruno's self-assessment.
+    ["biometrics/ana-1", { trainerId, studentId: ana, weight: 74.2, height: 1.65, bodyFat: 24.5, date: morningOf(59) }],
+    ["biometrics/ana-2", { trainerId, studentId: ana, weight: 73.1, height: 0, bodyFat: 0, date: morningOf(20) }],
+    [
+      "assessments/bruno-1",
+      {
+        trainerId,
+        studentId: bruno,
+        submittedAt: morningOf(30),
+        parQAnswersJson: JSON.stringify({
+          heart_condition: false,
+          chest_pain_activity: false,
+          chest_pain_rest: false,
+          dizziness: false,
+          bone_joint: true,
+          medication: false,
+          other_reason: false,
+        }),
+        goal: "Hipertrofia",
+        experienceLevel: "Iniciante",
+        trainingDays: ["Terça", "Quinta"],
+      },
+    ],
   ]);
 
   function charge(studentId, dueDate, amountCents, paidAt) {
@@ -151,20 +177,28 @@ try {
     };
   }
 
-  // Workout logs: one document per exercise, as the Kotlin app writes them.
+  // Workout logs: one document per exercise, as the Kotlin app writes them. The load goes up 1 kg a
+  // day, and each session's second set is typed with a comma ("22,5") — a weight the phone's chart
+  // can't read, so it counts neither there nor in the web's progression table.
   const session = (studentId, daysAgo) =>
-    ["Supino", "Remada", "Agachamento"].map((exerciseName, i) => [
-      `workoutLogs/${studentId}-${daysAgo}-${i}`,
-      {
-        trainerId,
-        studentId,
-        workoutId: "ficha-a",
-        exerciseName,
-        date: morningOf(daysAgo) + i * 4, // milliseconds apart, like currentTimeMillis() in the loop
-        performedSetsJson: '[{"setNumber":1,"weight":"20","reps":12}]',
-        note: null,
-      },
-    ]);
+    ["Supino", "Remada", "Agachamento"].map((exerciseName, i) => {
+      const load = 20 + (12 - daysAgo);
+      return [
+        `workoutLogs/${studentId}-${daysAgo}-${i}`,
+        {
+          trainerId,
+          studentId,
+          workoutId: "ficha-a",
+          exerciseName,
+          date: morningOf(daysAgo) + i * 4, // milliseconds apart, like currentTimeMillis() in the loop
+          performedSetsJson: JSON.stringify([
+            { setNumber: 1, weight: String(load), reps: 12 },
+            { setNumber: 2, weight: `${load + 2},5`, reps: 10 },
+          ]),
+          note: null,
+        },
+      ];
+    });
   const logs = Object.fromEntries([
     ...[1, 3, 5, 8, 10, 12].flatMap((daysAgo) => session(ana, daysAgo)),
     ...session(bruno, 12),

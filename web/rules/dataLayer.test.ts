@@ -27,6 +27,8 @@ import { emptyProfile } from "../src/domain/studentProfile";
 import { resolveProfile } from "../src/data/session";
 import { ensureMonthlyCharges, loadTrainerSnapshot, loadTrainerView } from "../src/data/trainerData";
 import { deleteWorkout, loadStudentWorkouts, newWorkout, saveWorkout } from "../src/data/workouts";
+import { addBiometric, loadStudentBiometrics } from "../src/data/biometrics";
+import { loadStudentAssessments } from "../src/data/assessments";
 
 // GOALS.md §23e: the data layer against the Firestore emulator, through the real rules — the same
 // modular SDK calls the app makes, signed in as a given uid. This is where the three layers meet:
@@ -382,5 +384,43 @@ describe("fichas (GOALS.md §23g)", () => {
     await assertFails(deleteWorkout(trainer, "other-trainer"));
     await deleteWorkout(trainer, "old");
     expect((await loadStudentWorkouts(trainer, "trainerA", "s1")).map((w) => w.id)).toEqual(["new"]);
+  });
+});
+
+describe("measurements and self-assessments (GOALS.md §23g)", () => {
+  it("records a measurement the student's own query then sees, newest first for the trainer", async () => {
+    await seed({
+      "users/trainerA": { role: "TRAINER" },
+      "users/s1": { role: "STUDENT", trainerId: "trainerA", inviteCode: "X", name: "Ana", createdAt: 1 },
+      "biometrics/older": { trainerId: "trainerA", studentId: "s1", weight: 74.0, height: 1.65, bodyFat: 0, date: 1 },
+    });
+    const trainer = signedInAs("trainerA");
+    const added = await addBiometric(trainer, "trainerA", "s1", { weight: 72, bodyFat: 18.5 }, 50);
+    expect((await loadStudentBiometrics(trainer, "trainerA", "s1")).map((b) => [b.id, b.weight])).toEqual([
+      [added.id, 72],
+      ["older", 74],
+    ]);
+
+    // StudentRepository.getMyBiometrics, through the real rules.
+    const student = signedInAs("s1");
+    const own = await getDocs(query(collection(student, "biometrics"), where("studentId", "==", "s1")));
+    expect(own.docs.map((d) => d.id).sort()).toEqual([added.id, "older"].sort());
+  });
+
+  it("lists a student's self-assessments to their trainer only, newest first", async () => {
+    const submission = { studentId: "s1", trainerId: "trainerA", parQAnswersJson: '{"medication":true}' };
+    await seed({
+      "users/trainerA": { role: "TRAINER" },
+      "users/trainerB": { role: "TRAINER" },
+      "assessments/first": { ...submission, submittedAt: 1 },
+      "assessments/second": { ...submission, submittedAt: 2 },
+    });
+    const assessments = await loadStudentAssessments(signedInAs("trainerA"), "trainerA", "s1");
+    expect(assessments.map((a) => [a.id, a.parQAnswers])).toEqual([
+      ["second", { medication: true }],
+      ["first", { medication: true }],
+    ]);
+    expect(await loadStudentAssessments(signedInAs("trainerB"), "trainerB", "s1")).toEqual([]);
+    await assertFails(getDocs(query(collection(signedInAs("trainerB"), "assessments"), where("studentId", "==", "s1"))));
   });
 });

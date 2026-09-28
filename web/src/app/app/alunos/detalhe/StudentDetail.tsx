@@ -16,13 +16,15 @@ import { useSession } from "../../../SessionProvider";
 import { useTrainerData } from "../../useTrainerData";
 import { StudentForm } from "../StudentForm";
 import { AssessmentsSection } from "./AssessmentsSection";
+import { BillingSection } from "./BillingSection";
 import { MeasurementsSection } from "./MeasurementsSection";
 import { ProgressSection } from "./ProgressSection";
 import { WorkoutsSection } from "./WorkoutsSection";
 
 // GOALS.md §23g: a student's page — profile, and either the invite (a draft) or the §17 permissions
-// (a connected account), then fichas, self-assessments, measurements and training progress. A draft
-// shows only what it can have: it has no account, so no sessions or self-assessments of its own.
+// (a connected account), then the mensalidade, fichas, self-assessments, measurements and training
+// progress. A draft shows only what it can have: it has no account, so no sessions or
+// self-assessments of its own. Loading it keeps this month's charges current, as the dashboard does.
 
 export function StudentDetail() {
   const { session } = useSession();
@@ -32,7 +34,7 @@ export function StudentDetail() {
 }
 
 function Detail({ trainerId, studentId }: { trainerId: string; studentId: string }) {
-  const { data, reload } = useTrainerData(trainerId);
+  const { data, reload } = useTrainerData(trainerId, { ensureCharges: true });
   const [editing, setEditing] = useState(false);
 
   if (data.status === "loading") return <p>Carregando…</p>;
@@ -124,6 +126,15 @@ function Detail({ trainerId, studentId }: { trainerId: string; studentId: string
       ) : (
         <PermissionsSection studentId={student.doc.id} account={student.doc} onChanged={reload} />
       )}
+
+      <BillingSection
+        trainerId={trainerId}
+        studentId={student.doc.id}
+        snapshot={data.snapshot}
+        today={data.today}
+        timeZone={data.timeZone}
+        onChanged={reload}
+      />
 
       <WorkoutsSection
         trainerId={trainerId}

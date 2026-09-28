@@ -75,17 +75,26 @@ export function matchesSearch(name: string, query: string): boolean {
   return fold(name).includes(fold(query));
 }
 
+/** Account uid → the draft its invite was minted from, for every account that claimed one. */
+export function claimedDrafts(
+  linked: readonly LinkedStudentDoc[],
+  draftIdByInviteCode: ReadonlyMap<string, string>,
+): Map<string, string> {
+  const claimed = new Map<string, string>();
+  for (const account of linked) {
+    if (account.inviteCode === null) continue;
+    const draftId = draftIdByInviteCode.get(account.inviteCode);
+    if (draftId !== undefined) claimed.set(account.id, draftId);
+  }
+  return claimed;
+}
+
 export function mergeStudents(
   drafts: readonly DraftStudentDoc[],
   linked: readonly LinkedStudentDoc[],
   draftIdByInviteCode: ReadonlyMap<string, string>,
 ): Student[] {
-  const claimedDraftIds = new Set<string>();
-  for (const account of linked) {
-    if (account.inviteCode === null) continue;
-    const draftId = draftIdByInviteCode.get(account.inviteCode);
-    if (draftId !== undefined) claimedDraftIds.add(draftId);
-  }
+  const claimedDraftIds = new Set(claimedDrafts(linked, draftIdByInviteCode).values());
 
   const unclaimedDrafts: Student[] = drafts
     .filter((draft) => !claimedDraftIds.has(draft.id))

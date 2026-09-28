@@ -1,11 +1,29 @@
 import { describe, expect, it } from "vitest";
-import { WEEKDAYS, addDays, datesBetween, daysInMonth, formatDateTime, localDate, weekdayOf } from "./dates";
+import {
+  WEEKDAYS,
+  addDays,
+  datesBetween,
+  daysInMonth,
+  formatDateTime,
+  isCalendarDate,
+  localDate,
+  weekdayOf,
+} from "./dates";
 
 describe("localDate", () => {
   it("uses the given zone, not UTC: 01:30Z on the 1st is still the 30th in São Paulo", () => {
     const instant = Date.parse("2026-10-01T01:30:00Z");
     expect(localDate(instant, "America/Sao_Paulo")).toBe("2026-09-30");
     expect(localDate(instant, "UTC")).toBe("2026-10-01");
+  });
+});
+
+describe("isCalendarDate", () => {
+  it("accepts real days only", () => {
+    expect(isCalendarDate("2028-02-29")).toBe(true);
+    for (const text of ["2026-02-29", "2026-09-31", "2026-13-01", "2026-9-1", "", "hoje"]) {
+      expect(isCalendarDate(text)).toBe(false);
+    }
   });
 });
 

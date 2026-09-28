@@ -1,5 +1,5 @@
 import { addDays, datesBetween, localDate, weekdayOf, yearMonth } from "./dates";
-import { paymentStatus, type Payment } from "./payments";
+import { monthTotals, paymentStatus, type Payment } from "./payments";
 import type { Student } from "./students";
 
 // GOALS.md §23c — the trainer dashboard's numbers, as pure functions over documents the caller has
@@ -176,23 +176,15 @@ export function paymentSummary(
   today: string,
   timeZone: string,
 ): PaymentSummary {
-  const month = yearMonth(today);
-  let expectedCents = 0;
-  let receivedCents = 0;
-  let overdueCents = 0;
-  const overdue: Payment[] = [];
-  for (const payment of payments) {
-    if (yearMonth(payment.dueDate) === month) expectedCents += payment.amountCents;
-    // The month it was paid in is the trainer's local month, not UTC's: a Pix at 23:00 on the
-    // 31st belongs to that month, even though it is already the 1st in UTC.
-    if (payment.paidAt !== null && yearMonth(localDate(payment.paidAt, timeZone)) === month) {
-      receivedCents += payment.amountCents;
-    }
-    if (paymentStatus(payment, today) === "overdue") {
-      overdue.push(payment);
-      overdueCents += payment.amountCents;
-    }
-  }
-  overdue.sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  const { expectedCents, receivedCents } = monthTotals(payments, yearMonth(today), timeZone);
+  const overdue = overdueCharges(payments, today);
+  const overdueCents = overdue.reduce((sum, payment) => sum + payment.amountCents, 0);
   return { expectedCents, receivedCents, overdue, overdueCents };
+}
+
+/** Unpaid charges past their due date, from any month — oldest first. */
+export function overdueCharges(payments: readonly Payment[], today: string): Payment[] {
+  return payments
+    .filter((payment) => paymentStatus(payment, today) === "overdue")
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
 }

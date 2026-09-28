@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mergeStudents, type DraftStudentDoc, type LinkedStudentDoc } from "./students";
+import { claimedDrafts, mergeStudents, type DraftStudentDoc, type LinkedStudentDoc } from "./students";
 
 function draft(id: string, name: string): DraftStudentDoc {
   return {
@@ -36,6 +36,16 @@ function account(id: string, name: string, inviteCode: string | null): LinkedStu
     pendingAssessmentRequest: false,
   };
 }
+
+describe("claimedDrafts", () => {
+  it("maps each account to the draft its invite came from, skipping what can't be traced", () => {
+    const claimed = claimedDrafts(
+      [account("u1", "Maria", "ABC123"), account("u2", "Ana", null), account("u3", "Rita", "GONE")],
+      new Map([["ABC123", "d1"]]),
+    );
+    expect([...claimed]).toEqual([["u1", "d1"]]);
+  });
+});
 
 describe("mergeStudents", () => {
   it("drops a draft once its invite has been claimed, so the student isn't listed twice", () => {

@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
   dueDateFor,
+  firstBillableMonth,
   monthlyCharge,
+  monthTotals,
   parseAmountCents,
   paymentId,
   paymentStatus,
   plansMissingCharge,
   type BillingPlan,
 } from "./payments";
+
+const ZONE = "America/Sao_Paulo";
 
 const plan: BillingPlan = {
   studentId: "s1",
@@ -65,8 +69,48 @@ describe("monthlyCharge", () => {
 describe("plansMissingCharge", () => {
   it("lists the active plans with no charge for the month yet", () => {
     const plans = [plan, { ...plan, studentId: "s2" }, { ...plan, studentId: "s3", active: false }];
-    expect(plansMissingCharge(plans, [{ id: "s1_2026-09" }], "2026-09").map((p) => p.studentId)).toEqual(["s2"]);
-    expect(plansMissingCharge(plans, [{ id: "s1_2026-09" }, { id: "s2_2026-09" }], "2026-09")).toEqual([]);
+    expect(plansMissingCharge(plans, [{ id: "s1_2026-09" }], "2026-09", ZONE).map((p) => p.studentId)).toEqual(["s2"]);
+    expect(plansMissingCharge(plans, [{ id: "s1_2026-09" }, { id: "s2_2026-09" }], "2026-09", ZONE)).toEqual([]);
+  });
+
+  it("leaves out a plan that doesn't bill yet — registered after this month's due day", () => {
+    const late = { ...plan, createdAt: Date.parse("2026-09-28T12:00:00-03:00") }; // due day 10
+    expect(plansMissingCharge([late], [], "2026-09", ZONE)).toEqual([]);
+    expect(plansMissingCharge([late], [], "2026-10", ZONE)).toEqual([late]);
+  });
+});
+
+describe("firstBillableMonth", () => {
+  it("is the month the plan was registered in while its due day is still ahead, or that day", () => {
+    expect(firstBillableMonth({ dueDay: 10, createdAt: Date.parse("2026-09-05T12:00:00-03:00") }, ZONE)).toBe("2026-09");
+    expect(firstBillableMonth({ dueDay: 10, createdAt: Date.parse("2026-09-10T23:00:00-03:00") }, ZONE)).toBe("2026-09");
+  });
+
+  it("is the next month once the due day has passed — across a year end too", () => {
+    expect(firstBillableMonth({ dueDay: 10, createdAt: Date.parse("2026-09-11T08:00:00-03:00") }, ZONE)).toBe("2026-10");
+    expect(firstBillableMonth({ dueDay: 5, createdAt: Date.parse("2026-12-20T08:00:00-03:00") }, ZONE)).toBe("2027-01");
+  });
+
+  it("reads the registration day on the trainer's calendar: 23:00 on the 10th is still the 10th", () => {
+    // 02:00 UTC on the 11th.
+    expect(firstBillableMonth({ dueDay: 10, createdAt: Date.parse("2026-09-11T02:00:00Z") }, ZONE)).toBe("2026-09");
+  });
+
+  it("clamps the due day like the charge does: day 31 in February is the 28th", () => {
+    expect(firstBillableMonth({ dueDay: 31, createdAt: Date.parse("2026-02-28T09:00:00-03:00") }, ZONE)).toBe("2026-02");
+  });
+});
+
+describe("monthTotals", () => {
+  const charge = monthlyCharge(plan, "2026-09", 0);
+  it("adds what falls due in the month, and what was received in it by the trainer's calendar", () => {
+    const paidLateOnThe30th = { ...charge, id: "a", paidAt: Date.parse("2026-10-01T01:30:00Z") }; // 22:30 on 30/09
+    const augustPaidInSeptember = { ...charge, id: "b", dueDate: "2026-08-10", paidAt: Date.parse("2026-09-02T12:00:00Z") };
+    const unpaid = { ...charge, id: "c", amountCents: 9000 };
+    expect(monthTotals([paidLateOnThe30th, augustPaidInSeptember, unpaid], "2026-09", ZONE)).toEqual({
+      expectedCents: 15000 + 9000,
+      receivedCents: 15000 + 15000,
+    });
   });
 });
 

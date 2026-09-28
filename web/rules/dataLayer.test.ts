@@ -35,12 +35,14 @@ import { deleteWorkout, loadStudentWorkouts, newWorkout, saveWorkout } from "../
 import { addBiometric, loadStudentBiometrics } from "../src/data/biometrics";
 import { loadStudentAssessments } from "../src/data/assessments";
 import { bookSlot, loadSchedules, removeBooking } from "../src/data/schedules";
+import { adjustCharge, createPlan, markPaid, setPlanActive, undoPayment, updatePlan } from "../src/data/billing";
 
 // GOALS.md §23e: the data layer against the Firestore emulator, through the real rules — the same
 // modular SDK calls the app makes, signed in as a given uid. This is where the three layers meet:
 // 23c's model, 23d's rules and 23e's converters all have to agree for these writes to land.
 
 const PROJECT_ID = "demo-personal-tracker";
+const ZONE = "America/Sao_Paulo";
 const RULES_FILE = process.env.RULES_FILE ?? fileURLToPath(new URL("../../firestore.rules", import.meta.url));
 
 let env: RulesTestEnvironment;
@@ -209,8 +211,8 @@ describe("loadTrainerView (GOALS.md §23g)", () => {
     // Found in the browser — React's dev double-mount did exactly this — and the second one used
     // to show a snapshot without the charge.
     const [first, second] = await Promise.all([
-      loadTrainerView(signedInAs("trainerA"), "trainerA", "2026-09", 1),
-      loadTrainerView(signedInAs("trainerA"), "trainerA", "2026-09", 2),
+      loadTrainerView(signedInAs("trainerA"), "trainerA", "2026-09", 1, ZONE),
+      loadTrainerView(signedInAs("trainerA"), "trainerA", "2026-09", 2, ZONE),
     ]);
     expect(first.chargesCreated + second.chargesCreated).toBe(1);
     for (const view of [first, second]) {
@@ -220,8 +222,8 @@ describe("loadTrainerView (GOALS.md §23g)", () => {
 
   it("writes nothing when every active plan already has its charge", async () => {
     await seed({ "users/trainerA": { role: "TRAINER" }, "billingPlans/studentA": plan("studentA") });
-    await loadTrainerView(signedInAs("trainerA"), "trainerA", "2026-09", 1);
-    const again = await loadTrainerView(signedInAs("trainerA"), "trainerA", "2026-09", 2);
+    await loadTrainerView(signedInAs("trainerA"), "trainerA", "2026-09", 1, ZONE);
+    const again = await loadTrainerView(signedInAs("trainerA"), "trainerA", "2026-09", 2, ZONE);
     expect(again.chargesCreated).toBe(0);
     expect(again.snapshot.payments).toHaveLength(1);
   });
@@ -449,5 +451,39 @@ describe("the agenda (GOALS.md §23g)", () => {
 
     await removeBooking(trainer, booked.id);
     expect(await loadSchedules(trainer, "trainerA")).toEqual([]);
+  });
+});
+
+describe("managing mensalidades (GOALS.md §23g)", () => {
+  it("registers, edits and pauses a plan; a second registration can't overwrite it", async () => {
+    await seed({ "users/trainerA": { role: "TRAINER" } });
+    const db = signedInAs("trainerA");
+    await createPlan(db, "trainerA", "s1", 15000, 10, 1_000);
+    await assertFails(createPlan(db, "trainerA", "s1", 9900, 5, 2_000));
+
+    await updatePlan(db, "s1", 16000, 15);
+    await setPlanActive(db, "s1", false);
+    const { plans } = await loadTrainerSnapshot(db, "trainerA");
+    expect(plans).toEqual([
+      { studentId: "s1", trainerId: "trainerA", amountCents: 16000, currency: "BRL", dueDay: 15, active: false, createdAt: 1_000 },
+    ]);
+  });
+
+  it("settles a charge, undoes it, adjusts it within its month — and nothing across months", async () => {
+    await seed({ "users/trainerA": { role: "TRAINER" }, "users/trainerB": { role: "TRAINER" }, "billingPlans/s1": plan("s1") });
+    const db = signedInAs("trainerA");
+    const { plans } = await loadTrainerSnapshot(db, "trainerA");
+    await ensureMonthlyCharges(db, plans, "2026-09", 1_700_000_100_000);
+    const charge = doc(db, "payments", "s1_2026-09");
+
+    await markPaid(db, "s1_2026-09", 1_700_000_200_000, "pix", "pago na recepção");
+    expect((await getDoc(charge)).data()).toMatchObject({ paidAt: 1_700_000_200_000, method: "pix", note: "pago na recepção" });
+    await undoPayment(db, "s1_2026-09");
+    expect((await getDoc(charge)).data()).toMatchObject({ paidAt: null, method: null, note: "pago na recepção" });
+
+    await adjustCharge(db, "s1_2026-09", 12000, "2026-09-20");
+    expect((await getDoc(charge)).data()).toMatchObject({ amountCents: 12000, dueDate: "2026-09-20" });
+    await assertFails(adjustCharge(db, "s1_2026-09", 12000, "2026-10-01"));
+    await assertFails(markPaid(signedInAs("trainerB"), "s1_2026-09", 1, "cash", null));
   });
 });

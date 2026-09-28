@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { billingOwners } from "../../domain/billing";
 import { dashboardFigures, ADHERENCE_WINDOW_DAYS, QUIET_AFTER_DAYS, SESSIONS_WINDOW_DAYS } from "../../domain/dashboard";
 import { formatDate, formatYearMonth, yearMonth } from "../../domain/dates";
 import { formatCents } from "../../domain/payments";
@@ -33,7 +34,8 @@ function Dashboard({ trainerId }: { trainerId: string }) {
 
   const { today, timeZone } = data;
   const figures = dashboardFigures(data.snapshot, today, timeZone);
-  const nameOf = new Map(data.snapshot.students.map((s) => [s.id, s.name]));
+  // A charge can sit under the id of a draft the student has since claimed (domain/billing.ts).
+  const owners = billingOwners(data.snapshot.students, data.snapshot.claimedDraftByAccount);
 
   return (
     <main>
@@ -120,7 +122,7 @@ function Dashboard({ trainerId }: { trainerId: string }) {
             <tbody>
               {figures.payments.overdue.map((p) => (
                 <tr key={p.id}>
-                  <td>{nameOf.get(p.studentId) ?? p.studentId}</td>
+                  <td>{owners.get(p.studentId)?.name ?? p.studentId}</td>
                   <td>{formatDate(p.dueDate)}</td>
                   <td>{formatCents(p.amountCents)}</td>
                 </tr>
@@ -128,6 +130,9 @@ function Dashboard({ trainerId }: { trainerId: string }) {
             </tbody>
           </table>
         )}
+        <p>
+          <Link href="/app/mensalidades">Gerenciar mensalidades</Link>
+        </p>
       </section>
     </main>
   );

@@ -60,6 +60,13 @@ export function daysInMonth(yearMonth: string): number {
   return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
 
+/** A real "YYYY-MM-DD" day — "2026-02-30" is not one, however well-formed. */
+export function isCalendarDate(text: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return false;
+  const ms = utcMidnight(text);
+  return !Number.isNaN(ms) && new Date(ms).toISOString().slice(0, 10) === text;
+}
+
 /** "2026-09-10" as "10/09/2026", the way the trainer reads a date. */
 export function formatDate(date: string): string {
   const [year, month, day] = date.split("-");

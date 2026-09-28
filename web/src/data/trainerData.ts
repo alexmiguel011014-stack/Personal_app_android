@@ -11,7 +11,13 @@ import {
 } from "firebase/firestore";
 import type { WorkoutLogDoc } from "../domain/metrics";
 import { monthlyCharge, plansMissingCharge, type BillingPlan, type Payment } from "../domain/payments";
-import { mergeStudents, type DraftStudentDoc, type LinkedStudentDoc, type Student } from "../domain/students";
+import {
+  claimedDrafts,
+  mergeStudents,
+  type DraftStudentDoc,
+  type LinkedStudentDoc,
+  type Student,
+} from "../domain/students";
 import {
   paymentToFirestore,
   toBillingPlan,
@@ -30,6 +36,8 @@ export interface TrainerSnapshot {
   /** The full documents behind `students`, for the detail page and its writes. */
   drafts: DraftStudentDoc[];
   linked: LinkedStudentDoc[];
+  /** Account uid → the draft it claimed: billing registered on the draft still belongs to them. */
+  claimedDraftByAccount: Map<string, string>;
   logs: WorkoutLogDoc[];
   payments: Payment[];
   plans: BillingPlan[];
@@ -60,10 +68,12 @@ export async function loadTrainerSnapshot(db: Firestore, trainerId: string): Pro
   ]);
   const draftStudents = mapDocs(drafts, toDraftStudent);
   const linkedStudents = mapDocs(linked, toLinkedStudent);
+  const draftIdByInvite = await draftIdsForInvites(db, linkedStudents);
   return {
-    students: mergeStudents(draftStudents, linkedStudents, await draftIdsForInvites(db, linkedStudents)),
+    students: mergeStudents(draftStudents, linkedStudents, draftIdByInvite),
     drafts: draftStudents,
     linked: linkedStudents,
+    claimedDraftByAccount: claimedDrafts(linkedStudents, draftIdByInvite),
     logs: mapDocs(logs, toWorkoutLog),
     payments: mapDocs(payments, toPayment),
     plans: mapDocs(plans, toBillingPlan),
@@ -104,9 +114,10 @@ export async function loadTrainerView(
   trainerId: string,
   yearMonth: string,
   now: number,
+  timeZone: string,
 ): Promise<{ snapshot: TrainerSnapshot; chargesCreated: number }> {
   const snapshot = await loadTrainerSnapshot(db, trainerId);
-  const missing = plansMissingCharge(snapshot.plans, snapshot.payments, yearMonth);
+  const missing = plansMissingCharge(snapshot.plans, snapshot.payments, yearMonth, timeZone);
   if (missing.length === 0) return { snapshot, chargesCreated: 0 };
   const chargesCreated = await ensureMonthlyCharges(db, missing, yearMonth, now);
   return { snapshot: await loadTrainerSnapshot(db, trainerId), chargesCreated };

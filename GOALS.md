@@ -3936,8 +3936,43 @@ by the SDK. 103 unit + 58 emulator tests, eslint and tsc clean.
       knew another trainer's student's uid could put a ficha in that student's app. `biometrics`
       and `schedules` have the same shape. uids aren't discoverable, so the risk is low; batch it
       with the archive change below.
-- [ ] Schedule. Mensalidades: register, mark paid, overdue list.
+- [x] Schedule. Mensalidades: register, mark paid, overdue list.
       (The overdue list is on the dashboard already; registering plans and marking paid is not.)
+      **Mensalidades done (part 6, 2026-09-28).** A student's page gets "Mensalidade": register the
+      plan (amount in reais, due day 1–31), edit it (future charges only — a charge already
+      generated is adjusted on its own), pause and reactivate it, and every charge so far.
+      `/app/mensalidades` ("Mensalidades" in the nav, and linked from the dashboard) shows a month's
+      charges (this one by default; a picker lists every month with charges), what's still overdue
+      from earlier months, and who has no plan yet. On each unpaid charge: "Marcar como pago" (how,
+      and on which day — so a Pix recorded on the 2nd still counts in the month it arrived) and
+      "Ajustar" (amount, and due date within the month — the rules allow no more, since the id
+      carries the month); on a paid one, "Desfazer pagamento". No delete: an active plan would
+      regenerate a deleted charge on the next load.
+      **Two things found and fixed along the way.** (1) **A new plan billed a month already past
+      due:** registering on the 28th with due day 10 made the dashboard create this month's charge,
+      overdue the moment it existed. Now a plan charges from `firstBillableMonth` — its creation
+      month if that month's due date was still ahead, else the next month — from its `createdAt`,
+      so no schema or rules change. (2) **Billing on a draft now follows the person.** Plans are
+      allowed for drafts (billing is web-only and doesn't need the app — unlike fichas), but a claim
+      gives the person a new id while the plan stays keyed by the draft's. `TrainerSnapshot` now
+      carries `claimedDraftByAccount`, and `domain/billing.ts` maps a claimed draft's plan and
+      charges to the account — its page shows them and never offers a second plan; the dashboard's
+      overdue list names them too.
+      **Verified in the browser against the emulators,** expected values written down first:
+      September R$ 270,00 expected / R$ 150,00 received, Bruno's August charge overdue, four students
+      without a plan. Marked that August charge paid in cash on 02/09 → September's received became
+      R$ 270,00 and the overdue list emptied; August showed it "Pago em 02/09/2026 (Dinheiro)" with
+      R$ 0,00 received in August; the emulator held `method: "cash"`. Undone → overdue again, month
+      kept. Adjusted Bruno's September charge to R$ 100,00 due 30/09 → expected R$ 250,00; an October
+      date was refused (the browser's own `max`, and the same check in code for browsers without a
+      date picker). Carla, due day 5 → "A primeira cobrança sai em outubro", no charge created;
+      Diego, due day 30 → September's charge created at once; pause and reactivate; Maria, still a
+      draft, got a plan and a charge. **Then Maria claimed her invite** (a test account on the Auth
+      emulator): she's listed once, connected, under her new id; her account's page shows the plan
+      and the charge made on the draft, with no form to register another; she's not in "sem
+      mensalidade". Emulator tests: plan create/update/pause, a second registration refused by the
+      rules, settle/undo/adjust, a cross-month adjustment and another trainer's write refused.
+      169 unit + 68 emulator tests, eslint and tsc clean, static build.
       **Schedule done (part 5, 2026-09-28):** `/app/agenda` ("Agenda" in the nav) is
       `ScheduleScreen` as one table — Segunda to Domingo across, 06h to 21h down, the day's count in
       each header (the phone's "N agendados"). Pick a student, then "Agendar" in a free slot; each

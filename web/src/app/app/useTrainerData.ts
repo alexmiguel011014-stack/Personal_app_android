@@ -48,7 +48,7 @@ export function useTrainerData(trainerId: string, { ensureCharges = false } = {}
         const timeZone = browserTimeZone();
         const today = localDate(now, timeZone);
         const { snapshot, chargesCreated } = ensureCharges
-          ? await loadTrainerView(db, trainerId, yearMonth(today), now)
+          ? await loadTrainerView(db, trainerId, yearMonth(today), now, timeZone)
           : { snapshot: await loadTrainerSnapshot(db, trainerId), chargesCreated: 0 };
         if (!cancelled) setData({ status: "ready", snapshot, chargesCreated, today, timeZone });
       } catch (error) {

@@ -1,4 +1,4 @@
-import { daysInMonth } from "./dates";
+import { addDays, daysInMonth, localDate } from "./dates";
 
 // GOALS.md §23c — mensalidades, level 1: the trainer records charges and marks them paid by hand.
 // Nothing here moves money. Two Firestore collections, both trainer-only (§23d):
@@ -106,14 +106,52 @@ export function monthlyCharge(plan: BillingPlan, yearMonth: string, now: number)
   };
 }
 
-/** Active plans that have no charge for `yearMonth` among `payments` yet. */
+/**
+ * The first month a plan charges for: the month it was registered in if that month's due date was
+ * still ahead (or that very day), otherwise the next one. Without this, a plan registered on the
+ * 28th with due day 10 would produce a charge that is overdue the moment it exists.
+ */
+export function firstBillableMonth(plan: Pick<BillingPlan, "createdAt" | "dueDay">, timeZone: string): string {
+  const created = localDate(plan.createdAt, timeZone);
+  const month = created.slice(0, 7);
+  if (dueDateFor(month, plan.dueDay) >= created) return month;
+  return addDays(`${month}-${String(daysInMonth(month)).padStart(2, "0")}`, 1).slice(0, 7);
+}
+
+/** Active plans already billing by `yearMonth` (firstBillableMonth) with no charge for it yet. */
 export function plansMissingCharge(
   plans: readonly BillingPlan[],
   payments: readonly Pick<Payment, "id">[],
   yearMonth: string,
+  timeZone: string,
 ): BillingPlan[] {
   const existing = new Set(payments.map((payment) => payment.id));
-  return plans.filter((plan) => plan.active && !existing.has(paymentId(plan.studentId, yearMonth)));
+  return plans.filter(
+    (plan) =>
+      plan.active &&
+      yearMonth >= firstBillableMonth(plan, timeZone) &&
+      !existing.has(paymentId(plan.studentId, yearMonth)),
+  );
+}
+
+/**
+ * A month's money: what falls due in it, and what was received in it — by the trainer's calendar,
+ * so a Pix at 23:00 on the 31st counts in that month even though it's already the 1st in UTC.
+ */
+export function monthTotals(
+  payments: readonly Payment[],
+  yearMonth: string,
+  timeZone: string,
+): { expectedCents: number; receivedCents: number } {
+  let expectedCents = 0;
+  let receivedCents = 0;
+  for (const payment of payments) {
+    if (payment.dueDate.slice(0, 7) === yearMonth) expectedCents += payment.amountCents;
+    if (payment.paidAt !== null && localDate(payment.paidAt, timeZone).slice(0, 7) === yearMonth) {
+      receivedCents += payment.amountCents;
+    }
+  }
+  return { expectedCents, receivedCents };
 }
 
 /** Derived, never stored: a stored status drifts away from paidAt the first time a write half-fails. */

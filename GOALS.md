@@ -4061,15 +4061,28 @@ which reads `payments`/`billingPlans` and so needs §23d published (already 23j'
       their area.
 
 **23j. Validation gate — blocks 23k**
-- [ ] Every flow in 23g/23h/23i exercised end to end against real Firestore data, with the browser
+
+Passed 2026-09-28.
+
+- [x] Every flow in 23g/23h/23i exercised end to end against real Firestore data, with the browser
       tooling driving it (DOM, page text, console, network — not screenshots; there is nothing to
       look at yet, by design).
-- [ ] The trainer runs their own real workflow on the unstyled build and confirms the *data* and
+      **Met in two halves, stated plainly.** The tooling drove every flow end to end (each 23g/23h
+      part and 23i, as recorded there) against the Firestore emulator running the real
+      `firestore.rules`, checking the stored documents; it can't drive production, since that
+      means signing in with the trainer's own credentials. Production data was the trainer's half:
+      the next item.
+- [x] The trainer runs their own real workflow on the unstyled build and confirms the *data* and
       the *flows* are right.
-- [ ] Rules verified against a real student account, not just a trainer one. §17's live test
+      **Confirmed by the trainer 2026-09-28** on the deployed site ("parece que deu tudo certo"):
+      their dashboard with their real numbers, then the trainer flows.
+- [x] Rules verified against a real student account, not just a trainer one. §17's live test
       failed on exactly this (`assessments/… PERMISSION_DENIED` from unpublished rules) — a
       trainer-only pass proves nothing about a student's permissions.
-- [ ] **Do not start 23k until this item is checked.** That is the entire point of the method.
+      **Confirmed by the trainer 2026-09-28:** signed in with a student account on the deployed
+      site and used the student side (ficha, logging a session), with §23d's rules live.
+- [x] **Do not start 23k until this item is checked.** That is the entire point of the method.
+      **Checked 2026-09-28.** 23k starts with 23a's open item: the component library.
 
 **23k. Visual pass — do not start before 23j**
 - [ ] Only now: component library, design tokens, layout, typography.

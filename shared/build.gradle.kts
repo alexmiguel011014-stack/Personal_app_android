@@ -25,15 +25,6 @@ plugins {
     id("org.jetbrains.kotlin.native.cocoapods")
 }
 
-// GOALS.md §19f/§19g: the equivalent root build.gradle.kts hook alone didn't stop
-// :shared:jsBrowserProductionWebpack from hitting the same "repository added by unknown code"
-// failure — NodeJsPlugin's actual instance backing the js target's own tasks may be scoped to
-// this project, not the root one. Applied here too, matching Kotlin's own integration test
-// fixture, which configures this in the same build file as the js target itself.
-project.plugins.withType<org.jetbrains.kotlin.gradle.targets.js.nodejs.NodeJsPlugin> {
-    project.the<org.jetbrains.kotlin.gradle.targets.js.nodejs.NodeJsEnvSpec>().downloadBaseUrl.set(null as String?)
-}
-
 kotlin {
     compilerOptions {
         freeCompilerArgs.add("-Xexpect-actual-classes")
@@ -61,27 +52,9 @@ kotlin {
     iosArm64()
     iosSimulatorArm64()
 
-    // GOALS.md §19a/§19b: the web target. Plain `js`, not `wasmJs` — GitLive's Firebase SDK
-    // (§18f, the app's Auth/Firestore layer) only publishes a `js` variant, and Compose
-    // Multiplatform's `js`/canvas renderer no longer needs the old
-    // `org.jetbrains.compose.experimental.jscanvas.enabled` flag, confirming it's a first-class
-    // target, not an experimental fallback. `wasmJs` is documented as a later migration (§19a),
-    // not built now.
-    js {
-        // GOALS.md §19f: the root project name ("Personal APP") has a space, which is invalid
-        // in an npm package name — Kotlin/JS derives one from the Gradle project name/path by
-        // default ("Personal APP-shared"), and `kotlinNpmInstall` rejects it
-        // (`EINVALIDPACKAGENAME`, confirmed via a real failed build, not guessed). This is the
-        // exact same root cause `compose.components.resources` was already left out for
-        // (`shared/build.gradle.kts`'s existing comment on the Android dex step) — `moduleName`
-        // overrides it for this target specifically, without renaming the whole Gradle project.
-        outputModuleName.set("personal-app-shared")
-        browser()
-        // Needed once a real `main()` entry point exists (this module now has one,
-        // shared/src/jsMain/kotlin/.../main.kt) — without this, the js target only produces a
-        // library klib, no runnable browser distribution/task.
-        binaries.executable()
-    }
+    // No web target: the Kotlin/JS build (GOALS.md §19) was replaced by the Next.js site in web/
+    // and removed at §23l. Some commonMain choices below still read "no `js` variant" — they were
+    // made for that target and stay as they are; nothing needs them back in commonMain.
 
     // GOALS.md §18f: the framework{} block here (baseName/isStatic) replaces the old manual
     // `iosTarget.binaries.framework {}` loop — the cocoapods plugin owns framework config once
@@ -183,13 +156,6 @@ kotlin {
             implementation(libs.androidx.datastore.core.okio)
             implementation(libs.gitlive.firebase.crashlytics)
             implementation(libs.ktor.client.darwin)
-        }
-        jsMain.dependencies {
-            // GOALS.md §19b/§19d: web's HTTP engine (GenerativeAiService/UpdateChecker) and
-            // browser bindings (SettingsStore/PlatformActions' localStorage/window/navigator
-            // access) — see each file's doc for why datastore/content-negotiation aren't here.
-            implementation(libs.ktor.client.js)
-            implementation(libs.kotlinx.browser)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))

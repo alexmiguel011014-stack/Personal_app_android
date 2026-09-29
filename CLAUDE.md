@@ -136,8 +136,8 @@ management view.
 ## Visual theme (GOALS.md §22)
 
 `shared/src/commonMain/.../ui/theme/AppTheme.kt` is the *one* file for palette and shape —
-`main.kt` (web) and `MainActivity.kt` (Android) both wrap `RoleRouter()`/content in `AppTheme { }`
-instead of a bare `MaterialTheme { }`. Every screen already reads colors via
+`MainActivity.kt` wraps `RoleRouter()`/content in `AppTheme { }` instead of a bare
+`MaterialTheme { }`. Every screen already reads colors via
 `MaterialTheme.colorScheme.*` and radii via `MaterialTheme.shapes.*` (verified by grep — the only
 hardcoded color anywhere in `ui/screen` is `SuccessGreen`, a deliberate fill for a role Material3
 doesn't have), so a palette/shape change belongs in `AppTheme.kt` alone, not spread across
@@ -155,28 +155,25 @@ them for free:
   `Outline`/`OutlineVariant` color tokens for this, but no existing `Card` was changed to use a
   border instead of its default elevation.
 
-**The web build's "still looks like an app" problem is not a theme problem — don't try to fix it
-here.** The Kotlin/JS web build paints the entire UI into a single `<canvas>` (confirmed on the
-live DOM 2026-09-22: `document.body.innerText` is an empty string, no text node exists anywhere),
-so no palette or corner radius can make it read as a website — §22 tried exactly that, and the
-verdict afterwards was still "parece app". The fix is GOALS.md §23: a separate React/Next front in
-`web/`. `AppTheme.kt` keeps theming the Android app (and the frozen Kotlin/JS build, until §23l
-removes it); it is no longer the lever for how the website looks.
+**The website's look was never a theme problem — don't look for it here.** The old Kotlin/JS web
+build painted the entire UI into a single `<canvas>` (confirmed on the live DOM 2026-09-22:
+`document.body.innerText` was an empty string), so no palette or corner radius could make it read
+as a website — §22 tried exactly that, and the verdict afterwards was still "parece app". The fix
+was GOALS.md §23: a separate React/Next front in `web/`, which replaced it (the Kotlin/JS build was
+removed at §23l). `AppTheme.kt` themes the Android app only.
 
 ## Web front (GOALS.md §23)
 
-`web/` is a Next.js 16 app (App Router, npm) replacing the Kotlin/JS web build. Phase 1 — every
-screen, unstyled — is built (§23d–§23i) and live on GitHub Pages (§23l); it now waits on the §23j
-validation gate. Until §23 says otherwise:
+`web/` is a Next.js 16 app (App Router, npm), the only website — it replaced the Kotlin/JS web
+build, which is gone (no `js` target, no `jsMain`; removed at §23l, 2026-09-28). Phase 1 — every
+screen, unstyled — is built (§23d–§23i), live on GitHub Pages (§23l), and passed the trainer's
+validation (§23j, 2026-09-28). `web-ci.yml` checks it on every push and pull request;
+`web-deploy.yml` publishes it. Until §23 says otherwise:
 
-- **Phase 1 has no CSS at all** — no stylesheet, no `className`, no inline `style` anywhere under
-  `web/src/`. Screens are built and validated as bare HTML; the visual pass (§23k) is blocked on
-  the §23j validation gate. Don't add "just a little" styling to make a screen presentable — that
-  is exactly how phase 1 turns into phase 2 before anything has been validated.
-- **The Kotlin/JS web build is frozen.** Since 2026-09-28 Pages serves `web/` instead
-  (`web-deploy.yml`, GOALS.md §23l); `shared/src/jsMain` and the `js` target still compile in
-  `web-ci.yml` until §23l's removal list runs, but nothing deploys them and no new web-only work
-  lands there. The removal list is in GOALS.md §23b.
+- **No CSS until §23k starts** — no stylesheet, no `className`, no inline `style` anywhere under
+  `web/src/`. Styling arrives all at once with §23k, from the component library the trainer picks
+  (§23a's open item) — not "just a little" on one screen before that; that is exactly how phase 1
+  turns into phase 2 without a plan.
 - **The site lives under a sub-path** on Pages (`/Personal_app_android/`): the deploy sets
   `NEXT_PUBLIC_BASE_PATH`, which `next.config.ts` turns into `basePath`. `Link` and the router
   prefix it themselves; any URL built by hand (a `fetch` of a `public/` file, a link meant to be

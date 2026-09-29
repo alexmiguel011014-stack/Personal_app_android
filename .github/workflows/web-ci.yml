@@ -1,14 +1,9 @@
 name: Web CI
 
-# /scanproject 2026-09-14: the js target had no CI gate — web-deploy.yml only runs on push to
-# main/feature/kmp-web (it's a deploy, not a check), so a PR could break the web build without
-# anything going red. This mirrors android-ci.yml/ios-ci.yml's shape for the js target.
-#
-# Compile only, deliberately. `:shared:jsTest` is blocked on this repo's centralized-repositories
-# setting the same way §19f's Node download was (kotlinNodeJsSetup's test path registers
-# https://nodejs.org/dist itself, which FAIL_ON_PROJECT_REPOS rejects, ignoring
-# NodeJsEnvSpec.download=false) — confirmed by running it locally, not assumed. Tracked in
-# GOALS.md §19h. compileKotlinJs needs no Node/npm at all, so it's safe here.
+# GOALS.md §23l: checks for the Next.js site in web/ on every push and pull request — lint, unit
+# tests, the static build, and the emulator tests (firestore.rules, and the data layer run through
+# them). web-deploy.yml publishes; this one guards pull requests too. (It used to compile the
+# Kotlin/JS target, removed with the old web build.)
 on:
   push:
     branches: [main, feature/kmp-web]
@@ -16,26 +11,39 @@ on:
     branches: [main, feature/kmp-web]
 
 jobs:
-  build:
+  check:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # The Firestore emulator behind npm run test:rules needs Java 21.
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+      - name: Install dependencies
+        run: npm ci
 
-      # :app is configured as part of the same Gradle build even though this task never touches
-      # it — same secret android-ci.yml already uses.
-      - name: Write google-services.json
-        env:
-          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
-        run: echo "$GOOGLE_SERVICES_JSON" > app/google-services.json
+      - name: Lint
+        run: npm run lint
 
-      - name: Compile web target
-        run: ./gradlew :shared:compileKotlinJs --no-configuration-cache
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Emulator tests (rules and data layer)
+        run: npm run test:rules

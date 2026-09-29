@@ -4127,7 +4127,18 @@ Passed 2026-09-28.
       dashboard loaded from production — App Check accepted the domain. **Watch out:** `main`'s own copy of `web-deploy.yml` still builds the
       Kotlin/JS target, so a push to `main` before this branch is merged would put the old site
       back.
-- [ ] Only after the new site is live and verified: remove 23b's list.
+- [x] Only after the new site is live and verified: remove 23b's list.
+      **Done 2026-09-28, after 23j passed and with the trainer's go-ahead** — the whole list:
+      the `js { }` target, the `jsMain` dependencies and the `NodeJsPlugin` hook in
+      `shared/build.gradle.kts`; both Kotlin/JS hooks in the root `build.gradle.kts`; the
+      `nodejs.org/dist` ivy repository (and its now-unused `URI` import) in `settings.gradle.kts`
+      — one more item the list missed; `kotlin.js.yarn` in `gradle.properties`; `kotlinxBrowser`,
+      `ktor-client-js` and `kotlinx-browser` in the version catalog; `shared/src/jsMain/**`;
+      `kotlin-js-store/`; and `.claude/launch.json`, whose only entry ran the Kotlin/JS dev
+      server. `web-ci.yml` wasn't deleted but repurposed: it now checks `web/` on every push and
+      pull request (lint, unit tests, build, emulator tests), since `web-deploy.yml` only guards
+      what gets published. **Verified:** `./gradlew verify assembleDebug` — `android-ci.yml`'s
+      own gate, which only runs on `main`, so run locally here — BUILD SUCCESSFUL.
 
 **23m. Registration**
 - [x] `CLAUDE.md` gains a web section: `web/` layout, which business rules are hand-ported and

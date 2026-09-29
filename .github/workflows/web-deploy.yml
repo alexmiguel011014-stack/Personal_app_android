@@ -3,9 +3,8 @@ name: Web Deploy (GitHub Pages)
 # GOALS.md §23l: the Next.js site in web/ (a static export) replaced the Kotlin/JS build here on
 # 2026-09-28 — same repo, same Pages URL, https://alexmiguel011014-stack.github.io/Personal_app_android/.
 # That URL is a sub-path, so the site is built with it as its base path (NEXT_PUBLIC_BASE_PATH, read
-# by web/next.config.ts). The Kotlin/JS target still compiles in web-ci.yml until §23l's removal
-# list runs; it just isn't deployed anymore. (§19g's reasons for Pages over Firebase Hosting —
-# bandwidth on a public repo, no extra vendor — still hold.)
+# by web/next.config.ts). The Kotlin/JS target itself was removed afterwards (§23l). (§19g's reasons
+# for Pages over Firebase Hosting — bandwidth on a public repo, no extra vendor — still hold.)
 on:
   push:
     branches: [main, feature/kmp-web]

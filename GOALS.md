@@ -3665,7 +3665,9 @@ libraries); all are dev-only — `npm audit --omit=dev` reports 0 for what ships
       nothing after it changed, sent again that day. The live rules are now this branch's copy.
       Not read back from here (that needs the trainer's login): the first trainer-side check in 23j
       is the confirmation, since the dashboard only loads under these rules — under the old ones it
-      shows its "regras do §23d já foram publicadas?" message instead.
+      shows its "regras do §23d já foram publicadas?" message instead. **Confirmed live the same
+      day:** the trainer signed in on the deployed site and the dashboard loaded their real numbers
+      (1 student, connected; 0 sessions in 7 days).
       **File ready 2026-09-24** — publish **this branch's** `firestore.rules`, not the Android
       branch's copy (see the note at the top of 23d). Safe to publish before the web uses any of
       it: every flow the Android app runs today passes against it (the 34 shared tests). **Sent to
@@ -4108,7 +4110,8 @@ which reads `payments`/`billingPlans` and so needs §23d published (already 23j'
       HTML is the Next site (no `<canvas>`); reCAPTCHA Enterprise loads with the App Check key on
       this domain, with no console errors. The App Check token exchange itself only happens on the
       first Firebase call — the trainer's first sign-in is its check (same domain and key the
-      Kotlin/JS site used). **Watch out:** `main`'s own copy of `web-deploy.yml` still builds the
+      Kotlin/JS site used). **Checked the same day:** the trainer signed in on the live site and the
+      dashboard loaded from production — App Check accepted the domain. **Watch out:** `main`'s own copy of `web-deploy.yml` still builds the
       Kotlin/JS target, so a push to `main` before this branch is merged would put the old site
       back.
 - [ ] Only after the new site is live and verified: remove 23b's list.

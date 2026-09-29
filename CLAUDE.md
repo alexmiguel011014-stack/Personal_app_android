@@ -166,23 +166,27 @@ removes it); it is no longer the lever for how the website looks.
 ## Web front (GOALS.md §23)
 
 `web/` is a Next.js 16 app (App Router, npm) replacing the Kotlin/JS web build. Phase 1 — every
-screen, unstyled — is built (§23d–§23i); it now waits on the §23j validation gate. Two rules hold
-until §23 says otherwise:
+screen, unstyled — is built (§23d–§23i) and live on GitHub Pages (§23l); it now waits on the §23j
+validation gate. Until §23 says otherwise:
 
 - **Phase 1 has no CSS at all** — no stylesheet, no `className`, no inline `style` anywhere under
   `web/src/`. Screens are built and validated as bare HTML; the visual pass (§23k) is blocked on
   the §23j validation gate. Don't add "just a little" styling to make a screen presentable — that
   is exactly how phase 1 turns into phase 2 before anything has been validated.
-- **The Kotlin/JS web build is frozen.** `shared/src/jsMain` and the `js` target keep building and
-  deploying to Pages until §23l, but no new web-only work lands there. Its full removal list — and
-  the two values (the Firebase web config and the App Check site key) that must be carried into
-  `web/` before anything is deleted — is in GOALS.md §23b.
+- **The Kotlin/JS web build is frozen.** Since 2026-09-28 Pages serves `web/` instead
+  (`web-deploy.yml`, GOALS.md §23l); `shared/src/jsMain` and the `js` target still compile in
+  `web-ci.yml` until §23l's removal list runs, but nothing deploys them and no new web-only work
+  lands there. The removal list is in GOALS.md §23b.
+- **The site lives under a sub-path** on Pages (`/Personal_app_android/`): the deploy sets
+  `NEXT_PUBLIC_BASE_PATH`, which `next.config.ts` turns into `basePath`. `Link` and the router
+  prefix it themselves; any URL built by hand (a `fetch` of a `public/` file, a link meant to be
+  shared) must read that variable too — and routes end in `/` (`trailingSlash`).
 
 Two more web conventions (§23f) that differ from Android on purpose:
 
 - **The site is a static export** (`output: "export"`): there is no server in production, and Next
   refuses server features even in `next dev`. Auth and data are the Firebase client SDK in the
-  browser; `firestore.rules` is the security. Hence the invite link `/convite?c=CODE` — a path
+  browser; `firestore.rules` is the security. Hence the invite link `/convite/?c=CODE` — a path
   segment unknown at build time would need a server.
 - **"Manter conectado" is Firebase persistence, not a preference plus a sign-out.** Checked is
   `browserLocalPersistence`, unchecked is `browserSessionPersistence` (the session ends with the

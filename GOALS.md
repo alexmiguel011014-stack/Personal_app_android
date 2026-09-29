@@ -4079,7 +4079,7 @@ which reads `payments`/`billingPlans` and so needs §23d published (already 23j'
       lessons, so verify they still apply once Material is gone.
 
 **23l. Deploy cutover**
-- [ ] Deploy the Next.js build. Decide the target — GitHub Pages needs a static export, which
+- [x] Deploy the Next.js build. Decide the target — GitHub Pages needs a static export, which
       constrains the App Router's server features; Vercel/Firebase Hosting do not. Pick based on
       whether anything server-side is actually needed (the Cloud Function from 23e might decide
       this).
@@ -4091,6 +4091,26 @@ which reads `payments`/`billingPlans` and so needs §23d published (already 23j'
       `public/` file, `web/src/data/promptAssets.ts`, needs the same prefix, since Next doesn't add
       it to `fetch`; and the chosen domain must be added to the App Check reCAPTCHA key (23b's
       finding).
+      **Done 2026-09-28 — GitHub Pages, the trainer's choice, at the same address as before:**
+      `https://alexmiguel011014-stack.github.io/Personal_app_android/`. The new site took the
+      Kotlin/JS build's place there (the trainer accepted the old one going down before 23j ends).
+      `web/next.config.ts` reads the sub-path from `NEXT_PUBLIC_BASE_PATH` (empty locally) and sets
+      `trailingSlash`, so every route is a directory `index.html` any static host serves; the two
+      hand-built URLs — the prompt assets' `fetch` and the invite link, now
+      `…/Personal_app_android/convite/?c=CODE` — read the same variable. `web-deploy.yml` builds
+      `web/` (lint, unit tests, static build with the sub-path) instead of the Kotlin/JS target,
+      which still compiles in `web-ci.yml` until the removal below. **Verified before the push:**
+      that exact build served locally the way Pages serves a project site (sub-path, directory
+      index, `404.html`), against the emulators — landing, sign-in, dashboard, list, a student's
+      page, the ficha editor loading its prompt assets, an invite link carrying the sub-path and
+      claimed through to the student area, direct loads of the agenda and mensalidades pages.
+      **After the deploy:** every route answers 200 and an unknown one the site's 404; the served
+      HTML is the Next site (no `<canvas>`); reCAPTCHA Enterprise loads with the App Check key on
+      this domain, with no console errors. The App Check token exchange itself only happens on the
+      first Firebase call — the trainer's first sign-in is its check (same domain and key the
+      Kotlin/JS site used). **Watch out:** `main`'s own copy of `web-deploy.yml` still builds the
+      Kotlin/JS target, so a push to `main` before this branch is merged would put the old site
+      back.
 - [ ] Only after the new site is live and verified: remove 23b's list.
 
 **23m. Registration**
@@ -4104,7 +4124,8 @@ which reads `payments`/`billingPlans` and so needs §23d published (already 23j'
       remaining "Personal APP".
       **Done on this branch**, plus one this item missed: the launcher label (`app_name` in
       `strings.xml`), whose note in `store-listing/listing-copy.md` is updated to match. Both are
-      string-only changes, not rebuilt with Gradle. **Not done on the Android line in production**
+      string-only changes; the `commonMain` one compiled in CI (`web-ci.yml`'s `compileKotlinJs`,
+      green on `4933cb8`). **Not done on the Android line in production**
       (`claude/tarefas-abertas-front-9834f6`), whose top bar and launcher label still say "Personal
       APP" — a visible change on the installed app, for that branch's next release. What stays
       "Personal APP" on purpose: the root Gradle project name and the folder, which are not

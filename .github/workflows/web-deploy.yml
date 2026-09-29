@@ -1,8 +1,11 @@
 name: Web Deploy (GitHub Pages)
 
-# GOALS.md §19g: GitHub Pages over Firebase Hosting — ~100GB/month bandwidth on a public repo
-# vs Firebase's 360MB/day, and it reuses the GitHub Actions setup §18k already stood up instead
-# of adding a vendor. ubuntu-latest, not macos: unlike ios-ci.yml this is a plain JVM/Node build.
+# GOALS.md §23l: the Next.js site in web/ (a static export) replaced the Kotlin/JS build here on
+# 2026-09-28 — same repo, same Pages URL, https://alexmiguel011014-stack.github.io/Personal_app_android/.
+# That URL is a sub-path, so the site is built with it as its base path (NEXT_PUBLIC_BASE_PATH, read
+# by web/next.config.ts). The Kotlin/JS target still compiles in web-ci.yml until §23l's removal
+# list runs; it just isn't deployed anymore. (§19g's reasons for Pages over Firebase Hosting —
+# bandwidth on a public repo, no extra vendor — still hold.)
 on:
   push:
     branches: [main, feature/kmp-web]
@@ -22,38 +25,40 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
+      - name: Set up Node 24
+        uses: actions/setup-node@v4
         with:
-          distribution: temurin
-          java-version: '21'
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
 
-      # No actions/setup-node: Kotlin downloads its own Node through the nodejs.org/dist ivy
-      # repository declared in settings.gradle.kts (GOALS.md §19f/§19g) — confirmed in this
-      # workflow's own log (:kotlinNodeJsSetup executes on every fresh runner).
+      - name: Install dependencies
+        run: npm ci
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+      # The same gate as a local check: nothing ships that doesn't lint and pass its unit tests.
+      # (npm run build type-checks everything too.)
+      - name: Lint
+        run: npm run lint
 
-      # Not needed by the js target itself (google-services.json is Android-only), but :app is
-      # still configured as part of the same build — same secret android-ci.yml already uses.
-      - name: Write google-services.json
+      - name: Unit tests
+        run: npm test
+
+      # prebuild copies the ficha prompt's assets from app/src/main/assets/ into public/prompt/.
+      - name: Build static site
         env:
-          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
-        run: echo "$GOOGLE_SERVICES_JSON" > app/google-services.json
-
-      # Produces shared/build/dist/js/productionExecutable/ (index.html + shared.js + skiko wasm).
-      # Slow: the webpack production/minification step took ~26 min locally on a cold cache.
-      - name: Build web distribution
-        run: ./gradlew :shared:jsBrowserDistribution --no-configuration-cache
+          NEXT_PUBLIC_BASE_PATH: /Personal_app_android
+        run: npm run build
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: shared/build/dist/js/productionExecutable
+          path: web/out
 
   deploy:
     needs: build

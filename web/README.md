@@ -85,6 +85,17 @@ example the version currently published, to see exactly which guarantees a candi
 Because `assertFails` passes on *any* failure, that comparison is also what proves each test
 actually discriminates.
 
+## Deploy
+
+`.github/workflows/web-deploy.yml` publishes this app to GitHub Pages
+(`https://alexmiguel011014-stack.github.io/Personal_app_android/`) on every push to `main` or
+`feature/kmp-web`: lint, unit tests, then `npm run build` with
+`NEXT_PUBLIC_BASE_PATH=/Personal_app_android` — the Pages URL is a sub-path, and `next.config.ts`
+turns that variable into `basePath` — and `out/` is the site. Next prefixes links and assets itself;
+the two URLs built by hand (the prompt assets' `fetch`, the invite link) read the same variable.
+To try that exact build locally, build with the variable set and serve `out/` under
+`/Personal_app_android/` with a static server that serves a directory's `index.html`.
+
 ## Before writing route code
 
 This is Next.js 16, and it differs from what most tutorials and AI models remember. See

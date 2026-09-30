@@ -80,7 +80,7 @@ export function InviteClaim() {
   );
 
   if (busy) return <p>Aceitando o convite…</p>;
-  if (session.status === "loading") return <p>Carregando…</p>;
+  if (session.status === "loading") return <p className="loading">Carregando…</p>;
 
   if (session.status === "signedIn") {
     const { role, trainerId } = session.profile;
@@ -113,7 +113,7 @@ export function InviteClaim() {
         </button>
         {error && <p role="alert">{error}</p>}
         <p>
-          Não é você? <SignOutButton />
+          Não é você? <SignOutButton className="link-button" />
         </p>
       </>
     );
@@ -152,7 +152,7 @@ export function InviteClaim() {
         <button type="submit">{mode === "create" ? "Criar conta e aceitar" : "Entrar e aceitar"}</button>
       </form>
       <p>
-        <button type="button" onClick={() => setMode(mode === "create" ? "signIn" : "create")}>
+        <button type="button" className="link-button" onClick={() => setMode(mode === "create" ? "signIn" : "create")}>
           {mode === "create" ? "Já tenho conta" : "Criar uma conta nova"}
         </button>
       </p>

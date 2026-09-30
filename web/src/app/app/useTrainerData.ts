@@ -20,6 +20,8 @@ export type TrainerData =
       chargesCreated: number;
       /** "Today" as of this load, in the trainer's zone — one value for every figure on screen. */
       today: string;
+      /** The instant of this load (epoch ms) that `today` was taken from. */
+      now: number;
       timeZone: string;
     };
 
@@ -46,7 +48,7 @@ export function useTrainerData(trainerId: string, { ensureCharges = false } = {}
         const { snapshot, chargesCreated } = ensureCharges
           ? await loadTrainerView(db, trainerId, yearMonth(today), now, timeZone)
           : { snapshot: await loadTrainerSnapshot(db, trainerId), chargesCreated: 0 };
-        if (!cancelled) setData({ status: "ready", snapshot, chargesCreated, today, timeZone });
+        if (!cancelled) setData({ status: "ready", snapshot, chargesCreated, today, now, timeZone });
       } catch (error) {
         if (!cancelled) setData({ status: "error", message: describe(error) });
       }

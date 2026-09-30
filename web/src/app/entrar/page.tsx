@@ -13,6 +13,7 @@ import { authErrorMessage } from "../../data/authErrors";
 import { getFirebase } from "../../data/firebase";
 import { destinationFor } from "../../data/session";
 import { useSession } from "../SessionProvider";
+import { PublicShell } from "../_shared/PublicShell";
 import { SignOutButton } from "../SignOutButton";
 
 // GOALS.md §23f: login for trainers and students who already have an account. Students without one
@@ -73,57 +74,72 @@ export default function LoginPage() {
 
   if (session.status === "signedIn" && session.profile.role === "NONE") {
     return (
-      <main>
-        <h1>Entrar</h1>
-        <p>
-          Login feito, mas esta conta ainda não tem um papel atribuído. Peça para um ADM configurar o
-          campo &quot;role&quot; desta conta no Firestore.
-        </p>
-        <SignOutButton />
-      </main>
+      <PublicShell>
+        <div className="public-main">
+          <div className="auth-card">
+            <h1>Entrar</h1>
+            <p>
+              Login feito, mas esta conta ainda não tem um papel atribuído. Peça para um ADM configurar o campo
+              &quot;role&quot; desta conta no Firestore.
+            </p>
+            <SignOutButton />
+          </div>
+        </div>
+      </PublicShell>
     );
   }
 
   return (
-    <main>
-      <h1>Entrar</h1>
-      <form onSubmit={signIn}>
-        <p>
-          <label>
-            E-mail{" "}
-            <input type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
-          </label>
-        </p>
-        <p>
-          <label>
-            Senha{" "}
-            <input
-              type="password"
-              autoComplete="current-password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </label>
-        </p>
-        <p>
-          <label>
-            <input type="checkbox" checked={stayLoggedIn} onChange={(e) => setStayLoggedIn(e.target.checked)} /> Manter
-            conectado
-          </label>
-        </p>
-        <button type="submit" disabled={busy}>
-          {busy ? "Entrando…" : "Entrar"}
-        </button>
-      </form>
-      <p>
-        <button type="button" onClick={() => void resetPassword()}>
-          Esqueci minha senha
-        </button>
-      </p>
-      {error && <p role="alert">{error}</p>}
-      {notice && <p role="status">{notice}</p>}
-      <p>É aluno e ainda não tem conta? Abra o link de convite que seu personal enviou.</p>
-    </main>
+    <PublicShell>
+      <div className="public-main">
+        <div className="auth-card">
+          <h1>Entrar</h1>
+          <p className="lede">Acesse o seu caderno de treino.</p>
+          <form onSubmit={signIn}>
+            <p>
+              <label>
+                E-mail{" "}
+                <input
+                  type="email"
+                  autoComplete="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </label>
+            </p>
+            <p>
+              <label>
+                Senha{" "}
+                <input
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </label>
+            </p>
+            <p>
+              <label>
+                <input type="checkbox" checked={stayLoggedIn} onChange={(e) => setStayLoggedIn(e.target.checked)} />{" "}
+                Manter conectado
+              </label>
+            </p>
+            <button type="submit" disabled={busy}>
+              {busy ? "Entrando…" : "Entrar"}
+            </button>
+          </form>
+          <p>
+            <button type="button" className="link-button" onClick={() => void resetPassword()}>
+              Esqueci minha senha
+            </button>
+          </p>
+          {error && <p role="alert">{error}</p>}
+          {notice && <p role="status">{notice}</p>}
+          <p className="subtle">É aluno e ainda não tem conta? Abra o link de convite que seu personal enviou.</p>
+        </div>
+      </div>
+    </PublicShell>
   );
 }

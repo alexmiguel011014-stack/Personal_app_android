@@ -19,7 +19,7 @@ export function RequireArea({ area, children }: { area: "/app" | "/aluno"; child
 
   if (error) {
     return (
-      <main>
+      <main className="public-main">
         <p role="alert">{error}</p>
         <button type="button" onClick={() => void refresh()}>
           Tentar de novo
@@ -27,6 +27,6 @@ export function RequireArea({ area, children }: { area: "/app" | "/aluno"; child
       </main>
     );
   }
-  if (destination !== area) return <p>Carregando…</p>;
+  if (destination !== area) return <p className="loading loading-screen">Carregando…</p>;
   return <>{children}</>;
 }

@@ -24,7 +24,7 @@ function Billing({ trainerId }: { trainerId: string }) {
   const { data, reload } = useTrainerData(trainerId, { ensureCharges: true });
   const [picked, setPicked] = useState<string | null>(null);
 
-  if (data.status === "loading") return <p>Carregando…</p>;
+  if (data.status === "loading") return <p className="loading">Carregando…</p>;
   if (data.status === "error") {
     return (
       <main>

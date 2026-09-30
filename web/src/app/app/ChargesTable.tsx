@@ -30,7 +30,7 @@ export function ChargesTable({
   onChanged: () => void;
 }) {
   return (
-    <table>
+    <table className="stack">
       <caption>{caption}</caption>
       <thead>
         <tr>
@@ -202,15 +202,15 @@ function ChargeRow({
       : ` em ${formatDate(localDate(charge.paidAt, timeZone))}${charge.method ? ` (${METHOD_LABELS[charge.method]})` : ""}`;
   return (
     <tr>
-      {name !== undefined && <td>{name}</td>}
-      <td>{formatDate(charge.dueDate)}</td>
-      <td>{formatCents(charge.amountCents)}</td>
-      <td>
+      {name !== undefined && <td data-label="Aluno">{name}</td>}
+      <td data-label="Vencimento">{formatDate(charge.dueDate)}</td>
+      <td data-label="Valor">{formatCents(charge.amountCents)}</td>
+      <td data-label="Situação">
         {STATUS_LABELS[paymentStatus(charge, today)]}
         {paidDetail}
         {charge.note && ` — ${charge.note}`}
       </td>
-      <td>
+      <td data-label="">
         {actions}
         {error && <p role="alert">{error}</p>}
       </td>

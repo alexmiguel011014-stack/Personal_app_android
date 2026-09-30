@@ -17,7 +17,7 @@ export default function StudentHome() {
 function Home({ uid }: { uid: string }) {
   const { data, reload } = useStudentData(uid);
 
-  if (data.status === "loading") return <p>Carregando…</p>;
+  if (data.status === "loading") return <p className="loading">Carregando…</p>;
   if (data.status === "error") {
     return (
       <main>
@@ -49,7 +49,7 @@ function Home({ uid }: { uid: string }) {
         <p>Nenhuma ficha atribuída ainda. Fale com seu personal.</p>
       ) : (
         workouts.map((workout) => (
-          <article key={workout.id}>
+          <article className="workout-card" key={workout.id}>
             <h2>{workout.name}</h2>
             <details>
               <summary>{workout.exercises.length} exercícios</summary>
@@ -62,9 +62,9 @@ function Home({ uid }: { uid: string }) {
                 ))}
               </ol>
             </details>
-            <p>
-              <Link href={`/aluno/treino?ficha=${encodeURIComponent(workout.id)}`}>Registrar treino de hoje</Link>
-            </p>
+            <Link className="button button-primary" href={`/aluno/treino?ficha=${encodeURIComponent(workout.id)}`}>
+              Registrar treino de hoje
+            </Link>
           </article>
         ))
       )}

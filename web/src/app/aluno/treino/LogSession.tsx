@@ -24,7 +24,7 @@ export function LogSession() {
 
 function Loader({ uid, workoutId }: { uid: string; workoutId: string }) {
   const { data } = useStudentData(uid);
-  if (data.status === "loading") return <p>Carregando…</p>;
+  if (data.status === "loading") return <p className="loading">Carregando…</p>;
   if (data.status === "error") return <p role="alert">{data.message}</p>;
   const workout = data.workouts.find((w) => w.id === workoutId);
   if (!workout) {
@@ -103,7 +103,7 @@ function SessionForm({ uid, trainerId, workout }: { uid: string; trainerId: stri
 
   return (
     <main>
-      <p>
+      <p className="eyebrow">
         <Link href="/aluno">← Fichas</Link>
       </p>
       <h1>{workout.name}</h1>
@@ -117,8 +117,8 @@ function SessionForm({ uid, trainerId, workout }: { uid: string; trainerId: stri
               {exercise.weight ? ` · ${exercise.weight}` : ""}
             </p>
             {(rows.get(exercise.name) ?? []).map((row, index) => (
-              <p key={index}>
-                Série {index + 1}:{" "}
+              <p className="set-row" key={index}>
+                <span className="set-number">Série {index + 1}</span>
                 <label>
                   Peso{" "}
                   <input
@@ -128,7 +128,7 @@ function SessionForm({ uid, trainerId, workout }: { uid: string; trainerId: stri
                     value={row.weight}
                     onChange={(e) => edit(exercise.name, index, { weight: e.target.value })}
                   />
-                </label>{" "}
+                </label>
                 <label>
                   Reps{" "}
                   <input
@@ -147,9 +147,11 @@ function SessionForm({ uid, trainerId, workout }: { uid: string; trainerId: stri
           </fieldset>
         ))}
         {error && <p role="alert">{error}</p>}
-        <button type="submit" disabled={busy || entries.length === 0}>
-          {busy ? "Salvando…" : "Salvar sessão"}
-        </button>
+        <div className="sticky-actions">
+          <button type="submit" disabled={busy || entries.length === 0}>
+            {busy ? "Salvando…" : "Salvar sessão"}
+          </button>
+        </div>
       </form>
     </main>
   );

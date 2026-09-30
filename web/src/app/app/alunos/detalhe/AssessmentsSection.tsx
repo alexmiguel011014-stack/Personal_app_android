@@ -36,7 +36,7 @@ export function AssessmentsSection({
   return (
     <section>
       <h2>Autoavaliações</h2>
-      {state.status === "loading" && <p>Carregando…</p>}
+      {state.status === "loading" && <p className="loading">Carregando…</p>}
       {state.status === "error" && <p role="alert">Não foi possível carregar as autoavaliações.</p>}
       {state.status === "ready" && state.assessments.length === 0 && <p>Nenhuma autoavaliação enviada ainda.</p>}
       {state.status === "ready" &&

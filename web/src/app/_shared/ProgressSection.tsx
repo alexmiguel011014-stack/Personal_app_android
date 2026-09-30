@@ -41,7 +41,7 @@ export function ProgressSection({ logs, timeZone }: { logs: readonly WorkoutLogD
             {points.length === 0 ? (
               <p>Sem sessões com carga registrada para este exercício ainda.</p>
             ) : (
-              <table>
+              <table className="stack">
                 <thead>
                   <tr>
                     <th scope="col">Data</th>
@@ -51,8 +51,8 @@ export function ProgressSection({ logs, timeZone }: { logs: readonly WorkoutLogD
                 <tbody>
                   {points.map((point, index) => (
                     <tr key={index}>
-                      <td>{formatDate(localDate(point.date, timeZone))}</td>
-                      <td>{formatKg(point.maxWeight)}</td>
+                      <td data-label="Data">{formatDate(localDate(point.date, timeZone))}</td>
+                      <td data-label="Maior carga">{formatKg(point.maxWeight)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -67,7 +67,7 @@ export function ProgressSection({ logs, timeZone }: { logs: readonly WorkoutLogD
         {logs.length === 0 ? (
           <p>Nenhuma sessão registrada ainda.</p>
         ) : (
-          <table>
+          <table className="stack">
             <thead>
               <tr>
                 <th scope="col">Exercício</th>
@@ -78,9 +78,9 @@ export function ProgressSection({ logs, timeZone }: { logs: readonly WorkoutLogD
             <tbody>
               {recentLogs(logs).map((log) => (
                 <tr key={log.id}>
-                  <td>{log.exerciseName}</td>
-                  <td>{formatDateTime(log.date, timeZone)}</td>
-                  <td>{formatSets(decodePerformedSets(log.performedSetsJson)) || "—"}</td>
+                  <td data-label="Exercício">{log.exerciseName}</td>
+                  <td data-label="Quando">{formatDateTime(log.date, timeZone)}</td>
+                  <td data-label="Séries (carga × reps)">{formatSets(decodePerformedSets(log.performedSetsJson)) || "—"}</td>
                 </tr>
               ))}
             </tbody>

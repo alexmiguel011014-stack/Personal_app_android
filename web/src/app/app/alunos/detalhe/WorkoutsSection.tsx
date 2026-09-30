@@ -68,7 +68,7 @@ export function WorkoutsSection({
           conectado fica presa a ele, e o aluno não a vê depois de entrar.
         </p>
       )}
-      {state.status === "loading" && <p>Carregando…</p>}
+      {state.status === "loading" && <p className="loading">Carregando…</p>}
       {state.status === "error" && <p role="alert">Não foi possível carregar as fichas.</p>}
       {state.status === "ready" && state.workouts.length === 0 && <p>Nenhuma ficha ainda.</p>}
       {state.status === "ready" &&

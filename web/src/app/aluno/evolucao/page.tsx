@@ -22,7 +22,7 @@ export default function EvolutionPage() {
 function Evolution({ uid }: { uid: string }) {
   const { data, reload } = useStudentData(uid);
 
-  if (data.status === "loading") return <p>Carregando…</p>;
+  if (data.status === "loading") return <p className="loading">Carregando…</p>;
   if (data.status === "error") {
     return (
       <main>

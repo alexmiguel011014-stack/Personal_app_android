@@ -18,6 +18,7 @@ import { StudentForm } from "../StudentForm";
 import { AssessmentsSection } from "./AssessmentsSection";
 import { BillingSection } from "./BillingSection";
 import { MeasurementsSection } from "./MeasurementsSection";
+import { Avatar } from "../../../_shared/Avatar";
 import { ProgressSection } from "../../../_shared/ProgressSection";
 import { WorkoutsSection } from "./WorkoutsSection";
 
@@ -37,7 +38,7 @@ function Detail({ trainerId, studentId }: { trainerId: string; studentId: string
   const { data, reload } = useTrainerData(trainerId, { ensureCharges: true });
   const [editing, setEditing] = useState(false);
 
-  if (data.status === "loading") return <p>Carregando…</p>;
+  if (data.status === "loading") return <p className="loading">Carregando…</p>;
   if (data.status === "error") {
     return (
       <main>
@@ -80,11 +81,20 @@ function Detail({ trainerId, studentId }: { trainerId: string; studentId: string
 
   return (
     <main>
-      <p>
+      <p className="eyebrow">
         <Link href="/app/alunos">← Alunos</Link>
       </p>
-      <h1>{profile.name}</h1>
-      <p>{student.kind === "linked" ? "Conectado" : "Aguardando conexão"}</p>
+      <div className="profile-heading">
+        <Avatar name={profile.name} />
+        <div>
+          <h1>{profile.name}</h1>
+          <p>
+            <span className={`status-pill${student.kind === "linked" ? "" : " is-pending"}`}>
+              {student.kind === "linked" ? "Conectado" : "Aguardando conexão"}
+            </span>
+          </p>
+        </div>
+      </div>
 
       <section>
         <h2>Dados</h2>

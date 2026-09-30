@@ -22,7 +22,7 @@ export default function AssessmentPage() {
 
 function Assessment({ uid }: { uid: string }) {
   const { data } = useStudentData(uid);
-  if (data.status === "loading") return <p>Carregando…</p>;
+  if (data.status === "loading") return <p className="loading">Carregando…</p>;
   if (data.status === "error") return <p role="alert">{data.message}</p>;
   if (!data.profile.pendingAssessmentRequest || !data.profile.canSelfAssess) {
     return (
@@ -89,7 +89,7 @@ function AssessmentForm({ uid, profile }: { uid: string; profile: LinkedStudentD
 
   return (
     <main>
-      <p>
+      <p className="eyebrow">
         <Link href="/aluno">← Fichas</Link>
       </p>
       <h1>Autoavaliação</h1>

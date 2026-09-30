@@ -46,7 +46,7 @@ function Loader({ trainerId, studentId, workoutId }: { trainerId: string; studen
     };
   }, [trainerId, studentId, workoutId]);
 
-  if (data.status === "loading" || existing === undefined) return <p>Carregando…</p>;
+  if (data.status === "loading" || existing === undefined) return <p className="loading">Carregando…</p>;
   if (data.status === "error") return <p role="alert">{data.message}</p>;
 
   const account = data.snapshot.linked.find((l) => l.id === studentId);
@@ -166,7 +166,7 @@ function FichaForm({
 
   return (
     <main>
-      <p>
+      <p className="eyebrow">
         <Link href={back}>← {student.doc.name}</Link>
       </p>
       <h1>{existing ? "Editar ficha" : "Nova ficha"}</h1>
@@ -229,7 +229,7 @@ function FichaForm({
         {exercises.length === 0 ? (
           <p>Nenhum exercício ainda.</p>
         ) : (
-          <table>
+          <table className="stack">
             <thead>
               <tr>
                 <th scope="col">Exercício</th>
@@ -242,17 +242,17 @@ function FichaForm({
             <tbody>
               {exercises.map((exercise, index) => (
                 <tr key={index}>
-                  <td>{exercise.name}</td>
-                  <td>{exercise.sets}</td>
-                  <td>{exercise.reps}</td>
-                  <td>
+                  <td data-label="Exercício">{exercise.name}</td>
+                  <td data-label="Séries">{exercise.sets}</td>
+                  <td data-label="Reps">{exercise.reps}</td>
+                  <td data-label="Músculos">
                     {exercise.muscleActivation
                       ? Object.entries(exercise.muscleActivation)
                           .map(([muscle, coefficient]) => `${muscle} ${coefficient}`)
                           .join(", ")
                       : "—"}
                   </td>
-                  <td>
+                  <td data-label="">
                     <button type="button" onClick={() => setExercises(exercises.filter((_, i) => i !== index))}>
                       Remover
                     </button>
@@ -302,7 +302,7 @@ function FichaForm({
           ))}
         </ul>
       )}
-      <button type="button" disabled={busy} onClick={() => void save()}>
+      <button type="button" className="button-primary" disabled={busy} onClick={() => void save()}>
         {busy ? "Salvando…" : "Salvar ficha"}
       </button>
     </main>

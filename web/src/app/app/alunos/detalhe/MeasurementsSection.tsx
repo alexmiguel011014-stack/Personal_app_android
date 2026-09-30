@@ -87,11 +87,11 @@ export function MeasurementsSection({
           conectado fica presa a ele.
         </p>
       )}
-      {state.status === "loading" && <p>Carregando…</p>}
+      {state.status === "loading" && <p className="loading">Carregando…</p>}
       {state.status === "error" && <p role="alert">Não foi possível carregar as medidas.</p>}
       {state.status === "ready" && state.biometrics.length === 0 && <p>Nenhuma medida registrada ainda.</p>}
       {state.status === "ready" && state.biometrics.length > 0 && (
-        <table>
+        <table className="stack">
           <thead>
             <tr>
               <th scope="col">Data</th>
@@ -102,9 +102,9 @@ export function MeasurementsSection({
           <tbody>
             {state.biometrics.map((biometric) => (
               <tr key={biometric.id}>
-                <td>{formatDate(localDate(biometric.date, timeZone))}</td>
-                <td>{formatKg(biometric.weight)}</td>
-                <td>{formatBodyFat(biometric.bodyFat)}</td>
+                <td data-label="Data">{formatDate(localDate(biometric.date, timeZone))}</td>
+                <td data-label="Peso">{formatKg(biometric.weight)}</td>
+                <td data-label="% Gordura">{formatBodyFat(biometric.bodyFat)}</td>
               </tr>
             ))}
           </tbody>

@@ -76,3 +76,104 @@ Reachable today from `StudentDetailsScreen`'s "Ficha Personal" button (dialog: M
 active-workout edit/toggle/delete controls the read-only list on `StudentDetailsScreen` doesn't).
 Two entry points to the same two destinations — not a bug, `WorkoutBuilderScreen` is the fuller
 management view.
+
+## Web front (GOALS.md §23)
+
+> On `main` the website arrived as one piece (2026-09-30): `web/`, its two workflows and the live
+> `firestore.rules`. The plan it was built from — GOALS.md §23 and the references to it in the code
+> comments — lives in GOALS.md on `feature/kmp-web`; `main`'s GOALS.md does not have it yet.
+
+`web/` is a Next.js 16 app (App Router, npm), the only website — it replaced the Kotlin/JS web
+build, which is gone (no `js` target, no `jsMain`; removed at §23l, 2026-09-28). Phase 1 — every
+screen, unstyled — was built (§23d–§23i), went live on GitHub Pages (§23l), and passed the
+trainer's validation (§23j, 2026-09-28). The visual pass (§23k) followed, from the trainer's own
+ALLU template. `web-ci.yml` checks it on every push and pull request; `web-deploy.yml` publishes
+it. Until §23 says otherwise:
+
+- **Styling is one stylesheet, `web/src/app/globals.css`** — the ALLU template's tokens, class
+  names and breakpoints (>1050, 861–1050, ≤860 tablet/phone with a bottom tab bar, ≤600, ≤430),
+  plus defaults for bare elements. No CSS framework, no component library, no CSS-in-JS. Extend
+  the stylesheet (or the shared frames in `src/app/_shared/`: `AppShell`, `PublicShell`) rather
+  than adding a stylesheet per screen; keep text ≥12px, controls ≥44px, form fields 16px on
+  touch widths, and give every table that has more than three columns `className="stack"` with a
+  `data-label` on each `<td>` so it reads as labelled rows on a phone. Behaviour, data and
+  `domain/` are not visual concerns: a restyle changes markup around them, not them.
+- **The site lives under a sub-path** on Pages (`/Personal_app_android/`): the deploy sets
+  `NEXT_PUBLIC_BASE_PATH`, which `next.config.ts` turns into `basePath`. `Link` and the router
+  prefix it themselves; any URL built by hand (a `fetch` of a `public/` file, a link meant to be
+  shared) must read that variable too — and routes end in `/` (`trailingSlash`).
+
+Two more web conventions (§23f) that differ from Android on purpose:
+
+- **The site is a static export** (`output: "export"`): there is no server in production, and Next
+  refuses server features even in `next dev`. Auth and data are the Firebase client SDK in the
+  browser; `firestore.rules` is the security. Hence the invite link `/convite/?c=CODE` — a path
+  segment unknown at build time would need a server.
+- **"Manter conectado" is Firebase persistence, not a preference plus a sign-out.** Checked is
+  `browserLocalPersistence`, unchecked is `browserSessionPersistence` (the session ends with the
+  tab). That keeps the invariant the Android code protects above — Firebase never holds a session
+  the UI pretends isn't there — by construction. Don't port the Android startup sign-out to the web.
+
+Before writing route code in `web/`, read `web/AGENTS.md`: this Next differs from what models
+remember (global `PageProps`/`LayoutProps` helpers, `params` as a Promise).
+
+**Layout.** `src/domain/` is pure TypeScript — the model and every derivation, no Firestore, no
+clock (every "today" and time zone is an argument) — with a unit test beside each file.
+`src/data/` talks to Firestore through the modular SDK; `converters.ts` is the one place a document
+becomes a domain type. `src/app/` holds the routes: `/` (landing), `/entrar`, `/convite?c=`, the
+trainer's `/app/*` and the student's `/aluno/*`, each area with its own layout and gate
+(`RequireArea`); `app/_shared/` has the few pieces both use (the underscore keeps it out of the
+routes). `rules/` has the emulator tests — the rules themselves, and the data layer run through
+them. `scripts/` seeds the emulators with fake data and copies the ficha prompt's assets.
+
+**The Kotlin side is authoritative.** The phone writes and reads back the same documents, so the web
+stores exactly what the Android line in production (`claude/tarefas-abertas-front-9834f6`) stores:
+same fields, types, defaults and read leniency. When the two disagree, the web is wrong. A web-only
+difference is allowed only when it changes nothing the phone reads — stricter input validation,
+trimming, a comma decimal saved with a dot — and each one is commented where it happens and
+recorded in GOALS.md §23. Where Kotlin/JVM standard-library behaviour differs from JavaScript's
+(whitespace sets, `toIntOrNull`'s 32-bit range, `toDoubleOrNull`'s padding, Java's ASCII-only `\s`,
+`trimIndent` after interpolation), `src/domain/kotlin.ts` reproduces the Kotlin side. The hand
+ports and their originals (paths under `shared/src/commonMain/kotlin/com/example/personalapp/` on
+that branch):
+
+| `web/src/` | Kotlin original |
+|---|---|
+| `domain/workoutParser.ts` (Smart Paste) | `util/WorkoutParser.kt`; its tests port `WorkoutParserTest.kt` |
+| `domain/fichaPrompt.ts` | `PromptFichaViewModel.buildPrompt`; template and volume table are `app/src/main/assets/`, copied by `scripts/copy-prompt-assets.mjs` |
+| `data/converters.ts` | `data/repository/FirestoreMappers.kt` (including `fieldOrNull`'s leniency) |
+| `domain/exercise.ts` | `data/model/Exercise.kt`, `PerformedSet.kt` (the kotlinx JSON in `exercisesJson`/`performedSetsJson`) |
+| `domain/workouts.ts`, `data/workouts.ts` | `TrainerRepository`'s status derivation; `PromptFichaScreen`/`ManualWorkoutScreen` save and paste rules |
+| `data/session.ts`, `data/invites.ts` | `AuthRepository.resolveRole` and `RoleRouter`; `AuthRepository.claimInvite` |
+| `domain/studentProfile.ts`, `data/students.ts` | `AddStudentScreen`/`EditStudentScreen`; `TrainerRepository`'s user writes |
+| `domain/assessments.ts`, `data/assessments.ts` | `AssessmentEntity.kt` (`ParQ.QUESTIONS`); `StudentRepository.submitAssessment` |
+| `domain/sessionLog.ts`, `data/workoutLogs.ts` | `StudentLogSessionScreen`; `StudentViewModel.logSession` |
+| `domain/biometrics.ts`, `data/biometrics.ts` | `AddBiometricDialog`; `StudentViewModel.logOwnBiometric` |
+| `domain/progression.ts` | `ExerciseProgressionChart` |
+| `domain/schedules.ts`, `data/schedules.ts` | `ScheduleScreen`; `TrainerViewModel.bookSlot` |
+
+Web-only, with no Kotlin original: mensalidades (`domain/payments.ts`, `domain/billing.ts` — the
+trainer decided the phone doesn't show payments) and the dashboard's numbers (`domain/metrics.ts`,
+`domain/dashboard.ts`).
+
+**No AI provider key ever reaches the browser** (decided 2026-09-24, GOALS.md §23e): the web builds
+the §15 prompt for the trainer to paste into whichever AI app they use, and reads the reply back
+with Smart Paste. Direct generation (`GenerativeAiService`, BYO keys, Firebase AI Logic) stays on
+Android; a server-side proxy would be its own item (a Cloud Function, which needs the Blaze plan).
+
+Checks, from `web/`: `npm test`, `npm run lint`, `npx tsc --noEmit` (run `npx next typegen` first
+on a fresh checkout), `npm run build`, and `npm run test:rules` (emulators, Java 21).
+
+## Security rules (`firestore.rules`)
+
+One Firestore database serves every client (Android, web, iOS), so there is one live rules file —
+published by hand by the trainer (console copy-paste, or `firebase deploy --only firestore:rules`
+with their own login). **`firestore.rules` on `main` is the live copy** (the web work's `004a029`,
+GOALS.md §23d on `feature/kmp-web`): it carries the `payments`/`billingPlans` rules and closes the
+privilege hole an older §17 version had. Any older copy on another branch must not be published.
+Never publish a copy without diffing it against what's live.
+
+Every rules change gets a test in `web/rules/firestore.rules.test.ts`, run against the local
+emulator with `npm run test:rules` from `web/` (Java 21; see `web/README.md`). `assertFails`
+passes on *any* failure, so a new "rejects X" test proves nothing until it's been seen failing
+against the old rules: `RULES_FILE=<published copy> npm run test:rules` does exactly that.

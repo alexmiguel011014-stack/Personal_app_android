@@ -1,0 +1,71 @@
+name: Web Deploy (GitHub Pages)
+
+# GOALS.md §23l: the Next.js site in web/ (a static export) replaced the Kotlin/JS build here on
+# 2026-09-28 — same repo, same Pages URL, https://alexmiguel011014-stack.github.io/Personal_app_android/.
+# That URL is a sub-path, so the site is built with it as its base path (NEXT_PUBLIC_BASE_PATH, read
+# by web/next.config.ts). The Kotlin/JS target itself was removed afterwards (§23l). (§19g's reasons
+# for Pages over Firebase Hosting — bandwidth on a public repo, no extra vendor — still hold.)
+on:
+  push:
+    branches: [main, feature/kmp-web]
+  workflow_dispatch:
+
+# Required by actions/deploy-pages.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time; don't cancel a running one (a half-published site is worse than a slow one).
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The same gate as a local check: nothing ships that doesn't lint and pass its unit tests.
+      # (npm run build type-checks everything too.)
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      # prebuild copies the ficha prompt's assets from app/src/main/assets/ into public/prompt/.
+      - name: Build static site
+        env:
+          NEXT_PUBLIC_BASE_PATH: /Personal_app_android
+        run: npm run build
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

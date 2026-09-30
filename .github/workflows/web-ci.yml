@@ -1,0 +1,49 @@
+name: Web CI
+
+# GOALS.md §23l: checks for the Next.js site in web/ on every push and pull request — lint, unit
+# tests, the static build, and the emulator tests (firestore.rules, and the data layer run through
+# them). web-deploy.yml publishes; this one guards pull requests too. (It used to compile the
+# Kotlin/JS target, removed with the old web build.)
+on:
+  push:
+    branches: [main, feature/kmp-web]
+  pull_request:
+    branches: [main, feature/kmp-web]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # The Firestore emulator behind npm run test:rules needs Java 21.
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Emulator tests (rules and data layer)
+        run: npm run test:rules

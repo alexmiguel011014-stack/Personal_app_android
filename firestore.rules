@@ -9,8 +9,17 @@ rules_version = '2';
 //   biometrics/{entryId} - trainerId, studentId
 //   schedules/{scheduleId} - trainerId, studentId
 //   workoutLogs/{logId}  - trainerId, studentId (written by the student, read by their trainer)
+//   assessments/{id}     - trainerId, studentId, submittedAt, parQAnswersJson, goal, ... (GOALS.md
+//                           §17: written by the student, append-only, read by their trainer)
 //   trainerRequests/{uid} - email, createdAt. Self-written "please promote me" mailbox, doc ID is
 //                           the requester's own uid; only an ADM can read/act on it (GOALS.md §5e).
+//   payments/{studentId}_{YYYY-MM} - one monthly charge (GOALS.md §23c). Trainer-only.
+//   billingPlans/{studentId}       - what to charge that student each month (GOALS.md §23c).
+//                                    Trainer-only.
+//
+//   users/{uid} also carries the GOALS.md §17 flags a trainer grants a linked student:
+//   canSelfAssess, canLogBiometrics (trainer-only), pendingAssessmentRequest (set by the trainer,
+//   cleared by the student's assessment batch), lastAssessmentId (that batch's link).
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -36,6 +45,15 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == trainerId && myRole() == 'TRAINER';
     }
 
+    // GOALS.md §23d: a student's own write can never result in a §17 permission their trainer
+    // didn't grant. The self-update branch already froze these flags, but the invite claim (a
+    // create, or the re-claim update) could arrive with them switched on.
+    function grantsNoPermissions(data) {
+      return data.get('canSelfAssess', false) == false &&
+        data.get('canLogBiometrics', false) == false &&
+        data.get('pendingAssessmentRequest', false) == false;
+    }
+
     // users/{uid} — self-read, admin-managed writes. A user can edit their own
     // profile fields but can never change their own role or trainerId (no self-promotion).
     match /users/{uid} {
@@ -53,20 +71,61 @@ service cloud.firestore {
         request.resource.data.role == 'STUDENT' &&
         request.resource.data.trainerId ==
           get(/databases/$(database)/documents/invites/$(request.resource.data.inviteCode)).data.trainerId &&
-        get(/databases/$(database)/documents/invites/$(request.resource.data.inviteCode)).data.used == false
+        get(/databases/$(database)/documents/invites/$(request.resource.data.inviteCode)).data.used == false &&
+        // GOALS.md §23d: single-use for real. Checking only that the invite was unused let a client
+        // create this doc without marking the invite, and the same code then worked again; the
+        // same batch must now leave the invite used (AuthRepository.claimInvite's transaction
+        // already does both writes together).
+        getAfter(/databases/$(database)/documents/invites/$(request.resource.data.inviteCode)).data.used == true &&
+        grantsNoPermissions(request.resource.data)
       );
-      // The second branch is a narrow re-claim exception (GOALS.md §13d): an account that
-      // already has a users/{uid} doc but is still an unclaimed STUDENT (trainerId null) may
-      // attach to a trainer for the first time via the same valid-unused-invite proof the
-      // create rule above requires. Any other existing role/trainerId (TRAINER, ADM, or already
-      // linked to a different trainer) stays blocked — that needs an explicit ADM decision, not
-      // a client-driven overwrite.
+      // Three writers:
+      // 1. The owning trainer (GOALS.md §17c, and the fix for a pre-existing gap: before this,
+      //    no branch let a trainer edit a linked student's profile at all, so EditStudentScreen's
+      //    set(merge) on users/{uid} was silently PERMISSION_DENIED). Restricted to the profile
+      //    fields TrainerRepository.updateUser writes plus the §17 permission/request flags —
+      //    never role/trainerId/inviteCode.
+      // 2. The student themselves: own profile fields only. role/trainerId immutable (the
+      //    anti-self-promotion guarantee); canSelfAssess/canLogBiometrics immutable (trainer-
+      //    granted, §17); pendingAssessmentRequest may only go true -> false, and only in the
+      //    same batch that creates the assessment doc named by lastAssessmentId (existsAfter
+      //    sees the batch's own writes) — a student can't just dismiss a request.
+      // 3. The narrow re-claim exception (GOALS.md §13d): an account that already has a
+      //    users/{uid} doc but is still an unclaimed STUDENT (trainerId null) may attach to a
+      //    trainer for the first time via the same valid-unused-invite proof the create rule
+      //    above requires. Any other existing role/trainerId (TRAINER, ADM, or already linked to
+      //    a different trainer) stays blocked — that needs an explicit ADM decision.
       allow update: if isAdmin() || (
+        isOwningTrainer(field(resource.data, 'trainerId')) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'name', 'gender', 'phone', 'goal', 'experienceLevel', 'medicalNotes', 'trainingDays',
+          'canSelfAssess', 'canLogBiometrics', 'pendingAssessmentRequest'
+        ])
+      ) || (
         isSignedIn() && request.auth.uid == uid &&
         (
           (
             field(request.resource.data, 'role') == field(resource.data, 'role') &&
-            field(request.resource.data, 'trainerId') == field(resource.data, 'trainerId')
+            field(request.resource.data, 'trainerId') == field(resource.data, 'trainerId') &&
+            field(request.resource.data, 'canSelfAssess') == field(resource.data, 'canSelfAssess') &&
+            field(request.resource.data, 'canLogBiometrics') == field(resource.data, 'canLogBiometrics') &&
+            // GOALS.md §23d: the trainer's web dashboard reads both — inviteCode to drop the draft a
+            // claim superseded, createdAt to size the adherence and "gone quiet" windows. A student
+            // editing either could hide from their trainer's numbers.
+            field(request.resource.data, 'inviteCode') == field(resource.data, 'inviteCode') &&
+            field(request.resource.data, 'createdAt') == field(resource.data, 'createdAt') &&
+            (
+              field(request.resource.data, 'pendingAssessmentRequest') == field(resource.data, 'pendingAssessmentRequest') ||
+              (
+                field(resource.data, 'pendingAssessmentRequest') == true &&
+                field(request.resource.data, 'pendingAssessmentRequest') == false &&
+                // Created by this very batch (§23d): existsAfter alone also accepted pointing
+                // lastAssessmentId at an older assessment, dismissing the request without
+                // submitting anything.
+                !exists(/databases/$(database)/documents/assessments/$(request.resource.data.lastAssessmentId)) &&
+                existsAfter(/databases/$(database)/documents/assessments/$(request.resource.data.lastAssessmentId))
+              )
+            )
           ) ||
           (
             field(resource.data, 'role') == 'STUDENT' &&
@@ -74,7 +133,10 @@ service cloud.firestore {
             request.resource.data.role == 'STUDENT' &&
             request.resource.data.trainerId ==
               get(/databases/$(database)/documents/invites/$(request.resource.data.inviteCode)).data.trainerId &&
-            get(/databases/$(database)/documents/invites/$(request.resource.data.inviteCode)).data.used == false
+            get(/databases/$(database)/documents/invites/$(request.resource.data.inviteCode)).data.used == false &&
+            // Same two §23d conditions as the create rule above.
+            getAfter(/databases/$(database)/documents/invites/$(request.resource.data.inviteCode)).data.used == true &&
+            grantsNoPermissions(request.resource.data)
           )
         )
       );
@@ -95,7 +157,12 @@ service cloud.firestore {
         resource.data.used == false &&
         request.resource.data.used == true &&
         request.resource.data.trainerId == resource.data.trainerId &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used']);
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used']) &&
+        // GOALS.md §23d: only as part of a claim — after the batch, the caller's own users doc must
+        // name this invite. Otherwise anyone holding the link could burn it without using it, and
+        // a /convite/<code> URL gets seen by more eyes (chat previews, browser history) than a
+        // typed code did.
+        getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.inviteCode == code;
       allow delete: if isOwningTrainer(resource.data.trainerId);
     }
 
@@ -115,11 +182,19 @@ service cloud.firestore {
       allow update, delete: if isOwningTrainer(resource.data.trainerId);
     }
 
-    // biometrics/{entryId} — trainer manages; student reads their own entries.
+    // biometrics/{entryId} — trainer manages; student reads their own entries, and may create
+    // their own once the trainer set canLogBiometrics on their profile (GOALS.md §17c). The
+    // trainerId on the entry must be the student's own trainer, as with workoutLogs.
     match /biometrics/{entryId} {
       allow read: if isOwningTrainer(resource.data.trainerId) ||
         (isSignedIn() && resource.data.studentId == request.auth.uid);
-      allow create: if isOwningTrainer(request.resource.data.trainerId);
+      allow create: if isOwningTrainer(request.resource.data.trainerId) || (
+        isSignedIn() &&
+        request.resource.data.studentId == request.auth.uid &&
+        field(get(/databases/$(database)/documents/users/$(request.auth.uid)).data, 'canLogBiometrics') == true &&
+        request.resource.data.trainerId ==
+          field(get(/databases/$(database)/documents/users/$(request.auth.uid)).data, 'trainerId')
+      );
       allow update, delete: if isOwningTrainer(resource.data.trainerId);
     }
 
@@ -138,11 +213,32 @@ service cloud.firestore {
     match /workoutLogs/{logId} {
       allow read: if isOwningTrainer(resource.data.trainerId) ||
         (isSignedIn() && resource.data.studentId == request.auth.uid);
-      allow create, update: if isSignedIn() &&
+      allow create: if isSignedIn() &&
+        request.resource.data.studentId == request.auth.uid &&
+        request.resource.data.trainerId ==
+          field(get(/databases/$(database)/documents/users/$(request.auth.uid)).data, 'trainerId');
+      // GOALS.md §23d: an update must also start from the caller's own log. Checking only the new
+      // studentId let one student overwrite another's log and re-attribute it to themselves.
+      allow update: if isSignedIn() &&
+        resource.data.studentId == request.auth.uid &&
         request.resource.data.studentId == request.auth.uid &&
         request.resource.data.trainerId ==
           field(get(/databases/$(database)/documents/users/$(request.auth.uid)).data, 'trainerId');
       allow delete: if isSignedIn() && resource.data.studentId == request.auth.uid;
+    }
+
+    // assessments/{id} — GOALS.md §17: the student's self-assessment history. Created by the
+    // student only while their trainer has granted canSelfAssess, attributed to that trainer;
+    // read by the owning trainer or the student. Append-only: no update/delete, so history can't
+    // be rewritten from a client.
+    match /assessments/{id} {
+      allow read: if isOwningTrainer(resource.data.trainerId) ||
+        (isSignedIn() && resource.data.studentId == request.auth.uid);
+      allow create: if isSignedIn() &&
+        request.resource.data.studentId == request.auth.uid &&
+        field(get(/databases/$(database)/documents/users/$(request.auth.uid)).data, 'canSelfAssess') == true &&
+        request.resource.data.trainerId ==
+          field(get(/databases/$(database)/documents/users/$(request.auth.uid)).data, 'trainerId');
     }
 
     // trainerRequests/{uid} — a self-registered STUDENT asks to become a TRAINER; only the ADM
@@ -152,6 +248,89 @@ service cloud.firestore {
       allow read: if isAdmin() || (isSignedIn() && request.auth.uid == uid);
       allow create: if isSignedIn() && request.auth.uid == uid;
       allow delete: if isAdmin();
+    }
+
+    // payments/{paymentId} — GOALS.md §23c/§23d: mensalidades, level 1 (recorded by hand; no money
+    // moves). Trainer-only: a student never reads these, not even their own — the trainer's
+    // decision, 2026-09-22. The id is {studentId}_{YYYY-MM} of the charge's dueDate, which is what
+    // makes generating a month's charges idempotent; these rules hold that invariant. The shape is
+    // validated because a malformed charge (float cents, a missing paidAt) silently breaks every
+    // query that reads it back — see web/src/domain/payments.ts for the model.
+    match /payments/{paymentId} {
+      function yearMonthOf(date) {
+        let parts = date.split('-');
+        return parts[0] + '-' + parts[1];
+      }
+
+      // Every field always present — `where('paidAt', '==', null)` doesn't match a document that
+      // lacks the field. No `id` field: the document id carries it, as in FirestoreMappers.kt.
+      function isPayment(d) {
+        let fields = ['trainerId', 'studentId', 'amountCents', 'currency', 'dueDate', 'paidAt',
+                      'method', 'source', 'externalId', 'note', 'createdAt'];
+        return d.keys().hasAll(fields) && d.keys().hasOnly(fields) &&
+          d.trainerId is string && d.studentId is string &&
+          d.amountCents is int && d.amountCents > 0 &&
+          d.currency == 'BRL' &&
+          d.dueDate is string &&
+          d.dueDate.matches('[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])') &&
+          (d.paidAt == null || d.paidAt is int) &&
+          (d.method == null || d.method in ['pix', 'cash', 'card', 'transfer', 'other']) &&
+          d.source in ['manual', 'gateway'] &&
+          (d.externalId == null || d.externalId is string) &&
+          (d.note == null || (d.note is string && d.note.size() <= 500)) &&
+          d.createdAt is int;
+      }
+
+      // A charge that doesn't exist yet has no resource.data to check — and that is exactly the
+      // read create-if-absent makes (ensureMonthlyCharges reads inside a transaction before
+      // creating). For a missing charge, ownership comes from the plan it would be generated from:
+      // the id starts with the studentId, and billingPlans/{studentId} names the trainer. No plan,
+      // no answer — so nobody can probe other trainers' students.
+      allow read: if resource == null
+        ? isOwningTrainer(get(/databases/$(database)/documents/billingPlans/$(paymentId.split('_')[0])).data.trainerId)
+        : isOwningTrainer(resource.data.trainerId);
+      allow create: if isOwningTrainer(request.resource.data.trainerId) &&
+        isPayment(request.resource.data) &&
+        paymentId == request.resource.data.studentId + '_' + yearMonthOf(request.resource.data.dueDate) &&
+        // Clients only ever write manual charges. A level-2 payment gateway would write through
+        // the Admin SDK, which bypasses these rules — no client needs to create a gateway charge.
+        request.resource.data.source == 'manual' &&
+        request.resource.data.externalId == null;
+      // Editable: the amount, the due day within the same month (the id encodes the month), and
+      // settlement — including undoing a mistaken "paid". A gateway-owned charge is the
+      // gateway's to change, never the client's.
+      allow update: if isOwningTrainer(resource.data.trainerId) &&
+        resource.data.source == 'manual' &&
+        isPayment(request.resource.data) &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['amountCents', 'dueDate', 'paidAt', 'method', 'note']) &&
+        yearMonthOf(request.resource.data.dueDate) == yearMonthOf(resource.data.dueDate);
+      allow delete: if isOwningTrainer(resource.data.trainerId) && resource.data.source == 'manual';
+    }
+
+    // billingPlans/{studentId} — GOALS.md §23c: the amount and due day a student's monthly charge
+    // is generated from. Trainer-only for the same reason as payments — and the reason this isn't
+    // fields on users/{uid}: rules are per document, not per field, and a student reads their own
+    // users doc.
+    match /billingPlans/{studentId} {
+      function isBillingPlan(d) {
+        let fields = ['studentId', 'trainerId', 'amountCents', 'currency', 'dueDay', 'active', 'createdAt'];
+        return d.keys().hasAll(fields) && d.keys().hasOnly(fields) &&
+          d.studentId is string && d.trainerId is string &&
+          d.amountCents is int && d.amountCents > 0 &&
+          d.currency == 'BRL' &&
+          d.dueDay is int && d.dueDay >= 1 && d.dueDay <= 31 &&
+          d.active is bool &&
+          d.createdAt is int;
+      }
+
+      allow read, delete: if isOwningTrainer(resource.data.trainerId);
+      allow create: if isOwningTrainer(request.resource.data.trainerId) &&
+        isBillingPlan(request.resource.data) &&
+        request.resource.data.studentId == studentId;
+      allow update: if isOwningTrainer(resource.data.trainerId) &&
+        isBillingPlan(request.resource.data) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['amountCents', 'dueDay', 'active']);
     }
 
     // Everything else: denied by default (no catch-all match).

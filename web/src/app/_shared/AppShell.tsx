@@ -7,6 +7,7 @@ import { useSession } from "../SessionProvider";
 import { SignOutButton } from "../SignOutButton";
 import { Avatar } from "./Avatar";
 import { NavIcon, type IconName } from "./icons";
+import { Wordmark } from "./Wordmark";
 
 // The ALLU template's frame (DESIGN.md): a forest-green rail with the wordmark and the navigation
 // on a desktop; on a tablet or phone (<= 860px, see globals.css) the rail shrinks to a slim top bar
@@ -25,14 +26,6 @@ function isCurrent(pathname: string, item: NavItem): boolean {
   // trailingSlash: true — "/app/alunos/" and "/app/alunos" are the same place.
   const path = pathname.replace(/\/+$/, "") || "/";
   return item.exact ? path === item.href : path === item.href || path.startsWith(`${item.href}/`);
-}
-
-export function Wordmark({ href, label }: { href: string; label: string }) {
-  return (
-    <Link className="wordmark" href={href} aria-label={label}>
-      ALLU<span>.</span>
-    </Link>
-  );
 }
 
 export function AppShell({
@@ -63,7 +56,7 @@ export function AppShell({
       </a>
       <div className="app-shell" data-area={area}>
         <aside className="rail">
-          <Wordmark href={home} label="ALLU, início" />
+          <Wordmark href={home} label="ALLU personal, início" />
           <p className="rail-caption">{caption}</p>
           <nav className="primary-nav" aria-label="Navegação principal">
             {nav.map((item) => (
@@ -97,7 +90,7 @@ export function AppShell({
             {children}
             <footer className="page-footer">
               <span>
-                ALLU <span className="footer-dot" aria-hidden="true" /> Caderno de treino
+                ALLU personal <span className="footer-dot" aria-hidden="true" /> Caderno de treino
               </span>
             </footer>
           </div>

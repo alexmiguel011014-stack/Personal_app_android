@@ -6,7 +6,7 @@ import "./globals.css";
 // static template's tokens, components and breakpoints — over the phase-1 component tree, which was
 // built and validated unstyled (§23j) and is left as it was.
 export const metadata: Metadata = {
-  title: { default: "ALLU", template: "%s — ALLU" },
+  title: { default: "ALLU personal", template: "%s — ALLU personal" },
   description: "Gestão de alunos, fichas de treino e evolução para personal trainers.",
 };
 

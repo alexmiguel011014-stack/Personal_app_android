@@ -17,7 +17,9 @@ export default function Landing() {
     >
       <section className="hero">
         <div className="hero-inner">
-          <h1>ALLU</h1>
+          <h1>
+            ALLU<span className="hero-dot" aria-hidden="true">.</span> <span className="hero-tag">personal</span>
+          </h1>
           <p>
             Acompanhamento de alunos para personal trainers: fichas de treino, registro das sessões, evolução e
             mensalidades, num lugar só — e o aluno com a ficha dele no celular.

@@ -4120,9 +4120,12 @@ Passed 2026-09-28.
       safe-area inset on a notched iPhone, `env()` behaviour), a contrast measurement of every
       pair (the template's greens were kept as given; `#729846` focus ring and the muted greys
       are the ones worth measuring), keyboard-only and screen-reader passes, Safari/Firefox.
-      **Decisions the trainer should confirm:** the wordmark and title now say **ALLU**
-      (template and `PRODUCT.md`) where §23m had standardised "Personal Tracker" — one string
-      in `AppShell.tsx`/`PublicShell.tsx`/`layout.tsx` each to revert; "Mensalidades" is a fifth
+      **Name, decided by the trainer 2026-09-30: "ALLU personal"** (web only) — supersedes
+      §23m's "Personal Tracker" for the website. The wordmark is the template's "ALLU." with
+      "personal" beside it (`_shared/Wordmark.tsx`), tab titles read "<page> — ALLU personal",
+      the landing heading and footers say it too. The Android app's name is untouched.
+      **Deviations from the template, still open for the trainer:** on a tablet or phone the
+      navigation is a bottom tab bar, not the template's top row; "Mensalidades" is a fifth
       navigation item beyond the template's four; the template's demo labels ("Página
       demonstrativa", fictitious names) were not carried over — the screens show real data.
 - [x] Reference sites the trainer reacted positively to (2026-09-22): `ui.shadcn.com/blocks` for

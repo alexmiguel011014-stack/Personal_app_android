@@ -57,6 +57,7 @@ img, svg { max-width: 100%; }
 .rail { position: fixed; inset: 0 auto 0 0; z-index: 2; display: flex; width: var(--rail-w); flex-direction: column; padding: 34px 22px 20px; overflow-y: auto; background: var(--forest); color: #f7f8ee; }
 .wordmark { width: fit-content; color: #fffefa; font-size: 31px; font-weight: 800; letter-spacing: -.08em; line-height: 1; text-decoration: none; }
 .wordmark span { color: var(--leaf); }
+.wordmark-tag { margin-left: 8px; color: #b4c9ba; font-size: 13px; font-weight: 600; letter-spacing: 0; }
 .rail-caption { margin: 49px 0 14px; color: #abc1b1; font-size: 12px; font-weight: 600; }
 .primary-nav { display: grid; gap: 5px; }
 .nav-link { display: flex; min-height: 48px; align-items: center; gap: 12px; padding: 0 12px; border-radius: 7px; color: #d5dfd5; font-size: 14px; text-decoration: none; }
@@ -334,7 +335,9 @@ button.day-cell.selected:hover { background: var(--leaf); }
 .hero { padding: clamp(36px, 8vw, 88px) clamp(16px, 5vw, 56px); background: var(--forest); color: #f7f8ee; }
 .hero-inner { max-width: 1040px; margin-inline: auto; }
 .public-page .hero h1 { max-width: 760px; margin-bottom: 18px; color: #fffefa; font-size: clamp(38px, 7vw, 68px); font-weight: 780; letter-spacing: -.06em; }
-.public-page .hero h1::after { color: var(--leaf); }
+.public-page .hero h1::after { content: none; }
+.hero-dot { color: var(--leaf); }
+.hero-tag { margin-left: .12em; color: #d5dfd5; font-size: .4em; font-weight: 500; letter-spacing: 0; }
 .public-page .hero p { max-width: 560px; color: #d5dfd5; font-size: clamp(16px, 2vw, 19px); line-height: 1.55; }
 .public-page .hero a:not([class]) { color: var(--leaf); }
 .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 26px; }

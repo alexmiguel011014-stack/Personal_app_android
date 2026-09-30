@@ -21,8 +21,9 @@ const NAV: readonly NavItem[] = [
 ];
 
 // The tab title of the trainer area. `template` is repeated here on purpose: a segment that sets a plain
-// string title ends the root layout's template for everything below it.
-export const metadata: Metadata = { title: { template: "%s — ALLU", default: "Hoje — ALLU" } };
+// string title ends the root layout's template for everything below it. The root template still
+// wraps this segment's own `default`, so that one is the bare page name.
+export const metadata: Metadata = { title: { template: "%s — ALLU personal", default: "Hoje" } };
 
 export default function TrainerLayout({ children }: LayoutProps<"/app">) {
   return (

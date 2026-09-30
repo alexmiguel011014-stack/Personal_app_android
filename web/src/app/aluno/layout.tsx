@@ -13,7 +13,7 @@ const NAV: readonly NavItem[] = [
 ];
 
 // `template` repeated: see app/app/layout.tsx.
-export const metadata: Metadata = { title: { template: "%s — ALLU", default: "Minhas fichas — ALLU" } };
+export const metadata: Metadata = { title: { template: "%s — ALLU personal", default: "Minhas fichas" } };
 
 export default function StudentLayout({ children }: LayoutProps<"/aluno">) {
   return (

@@ -4124,10 +4124,12 @@ Passed 2026-09-28.
       §23m's "Personal Tracker" for the website. The wordmark is the template's "ALLU." with
       "personal" beside it (`_shared/Wordmark.tsx`), tab titles read "<page> — ALLU personal",
       the landing heading and footers say it too. The Android app's name is untouched.
-      **Deviations from the template, still open for the trainer:** on a tablet or phone the
-      navigation is a bottom tab bar, not the template's top row; "Mensalidades" is a fifth
-      navigation item beyond the template's four; the template's demo labels ("Página
-      demonstrativa", fictitious names) were not carried over — the screens show real data.
+      **Deviations from the template, left to Claude's judgement by the trainer 2026-09-30
+      ("faz do seu jeito"):** on a tablet or phone the navigation is a bottom tab bar, not the
+      template's top row (five destinations do not fit one row; a thumb reaches the bottom);
+      "Mensalidades" stays as a fifth navigation item beyond the template's four. The template's
+      demo labels ("Página demonstrativa", fictitious names) were not carried over — the screens
+      show real data.
 - [x] Reference sites the trainer reacted positively to (2026-09-22): `ui.shadcn.com/blocks` for
       the dashboard shape (sidebar + metric cards + data table), `truecoach.co` and
       `trainerize.com` for category language, `linear.app` for density.

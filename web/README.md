@@ -3,13 +3,17 @@
 A Next.js (App Router) app that replaces the Kotlin/JS web build. The plan, and the reasons for
 every decision below, are in [`GOALS.md` §23](../GOALS.md) — read that first.
 
-## Phase 1 rule: no CSS at all
+## Styling (§23k)
 
-No stylesheet, no `className`, no inline `style` anywhere under `src/`. Every screen is built and
-validated as bare HTML first; the visual pass is §23k and is blocked on the §23j validation gate.
-This is deliberate, not unfinished: a stylesheet added now is how phase 1 quietly becomes phase 2.
-It is also still real Next.js with the real component tree — phase 2 styles it, it does not
-rewrite it.
+Phase 1 was built and validated with no CSS at all (§23j passed 2026-09-28); the visual pass then
+applied the trainer's ALLU template over the same component tree. The whole look is
+`src/app/globals.css` — tokens, component classes (named as in the template) and defaults for bare
+elements — with two shared frames in `src/app/_shared/`: `AppShell` (forest rail on a desktop; slim
+top bar and bottom tab bar on a tablet or phone) for `/app` and `/aluno`, and `PublicShell` for the
+landing, sign-in and invite pages. No CSS framework or component library: the template's CSS is
+plain, and `package.json` still depends on `next`/`react`/`react-dom` only. Responsive behaviour is
+in the stylesheet's media queries (>1050, 861–1050, ≤860, ≤600, ≤430px); a table with more than three
+columns takes `className="stack"` and a `data-label` per cell so it becomes labelled rows on a phone.
 
 ## Routes
 
@@ -18,7 +22,7 @@ rewrite it.
 | `/` | `src/app/page.tsx` | Public landing (§23i) |
 | `/entrar` | `src/app/entrar/` | Login, for anyone with an account (§23f) |
 | `/convite?c=CODE` | `src/app/convite/` | A student's first visit: create an account, claim the invite (§23f) |
-| `/app` | `src/app/app/` | Trainer (§23g) — dense, desktop-first |
+| `/app` | `src/app/app/` | Trainer (§23g) — "Hoje", Agenda, Alunos, Registros, Mensalidades |
 | `/aluno` | `src/app/aluno/` | Student (§23h) — mobile-first |
 
 `src/app/app/` is not a typo: the outer `app/` is the App Router directory, the inner one is the

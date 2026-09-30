@@ -3401,6 +3401,12 @@ mechanical CRUD screens once the data layer exists.
       reacted well to `ui.shadcn.com/blocks` as a *reference site*, which is not the same as
       choosing the library — and shadcn/ui brings Tailwind with it, a real consequence for 23k.
       Confirm with them before 23k starts, not after.
+      **Resolved 2026-09-30: no library.** The trainer brought their own static template (the
+      ALLU prototype: `DESIGN.md` + five HTML pages and one `styles.css`) and asked for it to be
+      implemented on the web front (those files live untracked in the outer checkout, not in git).
+      Its CSS is plain and small, so `web/` still depends on
+      `next`/`react`/`react-dom` only — no Tailwind, no shadcn/ui, no icon package (the navigation
+      icons are inline SVG, as in the template). Nothing here is built on Material.
 
 **23b. Scaffold, and what happens to the Kotlin/JS build**
 - [x] Next.js project at `web/` in this repo. Same repo, not a separate one — the Firestore schema
@@ -4084,14 +4090,52 @@ Passed 2026-09-28.
 - [x] **Do not start 23k until this item is checked.** That is the entire point of the method.
       **Checked 2026-09-28.** 23k starts with 23a's open item: the component library.
 
-**23k. Visual pass — do not start before 23j**
-- [ ] Only now: component library, design tokens, layout, typography.
-- [ ] Reference sites the trainer reacted positively to (2026-09-22): `ui.shadcn.com/blocks` for
+**23k. Visual pass — started 2026-09-30 from the trainer's ALLU template**
+- [x] Only now: component library, design tokens, layout, typography.
+      **Done 2026-09-30, on branch `claude/template-web-allu` (from `feature/kmp-web`).** One
+      stylesheet, `web/src/app/globals.css`, imported by the root layout: the template's tokens
+      (forest `#173d32`, leaf `#c6e778`, paper `#f8f8f3`…), its system-font stack and its class
+      names, plus a layer of defaults for bare elements (forms, tables, `<dl>`, `<details>`,
+      alerts) so every phase-1 screen picks up the look without a class per tag. The phase-1 tree
+      was kept: same routes, same data hooks, same `domain/` and `data/` (untouched); only
+      markup around them changed. Frame: `_shared/AppShell.tsx` (rail + nav, used by `/app` and
+      `/aluno`) and `_shared/PublicShell.tsx` (landing, sign-in, invite). Screens rebuilt to the
+      template's layouts: **Hoje** (`/app`: week strip, agenda of the day, roster, last record;
+      §23c's numbers kept below), **Agenda** (week strip picks the day, hours listed under it),
+      **Alunos** (directory of cards), the student page (avatar heading, panels), and a new
+      **Registros** (`/app/registros`: the book of sessions, measurements and self-assessments,
+      by day — `ledger.ts` + tests). The student area reuses the shell with a 720px centred
+      column, 52px set rows and a sticky save button.
+      **Responsive:** >1050px rail + two-column work grid; 861–1050px rail, narrower grid;
+      ≤860px (tablet portrait and phone) the rail becomes a slim top bar and navigation moves
+      to a bottom tab bar (a deliberate step beyond the template's ≤760px top bar: five
+      destinations do not fit a top row, and the tab bar is where a thumb reaches); ≤600px one
+      column, week strip in 4 columns, tables turn into labelled rows (`table.stack`), form
+      fields 16px so iOS does not zoom. **Verified:** `tsc`, `eslint`, `vitest` (187), and a
+      static `next build` with `NEXT_PUBLIC_BASE_PATH=/Personal_app_android` (17 routes); in the
+      Browser pane against the seeded emulators, every trainer, student and public route at
+      335/390/600/768/834/1024/1440px has no horizontal overflow, the tab-bar labels are not
+      truncated from 335px, booking and removing an agenda slot still work, and screens were
+      looked at on phone, tablet and desktop. **Not verified:** a real phone or tablet (touch,
+      safe-area inset on a notched iPhone, `env()` behaviour), a contrast measurement of every
+      pair (the template's greens were kept as given; `#729846` focus ring and the muted greys
+      are the ones worth measuring), keyboard-only and screen-reader passes, Safari/Firefox.
+      **Decisions the trainer should confirm:** the wordmark and title now say **ALLU**
+      (template and `PRODUCT.md`) where §23m had standardised "Personal Tracker" — one string
+      in `AppShell.tsx`/`PublicShell.tsx`/`layout.tsx` each to revert; "Mensalidades" is a fifth
+      navigation item beyond the template's four; the template's demo labels ("Página
+      demonstrativa", fictitious names) were not carried over — the screens show real data.
+- [x] Reference sites the trainer reacted positively to (2026-09-22): `ui.shadcn.com/blocks` for
       the dashboard shape (sidebar + metric cards + data table), `truecoach.co` and
       `trainerize.com` for category language, `linear.app` for density.
-- [ ] Carry §22's findings forward so they are not rediscovered: the "everything is purple" effect
+      **Superseded 2026-09-30** by the trainer's own template, which takes the sidebar shape from
+      the first reference but deliberately avoids the metric-card wall (`DESIGN.md`).
+- [x] Carry §22's findings forward so they are not rediscovered: the "everything is purple" effect
       came from Material's default containers, and density beat decoration. Both are Material 3
       lessons, so verify they still apply once Material is gone.
+      **Checked 2026-09-30:** no Material anywhere on the web (the palette is the template's
+      greens on off-white), and the screens stay dense — lists with hairline rules instead of
+      cards, except the student directory where a card is the tap target.
 
 **23l. Deploy cutover**
 - [x] Deploy the Next.js build. Decide the target — GitHub Pages needs a static export, which

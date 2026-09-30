@@ -166,14 +166,19 @@ removed at §23l). `AppTheme.kt` themes the Android app only.
 
 `web/` is a Next.js 16 app (App Router, npm), the only website — it replaced the Kotlin/JS web
 build, which is gone (no `js` target, no `jsMain`; removed at §23l, 2026-09-28). Phase 1 — every
-screen, unstyled — is built (§23d–§23i), live on GitHub Pages (§23l), and passed the trainer's
-validation (§23j, 2026-09-28). `web-ci.yml` checks it on every push and pull request;
-`web-deploy.yml` publishes it. Until §23 says otherwise:
+screen, unstyled — was built (§23d–§23i), went live on GitHub Pages (§23l), and passed the
+trainer's validation (§23j, 2026-09-28). The visual pass (§23k) followed, from the trainer's own
+ALLU template. `web-ci.yml` checks it on every push and pull request; `web-deploy.yml` publishes
+it. Until §23 says otherwise:
 
-- **No CSS until §23k starts** — no stylesheet, no `className`, no inline `style` anywhere under
-  `web/src/`. Styling arrives all at once with §23k, from the component library the trainer picks
-  (§23a's open item) — not "just a little" on one screen before that; that is exactly how phase 1
-  turns into phase 2 without a plan.
+- **Styling is one stylesheet, `web/src/app/globals.css`** — the ALLU template's tokens, class
+  names and breakpoints (>1050, 861–1050, ≤860 tablet/phone with a bottom tab bar, ≤600, ≤430),
+  plus defaults for bare elements. No CSS framework, no component library, no CSS-in-JS. Extend
+  the stylesheet (or the shared frames in `src/app/_shared/`: `AppShell`, `PublicShell`) rather
+  than adding a stylesheet per screen; keep text ≥12px, controls ≥44px, form fields 16px on
+  touch widths, and give every table that has more than three columns `className="stack"` with a
+  `data-label` on each `<td>` so it reads as labelled rows on a phone. Behaviour, data and
+  `domain/` are not visual concerns: a restyle changes markup around them, not them.
 - **The site lives under a sub-path** on Pages (`/Personal_app_android/`): the deploy sets
   `NEXT_PUBLIC_BASE_PATH`, which `next.config.ts` turns into `basePath`. `Link` and the router
   prefix it themselves; any URL built by hand (a `fetch` of a `public/` file, a link meant to be

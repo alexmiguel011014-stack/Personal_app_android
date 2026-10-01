@@ -2265,6 +2265,9 @@ Suggested: opus · xhigh — an auth/security change to the one rules file every
 - [ ] **(manual)** Publish the updated `firestore.rules` — **only after 27e is merged and deployed and, if 27g
       applies, the Android change is out** — after diffing against the live copy (CLAUDE.md: never publish
       without a diff). If §26d is also pending, publish the combined file. Then run the live checks in 27i.
+      **Order decided 2026-10-01:** merge the PR → wait for the Pages deploy to finish green → publish the rules
+      (the Android condition above is waived by the 27g decision). Publishing earlier is harmless to students who
+      already have a profile, but a new student could not yet see the confirmation screen.
 
 **27d. Address quality — `domain/emailPolicy.ts` (pure, no Firestore, no clock)**
 
@@ -2363,6 +2366,10 @@ Suggested: sonnet · medium — small Kotlin change, but on a different branch a
       writes, with no verification anywhere. So either this change ships first, or the trainer decides to publish
       anyway and send new students through the web link (an account that confirmed on the web can still claim
       on the phone; one registered on the phone and never confirmed cannot).
+      **Decision 2026-10-01 (trainer): Android and iOS are set aside for now.** The rules go out without the
+      phone change: new students sign up through the web invite link, and the phone's own sign-up/claim will be
+      refused (with its misleading "já vinculada" message) until it learns the confirmation flow. Left open as a
+      follow-up; nothing else in this section waits on it.
 
 **27h. Console setup — `(manual)`, nothing to code**
 

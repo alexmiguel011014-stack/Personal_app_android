@@ -326,10 +326,21 @@ button.day-cell.selected:hover { background: var(--leaf); }
 .review-card { margin: 14px 0; padding: 16px 18px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); }
 .review-card-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 20px; margin-bottom: 8px; }
 .review-card-head > label:first-child { flex: 1 1 260px; max-width: 460px; }
-.review-card ol { margin: 0; padding: 0; list-style: none; counter-reset: ex; }
-.review-card li { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0; padding: 8px 0; border-top: 1px solid var(--line); counter-increment: ex; }
-.review-card li > span::before { margin-right: 10px; color: var(--muted); content: counter(ex) "."; font-size: 12px; font-variant-numeric: tabular-nums; }
-.review-card li small { color: var(--muted); font-size: 12px; }
+.review-card ol { margin: 0; padding: 0; list-style: none; }
+/* number | name | séries | reps | remove — the same columns as the header row above the list */
+.review-columns, .review-exercise { display: grid; grid-template-columns: 26px minmax(0, 1fr) 76px 112px auto; align-items: start; gap: 8px 10px; }
+.review-columns { padding: 6px 0 4px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; font-weight: 650; }
+.review-columns span:first-child { grid-column: 2; }
+.review-exercise { margin: 0; padding: 8px 0; border-top: 1px solid var(--line); }
+.review-number { padding-top: 12px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.review-name { min-width: 0; }
+.review-name small { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; }
+.review-sets, .review-reps { text-align: center; font-variant-numeric: tabular-nums; }
+.review-exercise input[aria-invalid="true"] { border-color: var(--alert); background: var(--alert-bg); }
+.review-add { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 12px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.review-add > label:first-child { flex: 1 1 220px; max-width: 360px; }
+.review-add > label:not(:first-child) { flex: 0 0 96px; }
+.review-add p[role="alert"] { flex: 1 1 100%; margin: 0; }
 .review-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
 
 /* The two ways of asking an AI (GOALS.md §25i): copy a prompt, or Gemini here. */
@@ -467,6 +478,14 @@ button.day-cell.selected:hover { background: var(--leaf); }
   .profile-heading { align-items: flex-start; }
   .page-footer { flex-direction: column; gap: 6px; }
   .filters label, .filters .grow { flex-basis: 100%; max-width: none; }
+  .review { padding: 16px; }
+  .review-columns { display: none; }
+  .review-exercise { grid-template-columns: 22px 84px minmax(0, 1fr) auto; }
+  .review-name { grid-column: 2 / -1; }
+  .review-sets { grid-column: 2; }
+  .review-reps { grid-column: 3; }
+  .review-exercise > button { grid-column: 4; grid-row: 2; }
+  .review-add > label:not(:first-child) { flex: 1 1 96px; }
   .main-content p > label:not(:has(> input[type="checkbox"])):not(:has(> input[type="radio"])) { flex-basis: 100%; max-width: none; }
   fieldset { padding-inline: 12px; }
   .public-header .button { padding: 0 14px; }

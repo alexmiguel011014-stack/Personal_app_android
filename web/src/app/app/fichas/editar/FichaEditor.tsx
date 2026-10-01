@@ -10,6 +10,7 @@ import { loadStudentWorkouts, newWorkout, saveWorkout, saveWorkouts } from "../.
 import type { Exercise } from "../../../../domain/exercise";
 import { buildFichaPrompt, buildMultiFichaPrompt } from "../../../../domain/fichaPrompt";
 import { isKotlinBlank, kotlinTrim } from "../../../../domain/kotlin";
+import { exerciseErrors, tidied } from "../../../../domain/reviewEdit";
 import { calculateEffectiveVolume, parseWorkouts, type ParsedWorkout } from "../../../../domain/workoutParser";
 import { applyPaste, manualExercise, workoutErrors, type Workout } from "../../../../domain/workouts";
 import { useSession } from "../../../SessionProvider";
@@ -226,7 +227,9 @@ function FichaForm({
     if (review === null) return;
     const chosen = review.filter((item) => item.include);
     const found = chosen.flatMap((item) =>
-      workoutErrors(item.name, item.exercises).map((error) => `${item.name || "Treino sem nome"}: ${error}`),
+      [...workoutErrors(item.name, item.exercises), ...exerciseErrors(item.exercises)].map(
+        (error) => `${kotlinTrim(item.name) || "Treino sem nome"}: ${error}`,
+      ),
     );
     setReviewErrors(found);
     if (found.length > 0 || chosen.length === 0) return;
@@ -235,7 +238,13 @@ function FichaForm({
       const now = Date.now();
       // createdAt falls from the first treino to the last, so the trainer's newest-first list reads A, B, C.
       const workouts = chosen.map((item, index) =>
-        newWorkout(trainerId, student.doc.id, kotlinTrim(item.name), item.exercises, now + (chosen.length - 1 - index)),
+        newWorkout(
+          trainerId,
+          student.doc.id,
+          kotlinTrim(item.name),
+          tidied(item.exercises),
+          now + (chosen.length - 1 - index),
+        ),
       );
       await saveWorkouts(getFirebase().db, trainerId, workouts, now);
       router.push(back);

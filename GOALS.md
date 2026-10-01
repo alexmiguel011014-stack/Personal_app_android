@@ -2447,6 +2447,222 @@ Suggested: haiku · low — documentation and ticks, fully specified.
 
 ---
 
+## 28. Feature — Keep only the previous ficha: replacing a ficha archives the current one and deletes the older one
+(2026-10-01, via `/newgoal`)
+
+**The request:** "tem que ver como vamos gerenciar o excesso de fichas criadas também, para evitar de gastar espaço
+à toa. Eu queria criar um histórico que salva somente a ficha passada da pessoa e o resto exclui."
+
+**Goal type: Feature** — a retention rule added to a flow that already works (the ficha editor and the student's
+page). Research is done (2026-10-01) and recorded in 28a.
+
+**The short answer.** It can be done on the Spark plan, in the browser, with no server: when the trainer
+**replaces** a student's ficha, the app — in one atomic batch — saves the new treinos, moves the current ones to the
+**ficha anterior** (the history) and deletes whatever was already in the history. A student ends up with at most the
+current ficha plus one previous. Nothing runs in the background (that would need Cloud Functions / Scheduler, i.e. the
+Blaze plan), and **nothing is ever deleted that the feature did not itself archive one replacement earlier**.
+
+**One honest point first — space is not the problem, clutter is.** A treino is one small document (a name and a JSON
+list of exercises: a few KB), and Spark's free Firestore stores 1 GiB (<https://firebase.google.com/docs/firestore/quotas>)
+— hundreds of thousands of treinos. What *does* pile up with every "Nova ficha": **(1)** the trainer's student page
+lists every treino ever saved and loads all of them on each visit (reads are capped at 50,000/day on Spark); **(2)** a
+new treino is **active from its first save** (`newWorkout` → `isActive: true`), so unless the trainer deactivates or
+deletes the old ones by hand, the student sees the old and the new A/B/C side by side; **(3)** old plans stay for ever.
+The rule fixes those three; the space saved is a bonus. (The thing that really grows over the years is `workoutLogs` —
+one document per exercise per session — and the progress charts need it, so it is left alone; see "Not touched".)
+
+**What exists today (so the plan does not rebuild it):**
+- A "ficha" in this app is **one treino**: `workouts/{id}` = `{ trainerId, studentId, name ("Treino A — …"), isActive,
+  exercisesJson, createdAt, status ('draft'|'assigned'), assignedAt }` (`domain/workouts.ts`, `data/converters.ts`, a
+  mirror of `FirestoreMappers.kt`). There is **no grouping** of A/B/C into a cycle and **no archive state**. `status`
+  is derived (`withDerivedStatus`): active ⇒ `assigned` (the student can read it), inactive ⇒ `draft` (hidden).
+- Creation: `FichaEditor.tsx` `save()` (one treino) and `saveAll()` (several at once through `saveWorkouts`, one batch,
+  `createdAt` staggered by 1 ms). **Both only add** — nothing ever retires the previous ones. `WorkoutsSection.tsx` (the
+  student page) lists them all, newest first, with Editar / Desativar-Ativar / Excluir (`window.confirm`).
+- Rules: on `workouts` the owning trainer may create, update and delete; a student may only read their own *assigned*
+  ones; no field is validated — so a new field needs **no rules change**.
+- Kotlin: `toWorkoutEntity` reads only the eight known fields and `toFirestoreMap` writes only those, so an extra field
+  is ignored by the phone (checked on `claude/tarefas-abertas-front-9834f6`).
+- Logs: `workoutLogs` carry `workoutId` + `exerciseName`; the dashboard counts days and the progress charts group by
+  `exerciseName` — **deleting a treino does not break any past record or chart**. The student's logging screen opens a
+  treino by id from the *current* list, so only treinos the student can still see matter there.
+
+**What the research changed (four lines):**
+1. **"The previous ficha" needs a definition, because the data has no cycles.** Chosen: it is *whatever the trainer's
+   last replacement retired* — decided at the moment of replacing, never guessed from dates. One web-only field,
+   `archivedAt`, marks exactly those treinos. Guessing cycles from `createdAt` gaps works for AI batches and fails for
+   treinos added one at a time — and a wrong guess here deletes data.
+2. **The delete is bounded by construction.** The only documents the feature may delete are **inactive treinos of that
+   student that already carry `archivedAt`** — ones it archived itself at the previous replacement. Drafts the trainer
+   prepared, treinos the trainer deactivated by hand, and anything the phone wrote are never candidates.
+3. **Every other writer fails safe.** A save that does not carry `archivedAt` (the phone toggling or editing; the web's
+   own Editar/Ativar) turns an archived treino into an ordinary inactive one — it is **kept**; losing the field can only
+   mean "not deleted later". The delete filter also requires `isActive === false`, so an archived treino that was
+   re-activated is untouched even if the field survived a merge-write.
+4. **No scheduler on Spark ⇒ the delete happens inside the trainer's own action** (the replace), after a confirmation
+   that lists what will go. Considered and not chosen: Firestore TTL (deletes by age, not "keep the previous one",
+   configured outside the code, billing implications not verified) and Cloud Functions / Scheduler (Blaze plan).
+
+**Assumptions to confirm (28b):** "ficha" = all of a student's *active* treinos at the moment of replacing (A/B/C
+together), not one treino at a time; history depth is exactly **one** previous ficha; the previous ficha is for the
+trainer's eyes only (the student never sees it); and replacing is a **question asked each time** the student already
+has an active ficha ("Substituir" / "Só adicionar"), never automatic — adding a "Treino D" next to A/B/C must stay
+possible.
+
+**Not touched by this section (explicit, to stop scope creep):** `workoutLogs` retention (a separate item if reads ever
+become a problem — e.g. keep N months — and it must keep the progress charts working); `invites`/`students` drafts left
+behind after a claim; undoing a deletion (there is none — the dialog says so); a one-click "voltar para a ficha
+anterior" swap (Ativar/Desativar do it by hand); the phone's screens (it shows history treinos as ordinary inactive
+ones); any scheduled or age-based cleanup; a bulk "limpar tudo" button for the existing backlog (the existing Excluir
+does it, treino by treino).
+
+**Where this executes:** `web/` on `main`, branch + PR (CI gates lint, tests, build and the emulator rules tests). **No
+`firestore.rules` change is expected, so nothing to publish** — unlike §27; if a rules test in 28e shows otherwise, treat
+it as a rules change (the "seen failing on the old rules" run and the manual publish) before going on. Independent of
+§26 and §27.
+
+```mermaid
+flowchart TD
+    A[28a. Research — done] --> B[28b. Decisions]
+    B --> C[28c. Domain: archivedAt + planReplacement]
+    C --> D[28d. Data layer: replaceFicha, one batch]
+    D --> E[28e. Rules tests through the real rules]
+    D --> F[28f. Editor: ask Substituir / Só adicionar]
+    D --> G[28g. Student page: Ficha atual / anterior]
+    E --> H[28h. Verification]
+    F --> H
+    G --> H
+    H --> I[28i. Registration]
+```
+
+Suggested: opus · high — the feature deletes data; the bounds of the delete (28c–28d) are where a mistake is expensive, the dialog and the page are ordinary UI work.
+
+**28a. Research — what the code and the platform say (checked 2026-10-01)**
+
+Suggested: sonnet · medium — already done; kept so the decisions are not looked up twice.
+
+- [x] Data model and flows as listed above (read from `domain/workouts.ts`, `data/workouts.ts`, `data/converters.ts`,
+      `FichaEditor.tsx`, `WorkoutsSection.tsx`, `firestore.rules`): one treino per document, no cycles, no archive,
+      creation only adds, the owning trainer may delete, no field validation.
+- [x] Kotlin parity: `FirestoreMappers.kt` `toWorkoutEntity` / `toFirestoreMap` use eight fields; an extra field is
+      ignored on read; a phone save rewrites only those eight (a plain `set` drops `archivedAt` — the safe direction;
+      a merge-write would keep it, which the `isActive === false` guard of 28c covers).
+- [x] Free quotas (Spark): 1 GiB stored, 50,000 reads, 20,000 writes and 20,000 deletes per day
+      (<https://firebase.google.com/docs/firestore/quotas>) — a replace is a handful of operations.
+- [x] Client SDK limit that shapes the design: a web transaction cannot run a *query*, so the replace reads the
+      student's treinos once and then writes one batch (≤ 500 operations; the plan refuses above 450). Two tabs
+      replacing at the same instant could leave two active fichas (never lost data) — accepted, one trainer on one
+      device being the real case.
+
+**28b. Decisions (settled here, so nobody re-argues them mid-build)**
+
+Suggested: sonnet · medium — decisions already made; the last item is the one to confirm.
+
+- [x] "Ficha" for this feature = all of a student's **active** treinos when the replace happens; adding one extra
+      treino stays possible ("Só adicionar").
+- [x] History depth = **1**: the current ficha plus one previous; not configurable in v1.
+- [x] The delete is part of the replace, confirmed with a list of what goes; no background job; no bulk button.
+- [x] Logs, charts, biometrics, payments and schedules are untouched; the student never sees the history.
+- [ ] **(manual)** Confirm the two product choices: **(1)** replacing is asked **every time** the student already has an
+      active ficha (*Substituir* / *Só adicionar*) instead of always replacing; **(2)** the previous ficha is visible
+      to the trainer only. Done when the trainer has said yes (or changed it) in chat.
+
+**28c. Domain — `archivedAt` and the replacement plan (pure, no Firestore, no clock)**
+
+Suggested: opus · high — this is where the bound of the delete lives; every rule above becomes a test.
+
+- [ ] `Workout.archivedAt: number | null`. `toWorkout` reads it with the existing `int()` helper (absent or malformed ⇒
+      `null`); `workoutToFirestore` writes it **only when non-null**, so every document written for a non-archived
+      treino stays exactly what it is today (what the phone reads and writes); `withDerivedStatus`: active ⇒
+      `archivedAt: null` (re-activating takes a treino out of the history). Tests: absent / number / string / negative,
+      written only when set, activation clears it, every existing converter test still passes unchanged.
+- [ ] `domain/fichaHistory.ts` — `planReplacement(existing, incoming, now) → { toCreate, toArchive, toDelete }`:
+      `toArchive` = existing with `isActive`, each becoming `withDerivedStatus({ ...w, isActive: false })` +
+      `archivedAt: now`; `toDelete` = existing with `archivedAt !== null && !isActive` — **and only when `toArchive` is
+      non-empty** (a replace that retires nothing never deletes the history); `toCreate` = incoming, normalised active.
+      The three lists are disjoint by id (throw if not — it would be a bug, not a case). Table-driven tests: nothing
+      existing; only active; active + history; history treino re-activated (not deleted); hand-deactivated and draft
+      treinos untouched; a student with 40 old inactive treinos and no history ⇒ **none deleted**; nothing active but
+      a history ⇒ **none deleted**; a second replace deletes exactly the first replace's archive; `toDelete` never
+      contains an active treino. Done when `tsc`, `eslint`, `vitest` are green.
+
+**28d. Data layer — `replaceFicha`, one atomic batch**
+
+Suggested: opus · high — the write path of a delete; atomicity and the error paths are the point.
+
+- [ ] `data/workouts.ts` `replaceFicha(db, trainerId, studentId, incoming, now)`: reads the student's treinos with
+      `loadStudentWorkouts` (equality filters, no composite index), runs `planReplacement`, and commits **one
+      `writeBatch`**: `set` the new treinos, `set` the archived copies, `delete` the old history. Refuses with a typed
+      error above 450 operations. Returns `{ created, archived, deleted }` (names included) so the screen can report it.
+      A failed commit writes nothing; a retry re-plans from fresh data.
+- [ ] Unit-test the part that does not need Firestore (the operation list built from a plan); the rest is 28e.
+
+**28e. Rules tests — through the real rules, expecting no rules change**
+
+Suggested: sonnet · high — emulator tests; the discipline is reading the failures honestly.
+
+- [ ] `web/rules/dataLayer.test.ts`: `replaceFicha` as the owning trainer lands new + archive + delete together; as
+      **another trainer** it fails as a whole with nothing partially written; a **student** cannot write any of it and
+      cannot read an archived treino (inactive ⇒ draft) while still reading the active ones.
+- [ ] `web/rules/firestore.rules.test.ts`: a `workouts` document carrying `archivedAt` is accepted on create and update
+      by the owning trainer. Run `npm run test:rules` (Java 21). If a case fails because of the rules, **stop** — that is
+      a rules change (xhigh, the "seen failing on the old rules" run, a manual publish), not part of this plan's size.
+
+**28f. The editor — ask "Substituir" or "Só adicionar"**
+
+Suggested: sonnet · high — two save paths and a destructive choice that must be impossible to trigger by accident.
+
+- [ ] `FichaEditor.tsx`, in `save()` (a **new** treino only — editing an existing one never replaces) and `saveAll()`:
+      load the student's treinos first (if the load fails, fall back to a plain add and delete nothing); if there is at
+      least one active treino, open `ConfirmDialog` **"Substituir a ficha atual?"**: "O aluno tem hoje: <names>.
+      **Substituir**: a ficha atual vira a *ficha anterior* (o aluno deixa de vê-la) e a que já era a anterior
+      (<names and dates, or "nenhuma">) é **excluída para sempre**. **Só adicionar**: a nova se junta às que já
+      existem e nada é apagado." *Só adicionar* is the default focus, Escape and backdrop (the dialog's "Não"), *Substituir*
+      is the "Sim". A student with no active treino gets no question — a plain add, as today. *Substituir* calls
+      `replaceFicha`; *Só adicionar* calls the existing `saveWorkout(s)`.
+- [ ] Error text when the replace fails: nothing was changed (it is one batch) — "Não foi possível substituir. Nada foi
+      alterado." Controls ≥ 44 px, text ≥ 12 px, no new stylesheet.
+
+**28g. The student's page — "Ficha atual" and "Ficha anterior"**
+
+Suggested: sonnet · medium — a grouped list on an existing screen.
+
+- [ ] `WorkoutsSection.tsx`: group the list into **Ficha atual** (active), **Ficha anterior — histórico**
+      (`archivedAt !== null && !isActive`, each with "arquivada em dd/mm/aaaa" and the line "será excluída quando você
+      substituir a ficha de novo") and **Outras (inativas)** (drafts and hand-deactivated). Editar / Ativar / Excluir
+      stay on every treino; *Ativar* on a history treino goes through the normal save and so leaves the history (28c).
+      Existing classes only; phone-width check.
+- [ ] The student's own screens are untouched (an archived treino is a draft and invisible — proved in 28e).
+
+**28h. Verification**
+
+Suggested: sonnet · high — proving the bounds of a delete from the outside is the whole job.
+
+- [ ] Run `tsc`, `eslint`, `vitest`, `npm run test:rules` (Java 21) and the static build with
+      `NEXT_PUBLIC_BASE_PATH=/Personal_app_android`. Done when all are green; record the counts here.
+- [ ] Browser, against the emulators (seeded student with an active A/B/C): save a new ficha → the dialog lists A/B/C;
+      **Só adicionar** keeps everything; save again → **Substituir**: the old ones appear under *Ficha anterior*, the new
+      ones are active, and the student (logged in) sees only the new ones; replace once more → the first history is
+      **gone** and the second ficha is now the history; a hand-deactivated treino and a draft **survive both replaces**;
+      re-activating a history treino takes it out of the history and it survives the next replace; a student with
+      nothing active gets no question. Phone width (overflow probe), keyboard-only through the dialog (Escape = *Só
+      adicionar*). Record the result here.
+- [ ] A failure test: replace as a trainer whose write is refused — nothing is archived, created or deleted.
+
+**28i. Registration**
+
+Suggested: haiku · low — documentation and ticks, fully specified.
+
+- [ ] `CLAUDE.md` web section: the web-only `archivedAt` field (ignored by the phone, written only when set), the
+      three guards (inactive + archived only; nothing deleted unless something is archived in the same replace; one
+      atomic batch), that nothing is deleted outside a replace, and the accepted two-tab race. GOALS.md: tick each
+      item with what was actually verified, commit each verified item on its own, never push without being asked.
+- [ ] Done-when for the whole section: on the live site a trainer replaces a student's ficha, sees the old one under
+      *Ficha anterior*, replaces again and sees the first one gone; the student only ever saw the current one; no log,
+      chart or number on the dashboard changed. Not done when the code exists.
+
+---
+
 ## Suggested build order (what blocks what) — revised 2026-08-18
 
 **Done** (§0, §1 CLAUDE.md, §2 git, §4a Firestore migration, §5d UI debt + AI button wiring, §7

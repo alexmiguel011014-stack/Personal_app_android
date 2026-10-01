@@ -15,6 +15,11 @@ const MESSAGES: Record<string, string> = {
   "auth/too-many-requests": "Muitas tentativas. Espere alguns minutos e tente de novo.",
   "auth/network-request-failed": "Sem conexão com o servidor. Verifique a internet.",
   "auth/user-disabled": "Esta conta foi desativada.",
+  // GOALS.md §27: the verification link. A continue URL outside the console's authorized domains is a
+  // setup problem on our side, not something the student can fix.
+  "auth/unauthorized-continue-uri": "Não foi possível enviar o link de confirmação agora. Avise o seu personal.",
+  "auth/invalid-continue-uri": "Não foi possível enviar o link de confirmação agora. Avise o seu personal.",
+  "auth/requires-recent-login": "Por segurança, entre de novo e repita.",
 };
 
 export function authErrorMessage(error: unknown): string {

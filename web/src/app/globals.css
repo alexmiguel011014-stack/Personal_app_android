@@ -149,6 +149,9 @@ fieldset > legend + * { margin-top: 4px; }
 [role="alert"], [role="status"] { margin: 0 0 14px; padding: 12px 14px; border: 1px solid var(--alert-line); border-radius: 7px; background: var(--alert-bg); color: var(--alert); font-size: 14px; line-height: 1.5; }
 [role="status"] { border-color: #cbd9c4; background: #eef1e8; color: var(--ink); }
 ul[role="alert"] { padding-left: 32px; }
+/* "Você quis dizer …?" under the e-mail field (GOALS.md §27) — a question with its two answers. */
+.email-suggestion p { margin: 0 0 10px; }
+.email-suggestion p:last-child { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; }
 .attention { max-width: 210px; padding: 7px 9px; border: 1px solid #8a633e; border-radius: 4px; color: #654722; font-size: 12px; font-weight: 600; line-height: 1.4; }
 .loading { color: var(--muted); }
 .loading-screen { padding: 40px 24px; }
@@ -391,6 +394,8 @@ dialog.confirm::backdrop { background: #12352c8c; }
 .feature-columns li:last-child { border-bottom: 1px solid var(--line); }
 .auth-card { width: 100%; max-width: 440px; margin-inline: auto; padding: clamp(22px, 5vw, 34px); border: 1px solid var(--line); border-radius: 12px; background: var(--white); }
 .auth-card > :last-child { margin-bottom: 0; }
+/* A long e-mail address is one unbreakable word; on a phone it must wrap, not push the page sideways. */
+.auth-card, .auth-card dialog { overflow-wrap: break-word; }
 .auth-card .lede { margin-bottom: 22px; color: var(--muted); font-size: 14px; }
 .auth-card form > p { display: block; margin-bottom: 14px; }
 .auth-card form button[type="submit"], .auth-card .button-block { width: 100%; min-height: 48px; font-size: 15px; }

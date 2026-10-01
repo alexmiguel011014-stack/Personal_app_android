@@ -69,7 +69,9 @@ function signedInAs(uid: string): Firestore {
   apps.push(app);
   const db = getFirestore(app);
   const [host, port] = (process.env.FIRESTORE_EMULATOR_HOST ?? "127.0.0.1:8081").split(":");
-  connectFirestoreEmulator(db, host, Number(port), { mockUserToken: { sub: uid } });
+  // A confirmed address, as every real account that reaches these screens has (GOALS.md §27: an invite
+  // claim needs one; firestore.rules.test.ts covers the unconfirmed cases).
+  connectFirestoreEmulator(db, host, Number(port), { mockUserToken: { sub: uid, email_verified: true } });
   return db;
 }
 

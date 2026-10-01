@@ -38,7 +38,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       const profile = await resolveProfile(getFirebase().db, user.uid);
       if (ticket !== latestLoad.current) return;
       setError(null);
-      setSession({ status: "signedIn", uid: user.uid, email: user.email, profile });
+      setSession({ status: "signedIn", uid: user.uid, email: user.email, emailVerified: user.emailVerified, profile });
     } catch {
       if (ticket !== latestLoad.current) return;
       setError("Não foi possível carregar sua conta. Verifique a conexão.");

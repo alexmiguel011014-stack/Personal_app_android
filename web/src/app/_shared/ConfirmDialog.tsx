@@ -12,7 +12,9 @@ export function ConfirmDialog({
   children,
   yesLabel = "Sim",
   noLabel = "Não",
+  altLabel,
   onYes,
+  onAlt,
   onNo,
 }: {
   open: boolean;
@@ -20,7 +22,10 @@ export function ConfirmDialog({
   children: ReactNode;
   yesLabel?: string;
   noLabel?: string;
+  /** An optional middle answer (GOALS.md §28: "Só adicionar"); "Não" stays the cancel. */
+  altLabel?: string;
   onYes: () => void;
+  onAlt?: () => void;
   onNo: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -54,6 +59,11 @@ export function ConfirmDialog({
           <button type="button" autoFocus onClick={onNo}>
             {noLabel}
           </button>
+          {altLabel !== undefined && onAlt && (
+            <button type="button" onClick={onAlt}>
+              {altLabel}
+            </button>
+          )}
           <button type="button" className="button-primary" onClick={onYes}>
             {yesLabel}
           </button>

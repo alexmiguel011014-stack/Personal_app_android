@@ -143,6 +143,7 @@ export function toWorkout(id: string, data: Data): Workout | null {
     createdAt: int(data, "createdAt") ?? 0,
     status: data.status === "assigned" ? "assigned" : "draft",
     assignedAt: int(data, "assignedAt"),
+    archivedAt: int(data, "archivedAt"),
   };
 }
 
@@ -157,6 +158,9 @@ export function workoutToFirestore(workout: Workout, trainerId: string): Data {
     createdAt: workout.createdAt,
     status: workout.status,
     assignedAt: workout.assignedAt,
+    // GOALS.md §28, web-only: written only on a treino a replacement archived, so every other document is
+    // exactly what the phone writes (and the phone ignores the field where it is present).
+    ...(workout.archivedAt === null ? {} : { archivedAt: workout.archivedAt }),
   };
 }
 

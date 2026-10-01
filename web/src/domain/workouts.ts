@@ -17,6 +17,12 @@ export interface Workout {
   createdAt: number;
   status: WorkoutStatus;
   assignedAt: number | null;
+  /**
+   * GOALS.md §28: web-only. Set (to the time of a replacement) only on the treinos a "Substituir" retired —
+   * the student's "ficha anterior". The phone neither reads nor writes it; it is the one mark that makes a
+   * treino a candidate for the NEXT replacement's delete (domain/fichaHistory.ts). Null on every other treino.
+   */
+  archivedAt: number | null;
 }
 
 /**
@@ -26,8 +32,9 @@ export interface Workout {
  * without this stays invisible to them forever (the Kotlin comment says exactly that).
  */
 export function withDerivedStatus(workout: Workout, now: number): Workout {
+  // Active again means current again: a treino taken out of the history (GOALS.md §28) leaves it for good.
   return workout.isActive
-    ? { ...workout, status: "assigned", assignedAt: workout.assignedAt ?? now }
+    ? { ...workout, status: "assigned", assignedAt: workout.assignedAt ?? now, archivedAt: null }
     : { ...workout, status: "draft", assignedAt: null };
 }
 

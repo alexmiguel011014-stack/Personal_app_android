@@ -18,7 +18,13 @@ describe("profileFrom — AuthRepository.resolveRole", () => {
 });
 
 describe("destinationFor — RoleRouter", () => {
-  const signedIn = (profile: Profile) => ({ status: "signedIn" as const, uid: "u", email: null, profile });
+  const signedIn = (profile: Profile) => ({
+    status: "signedIn" as const,
+    uid: "u",
+    email: null,
+    emailVerified: true,
+    profile,
+  });
 
   it("sends each kind of account to its own area", () => {
     expect(destinationFor({ status: "signedOut" })).toBe("/entrar");
@@ -40,5 +46,11 @@ describe("invite codes and auth messages", () => {
     expect(authErrorMessage(new FirebaseError("auth/weak-password", "x"))).toMatch(/6 caracteres/);
     expect(authErrorMessage(new FirebaseError("auth/something-new", "x"))).toBe("Não foi possível concluir. Tente de novo.");
     expect(authErrorMessage(new Error("boom"))).toBe("Não foi possível concluir. Tente de novo.");
+  });
+
+  it("explains the verification-link failures (GOALS.md §27)", () => {
+    expect(authErrorMessage(new FirebaseError("auth/unauthorized-continue-uri", "x"))).toMatch(/link de confirmação/);
+    expect(authErrorMessage(new FirebaseError("auth/invalid-continue-uri", "x"))).toMatch(/link de confirmação/);
+    expect(authErrorMessage(new FirebaseError("auth/requires-recent-login", "x"))).toMatch(/entre de novo/);
   });
 });

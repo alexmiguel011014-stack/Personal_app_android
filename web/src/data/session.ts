@@ -16,7 +16,15 @@ export interface Profile {
 export type Session =
   | { status: "loading" }
   | { status: "signedOut" }
-  | { status: "signedIn"; uid: string; email: string | null; profile: Profile };
+  | {
+      status: "signedIn";
+      uid: string;
+      email: string | null;
+      /** GOALS.md §27: whether the address was confirmed by its link — what a new account needs to
+       *  claim an invite. As of the last load; `refresh()` after a `reload()` picks up a change. */
+      emailVerified: boolean;
+      profile: Profile;
+    };
 
 export type Area = "/entrar" | "/app" | "/aluno" | "/convite";
 

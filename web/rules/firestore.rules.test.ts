@@ -51,7 +51,12 @@ beforeEach(async () => {
 
 type Db = ReturnType<ReturnType<RulesTestEnvironment["unauthenticatedContext"]>["firestore"]>;
 
-const as = (uid: string): Db => env.authenticatedContext(uid).firestore();
+// GOALS.md §27: everyone here has a confirmed address unless a test says otherwise — that is what a
+// claim now needs, and every other rule must not care either way (proved in "verified e-mail" below).
+const as = (uid: string): Db => env.authenticatedContext(uid, { email_verified: true }).firestore();
+const asUnverified = (uid: string): Db => env.authenticatedContext(uid, { email_verified: false }).firestore();
+/** A token with no email_verified claim at all — how these tests signed in before §27. */
+const asWithoutClaim = (uid: string): Db => env.authenticatedContext(uid).firestore();
 const anonymous = (): Db => env.unauthenticatedContext().firestore();
 
 /** Writes test fixtures with the rules switched off. */
@@ -298,10 +303,9 @@ describe("claiming an invite", () => {
     };
   }
 
-  async function claim(uid: string, data: Record<string, unknown>) {
+  async function claim(uid: string, data: Record<string, unknown>, db: Db = as(uid)) {
     // The same shape as AuthRepository.claimInvite: one transaction that reads the invite, writes
     // the account, and marks the invite used.
-    const db = as(uid);
     return db.runTransaction(async (transaction) => {
       await transaction.get(db.doc(`invites/${OPEN_INVITE}`));
       transaction.set(db.doc(`users/${uid}`), data);
@@ -339,6 +343,97 @@ describe("claiming an invite", () => {
     await seed((db) => db.doc("users/orphan").set({ role: "STUDENT", trainerId: null }));
     await assertFails(claim("orphan", claimDoc({ canSelfAssess: true })));
     await assertSucceeds(claim("orphan", claimDoc()));
+  });
+
+  // GOALS.md §27: Firebase only checks an address's shape. Without a confirmed one (the link mailed
+  // to it was opened), an invented or mistyped address must never become a student.
+  it("needs a confirmed e-mail", async () => {
+    await assertFails(claim(NEW_STUDENT, claimDoc(), asUnverified(NEW_STUDENT)));
+    await assertFails(claim(NEW_STUDENT, claimDoc(), asWithoutClaim(NEW_STUDENT)));
+    // Refused as a whole: the invite is still open for the same person once they confirm.
+    await assertSucceeds(claim(NEW_STUDENT, claimDoc()));
+  });
+
+  it("needs a confirmed e-mail on the re-claim path too", async () => {
+    await seed((db) => db.doc("users/orphan").set({ role: "STUDENT", trainerId: null }));
+    await assertFails(claim("orphan", claimDoc(), asUnverified("orphan")));
+    await assertSucceeds(claim("orphan", claimDoc()));
+  });
+});
+
+describe("trainerRequests", () => {
+  it("are queued only from a confirmed e-mail (GOALS.md §27)", async () => {
+    const request = { email: "novo@exemplo.com", createdAt: 1 };
+    await assertFails(asUnverified("candidate").doc("trainerRequests/candidate").set(request));
+    await assertFails(asWithoutClaim("candidate").doc("trainerRequests/candidate").set(request));
+    await assertSucceeds(as("candidate").doc("trainerRequests/candidate").set(request));
+  });
+
+  it("are only ever one's own", async () => {
+    await assertFails(as("candidate").doc("trainerRequests/someoneElse").set({ email: "x@y.com", createdAt: 1 }));
+  });
+});
+
+// GOALS.md §27: the confirmed e-mail is an entry door, not a new condition on everything. A student who
+// already has a profile — every one created before §27, none of whom was ever asked to confirm — keeps
+// doing all they did. If one of these fails, the rule went somewhere it must not.
+describe("verified e-mail: accounts that already exist are not affected", () => {
+  beforeEach(async () => {
+    await seed((db) => db.doc(`users/${STUDENT_A}`).update({ canSelfAssess: true, canLogBiometrics: true }));
+  });
+
+  it("an unconfirmed linked student reads, edits and logs as before", async () => {
+    const db = asUnverified(STUDENT_A);
+    await assertSucceeds(db.doc(`users/${STUDENT_A}`).get());
+    await assertSucceeds(db.doc(`users/${STUDENT_A}`).update({ phone: "11999990000" }));
+    await assertSucceeds(
+      db.doc("workoutLogs/l1").set({ trainerId: TRAINER_A, studentId: STUDENT_A, workoutId: "w1", date: 1, performedSetsJson: "[]" }),
+    );
+    await assertSucceeds(db.doc("assessments/a1").set({ trainerId: TRAINER_A, studentId: STUDENT_A, submittedAt: 1 }));
+    await assertSucceeds(db.doc("biometrics/b1").set({ trainerId: TRAINER_A, studentId: STUDENT_A, date: 1, weight: 70 }));
+  });
+
+  it("an unconfirmed trainer works as before", async () => {
+    const db = asUnverified(TRAINER_A);
+    await assertSucceeds(db.doc(`users/${STUDENT_A}`).get());
+    await assertSucceeds(db.doc(`users/${STUDENT_A}`).update({ canAddSets: true }));
+    await assertSucceeds(db.doc("invites/NEWCODE1").set({ trainerId: TRAINER_A, used: false, createdAt: 1 }));
+  });
+
+  it("an unconfirmed account still can't edit what it never could", async () => {
+    await assertFails(asUnverified(STUDENT_A).doc(`users/${STUDENT_A}`).update({ role: "TRAINER" }));
+    await assertFails(asUnverified("stranger").doc(`users/${STUDENT_A}`).get());
+  });
+});
+
+// GOALS.md §28: `archivedAt` is a web-only field on a treino a replacement retired. The rules validate no
+// workout fields, so it needs no rules change — this proves it, and that who may touch it did not move.
+describe("workouts carrying archivedAt (GOALS.md §28)", () => {
+  const archived = {
+    trainerId: TRAINER_A,
+    studentId: STUDENT_A,
+    name: "Ficha anterior",
+    isActive: false,
+    exercisesJson: "[]",
+    createdAt: 1,
+    status: "draft",
+    assignedAt: null,
+    archivedAt: 900,
+  };
+
+  it("the owning trainer creates, updates and deletes one", async () => {
+    const db = as(TRAINER_A);
+    await assertSucceeds(db.doc("workouts/h1").set(archived));
+    await assertSucceeds(db.doc("workouts/h1").update({ isActive: true, status: "assigned", assignedAt: 5, archivedAt: null }));
+    await assertSucceeds(db.doc("workouts/h1").delete());
+  });
+
+  it("another trainer can't write or delete it, and the student can't read it", async () => {
+    await seed((db) => db.doc("workouts/h1").set(archived));
+    await assertFails(as(TRAINER_B).doc("workouts/h1").delete());
+    await assertFails(as(TRAINER_B).doc("workouts/h1").update({ archivedAt: null }));
+    await assertFails(as(STUDENT_A).doc("workouts/h1").get());
+    await assertFails(as(STUDENT_A).doc("workouts/h1").update({ archivedAt: null }));
   });
 });
 

@@ -1638,6 +1638,1045 @@ flowchart TD
 
 ---
 
+## 26. Feature — ADM console on the web: monitor and manage the personais
+(2026-10-01, via `/newgoal`)
+
+**The request:** "preciso criar uma conta adm para gerenciar o acesso dos personais. Vai ser uma página
+diferente. Essa página vai monitorar quantos personais eu tenho cadastrado, vai poder cadastrar personal e
+ver as atividades de cada um, saber quanto ele está cobrando, quantos alunos tem, quantas atividades ele
+executa no web, e outras coisas que você julgar pertinente." And: "para criar minha conta ADM vou usar um
+email meu e preciso criar a senha — cadastra direto no Firebase?"
+
+**Goal type: Feature** — a new area added to a web front that works and is live (`/app` for the trainer,
+`/aluno` for the student), plus one manual bootstrap step (26b) and a rules change (26d). Research is done
+(2026-10-01) and recorded in 26a so nothing is looked up twice.
+
+**The short answer to "how do I create the ADM account": yes, directly in the Firebase console — it is the
+only way, by design.** The rules forbid anyone from granting themselves a role (`users/{uid}.role` can only be
+written by an existing ADM), the site has no server, and the console bypasses the rules. So the *first* ADM is
+minted by hand, in two steps (exact clicks in 26b): **(1)** Authentication → Users → *Add user* (your e-mail +
+a strong password — you choose it right there); **(2)** Firestore → collection `users` → add a document whose
+ID is that user's UID, with the string field `role` = `ADM` (exactly upper case). That is all the code needs:
+`resolveProfile` (`web/src/data/session.ts`) reads `role`, and `firestore.rules`' `isAdmin()` is
+`users/{uid}.role == 'ADM'`. The phone already honours it too — its ADM dashboard (`AdminViewModel.kt`:
+counts, trainer list, promote-by-UID, the `trainerRequests` queue) works with this same account today.
+Everything after that — creating personais, suspending, watching their activity — is this section, and every
+later ADM is created from the first one.
+
+**What exists today (so the plan does not rebuild it):**
+- Web: `destinationFor` (`web/src/data/session.ts`) sends an ADM to `/app` — the trainer area — because "the
+  admin dashboard has no web counterpart"; `Area` is `"/entrar" | "/app" | "/aluno" | "/convite"`;
+  `RequireArea` accepts only `"/app" | "/aluno"`; `AppShell` knows `area: "trainer" | "student"`.
+- Rules (`firestore.rules`): `isAdmin()` may read, create and update **every `users` doc** and read/delete
+  `trainerRequests`; it can **not** read `students`, `workouts`, `workoutLogs`, `payments`, `billingPlans`,
+  `assessments` — those are trainer-owner-only. A trainer is whoever has `role == 'TRAINER'` and is the
+  record's `trainerId` (`isOwningTrainer`).
+- Phone: trainers are onboarded by self-registration (role-less account → STUDENT by default) + a
+  `trainerRequests/{uid}` mailbox (`{ email, createdAt }`) the ADM approves (`users/{uid}.role = TRAINER`) — or
+  by promoting a UID by hand.
+
+**What the research changed (five lines):**
+1. **Metrics come from two places, on purpose.** Counts the rules already allow the ADM to run
+   (`users where role == 'TRAINER'`, linked students per trainer) are read live with Firestore count queries.
+   Everything else (what a trainer charges, sessions, adherence, web activity) lives in data the ADM cannot
+   read — and should not: opening `payments`/`students`/`workoutLogs` to the ADM would expose every
+   student's name and health notes to the platform owner just to add numbers up. Instead the trainer's own
+   web session writes a small **summary document** and **activity counters** (26c); the ADM reads only those.
+   Cheaper (one read per trainer), no composite indexes, privacy-minimising — at the price of being
+   **self-reported and as fresh as the trainer's last web visit**, which the screens must say.
+2. **"Quantas atividades ele executa no web" cannot be derived from existing data** (a document written by the
+   web and by the phone look the same), so it needs its own counters — which is also exactly the right
+   definition: it counts what happens *on the web*.
+3. **Suspending a trainer = a rules-enforced flag, not an Auth switch.** Disabling a Firebase Auth account
+   needs the Admin SDK (a server, i.e. the Blaze plan §3 refused); from the browser the only lever is
+   `users/{uid}.accessStatus`, enforced inside `isOwningTrainer` — and **frozen against the trainer's own
+   writes**, or a suspended trainer could simply un-suspend themselves (26d).
+4. **Creating a personal from the ADM's browser works without a server** by using a second Firebase app
+   instance for `createUserWithEmailAndPassword` (the primary session is not replaced), then a **password
+   reset e-mail** so the trainer picks their own password and the ADM never knows it (Spark: 150 reset e-mails
+   per day; 100 new accounts per hour per IP).
+5. **MFA for the ADM account is possible on the free plan** (TOTP, after switching the project to Identity
+   Platform — a free switch, 3,000 daily-active-users cap on Spark) and is the one hardening step worth taking
+   because this account can read and promote everyone. It is optional here (26k) and does not block anything.
+
+**Assumptions to confirm (stated so nobody has to guess):** "quanto ele está cobrando" is read as *what the
+personal charges his students* — the mensalidades the web already tracks (active plans, expected / received /
+overdue). If it instead means *what the platform charges the personal* (a subscription), that is a different
+feature (plans, invoices, probably a payment gateway) and is **out of scope** — the data model below leaves
+room (`users/{uid}.plan`) without building it. Likewise: suspending a trainer does **not** lock out that
+trainer's students (they keep their ficha and can still log sessions) — flip that default in 26i if the
+platform's terms say otherwise.
+
+**Not touched by this section (explicit, to stop scope creep):** the student area; the trainer's own screens
+(beyond the tracking calls in 26f and the suspended-account message); Android (it will simply see permission
+errors for a suspended trainer — a friendlier message there is a separate item); deleting a trainer or their
+Auth account (needs the Admin SDK — "suspend" is the supported verb); any payment gateway; e-mailing trainers
+from the site; reading or listing any student's name, notes or workouts from the admin pages; adding a chart
+library (the pages use lists, tables and a CSS strip — the ALLU look has no metric-card wall).
+
+**Where this executes:** `web/` on `main` (the live site publishes from there). Work on a branch from `main`
+and open a PR (CI gates on lint + tests + build + the emulator rules tests). **`firestore.rules` changes in
+26d are code until the trainer publishes them** by hand (console copy-paste or `firebase deploy --only
+firestore:rules`), after diffing against what is live — the admin pages work only after that. This file's
+numbering skips §19–§25 on purpose: they live on `feature/kmp-web`'s copy of `GOALS.md` and are not in
+`main`'s; the web decisions this plan leans on (static export, no server, Spark plan, App Check on, no AI key
+in the browser) are restated where they matter.
+
+```mermaid
+flowchart TD
+    A[26a. Research — done] --> B[26b. Bootstrap the first ADM — manual]
+    A --> C[26c. Decisions and data model]
+    C --> D[26d. Rules + their tests — manual publish]
+    D --> E[26e. Domain + data layer]
+    E --> F[26f. Tracking in the trainer web]
+    E --> G[26g. Admin area: shell, overview, list, detail]
+    G --> H[26h. Create a personal]
+    G --> I[26i. Suspend + audit + requests]
+    F --> J[26j. Verification]
+    H --> J
+    I --> J
+    B --> J
+    J --> K[26k. Optional hardening: MFA]
+    J --> L[26l. Registration]
+```
+
+Suggested: opus · high — the module mixes security rules, auth flows and a new area on a live site; the rules (26d) and the create/suspend flows (26h–26i) are where a mistake is expensive, the pages are medium.
+
+**26a. Research — what the platform allows (checked 2026-10-01)**
+
+Suggested: sonnet · medium — already done; kept so the decisions can be re-read, not repeated.
+
+- [x] Creating the first ADM: Firebase console → Authentication → Users → *Add user* creates an e-mail/password
+      account with the password you type (Email/Password is already enabled — the site logs in with it);
+      Firestore console writes bypass the rules, which is why the role document can be created there. Nothing
+      in the client SDKs can mint a role (the rules deny it) and there is no custom-claims setup in this project
+      (roles live in `users/{uid}.role`, read by `resolveProfile` and by `isAdmin()`).
+- [x] Creating users from client code without losing the current session: the documented method is
+      `createUserWithEmailAndPassword`, which signs the new user in on **that Auth instance**; the established
+      pattern is a **second app** — `initializeApp(config, "name")` → `getAuth(secondary)` → create → `signOut`
+      → `deleteApp`. (<https://firebase.google.com/docs/auth/web/manage-users> for the methods; the secondary-app
+      pattern is community-established, not a documented recipe — hence the manual verification in 26j.)
+      Disabling a user is **not** on the client SDK (Admin SDK only); deleting needs a recent sign-in.
+- [x] Auth quotas (<https://firebase.google.com/docs/auth/limits>): Spark — password-reset e-mails **150/day**,
+      verification e-mails 1,000/day; new accounts **100/hour per IP**; registered users unlimited.
+- [x] MFA (<https://firebase.google.com/docs/auth/web/totp-mfa>): TOTP (authenticator app) needs the **Identity
+      Platform upgrade** (a free switch; Spark projects capped at 3,000 daily active users), the modular Web SDK
+      ≥ 9.19.1 (the site has 12.x), and a **verified e-mail** on the account; enabling TOTP is done through the
+      Admin SDK/REST per the doc (check the console toggle first). Sign-in then throws
+      `auth/multi-factor-auth-required` → `getMultiFactorResolver` → `assertionForSignIn`. SMS MFA needs Blaze —
+      not an option.
+- [x] Firestore aggregation (<https://firebase.google.com/docs/firestore/query-data/aggregation-queries>):
+      `getCountFromServer`, `getAggregateFromServer` with `sum()` / `average()`; they honour filters, bill far
+      fewer reads than fetching the documents, and rely on the indexes the query already uses — **verify at
+      implementation** whether a `sum` with an equality filter asks for a composite index (the SDK error carries
+      the console link; creating it would be a `(manual)` step). The plan avoids the question by reading
+      summary documents instead of summing payments.
+- [x] Rules limits (<https://firebase.google.com/docs/firestore/quotas>): at most **10** `get()/exists()/
+      getAfter()` per single-document or query request, **20** for batched writes/transactions, and the same
+      document fetched twice **counts twice**. `isOwningTrainer` already costs one `get` per call (via
+      `myRole()`); the suspension check must reuse that single fetch (26d), never add a second one.
+- [x] The phone's ADM dashboard already does: counts (`users where role == 'TRAINER'`), a trainer list, promote by
+      UID (`set(merge)` of `{ role: 'TRAINER', name }`), and the `trainerRequests` accept/reject — the web console
+      mirrors those capabilities (same writes, so the two stay interchangeable) and adds what the phone lacks.
+- [ ] **(manual)** Firebase console → App Check → APIs: note whether **Authentication** enforcement is on (it is
+      not required today). If it is, the secondary app in 26h must initialise App Check too, with the same
+      reCAPTCHA Enterprise provider. Done when the answer (on/off) is written here.
+- [ ] **(manual)** Firebase console → Authentication → Templates: set the **password-reset** template to
+      Portuguese with a sentence that explains it is the trainer's first access ("Defina sua senha para entrar no
+      ALLU personal"). Done when a test e-mail reads right and lands outside spam on a Gmail and an Outlook
+      address.
+
+**26b. Bootstrap the first ADM account — manual, can be done today**
+
+Suggested: haiku · low — a checklist for the trainer (the account owner), nothing for code to do.
+
+- [ ] **(manual)** Use an e-mail you control and read often, **not** an address already used as a personal or a
+      student (one account = one role). A dedicated address is safest; the same inbox receives password resets.
+      Pick a long, unique password (a password manager's) — it is typed once, in the next step.
+- [ ] **(manual)** Firebase console → project → **Authentication → Users → Add user** → e-mail + password →
+      *Add user*. Copy the **User UID** shown in the table (a ~28-character string). Done when the user appears
+      in the list.
+- [ ] **(manual)** Firebase console → **Firestore Database → Data** → collection `users` → *Add document* →
+      **Document ID = the UID pasted exactly** (not auto-ID) → fields: `role` (string) = `ADM`, `name` (string) =
+      your name, `email` (string) = the same e-mail, `createdAt` (number) = a Unix time in milliseconds (any
+      current value, e.g. `1790000000000`). Do **not** add `trainerId`. Done when the document exists under that
+      exact ID and `role` reads `ADM` in capitals.
+- [ ] **(manual)** Check it works: on the phone the app opens the ADM dashboard; on the site, `/entrar` signs in
+      and — until 26g ships — lands on `/app` (the trainer area, empty for an ADM). That landing is correct for
+      now. Done when one of the two shows you signed in as an ADM.
+- [ ] **(manual)** Make the account recoverable and not single-point: confirm the reset e-mail reaches the inbox
+      ("Esqueci minha senha" on `/entrar`), and create a **second ADM** the same way with another e-mail you
+      control (a partner, a backup address). Only the console can mint an ADM, so losing the only one means
+      doing it by hand again — easy, but better not at 2 a.m. Done when both can sign in.
+
+**26c. Decisions and the data model — written down before any code**
+
+Suggested: sonnet · medium — the decisions are already argued above; this fixes names and shapes so the rules
+and the code agree.
+
+- [ ] Record, in this section or `CLAUDE.md`'s web section, the settled decisions with their reasons:
+      **(1)** the admin pages read only *counts* the rules already allow plus **self-reported summaries**
+      (`trainerStats`, `trainerActivity`) — never a student's document; **(2)** "cobrando" = what the personal
+      charges his students; **(3)** suspension is `accessStatus` enforced by rules, with the Auth account
+      untouched, and students keep access; **(4)** onboarding has three doors — create an account (26h),
+      approve a `trainerRequests` entry, promote by UID — all producing the same `users/{uid}` shape; **(5)**
+      every ADM action is appended to an audit log; **(6)** no new npm dependency. Done when written.
+- [ ] The documents (all keys listed so the rules can allow-list them; a missing optional field reads as its
+      default, as everywhere in `data/converters.ts`):
+      - `users/{uid}` for a trainer: `role: 'TRAINER'`, `name`, `email`, `createdAt` (ms), `createdBy` (the ADM's
+        uid, when created from the console page), `accessStatus` (`'active' | 'suspended'`; **missing = active**),
+        `suspendedAt` (ms) and `suspendedReason` (string, ≤ 200) — written only by an ADM.
+      - `trainerStats/{trainerId}`: `trainerId`, `updatedAt`, `lastSeenAt`, `students` `{ total, linked, pending }`,
+        `sessions7d`, `adherence28d` (number 0–1 or null), `quiet` (count), `pendingAssessments` (count),
+        `billing` `{ month: 'YYYY-MM', activePlans, planCents, expectedCents, receivedCents, overdueCents }`. These
+        are exactly the figures `dashboardFigures` (`web/src/domain/dashboard.ts`) and the trainer snapshot already
+        compute on `/app`, so writing them costs nothing new to compute.
+      - `trainerActivity/{trainerId}_{YYYY-MM}`: `trainerId`, `month`, `updatedAt`, `actions` — a map of integer
+        counters (`login`, `studentCreated`, `inviteGenerated`, `fichaSaved`, `geminiGenerated`, `chargePaid`,
+        `bookingAdded`, `measurementAdded`, `assessmentRequested`) — and `activeDays`, an array of
+        `'YYYY-MM-DD'` strings (the trainer's local days with any action; ≤ 31 per month).
+      - `adminAudit/{autoId}`: `at` (ms), `adminUid`, `action` (`trainer.create | trainer.suspend |
+        trainer.reactivate | trainer.promote | request.reject | trainer.resetEmail`), `targetUid`, `note`
+        (≤ 200). Append-only.
+- [ ] The metric definitions (pure, in `domain/adminMetrics.ts`, so every screen says the same thing): **uso**
+      — *Ativo* (last seen ≤ 7 days), *Quieto* (8–30), *Sumido* (> 30), *Nunca entrou* (no `lastSeenAt`);
+      **ações em 30 dias** — the sum of the counters of the months a 30-day window touches (month buckets, so
+      "last 30 days" is approximate at the edges and says so); **dias ativos em 30 dias** — the count of
+      `activeDays` inside the window; **ticket médio** — `planCents / activePlans`; **taxa de recebimento do
+      mês** — `receivedCents / expectedCents` (blank when expected is 0); **dado desatualizado** — a summary
+      older than 14 days is flagged, never hidden.
+
+**26d. Rules — the riskiest part; every change tested and seen failing first**
+
+Suggested: opus · xhigh — authorisation changes on a live database shared with the phone; a hole here is a
+privilege escalation, a mistake there locks every trainer out. Not safely retryable: the file is published by hand.
+
+- [ ] `isOwningTrainer(trainerId)` (`firestore.rules`): keep it to **one** `get()` of the caller's `users` doc
+      and check both facts from it — `role == 'TRAINER'` **and** `accessStatus != 'suspended'` (missing =
+      active) — instead of calling `myRole()` and then fetching again. Done when the number of `get()`s on every
+      existing rule path is unchanged (read each `allow` that reaches `isOwningTrainer` and count; the limit is
+      10 per request, repeats count twice) and all 76 existing emulator tests still pass untouched.
+- [ ] `users/{uid}`, the **self-update branch**: add `accessStatus`, `suspendedAt`, `suspendedReason`, `createdBy`
+      and `plan` to the fields a caller may not change on their own document (the same pattern `canSelfAssess`
+      and `canAddSets` use). **Without this a suspended trainer un-suspends themselves** — the first new test
+      below exists to prove it. The invite-claim `grantsNoPermissions` stays as is (a claim never carries these).
+- [ ] `trainerStats/{trainerId}`: `read` by `isAdmin()` or `isOwningTrainer(trainerId)`; `create`/`update` only by
+      `isOwningTrainer(trainerId)` with the key set allow-listed and typed (`trainerId == the path`, ints ≥ 0,
+      `adherence28d` null-or-0..1, `billing.month` a `YYYY-MM` string); `delete` by `isAdmin()` only.
+- [ ] `trainerActivity/{id}`: same read; write by `isOwningTrainer(request.resource.data.trainerId)` with
+      `id == trainerId + '_' + month`, `actions` keys allow-listed and every counter an int ≥ its previous value
+      on update (monotonic — a counter can't be rewound), `activeDays` ≤ 31 strings; `delete` by `isAdmin()`.
+- [ ] `adminAudit/{id}`: `create` and `read` by `isAdmin()` only, `adminUid == request.auth.uid`, `at` an int,
+      `action` in the allow-list; **no `update`, no `delete`** (append-only).
+- [ ] Tests (`web/rules/firestore.rules.test.ts`, plus `dataLayer.test.ts` for the functions of 26e): a suspended
+      trainer is **denied** on a matrix of every trainer-owned collection (read and write on `students`,
+      `workouts`, `schedules`, `biometrics`, `payments`, `billingPlans`, `invites` create, `trainerStats`,
+      `trainerActivity`) and **still allowed** to read their own `users` doc (so the app can say why); a trainer
+      **cannot** set their own `accessStatus` back to `active` (nor create the field on a doc that lacks it); an
+      ADM can suspend and reactivate; a student of a suspended trainer **still reads their assigned workouts and
+      writes their own logs** (decision 3); a trainer cannot write another trainer's `trainerStats` or
+      `trainerActivity`; an ADM cannot write them either (counters are the trainer's own); a trainer cannot read
+      another's stats; `adminAudit` accepts an ADM's create, rejects a trainer's and any update/delete; the stats
+      shape tests reject a float cents value and a missing key. Then **run the new tests against the old rules**
+      (`RULES_FILE=<origin/main copy> npm run test:rules`) and record that the "rejects X" ones fail there — the
+      repository's rule: `assertFails` passes on any failure.
+- [ ] **(manual)** Publish the updated `firestore.rules` (diff first against what is live; `main`'s copy is the
+      live one). Until then the admin pages show permission errors and trainers' tracking writes fail silently.
+      Done when a trainer's `/app` visit creates a `trainerStats` document in the console.
+
+**26e. Domain and data layer**
+
+Suggested: sonnet · high — pure functions and thin Firestore wrappers with many edge cases (dates, buckets,
+defaults); correctness is cheap to test and expensive to discover on the live site.
+
+- [ ] `web/src/domain/activity.ts` (+ test): `ActivityKind` (the nine counters), `emptyActions()`,
+      `monthOf(day)`, `activityDocId(trainerId, month)`, `shouldWriteLastSeen(lastWrittenMs, nowMs)` (throttle:
+      at most once per 10 minutes) — pure, no storage, no clock.
+- [ ] `web/src/domain/adminMetrics.ts` (+ test, boundary cases for each definition in 26c): `usageStatus`,
+      `actionsInWindow`, `activeDaysInWindow`, `averageTicketCents`, `collectionRate`, `isStale`, the row type
+      the list renders, and `trainersCsv(rows)` — quotes and doubled quotes escaped, and **a cell starting with
+      `=`, `+`, `-`, `@` or a tab is prefixed with `'`** so a trainer named `=HYPERLINK(...)` cannot run in a
+      spreadsheet.
+- [ ] `web/src/data/converters.ts`: `toTrainerUser`, `toTrainerStats`, `toTrainerActivity`, `toAuditEntry` —
+      lenient like the rest (missing field → default; an unknown `accessStatus` reads as active; a malformed
+      document → `null`, filtered out). Extend `Profile` in `data/session.ts` with `accessStatus` so the session
+      knows a trainer is suspended.
+- [ ] `web/src/data/admin.ts`: `loadTrainers(db)` (`users where role == 'TRAINER'`), `loadTrainerStats(db)`,
+      `loadActivity(db, trainerId, months)`, `countLinkedStudents(db, trainerId)` (`getCountFromServer`, `role ==
+      'STUDENT'` + `trainerId`), `loadTrainerRequests(db)`, `setAccessStatus(db, adminUid, trainerUid, status,
+      reason)`, `promoteToTrainer(db, adminUid, uid, name)` (the phone's `set(merge)` write, plus `createdBy`),
+      `rejectRequest(db, adminUid, uid)`, and `recordAudit(...)`. Every mutating function writes its audit entry
+      in the **same batch**, so an action without its record cannot happen.
+- [ ] `web/src/data/activity.ts`: `trackActivity(db, trainerId, kind, now, timeZone)` — one `setDoc(..., { merge:
+      true })` on the month document with `increment(1)` on `actions.<kind>` and `arrayUnion(day)` on
+      `activeDays`; **never throws** (a failed counter must not fail the action it counts) and returns
+      nothing the caller needs. `writeTrainerStats(db, trainerId, figures, snapshot, now)` builds the document
+      from what `/app` already loaded.
+- [ ] Data-layer tests (`web/rules/dataLayer.test.ts`, emulator): the counters accumulate across calls and
+      across a month boundary; `trackActivity` swallows a permission error; `setAccessStatus` writes the audit
+      entry atomically; `loadTrainers` returns only trainers; `countLinkedStudents` counts only that trainer's
+      linked students. Done when `npm run test:rules` and `npm test` pass.
+
+**26f. Tracking in the trainer's web session**
+
+Suggested: sonnet · medium — one-line calls at known success points, plus the summary write on the dashboard.
+
+- [ ] On `/app` (the "Hoje" dashboard, which already loads the snapshot): once per browser session record
+      `login` (guard with a `sessionStorage` flag), set `lastSeenAt`, and write `trainerStats` — throttled with
+      `shouldWriteLastSeen` so reloading does not write every time. The numbers are those `dashboardFigures`
+      returns; `billing.activePlans`/`planCents` come from `snapshot.plans`.
+- [ ] One `trackActivity` call, on the success path only, in each handler: student drafted
+      (`studentCreated`), invite generated (`inviteGenerated`), ficha saved (`fichaSaved`, counted per ficha, so
+      a 3-treino import adds 3), charge marked paid (`chargePaid`), booking added (`bookingAdded`), measurement
+      added by the trainer (`measurementAdded`), self-assessment requested (`assessmentRequested`), Gemini
+      generation succeeded (`geminiGenerated` — which also tells the ADM who is spending the project's free AI
+      quota). Done when each, exercised in the browser against the emulators, increments the right counter and
+      today's day appears in `activeDays`.
+- [ ] A transparency line in the trainer area's footer: "O uso do site é contabilizado de forma agregada
+      (quantidade de ações e dias de uso) para a administração da plataforma; nenhum dado de aluno é incluído."
+      Done when it shows on `/app`.
+
+**26g. The admin area: shell, overview, directory, detail**
+
+Suggested: sonnet · high — a new route group with its own guard, and several data-heavy pages that must stay
+readable on a phone (the ALLU rules: ≥ 44px controls, `table.stack`, no horizontal overflow).
+
+- [ ] Routing: add `"/admin"` to `Area` and `destinationFor` — **an ADM now goes to `/admin`** (update the tests
+      in `web/src/data/session.test.ts` that pin ADM → `/app`, and the comment that explains the old choice);
+      `RequireArea` accepts `"/admin"`; `web/src/app/admin/layout.tsx` wraps `AppShell` (extend `AppShell`'s
+      `area` to `"admin"`, `data-area="admin"` in the CSS) with the navigation *Visão geral · Personais ·
+      Solicitações · Minha conta* (new icons in `_shared/icons.tsx`: a shield and a team); route titles via
+      `metadata` as the other areas do. An ADM opening `/app` is sent back to `/admin`.
+- [ ] `/admin` — **Visão geral**, in the ALLU template's language (the `dl.figures` strip and quiet lists, not
+      a wall of cards): personais cadastrados (ativos / suspensos), alunos conectados (the sum of the count
+      queries), personais ativos nos últimos 7 dias, solicitações pendentes, and — from the summaries, labelled
+      "n de N personais com resumo recente" — cobrança prevista / recebida / em atraso do mês. Below: **Atenção**
+      (personais *Sumidos* or *Nunca entraram*, summaries older than 14 days, overdue amounts above a threshold
+      that is a constant at the top of `adminMetrics.ts`), **Uso do mês** (top personais by actions, Gemini
+      generations per personal), and a **Links úteis** list (Firebase console, Google AI Studio's rate-limit
+      page, the live site). Done when every number on the page can be traced to a document or a count query.
+- [ ] `/admin/personais` — the directory: name, e-mail, **status** (Ativo / Suspenso), **uso** (the four labels),
+      alunos, última visita, ações em 30 dias, cobrança do mês (previsto · recebido), "resumo de dd/mm"; search by
+      name or e-mail, filter by status and by uso, sort by any column; each row a link to the detail; a button
+      **Exportar CSV** (`trainersCsv`). The whole row is the tap target on a phone, as in the students'
+      directory.
+- [ ] `/admin/personais/detalhe?id=` — one personal: identity (name, e-mail, `createdAt`, `createdBy`), the status
+      controls of 26i, **alunos** (the live count next to the reported one, so a drift is visible), **atividade**
+      (a table by month of every counter, and a 30-day strip — `<ol>` of 30 marked squares with the day and the
+      count in `title` and in text for screen readers), **cobrança** (planos ativos, ticket médio, previsto /
+      recebido / em atraso, taxa de recebimento, and "resumo atualizado em dd/mm hh:mm" with the stale flag), and
+      the audit entries for this personal. Done when each block renders with no data (a brand-new trainer) as an
+      honest "ainda sem dados", not zeros that look like facts.
+- [ ] `/admin/conta` — the ADM's own page: the signed-in e-mail, a button that sends *me* a password-reset
+      e-mail, how many ADMs exist (`users where role == 'ADM'` count), and — when 26k ships — the MFA status.
+- [ ] Layout checks as in the ALLU visual pass: `tsc`, `eslint`, no horizontal overflow at 335 / 390 / 600 / 768 /
+      834 / 1024 / 1440 px on every `/admin` route (the iframe probe used before), and the page titles read
+      "<página> — ALLU personal".
+
+**26h. Create a personal from the console**
+
+Suggested: opus · high — handles credentials, two systems (Auth and Firestore) that can half-succeed, and a
+second app instance; the failure paths are the point.
+
+- [ ] `/admin/personais/novo`: name, e-mail (and an optional phone). On submit, in this order: **(1)** build a
+      random 20-character password from `crypto.getRandomValues` (never shown, never stored); **(2)**
+      `initializeApp(config, "admin-create-trainer")` with the same `firebaseConfig` — and, **when running on the
+      emulators, `connectAuthEmulator` on that second Auth instance too** (or the call goes to production);
+      initialise App Check on it only if the 26a manual check found Authentication enforcement on;
+      **(3)** `createUserWithEmailAndPassword` there, then `signOut` and `deleteApp` in a `finally`; **(4)** with
+      the **primary** session, create `users/{newUid}` = `{ role: 'TRAINER', name, email, createdAt,
+      createdBy: adminUid, accessStatus: 'active' }` and the `trainer.create` audit entry in one batch; **(5)**
+      `sendPasswordResetEmail(email)` so the trainer sets their own password. The ADM stays signed in throughout.
+- [ ] Failure handling, each with a message and a test where it can be tested: `auth/email-already-in-use` →
+      "esse e-mail já tem uma conta" with the two ways forward (promote it by UID on the requests page, or use
+      another e-mail); `auth/weak-password`/`invalid-email` can't happen with the generated password and the
+      form's own validation; **step 4 failing after step 3 succeeded** leaves an Auth account with no `users`
+      document (which the site reads as an unclaimed student) — the page must keep the new UID on screen and
+      offer **"Concluir cadastro"**, which retries only step 4 (idempotent: `set` with the same data), so an
+      orphan is never silently left behind; **step 5 failing** is not fatal — the personal exists, the page says
+      so and offers **"Reenviar e-mail de senha"** (also available on the detail page). Rate limits (100 accounts
+      per hour per IP, 150 reset e-mails per day) are shown as a plain message.
+- [ ] Fallback for a trainer who never receives the e-mail: an explicit, opt-in **"Gerar senha temporária"** on
+      the detail page of a personal the ADM just created — it shows a random password **once** (copy button,
+      cleared on leaving the page, never stored) and records `trainer.resetEmail`-style audit text; it exists
+      because a reset e-mail in a spam folder is the most likely onboarding failure. Implemented only if the
+      reset e-mail test of 26a (manual) shows it is needed; otherwise skipped and noted here.
+- [ ] **E-mail quality (GOALS.md §27):** the form's e-mail field runs `validateEmail` from
+      `domain/emailPolicy.ts` (§27d) — syntax, the "você quis dizer…?" typo hint, throwaway domains — if §27d
+      has landed; a typo here costs a day of "I never got the e-mail". No `email_verified` gate applies to a
+      personal created this way: the reset link they must click is the proof the address is theirs (§27b).
+- [ ] Test the whole flow against the Auth + Firestore emulators in the browser (a throwaway e-mail, then sign in
+      as the new trainer from a private window with the password from the emulator's reset link) and record the
+      result here. Done when the new trainer lands on `/app`, and the ADM was never signed out.
+
+**26i. Suspend, reactivate, audit, requests**
+
+Suggested: opus · high — the enforcement is in the rules (26d), but the flows and the suspended-account
+experience are what a real person meets; getting the wording and the guards right matters.
+
+- [ ] On the detail page: **Suspender acesso** (asks for a short reason, ≤ 200 characters, then a
+      "Deseja suspender?" Sim/Não using `_shared/ConfirmDialog.tsx`) and **Reativar acesso**; both go through
+      `setAccessStatus` (audit in the same batch). An ADM cannot suspend an ADM or themselves (the button is
+      absent, the function refuses, and the rules need no special case because only a `TRAINER` is ever
+      suspended in the UI). Done when suspend → the trainer's very next request fails and reactivate → works.
+- [ ] The suspended trainer's experience: `resolveProfile` carries `accessStatus`; `destinationFor` sends a
+      suspended TRAINER to `/entrar`, which shows "Sua conta de personal está suspensa. Fale com o administrador."
+      and **Sair** (the existing `role: NONE` message pattern) — never a blank screen or a wall of permission
+      errors. A trainer already inside a session is bounced at the next `RequireArea` check, and any in-flight
+      write fails with the plain "Não foi possível salvar" the pages already show. Add the matching test to
+      `session.test.ts`.
+- [ ] `/admin/solicitacoes`: the `trainerRequests` queue (e-mail, date) with **Aprovar** (the same `set(merge)`
+      the phone does — `role: 'TRAINER'`, `name` from the e-mail's local part, editable before confirming —
+      then deletes the request, with a `trainer.promote` audit entry) and **Recusar** (`request.reject`), each
+      behind the Sim/Não dialog; plus **Promover por UID** (the phone's fallback) for an existing account that
+      never made a request. Done when approving makes that person a trainer on their next sign-in.
+- [ ] The audit history: a list of the latest 50 `adminAudit` entries on the overview ("Atividade da
+      administração": quem fez o quê, quando) and the per-trainer filter on the detail page. Read-only.
+
+**26j. Verification**
+
+Suggested: sonnet · high — mostly running and reading, with manual judgement on the live site.
+
+- [ ] Seed script: extend `web/scripts/seed-emulators.mjs` with an ADM account (`admin@teste.dev`, role `ADM`),
+      a second trainer with students, and `trainerStats`/`trainerActivity` documents with a spread of states
+      (active, quiet, away, never seen, suspended, stale summary, overdue) so every admin screen has something
+      honest to show; keep the script's header comment in step.
+- [ ] Run `tsc`, `eslint`, `vitest`, `npm run test:rules` (Java 21) and the static build with
+      `NEXT_PUBLIC_BASE_PATH=/Personal_app_android`. Done when all are green and the "seen failing on the old
+      rules" run of 26d is recorded.
+- [ ] Browser, against the emulators: ADM login → `/admin`; every page above on desktop, tablet and phone widths
+      with the overflow probe; create a personal (26h) and sign in as them; they work in `/app` and the
+      counters move; the ADM suspends them → their next action fails and they see the suspended message;
+      reactivate → works; a trainer opening `/admin` is sent to `/app`; a student opening it to `/aluno`; an ADM
+      opening `/app` is sent to `/admin`; keyboard-only through the create form and the suspend dialog.
+- [ ] **(manual)** On the live site, after the rules are published: sign in as the ADM; create a real test
+      personal with a throwaway address and confirm the reset e-mail arrives and works; sign in as them, do a
+      few things, and watch the counters appear on `/admin`; suspend and reactivate; confirm Android's ADM
+      dashboard still works with the same account. Record anything that surprised you here.
+
+**26k. Optional hardening — MFA for the ADM account**
+
+Suggested: opus · high — touches the login page that every user passes through; a regression locks people out.
+
+- [ ] **(manual)** Decide whether to enable it now. It is recommended once real trainers' data is on the
+      platform, costs nothing, and adds one authenticator-app code at each ADM sign-in. Steps for the trainer: in
+      the console, upgrade Authentication to **Identity Platform** (free switch), enable **TOTP**, and verify the
+      ADM's e-mail (send the verification mail from `/admin/conta`).
+- [ ] Code (only if enabled): on `/admin/conta` an **enrol** flow (`TotpMultiFactorGenerator.generateSecret` →
+      QR/URI → confirm a code → `assertionForEnrollment`); on `/entrar` handle `auth/multi-factor-auth-required`
+      with `getMultiFactorResolver` + a code field + `assertionForSignIn` — for **any** account that has it, so
+      nothing here may change the path of users without MFA. Unit-test the error→resolver branching with a fake
+      error; test the happy path by hand (an authenticator app on a phone). Done when an ADM with MFA signs in
+      only with the code and a trainer without MFA signs in exactly as before.
+
+**26l. Registration**
+
+Suggested: haiku · low — documentation and index edits, fully specified.
+
+- [ ] `CLAUDE.md` web section: the `/admin` area (guard, nav, why the ADM no longer lands on `/app`), the three
+      new collections and what writes them, the **suspension semantics** (flag + rules, Auth untouched, students
+      keep access, frozen against self-writes), the **secondary app pattern** and its emulator caveat, and that
+      the admin pages deliberately read no student document. `web/README.md`: the routes table and the "first
+      ADM" steps from 26b.
+- [ ] `store-listing/privacy-policy.md`: a paragraph that the platform operator sees, per personal, aggregate
+      counts (alunos, ações, dias de uso, resumo de cobrança) and never a student's data from the admin pages;
+      the pre-existing fact that an ADM *can* read every `users` document is stated, not hidden. `(manual)` —
+      the trainer reviews and decides the wording. Done when the file says it and the trainer has read it.
+- [ ] GOALS.md: tick items with what was actually verified and what was not (as the earlier sections do), commit
+      each verified item on its own, never push without being asked.
+- [ ] Done-when for the whole section: the ADM signs in on the **live** site, lands on `/admin`, sees the real
+      trainers with their counts and activity, creates a personal who then signs in and works, and suspends and
+      reactivates one — with the audit trail showing it. Not done when the code exists.
+
+---
+
+## 27. Feature — Require a verified e-mail before an account gets a profile
+(2026-10-01, via `/newgoal`)
+
+**The request:** "O nosso sistema atual recebe qualquer tipo de email falso, consegue exigir apenas emails
+válidos? pense em alguma forma de executar isso e me retorna, se achar solução implemente no goals."
+
+**Goal type: Feature** — a hardening of two flows that already work (student sign-up on `/convite`, and the
+rules behind it). Research is done (2026-10-01) and recorded in 27a.
+
+**The short answer.** Today **yes, any fake address gets in** — checked in the code, not assumed: the invite page
+calls `createUserWithEmailAndPassword(auth, email.trim(), password)` and goes straight on to claim the invite;
+the only check is the browser's `<input type="email">` (`a@b` passes); nothing anywhere calls
+`sendEmailVerification` (no match in `web/` or `app/`); and `firestore.rules` never looks at
+`request.auth.token.email_verified`. Firebase itself checks *syntax only* — it cannot know whether a mailbox
+exists. **Yes, it can be required, and there is exactly one thing that proves an address is real: send a link
+to it and have its owner click.** That is Firebase's *verified e-mail*. The plan makes **the rules** refuse a
+profile to any account whose address is not verified — enforcement on the server side, because anything done
+only in the page can be skipped by calling the Auth API directly (the Firebase API key is public by design, so
+anyone can create an Auth account without ever opening the site). The page work (27d–27e) is the friendly side
+of that: tell the person to check their inbox, and catch typos and throwaway domains *before* they cost a day.
+
+**What "valid" can honestly mean here (three layers, each with its limit):**
+1. **Looks like an address** (stricter than the browser) and **is probably not a typo** (`gmial.com` →
+   "você quis dizer gmail.com?") — client only, a courtesy, bypassable.
+2. **Not a known throwaway domain** (mailinator & co.) — client only, a short list, never complete; verification
+   does *not* stop these (a throwaway inbox receives the link too), which is why the list exists at all.
+3. **The owner of the mailbox confirmed it** — enforced in `firestore.rules`. This is what turns a typo
+   (`ana@gmail.con`, `ana@gmial.com`) or an invented address into an account that **can never claim an invite**:
+   the link goes nowhere, so the claim is refused. It also stops someone claiming an invite under *another
+   person's* address.
+
+**What exists today (so the plan does not rebuild it):**
+- Web: `web/src/app/convite/InviteClaim.tsx` (create account or sign in → `claimInvite` →
+  `/aluno`), `web/src/data/invites.ts` (the claim transaction; maps `permission-denied` to "Esta conta já está
+  vinculada a um perfil existente" — which would be a *wrong* message for an unverified account),
+  `web/src/data/authErrors.ts`, `web/src/data/session.ts` (`Session.signedIn` has `uid`/`email`/`profile`, no
+  verified flag), `SessionProvider.tsx` (`refresh()` re-reads the profile for `auth.currentUser`).
+- Rules: a student's profile is created by the invite claim (`users/{uid}` create, plus the re-claim *update*
+  for an account that already has a role-less doc); `trainerRequests/{uid}` is `allow create: if isSignedIn() &&
+  request.auth.uid == uid` — **any** signed-in account, including a fake one, can queue a "promote me" request
+  that the ADM then sees. Rules tests build users with `env.authenticatedContext(uid)` (no token claims).
+- Android: `AuthRepository.register` creates the account and logs in; `claimInvite` and `requestTrainerAccess`
+  follow; no verification. The rules are shared by every client, which is why Android is a module here (27g).
+- Auth quotas (<https://firebase.google.com/docs/auth/limits>): Spark — address-verification e-mails
+  **1,000/day**, password-reset e-mails 150/day (separate counter), and **150 requests per IP per hour** for
+  verification. Plenty for a personal-trainer platform; the Resend button gets a cooldown anyway.
+
+**What the research changed (five lines):**
+1. **The gate goes on the *entry doors*, not on everything.** Verified e-mail is required to **create** a
+   student profile (invite claim), to **re-claim** one, and to **queue a trainer request**. It is *not*
+   required for anything an existing account does day to day — students who already have a profile (and no
+   verified e-mail, because nobody ever asked) keep working untouched ("grandfathered"); locking them out
+   would be the worst possible rollout.
+2. **The token is the catch.** `request.auth.token.email_verified` is read from the ID token, which only
+   changes when the token is **refreshed** — clicking the link in the mail does not update the page that is
+   open. The page must `user.reload()` and then `getIdToken(true)` *before* retrying the claim, or the rules
+   still see `false` and the student is refused although they did everything right. This is the one subtle
+   thing in the whole section and gets its own test (27i).
+3. **Verification happens wherever the link is opened** (often the phone's mail app, while the form is on a
+   laptop), so the waiting screen needs "Já confirmei" plus an automatic re-check when the tab regains focus.
+4. **Trainers created by the ADM (§26h) need no gate:** their role comes from the ADM's decision, and the
+   password-reset link they must click to set a password is itself proof the mailbox is theirs. Only the ADM's
+   form gets the layer-1/2 checks (typo hint, throwaway domains), because a typo there costs a day.
+5. **Bots are a separate problem, and a bigger switch.** Unverified accounts that anyone can still create
+   through the Auth API stay *empty* (no profile, no request, no data — that is what the rules gate buys); they
+   only clutter Authentication → Users. Stopping the creation itself means reCAPTCHA Enterprise / App Check
+   enforcement for Authentication, which needs the Identity Platform switch that §26k also needs — recorded as an
+   optional decision (27h), not built.
+
+**Not touched by this section (explicit, to stop scope creep):** phone/SMS verification (needs billing); e-mail
+link (passwordless) sign-in (5 e-mails/day on Spark — unusable); deleting orphan unverified Auth accounts (Admin
+SDK — a by-hand console job if it ever matters); a change-e-mail feature (none exists; if one is ever added it
+must use `verifyBeforeUpdateEmail`, never a plain update); a custom sender domain/SMTP for the verification mail
+(needs a domain — deferred; the page tells people to look in the spam folder instead); gating `invites` *reads*
+(the 8-hex-character code is the secret and a throwaway mailbox could be verified anyway — revisit only if abuse
+is seen); making existing students verify (a soft nudge is offered in 27e, nothing forced).
+
+**Where this executes:** `web/` and `firestore.rules` on `main`, branch + PR (CI gates lint, tests, build and the
+emulator rules tests). **Rollout order matters and is the whole risk:** the page work ships first (it behaves
+the same under old and new rules), Android parity (27g) second *if* its student path is live, and the
+**`firestore.rules` publish is last and by hand** (console copy-paste or `firebase deploy --only
+firestore:rules`, diffed against what is live). Publishing the rule before the page ships makes every new
+student's claim fail with a misleading message. **§26d also edits `firestore.rules`** (suspension check): if both
+sections are in flight, merge one, rebase the other, and publish **one** combined file — never two overlapping
+copies.
+
+```mermaid
+flowchart TD
+    A[27a. Research — done] --> B[27b. Decisions]
+    B --> C[27c. Rules + tests]
+    B --> D[27d. emailPolicy — domain]
+    D --> E[27e. Web flow on /convite]
+    E --> F[27f. Other doors]
+    E --> G[27g. Android parity — manual]
+    H[27h. Console setup — manual] --> I[27i. Verification]
+    C --> I
+    E --> I
+    I --> P[Publish rules — manual, last]
+    G --> P
+    P --> J[27j. Registration]
+```
+
+Suggested: opus · high — a security rule on a live site with a token-timing trap and a rollout order; the rules (27c) are the expensive part, the page and the policy are ordinary work.
+
+**27a. Research — what the platform allows (checked 2026-10-01)**
+
+Suggested: sonnet · medium — already done; kept so the decisions are not looked up twice.
+
+- [x] The check Firebase can enforce: `request.auth.token.email_verified` — "true if the user has verified they
+      have access to the e-mail address" (<https://firebase.google.com/docs/rules/rules-and-auth>); accounts
+      created with e-mail + password start unverified; `sendEmailVerification(user)` sends the link
+      (<https://firebase.google.com/docs/auth/web/manage-users>) and accepts a continue URL back to the site.
+      The docs do not say the open page's token updates by itself — treated as "it does not" (27e/27i prove it).
+- [x] Quotas and limits recorded above (1,000 verification e-mails/day, 150 requests/IP/hour on Spark).
+- [x] Server-side alternatives considered and **not** chosen: *blocking functions* (`beforeCreate`, could reject
+      domains and even require verification at sign-up) need the Identity Platform upgrade **and** deployed Cloud
+      Functions, i.e. the Blaze plan §3 refused; reCAPTCHA Enterprise bot protection for e-mail sign-up is real
+      but is a console switch with its own free-tier limits — optional (27h). Rules + the verified-e-mail claim
+      cost nothing and need no server.
+- [x] Emulator behaviour: the Auth emulator sends no mail; it prints verification links and exposes the pending
+      codes on `GET /emulator/v1/projects/{project}/oobCodes` (<https://firebase.google.com/docs/emulator-suite/connect_auth>),
+      so a test can fetch a code and apply it (`accounts:update` with the `oobCode`) — 27i's helper.
+- [x] Not confirmed and not needed: whether completing a *password-reset* link also flips `emailVerified`.
+      The design does not depend on it (trainers are not gated); 27i's live check records what happens.
+
+**27b. Decisions (settled here, so nobody re-argues them mid-build)**
+
+Suggested: sonnet · medium — decisions already made; the item below is the one to confirm.
+
+- [x] **Enforcement is `request.auth.token.get('email_verified', false) == true` in the rules**, in a helper
+      `hasVerifiedEmail()` next to `isAdmin()`. It reads the token, **not a document**, so it costs nothing
+      against the per-request `get()` limits §26d is careful about.
+- [x] **Gated:** `users/{uid}` **create** (invite claim) and the **re-claim update** branch (the self branches
+      that edit a profile are untouched); `trainerRequests/{uid}` **create**. **Not gated:** every other write of
+      an existing account; the ADM's `isAdmin()` branches; `invites` reads and the invite's `used` flip (it can
+      only happen in a batch whose `users` write is gated).
+- [x] **Grandfathering:** no existing account is locked out, none is forced to verify. The soft nudge (27e) is
+      the only touch.
+- [x] **Client courtesy checks are labelled as such** in code comments: `domain/emailPolicy.ts` is a UX nicety,
+      never a security boundary; the rules are.
+- [x] **(manual)** Confirm the one product choice: new students **must** verify before they get their ficha (the
+      plan's default — it is the point of the request). The alternative — let them in and merely nag — is not
+      enforceable and is not planned. Done when the trainer has said yes (or changed it) in chat. **Confirmed 2026-10-01** ("minha ideia é essa … quero criar essa caixinha de verificação"); a throwaway
+      inbox getting through is accepted.
+
+**27c. Rules and their tests**
+
+Suggested: opus · xhigh — an auth/security change to the one rules file every client shares; a mistake either locks students out or leaves the door open, and publishing is by hand and not testable in CI.
+
+- [x] `firestore.rules`: add `hasVerifiedEmail()` and put it into the **self branch of `users` create** and into
+      the **re-claim branch of `users` update** (alongside the existing `isSignedIn() && request.auth.uid ==
+      uid`), and into `trainerRequests` **create**. Update the schema comment at the top of the file (one line:
+      what is gated and why). Nothing else changes; run the existing suite to prove it. **Done 2026-10-01.**
+- [x] `web/rules/firestore.rules.test.ts` and `web/rules/dataLayer.test.ts`: the helpers build users with no
+      token claims (`env.authenticatedContext(uid)`, `signedInAs(uid)`) — make the **default verified**
+      (`{ email_verified: true }`) so the existing tests keep meaning what they meant, add an explicit
+      **unverified** helper, and use it only in the new cases:
+      unverified → **create** `users/{uid}` by a valid claim **fails**; unverified → **re-claim update fails**;
+      unverified → **create `trainerRequests/{uid}` fails**; the same three **pass** when verified;
+      a **grandfathered unverified student** (profile already exists) can still update their own profile, create
+      a `workoutLog`, an `assessment` and a biometric, and read their own profile — proving nothing else is
+      gated; an unverified user still cannot claim *someone else's* uid (unchanged denial, kept as a regression
+      test); `email_verified` **absent** from the token (the old default) is treated as unverified. **Done 2026-10-01:** `as()`/`signedInAs()` are verified by default; `asUnverified`/`asWithoutClaim`
+      serve the new cases; "accounts that already exist are not affected" is a describe block of its own
+      (unconfirmed student: read, edit, log, assess, measure; unconfirmed trainer: read, grant, invite).
+- [x] **Seen failing on the old rules** (CLAUDE.md's discipline — `assertFails` passes on any failure): run
+      `RULES_FILE=<origin/main copy of firestore.rules> npm run test:rules`; the three new "unverified is
+      refused" tests **must fail** there and pass here, every other test passes on both. Record the counts in
+      this item, as §23d/§25 did. **Done 2026-10-01:** against `origin/main`'s copy exactly the 3 new tests fail (claim, re-claim and trainer
+      request from an unconfirmed address); the other 80 pass on both files.
+- [x] `npm run test:rules` (emulators, Java 21 — see `web/README.md`) green. Done when the file is merged *and
+      not yet published*; the publish is its own manual item below. **83/83 on 2026-10-01. Merged: no. Published: no.**
+- [ ] **(manual)** Publish the updated `firestore.rules` — **only after 27e is merged and deployed and, if 27g
+      applies, the Android change is out** — after diffing against the live copy (CLAUDE.md: never publish
+      without a diff). If §26d is also pending, publish the combined file. Then run the live checks in 27i.
+      **Order decided 2026-10-01:** merge the PR → wait for the Pages deploy to finish green → publish the rules
+      (the Android condition above is waived by the 27g decision). Publishing earlier is harmless to students who
+      already have a profile, but a new student could not yet see the confirmation screen.
+
+**27d. Address quality — `domain/emailPolicy.ts` (pure, no Firestore, no clock)**
+
+Suggested: sonnet · medium — ordinary pure code with a table-driven test; the care is in not rejecting real addresses.
+
+- [x] `validateEmail(input): { ok: true; email: string; suggestion?: string } | { ok: false; reason: ... }`:
+      trim; lower-case the **domain** only (Firebase lower-cases the whole address, but the local part is shown
+      back as typed); one `@`; local part 1–64 characters, no spaces, no leading/trailing/double dots; domain of
+      at least two labels, each letters/digits/hyphens not starting or ending with `-`, last label ≥ 2 letters
+      (or `xn--` punycode); total ≤ 254. **Deliberately does not support quoted local parts or comments** —
+      nobody types them and they are a classic source of bypasses; noted in a comment. `+tags` and dots stay
+      valid (`ana+treino@gmail.com` is a real address).
+- [x] **Throwaway domains**: a short const list (~40) of the best-known disposable-mail services, matched on the
+      domain **and its subdomains**, result `{ ok: false, reason: "disposable" }` with the message "Use um e-mail
+      pessoal que você acessa — endereços temporários não funcionam." The comment says plainly: *never complete,
+      client-only, the rules' verification is the enforcement*. No third-party list package (100k+ entries in the
+      bundle for a courtesy).
+- [x] **Typo hint, never an auto-correction**: if the domain is exactly one edit (insert/delete/substitute/swap)
+      from a short list of the domains this audience uses — `gmail.com`, `hotmail.com`, `outlook.com`,
+      `yahoo.com`, `yahoo.com.br`, `icloud.com`, `live.com`, `uol.com.br`, `bol.com.br`, `terra.com.br` — or
+      ends in a near-miss of `.com` / `.com.br` (`.con`, `.cmo`, `.vom`), return `suggestion`; an address that
+      *is* on the list is never flagged. The page shows "Você quis dizer `ana@gmail.com`?" with two buttons —
+      *Usar esse* and *Manter o que digitei* — so a legitimate rare domain is never blocked.
+- [x] Unit test, table-driven: valid (plain, dotted, `+tag`, subdomain, punycode, long-but-legal), invalid (every
+      rule above, plus `a@b`, `a@b.c`, `@x.com`, `x@.com`, `x@com`, spaces, two `@`), disposable (domain and
+      subdomain; a real domain that merely *contains* a listed name is **not** flagged), typos (each listed
+      pattern → the right suggestion; `gmail.com` itself → none). Done when `tsc`, `eslint`, `vitest` are green. **Done 2026-10-01** (`domain/emailPolicy.ts` + test; the list has 52 domains; real providers one letter
+      from a common one — `mail.com`, `email.com`, `ymail.com`, `gmx.com`… — are never "corrected").
+
+**27e. The web flow on `/convite`**
+
+Suggested: sonnet · high — a small state machine (form → waiting → claim) with the token-refresh trap and two Auth failure paths; opus if the first attempt trips on the refresh behaviour.
+
+- [x] Session: `Session.signedIn` gains `emailVerified: boolean`, read from `user.emailVerified` in
+      `SessionProvider.load`; `refresh()` already re-reads `auth.currentUser`, so after a `reload()` it shows the
+      new value. `data/session.ts` types follow; no route's `destinationFor` changes.
+- [x] `domain/emailVerification.ts` (pure): `verificationContinueUrl(origin, basePath, code)` — builds
+      `<origin><basePath>/convite/?c=<CODE>` **with the trailing slash and the `NEXT_PUBLIC_BASE_PATH` prefix**
+      (CLAUDE.md: any hand-built URL on Pages must) and URL-encodes the code; `resendWaitSeconds(lastSentAt, now,
+      cooldownSeconds = 60)`. Unit tests for both (with and without a base path).
+- [x] `data/emailVerification.ts`: `sendVerification(user, continueUrl)` (wraps `sendEmailVerification`);
+      `confirmVerified(user)` → `await user.reload()`; if `user.emailVerified`, `await user.getIdToken(true)`
+      and return `true` — **the token refresh is the point**; `discardUnverifiedAccount(user)` (`deleteUser`, for
+      "usei o e-mail errado"; a just-created account is recent enough to delete). Take narrow interfaces so the
+      unit tests use fakes: reload-then-refresh order, no refresh when still unverified, errors propagate.
+- [x] `InviteClaim.tsx`: after `createUserWithEmailAndPassword`, validate first (27d, inline `role="alert"`, the
+      typo suggestion as two buttons), then `sendVerification` and show a **waiting panel** instead of claiming:
+      "Confirme seu e-mail" · the address · "Enviamos um link para **ana@…**. Abra e clique nele. Não achou?
+      Veja a caixa de spam." · **Reenviar** (disabled during the cooldown, shows the seconds) · **Já confirmei**
+      (`confirmVerified`; on `true` claim and go to `/aluno`; on `false` say "Ainda não vimos a confirmação —
+      abra o link do e-mail e tente de novo") · **Usei o e-mail errado** (`discardUnverifiedAccount`, back to the
+      form, `ConfirmDialog` Sim/Não) · **Sair**. Re-check automatically when the tab regains focus
+      (`visibilitychange`). In **sign-in mode**, an account with `!emailVerified` lands on the same panel (no
+      mail is sent unprompted — a "Enviar e-mail de confirmação" button). The claim runs **only** after
+      `confirmVerified` returned `true`. Existing classes only; controls ≥ 44px; the status text is
+      `role="status"`, focus moves to the panel heading. **Done 2026-10-01** (`convite/VerifyEmailPanel.tsx`; the Firebase Auth instance also asks for Portuguese
+      mail: `auth.languageCode = "pt-BR"` in `data/firebase.ts`; `.auth-card` wraps long addresses).
+- [x] `claimInvite` (`data/invites.ts`): when the transaction ends in `permission-denied` **and** the current
+      user is unverified, return "Confirme seu e-mail antes de aceitar o convite." instead of the misleading
+      "já vinculada" message (the caller passes the flag; the function's signature stays backward-compatible).
+      Test the branch with the fake the existing tests use. **Not needed (2026-10-01):** the page claims only after `confirmVerified` returned `true`, so an unconfirmed
+      account never reaches the claim from the web, and a refused claim of a confirmed one still means what the
+      old message says. Left unchanged.
+- [x] `authErrors.ts`: add `auth/unauthorized-continue-uri` and `auth/invalid-continue-uri` ("O link de
+      confirmação não pôde ser enviado — avise o administrador."), `auth/requires-recent-login`, and keep
+      `auth/too-many-requests`; unit-test the new codes.
+- [ ] **(optional)** Soft nudge for grandfathered accounts: a dismissible line in the student area header —
+      "Confirme seu e-mail para poder recuperar sua senha" with a send button — shown only when
+      `emailVerified === false`. Skip if it adds noise; nothing depends on it. **Skipped for now (2026-10-01).**
+- [x] `tsc`, `eslint`, `vitest` green; no new stylesheet. Done when the page behaves as 27i's browser run says. **Done 2026-10-01** (331 unit tests).
+
+**27f. Other doors**
+
+Suggested: haiku · low — wiring and a decision record.
+
+- [ ] The ADM's "Cadastrar personal" form (§26h, when it exists) runs `validateEmail`; no `email_verified` gate
+      for trainers it creates — the reset link is the proof. If §26h is built first, this item is its follow-up;
+      the one-line pointer is already in §26h.
+- [x] The web has **no writer of `trainerRequests`** (only Android writes it), so the web needs no change for
+      that door; §26i's request list will from now on contain only verified addresses — say so in its empty-state
+      text only if it reads naturally.
+
+**27g. Android parity — `(manual)`, other branch**
+
+Suggested: sonnet · medium — small Kotlin change, but on a different branch and it must precede the rules publish.
+
+- [ ] **(manual)** On the Android production line (`claude/tarefas-abertas-front-9834f6`), check whether a student
+      can still reach `register` → `claimInvite`, and whether `requestTrainerAccess` is reachable. If neither is
+      live: record "not applicable — rules can be published" here and stop. If either is: after `register`,
+      call `auth.currentUser?.sendEmailVerification()`; show a "Confirme seu e-mail" state with resend; call
+      `reload()` then `getIdToken(true)` before `claimInvite` / `requestTrainerAccess`; map `PERMISSION_DENIED`
+      on an unverified user to "Confirme seu e-mail antes". Ship it **before** the rules are published, or the
+      old build's new students are refused with the wrong message. Test on a device (or the existing
+      `AuthRepository` seam if the branch has one) and record it here. **Checked 2026-10-01: it applies.** On that branch `LoginScreen.kt` (register mode → `register`, the invite
+      field → `claimInvite`, "pedir acesso" → `requestTrainerAccess`) and `AuthViewModel.kt` reach all three gated
+      writes, with no verification anywhere. So either this change ships first, or the trainer decides to publish
+      anyway and send new students through the web link (an account that confirmed on the web can still claim
+      on the phone; one registered on the phone and never confirmed cannot).
+      **Decision 2026-10-01 (trainer): Android and iOS are set aside for now.** The rules go out without the
+      phone change: new students sign up through the web invite link, and the phone's own sign-up/claim will be
+      refused (with its misleading "já vinculada" message) until it learns the confirmation flow. Left open as a
+      follow-up; nothing else in this section waits on it.
+
+**27h. Console setup — `(manual)`, nothing to code**
+
+Suggested: haiku · low — a short click list, fully specified.
+
+- [ ] **(manual)** Firebase console → Authentication → **Templates** → *Email address verification*: language
+      **Português (Brasil)**, sender name **ALLU personal**, a short subject and body that says what the link is
+      for. Do this *before* the live test, or the first mails go out in English.
+- [ ] **(manual)** Authentication → Settings → **Authorized domains**: confirm `alexmiguel011014-stack.github.io`
+      is listed (the continue URL must be on an authorized domain; sign-in already needs it, so it should be) —
+      a missing one shows up as `auth/unauthorized-continue-uri` on the first live attempt.
+- [ ] **(manual, optional)** Decide on bot protection for e-mail sign-up (reCAPTCHA Enterprise / App Check
+      enforcement for Authentication). It needs the **Identity Platform** switch that §26k's MFA also needs — do
+      both together or neither; start in *audit* mode; read the free-tier limits in the console first. Only worth
+      it if junk accounts actually show up in Authentication → Users. Record the decision here.
+- [ ] **(manual)** Know the deliverability limit and accept it: the verification mail comes from Firebase's own
+      sender and may land in spam on Gmail/Outlook — hence the spam hint in the page. A custom domain + SMTP is
+      the permanent fix and is deferred until there is a domain.
+
+**27i. Verification**
+
+Suggested: sonnet · high — proving the token-refresh behaviour and the rules from the *outside* is the whole job.
+
+- [x] `web/scripts/verify-email.mjs <email>`: reads `GET ${AUTH}/emulator/v1/projects/${PROJECT_ID}/oobCodes`,
+      takes the newest `VERIFY_EMAIL` code for that address and applies it (`accounts:update` with the
+      `oobCode`). Seed accounts (`seed-emulators.mjs`) are left as they are — their profiles exist, so they are
+      the **grandfathered** case on purpose; add one more seeded *unverified student with a profile* if none
+      reads that way. Document both in `web/README.md`. **Done 2026-10-01** (the seeded students are the grandfathered case as they are; README updated).
+- [x] Run `tsc`, `eslint`, `vitest`, `npm run test:rules` (Java 21) and the static build with
+      `NEXT_PUBLIC_BASE_PATH=/Personal_app_android`. Done when all are green and the "seen failing on the old
+      rules" run of 27c is recorded. **Done 2026-10-01:** all green; static build 17/17 pages.
+- [x] **From the outside, like an attacker** (against the emulators): create an account with the Auth REST API
+      (`accounts:signUp`, no page involved), then attempt the invite-claim write through the Firestore REST API
+      with that token → **refused**; apply the verification, refresh the token → the same write **succeeds**.
+      Record both results here. This is the test that proves the rule, not the page. **Done 2026-10-01**, Auth REST + Firestore REST, no page: unconfirmed token → `403 PERMISSION_DENIED`; link
+      applied, **same old token** → `403` again (the stale-token trap is real); refreshed token → `200 OK`.
+- [x] Browser, against the emulators, on desktop and phone width (overflow probe): new student on
+      `/convite/?c=…` → the waiting panel shows and **no `users/{uid}` document exists** yet; **Já confirmei**
+      before verifying stays on the panel; run the helper → **Já confirmei** claims and lands on `/aluno`
+      **without a page reload** (this is the stale-token case — it must pass); the Resend cooldown counts down;
+      **Usei o e-mail errado** deletes the account and returns to the form; `ana@gmial.com` offers the
+      suggestion, a `mailinator.com` address is refused; sign-in mode with an unverified account shows the
+      panel; a grandfathered unverified student signs in and uses `/aluno` normally; keyboard-only through the
+      panel. **Done 2026-10-01** (Browser pane, DOM-driven): throwaway domain refused; `maria@gmial.com` → "Você quis
+      dizer maria@gmail.com?" → *Usar esse* → account created, link sent with continue URL
+      `/convite/?c=AB12CD34`, **no `users` doc** (404), "Já confirmei" → "Ainda não vimos…"; helper run →
+      "Já confirmei" → claimed (role STUDENT, invite used) and on `/aluno` **in the same page, no reload**;
+      *Manter o que digitei* → panel → *Usei o e-mail errado* (dialog opens on *Não*) → *Sim* deletes the
+      account (sign-in then says EMAIL_NOT_FOUND) and the form comes back with the address; sign-in mode with
+      an unconfirmed account → panel, no mail sent unasked; *Enviar* → countdown 59 s; confirmed elsewhere +
+      tab shown again → re-checked by itself; seeded unconfirmed Ana signs in and uses `/aluno`. Phone width
+      (375 px): a long address overflowed by 27 px — fixed (`overflow-wrap`), then 0 overflow on the form, the
+      suggestion, the panel and the dialog; buttons 44–48 px tall. Keyboard-only was not run (the pane was
+      hidden); focus lands on the panel heading and the dialog on *Não*, checked in the DOM.
+- [ ] **(manual)** On the live site, after the console setup (27h) **and the rules publish**: use a real inbox you
+      own. Record: how long the mail took; inbox or spam; whether the link returned to `/convite/?c=…`;
+      claim works. Then register with a **made-up address on a real domain** (`zzz-nao-existe-123@gmail.com`):
+      the account is created, the claim is **refused** — that is the proof the requirement holds. Also note, for
+      the record, whether a trainer who finishes the password-reset link shows as *verified* in the console.
+
+**27j. Registration**
+
+Suggested: haiku · low — documentation and ticks, fully specified.
+
+- [x] `CLAUDE.md` web section: the rule (new student profiles and trainer requests need a verified e-mail;
+      existing accounts are grandfathered), the helper name `hasVerifiedEmail()` and the three places it is
+      used, the **`reload()` + `getIdToken(true)`** requirement before any gated write, and that
+      `domain/emailPolicy.ts` is UX-only. `web/README.md`: the console steps from 27h and the emulator helper. **Done 2026-10-01.**
+- [x] GOALS.md: tick each item with what was actually verified and what was not, commit each verified item on its
+      own, never push without being asked.
+- [ ] Done-when for the whole section: on the live site, a brand-new student with a real inbox can sign up, is
+      told to confirm, confirms, and lands on their ficha; an invented address creates an account that **cannot**
+      claim an invite; and no student who had a profile before is affected. Not done when the code exists, and
+      not done until the rules are published.
+
+---
+
+## 28. Feature — Keep only the previous ficha: replacing a ficha archives the current one and deletes the older one
+(2026-10-01, via `/newgoal`)
+
+**The request:** "tem que ver como vamos gerenciar o excesso de fichas criadas também, para evitar de gastar espaço
+à toa. Eu queria criar um histórico que salva somente a ficha passada da pessoa e o resto exclui."
+
+**Goal type: Feature** — a retention rule added to a flow that already works (the ficha editor and the student's
+page). Research is done (2026-10-01) and recorded in 28a.
+
+**The short answer.** It can be done on the Spark plan, in the browser, with no server: when the trainer
+**replaces** a student's ficha, the app — in one atomic batch — saves the new treinos, moves the current ones to the
+**ficha anterior** (the history) and deletes whatever was already in the history. A student ends up with at most the
+current ficha plus one previous. Nothing runs in the background (that would need Cloud Functions / Scheduler, i.e. the
+Blaze plan), and **nothing is ever deleted that the feature did not itself archive one replacement earlier**.
+
+**One honest point first — space is not the problem, clutter is.** A treino is one small document (a name and a JSON
+list of exercises: a few KB), and Spark's free Firestore stores 1 GiB (<https://firebase.google.com/docs/firestore/quotas>)
+— hundreds of thousands of treinos. What *does* pile up with every "Nova ficha": **(1)** the trainer's student page
+lists every treino ever saved and loads all of them on each visit (reads are capped at 50,000/day on Spark); **(2)** a
+new treino is **active from its first save** (`newWorkout` → `isActive: true`), so unless the trainer deactivates or
+deletes the old ones by hand, the student sees the old and the new A/B/C side by side; **(3)** old plans stay for ever.
+The rule fixes those three; the space saved is a bonus. (The thing that really grows over the years is `workoutLogs` —
+one document per exercise per session — and the progress charts need it, so it is left alone; see "Not touched".)
+
+**What exists today (so the plan does not rebuild it):**
+- A "ficha" in this app is **one treino**: `workouts/{id}` = `{ trainerId, studentId, name ("Treino A — …"), isActive,
+  exercisesJson, createdAt, status ('draft'|'assigned'), assignedAt }` (`domain/workouts.ts`, `data/converters.ts`, a
+  mirror of `FirestoreMappers.kt`). There is **no grouping** of A/B/C into a cycle and **no archive state**. `status`
+  is derived (`withDerivedStatus`): active ⇒ `assigned` (the student can read it), inactive ⇒ `draft` (hidden).
+- Creation: `FichaEditor.tsx` `save()` (one treino) and `saveAll()` (several at once through `saveWorkouts`, one batch,
+  `createdAt` staggered by 1 ms). **Both only add** — nothing ever retires the previous ones. `WorkoutsSection.tsx` (the
+  student page) lists them all, newest first, with Editar / Desativar-Ativar / Excluir (`window.confirm`).
+- Rules: on `workouts` the owning trainer may create, update and delete; a student may only read their own *assigned*
+  ones; no field is validated — so a new field needs **no rules change**.
+- Kotlin: `toWorkoutEntity` reads only the eight known fields and `toFirestoreMap` writes only those, so an extra field
+  is ignored by the phone (checked on `claude/tarefas-abertas-front-9834f6`).
+- Logs: `workoutLogs` carry `workoutId` + `exerciseName`; the dashboard counts days and the progress charts group by
+  `exerciseName` — **deleting a treino does not break any past record or chart**. The student's logging screen opens a
+  treino by id from the *current* list, so only treinos the student can still see matter there.
+
+**What the research changed (four lines):**
+1. **"The previous ficha" needs a definition, because the data has no cycles.** Chosen: it is *whatever the trainer's
+   last replacement retired* — decided at the moment of replacing, never guessed from dates. One web-only field,
+   `archivedAt`, marks exactly those treinos. Guessing cycles from `createdAt` gaps works for AI batches and fails for
+   treinos added one at a time — and a wrong guess here deletes data.
+2. **The delete is bounded by construction.** The only documents the feature may delete are **inactive treinos of that
+   student that already carry `archivedAt`** — ones it archived itself at the previous replacement. Drafts the trainer
+   prepared, treinos the trainer deactivated by hand, and anything the phone wrote are never candidates.
+3. **Every other writer fails safe.** A save that does not carry `archivedAt` (the phone toggling or editing; the web's
+   own Editar/Ativar) turns an archived treino into an ordinary inactive one — it is **kept**; losing the field can only
+   mean "not deleted later". The delete filter also requires `isActive === false`, so an archived treino that was
+   re-activated is untouched even if the field survived a merge-write.
+4. **No scheduler on Spark ⇒ the delete happens inside the trainer's own action** (the replace), after a confirmation
+   that lists what will go. Considered and not chosen: Firestore TTL (deletes by age, not "keep the previous one",
+   configured outside the code, billing implications not verified) and Cloud Functions / Scheduler (Blaze plan).
+
+**Assumptions to confirm (28b):** "ficha" = all of a student's *active* treinos at the moment of replacing (A/B/C
+together), not one treino at a time; history depth is exactly **one** previous ficha; the previous ficha is for the
+trainer's eyes only (the student never sees it); and replacing is a **question asked each time** the student already
+has an active ficha ("Substituir" / "Só adicionar"), never automatic — adding a "Treino D" next to A/B/C must stay
+possible.
+
+**Not touched by this section (explicit, to stop scope creep):** `workoutLogs` retention (a separate item if reads ever
+become a problem — e.g. keep N months — and it must keep the progress charts working); `invites`/`students` drafts left
+behind after a claim; undoing a deletion (there is none — the dialog says so); a one-click "voltar para a ficha
+anterior" swap (Ativar/Desativar do it by hand); the phone's screens (it shows history treinos as ordinary inactive
+ones); any scheduled or age-based cleanup; a bulk "limpar tudo" button for the existing backlog (the existing Excluir
+does it, treino by treino).
+
+**Where this executes:** `web/` on `main`, branch + PR (CI gates lint, tests, build and the emulator rules tests). **No
+`firestore.rules` change is expected, so nothing to publish** — unlike §27; if a rules test in 28e shows otherwise, treat
+it as a rules change (the "seen failing on the old rules" run and the manual publish) before going on. Independent of
+§26 and §27.
+
+```mermaid
+flowchart TD
+    A[28a. Research — done] --> B[28b. Decisions]
+    B --> C[28c. Domain: archivedAt + planReplacement]
+    C --> D[28d. Data layer: replaceFicha, one batch]
+    D --> E[28e. Rules tests through the real rules]
+    D --> F[28f. Editor: ask Substituir / Só adicionar]
+    D --> G[28g. Student page: Ficha atual / anterior]
+    E --> H[28h. Verification]
+    F --> H
+    G --> H
+    H --> I[28i. Registration]
+```
+
+Suggested: opus · high — the feature deletes data; the bounds of the delete (28c–28d) are where a mistake is expensive, the dialog and the page are ordinary UI work.
+
+**28a. Research — what the code and the platform say (checked 2026-10-01)**
+
+Suggested: sonnet · medium — already done; kept so the decisions are not looked up twice.
+
+- [x] Data model and flows as listed above (read from `domain/workouts.ts`, `data/workouts.ts`, `data/converters.ts`,
+      `FichaEditor.tsx`, `WorkoutsSection.tsx`, `firestore.rules`): one treino per document, no cycles, no archive,
+      creation only adds, the owning trainer may delete, no field validation.
+- [x] Kotlin parity: `FirestoreMappers.kt` `toWorkoutEntity` / `toFirestoreMap` use eight fields; an extra field is
+      ignored on read; a phone save rewrites only those eight (a plain `set` drops `archivedAt` — the safe direction;
+      a merge-write would keep it, which the `isActive === false` guard of 28c covers).
+- [x] Free quotas (Spark): 1 GiB stored, 50,000 reads, 20,000 writes and 20,000 deletes per day
+      (<https://firebase.google.com/docs/firestore/quotas>) — a replace is a handful of operations.
+- [x] Client SDK limit that shapes the design: a web transaction cannot run a *query*, so the replace reads the
+      student's treinos once and then writes one batch (≤ 500 operations; the plan refuses above 450). Two tabs
+      replacing at the same instant could leave two active fichas (never lost data) — accepted, one trainer on one
+      device being the real case.
+
+**28b. Decisions (settled here, so nobody re-argues them mid-build)**
+
+Suggested: sonnet · medium — decisions already made; the last item is the one to confirm.
+
+- [x] "Ficha" for this feature = all of a student's **active** treinos when the replace happens; adding one extra
+      treino stays possible ("Só adicionar").
+- [x] History depth = **1**: the current ficha plus one previous; not configurable in v1.
+- [x] The delete is part of the replace, confirmed with a list of what goes; no background job; no bulk button.
+- [x] Logs, charts, biometrics, payments and schedules are untouched; the student never sees the history.
+- [x] **(manual)** Confirm the two product choices: **(1)** replacing is asked **every time** the student already has an
+      active ficha (*Substituir* / *Só adicionar*) instead of always replacing; **(2)** the previous ficha is visible
+      to the trainer only. Done when the trainer has said yes (or changed it) in chat. **Confirmed 2026-10-01** ("pode fazer como sugeriu").
+
+**28c. Domain — `archivedAt` and the replacement plan (pure, no Firestore, no clock)**
+
+Suggested: opus · high — this is where the bound of the delete lives; every rule above becomes a test.
+
+- [x] `Workout.archivedAt: number | null`. `toWorkout` reads it with the existing `int()` helper (absent or malformed ⇒
+      `null`); `workoutToFirestore` writes it **only when non-null**, so every document written for a non-archived
+      treino stays exactly what it is today (what the phone reads and writes); `withDerivedStatus`: active ⇒
+      `archivedAt: null` (re-activating takes a treino out of the history). Tests: absent / number / string / negative,
+      written only when set, activation clears it, every existing converter test still passes unchanged. **Done 2026-10-01** (converter tests: absent/number/string/fraction/null, written only when set; activation clears it).
+- [x] `domain/fichaHistory.ts` — `planReplacement(existing, incoming, now) → { toCreate, toArchive, toDelete }`:
+      `toArchive` = existing with `isActive`, each becoming `withDerivedStatus({ ...w, isActive: false })` +
+      `archivedAt: now`; `toDelete` = existing with `archivedAt !== null && !isActive` — **and only when `toArchive` is
+      non-empty** (a replace that retires nothing never deletes the history); `toCreate` = incoming, normalised active.
+      The three lists are disjoint by id (throw if not — it would be a bug, not a case). Table-driven tests: nothing
+      existing; only active; active + history; history treino re-activated (not deleted); hand-deactivated and draft
+      treinos untouched; a student with 40 old inactive treinos and no history ⇒ **none deleted**; nothing active but
+      a history ⇒ **none deleted**; a second replace deletes exactly the first replace's archive; `toDelete` never
+      contains an active treino. Done when `tsc`, `eslint`, `vitest` are green. **Done 2026-10-01** (`domain/fichaHistory.ts` + test, 15 cases incl. the 40-old-inactive and nothing-active-but-history
+      ones; also `splitFichas` for the page).
+
+**28d. Data layer — `replaceFicha`, one atomic batch**
+
+Suggested: opus · high — the write path of a delete; atomicity and the error paths are the point.
+
+- [x] `data/workouts.ts` `replaceFicha(db, trainerId, studentId, incoming, now)`: reads the student's treinos with
+      `loadStudentWorkouts` (equality filters, no composite index), runs `planReplacement`, and commits **one
+      `writeBatch`**: `set` the new treinos, `set` the archived copies, `delete` the old history. Refuses with a typed
+      error above 450 operations. Returns `{ created, archived, deleted }` (names included) so the screen can report it.
+      A failed commit writes nothing; a retry re-plans from fresh data. **Done 2026-10-01**; it also refuses an incoming treino of another student before reading anything.
+- [x] Unit-test the part that does not need Firestore (the operation list built from a plan); the rest is 28e. **Done:** the operation count and the lists are tested in `fichaHistory.test.ts`; the batch itself in 28e.
+
+**28e. Rules tests — through the real rules, expecting no rules change**
+
+Suggested: sonnet · high — emulator tests; the discipline is reading the failures honestly.
+
+- [x] `web/rules/dataLayer.test.ts`: `replaceFicha` as the owning trainer lands new + archive + delete together; as
+      **another trainer** it fails as a whole with nothing partially written; a **student** cannot write any of it and
+      cannot read an archived treino (inactive ⇒ draft) while still reading the active ones. **Done 2026-10-01:** 5 tests through the real rules (replace; a second replace deletes exactly the first archive;
+      nothing active ⇒ history kept; another trainer / the student refused with nothing changed; another student's treino
+      refused).
+- [x] `web/rules/firestore.rules.test.ts`: a `workouts` document carrying `archivedAt` is accepted on create and update
+      by the owning trainer. Run `npm run test:rules` (Java 21). If a case fails because of the rules, **stop** — that is
+      a rules change (xhigh, the "seen failing on the old rules" run, a manual publish), not part of this plan's size. **Done:** 2 tests; `npm run test:rules` is 90/90 and **no rules change was needed** — nothing to publish for §28.
+
+**28f. The editor — ask "Substituir" or "Só adicionar"**
+
+Suggested: sonnet · high — two save paths and a destructive choice that must be impossible to trigger by accident.
+
+- [x] `FichaEditor.tsx`, in `save()` (a **new** treino only — editing an existing one never replaces) and `saveAll()`:
+      load the student's treinos first (if the load fails, fall back to a plain add and delete nothing); if there is at
+      least one active treino, open `ConfirmDialog` **"Substituir a ficha atual?"**: "O aluno tem hoje: <names>.
+      **Substituir**: a ficha atual vira a *ficha anterior* (o aluno deixa de vê-la) e a que já era a anterior
+      (<names and dates, or "nenhuma">) é **excluída para sempre**. **Só adicionar**: a nova se junta às que já
+      existem e nada é apagado." *Só adicionar* is the default focus, Escape and backdrop (the dialog's "Não"), *Substituir*
+      is the "Sim". A student with no active treino gets no question — a plain add, as today. *Substituir* calls
+      `replaceFicha`; *Só adicionar* calls the existing `saveWorkout(s)`. **Done 2026-10-01, with one change from the plan:** the dialog has three answers — *Cancelar* (default focus,
+      Escape, backdrop: nothing is saved), *Só adicionar*, *Substituir* — so a stray Escape can never save or delete
+      (the plan had Escape = *Só adicionar*). `ConfirmDialog` gained an optional middle button.
+- [x] Error text when the replace fails: nothing was changed (it is one batch) — "Não foi possível substituir. Nada foi
+      alterado." Controls ≥ 44 px, text ≥ 12 px, no new stylesheet. **Done** ("Não foi possível substituir. Nada foi alterado.").
+
+**28g. The student's page — "Ficha atual" and "Ficha anterior"**
+
+Suggested: sonnet · medium — a grouped list on an existing screen.
+
+- [x] `WorkoutsSection.tsx`: group the list into **Ficha atual** (active), **Ficha anterior — histórico**
+      (`archivedAt !== null && !isActive`, each with "arquivada em dd/mm/aaaa" and the line "será excluída quando você
+      substituir a ficha de novo") and **Outras (inativas)** (drafts and hand-deactivated). Editar / Ativar / Excluir
+      stay on every treino; *Ativar* on a history treino goes through the normal save and so leaves the history (28c).
+      Existing classes only; phone-width check. **Done 2026-10-01.**
+- [x] The student's own screens are untouched (an archived treino is a draft and invisible — proved in 28e). **Verified** in the browser and in 28e.
+
+**28h. Verification**
+
+Suggested: sonnet · high — proving the bounds of a delete from the outside is the whole job.
+
+- [x] Run `tsc`, `eslint`, `vitest`, `npm run test:rules` (Java 21) and the static build with
+      `NEXT_PUBLIC_BASE_PATH=/Personal_app_android`. Done when all are green; record the counts here. **Done 2026-10-01:** `tsc`, `eslint` clean; 349 unit tests; 90 emulator tests; static build 17/17 pages.
+- [x] Browser, against the emulators (seeded student with an active A/B/C): save a new ficha → the dialog lists A/B/C;
+      **Só adicionar** keeps everything; save again → **Substituir**: the old ones appear under *Ficha anterior*, the new
+      ones are active, and the student (logged in) sees only the new ones; replace once more → the first history is
+      **gone** and the second ficha is now the history; a hand-deactivated treino and a draft **survive both replaces**;
+      re-activating a history treino takes it out of the history and it survives the next replace; a student with
+      nothing active gets no question. Phone width (overflow probe), keyboard-only through the dialog (Escape = *Só
+      adicionar*). Record the result here. **Done 2026-10-01** (Browser pane, DOM-driven, seeded Ana with one active and one draft ficha): the dialog lists her
+      active treino and "(nenhuma)" as history; **Cancelar** (the dialog's cancel event) saves nothing; **Só adicionar**
+      adds Treino A/B with nothing archived or deleted; **Substituir** archives Ficha A, Treino A, Treino B
+      (`archivedAt` set), creates Treino C/D, and the page shows Ficha atual / Ficha anterior (histórico) / Outras
+      (inativas) with "Arquivada em 01/10/2026"; **Ativar** on a history treino clears its `archivedAt`; the next
+      replacement (the single-treino form this time) listed "Treino A, Treino B" as the history to delete, **deleted
+      exactly those**, archived C/D/Ficha A, created Treino E, and the draft "Ficha B — em revisão" survived both
+      replacements; logged in as Ana, `/aluno` shows only Treino E. At 375 px: no overflow on the student page and the
+      dialog (its three buttons wrap to two rows, 48 px tall). Keyboard-only was not run (the pane was hidden);
+      default focus on *Cancelar* and the Escape path were checked in the DOM.
+- [x] A failure test: replace as a trainer whose write is refused — nothing is archived, created or deleted. **Done in 28e:** another trainer and the student are refused and `a1`/`history1` are unchanged.
+
+**28i. Registration**
+
+Suggested: haiku · low — documentation and ticks, fully specified.
+
+- [x] `CLAUDE.md` web section: the web-only `archivedAt` field (ignored by the phone, written only when set), the
+      three guards (inactive + archived only; nothing deleted unless something is archived in the same replace; one
+      atomic batch), that nothing is deleted outside a replace, and the accepted two-tab race. GOALS.md: tick each
+      item with what was actually verified, commit each verified item on its own, never push without being asked. **Done 2026-10-01.**
+- [ ] Done-when for the whole section: on the live site a trainer replaces a student's ficha, sees the old one under
+      *Ficha anterior*, replaces again and sees the first one gone; the student only ever saw the current one; no log,
+      chart or number on the dashboard changed. Not done when the code exists.
+
+---
+
 ## Suggested build order (what blocks what) — revised 2026-08-18
 
 **Done** (§0, §1 CLAUDE.md, §2 git, §4a Firestore migration, §5d UI debt + AI button wiring, §7

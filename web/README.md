@@ -47,13 +47,28 @@ Web-only files: `prompt/ficha_prompt_multi.md` (the copy-and-paste prompt) and
 The `npm test` suite covers the pure parts (splitting, request building, response mapping, error messages);
 the network call is not tested in CI — try it on the deployed site after steps 1–2.
 
+## Confirmed e-mail for new students (GOALS.md §27) — console steps
+
+The rules refuse an invite claim from an address that was not confirmed, and `/convite` sends the link.
+Two things only the project owner can do, in the Firebase console:
+
+1. **Publish `firestore.rules`** (diff it against what is live first). Until then nothing is enforced —
+   the page already asks for the confirmation, but the rules don't check it.
+2. **Authentication → Templates → Email address verification**: sender name **ALLU personal**, and look at
+   the text. The site asks for Portuguese on every mail (`auth.languageCode = "pt-BR"`); the template's
+   language setting is the fallback.
+
+Check once that **Authentication → Settings → Authorized domains** lists
+`alexmiguel011014-stack.github.io` (the link's "Continuar" goes back there; sign-in already needs it). The
+mail comes from Firebase's own sender and can land in spam — the page tells the student to look there.
+
 ## Routes
 
 | URL | Directory | Who |
 |---|---|---|
 | `/` | `src/app/page.tsx` | Public landing (§23i) |
 | `/entrar` | `src/app/entrar/` | Login, for anyone with an account (§23f) |
-| `/convite?c=CODE` | `src/app/convite/` | A student's first visit: create an account, claim the invite (§23f) |
+| `/convite?c=CODE` | `src/app/convite/` | A student's first visit: create an account, confirm the e-mail (GOALS.md §27), claim the invite (§23f) |
 | `/app` | `src/app/app/` | Trainer (§23g) — "Hoje", Agenda, Alunos, Registros, Mensalidades |
 | `/aluno` | `src/app/aluno/` | Student (§23h) — mobile-first |
 
@@ -109,6 +124,16 @@ NEXT_PUBLIC_FIREBASE_EMULATORS=true npm run dev     # the app, pointed at the em
 ```
 
 The seed prints the trainer's login and the invite link. Re-running it wipes both emulators first.
+
+A new student must confirm their e-mail before the invite is claimed (GOALS.md §27). The emulator sends
+no mail; it keeps the links, and this opens the newest one sent to an address:
+
+```bash
+node scripts/verify-email.mjs maria@gmail.com    # then "Já confirmei" on the invite page
+```
+
+The seeded students were created without confirming, on purpose: they are the accounts that existed
+before §27 and must keep working.
 
 Needs **Java 21** (Firebase CLI 15 dropped older Javas for the emulators). If `java -version`
 says something older, point `JAVA_HOME` and `PATH` at a JDK 21 for that command — on the main

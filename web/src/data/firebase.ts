@@ -37,6 +37,9 @@ export function getFirebase(): FirebaseClients {
     : initializeApp(useEmulators ? { ...firebaseConfig, projectId: EMULATOR_PROJECT_ID } : firebaseConfig);
   const db = getFirestore(app);
   const auth = getAuth(app);
+  // Firebase's own e-mails — the password reset and the §27 verification link — in Portuguese,
+  // whatever language the console's templates default to.
+  auth.languageCode = "pt-BR";
 
   if (useEmulators) {
     connectFirestoreEmulator(db, "127.0.0.1", 8081);

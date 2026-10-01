@@ -6,13 +6,15 @@ import { useEffect, useState, type FormEvent } from "react";
 import { getFirebase } from "../../../../data/firebase";
 import { loadPromptAssets, type PromptAssets } from "../../../../data/promptAssets";
 import type { TrainerStudent } from "../../../../data/students";
-import { loadStudentWorkouts, newWorkout, saveWorkout, saveWorkouts } from "../../../../data/workouts";
+import { loadStudentWorkouts, newWorkout, replaceFicha, saveWorkout, saveWorkouts } from "../../../../data/workouts";
 import type { Exercise } from "../../../../domain/exercise";
+import { currentFicha, historyFicha } from "../../../../domain/fichaHistory";
 import { buildFichaPrompt, buildMultiFichaPrompt } from "../../../../domain/fichaPrompt";
 import { isKotlinBlank, kotlinTrim } from "../../../../domain/kotlin";
 import { exerciseErrors, tidied } from "../../../../domain/reviewEdit";
 import { calculateEffectiveVolume, parseWorkouts, type ParsedWorkout } from "../../../../domain/workoutParser";
 import { applyPaste, manualExercise, workoutErrors, type Workout } from "../../../../domain/workouts";
+import { ConfirmDialog } from "../../../_shared/ConfirmDialog";
 import { useSession } from "../../../SessionProvider";
 import { useTrainerData } from "../../useTrainerData";
 import { GeminiPanel } from "./GeminiPanel";
@@ -24,6 +26,16 @@ import { RequestBuilder } from "./RequestBuilder";
 // (name and exercises fill in), adjust by hand, save. Texts follow the Android screens.
 
 const VOLUME = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+/** GOALS.md §28: new treinos waiting for the answer to "Substituir a ficha atual?". */
+interface ReplaceQuestion {
+  current: Workout[];
+  history: Workout[];
+  workouts: Workout[];
+  now: number;
+  /** From the several-treinos review (its errors show there) rather than the single form. */
+  multi: boolean;
+}
 
 export function FichaEditor() {
   const { session } = useSession();
@@ -114,6 +126,7 @@ function FichaForm({
   const [addError, setAddError] = useState<string | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [question, setQuestion] = useState<ReplaceQuestion | null>(null);
   // GOALS.md §25: set when the pasted answer holds two or more treinos (new fichas only).
   const [review, setReview] = useState<ReviewItem[] | null>(null);
   const [reviewWarnings, setReviewWarnings] = useState<string[]>([]);
@@ -205,6 +218,49 @@ function FichaForm({
     setAddError(null);
   }
 
+  /**
+   * GOALS.md §28 — new treinos only (editing one never replaces). If the student already has an active
+   * ficha, ask what the new one does; true means the question is open and saving waits for the answer.
+   * If what the student has cannot be read, it is a plain add: nothing is ever deleted on a guess.
+   */
+  async function askBeforeSaving(workouts: Workout[], now: number, multi: boolean): Promise<boolean> {
+    let all: Workout[];
+    try {
+      all = await loadStudentWorkouts(getFirebase().db, trainerId, student.doc.id);
+    } catch {
+      return false;
+    }
+    const current = currentFicha(all);
+    if (current.length === 0) return false;
+    setQuestion({ current, history: historyFicha(all), workouts, now, multi });
+    setBusy(false);
+    return true;
+  }
+
+  async function answer(choice: "replace" | "add") {
+    if (question === null) return;
+    const { workouts, now, multi } = question;
+    setQuestion(null);
+    setBusy(true);
+    try {
+      const { db } = getFirebase();
+      if (choice === "replace") await replaceFicha(db, trainerId, student.doc.id, workouts, now);
+      else if (workouts.length === 1) await saveWorkout(db, trainerId, workouts[0], now);
+      else await saveWorkouts(db, trainerId, workouts, now);
+      router.push(back);
+    } catch {
+      const message =
+        choice === "replace"
+          ? "Não foi possível substituir. Nada foi alterado."
+          : multi
+            ? "Não foi possível salvar as fichas. Nenhuma foi gravada — tente de novo."
+            : "Não foi possível salvar a ficha. Tente de novo.";
+      if (multi) setReviewErrors([message]);
+      else setErrors([message]);
+      setBusy(false);
+    }
+  }
+
   async function save() {
     const found = workoutErrors(name, exercises);
     setErrors(found);
@@ -212,9 +268,14 @@ function FichaForm({
     setBusy(true);
     try {
       const now = Date.now();
-      const workout = existing
-        ? { ...existing, name: kotlinTrim(name), exercises } // ManualWorkoutScreen: existing.copy(name, exercises)
-        : newWorkout(trainerId, student.doc.id, kotlinTrim(name), exercises, now);
+      if (existing) {
+        // ManualWorkoutScreen: existing.copy(name, exercises)
+        await saveWorkout(getFirebase().db, trainerId, { ...existing, name: kotlinTrim(name), exercises }, now);
+        router.push(back);
+        return;
+      }
+      const workout = newWorkout(trainerId, student.doc.id, kotlinTrim(name), exercises, now);
+      if (await askBeforeSaving([workout], now, false)) return;
       await saveWorkout(getFirebase().db, trainerId, workout, now);
       router.push(back);
     } catch {
@@ -246,6 +307,7 @@ function FichaForm({
           now + (chosen.length - 1 - index),
         ),
       );
+      if (await askBeforeSaving(workouts, now, true)) return;
       await saveWorkouts(getFirebase().db, trainerId, workouts, now);
       router.push(back);
     } catch {
@@ -472,6 +534,34 @@ function FichaForm({
           </button>
         </>
       )}
+
+      <ConfirmDialog
+        open={question !== null}
+        title="Substituir a ficha atual?"
+        yesLabel="Substituir"
+        altLabel="Só adicionar"
+        noLabel="Cancelar"
+        onYes={() => void answer("replace")}
+        onAlt={() => void answer("add")}
+        onNo={() => setQuestion(null)}
+      >
+        {question && (
+          <>
+            <p>
+              {student.doc.name} tem hoje: <strong>{question.current.map((w) => w.name).join(", ")}</strong>.
+            </p>
+            <p>
+              <strong>Substituir:</strong> a ficha atual vira a <em>ficha anterior</em> (o aluno deixa de vê-la) e a
+              que já era a anterior (
+              {question.history.length === 0 ? "nenhuma" : question.history.map((w) => w.name).join(", ")}) é{" "}
+              <strong>excluída para sempre</strong>.
+            </p>
+            <p>
+              <strong>Só adicionar:</strong> a nova se junta às que já existem; nada é apagado.
+            </p>
+          </>
+        )}
+      </ConfirmDialog>
     </main>
   );
 }

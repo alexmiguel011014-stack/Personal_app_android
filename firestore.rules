@@ -22,6 +22,9 @@ rules_version = '2';
 //   cleared by the student's assessment batch), lastAssessmentId (that batch's link). Web-only
 //   flag, same rule: canAddSets — whether the student may add extra sets when logging a session
 //   (off unless the trainer turns it on; a missing field reads as off).
+//
+//   Verified e-mail (GOALS.md §27): claiming an invite (creating or re-claiming users/{uid}) and
+//   queueing trainerRequests/{uid} need request.auth.token.email_verified — see hasVerifiedEmail().
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -40,6 +43,15 @@ service cloud.firestore {
 
     function isAdmin() {
       return isSignedIn() && myRole() == 'ADM';
+    }
+
+    // GOALS.md §27: the caller's address was confirmed by the link Firebase mailed to it. Firebase
+    // only checks an address's shape, so without this an invented or mistyped one (teste@teste.com)
+    // could become a student. Read from the ID token — no document read, so it costs nothing against
+    // the per-request get() limit — and required only at the entry doors (claiming an invite,
+    // queueing a trainer request): accounts that already have a profile keep working as they are.
+    function hasVerifiedEmail() {
+      return isSignedIn() && request.auth.token.get('email_verified', false) == true;
     }
 
     // The caller is the TRAINER who owns this record.
@@ -71,6 +83,7 @@ service cloud.firestore {
       // valid, unused invite minted by the trainerId being claimed.
       allow create: if isAdmin() || (
         isSignedIn() && request.auth.uid == uid &&
+        hasVerifiedEmail() &&
         request.resource.data.role == 'STUDENT' &&
         request.resource.data.trainerId ==
           get(/databases/$(database)/documents/invites/$(request.resource.data.inviteCode)).data.trainerId &&
@@ -135,6 +148,7 @@ service cloud.firestore {
           (
             field(resource.data, 'role') == 'STUDENT' &&
             field(resource.data, 'trainerId') == null &&
+            hasVerifiedEmail() &&
             request.resource.data.role == 'STUDENT' &&
             request.resource.data.trainerId ==
               get(/databases/$(database)/documents/invites/$(request.resource.data.inviteCode)).data.trainerId &&
@@ -251,7 +265,8 @@ service cloud.firestore {
     // or deleting this doc) — this collection carries zero privilege on its own, it's a mailbox.
     match /trainerRequests/{uid} {
       allow read: if isAdmin() || (isSignedIn() && request.auth.uid == uid);
-      allow create: if isSignedIn() && request.auth.uid == uid;
+      // GOALS.md §27: only from a confirmed address — the ADM's queue is not a place for invented ones.
+      allow create: if isSignedIn() && request.auth.uid == uid && hasVerifiedEmail();
       allow delete: if isAdmin();
     }
 

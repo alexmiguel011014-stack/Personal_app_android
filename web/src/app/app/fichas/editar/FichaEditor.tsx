@@ -8,13 +8,15 @@ import { loadPromptAssets, type PromptAssets } from "../../../../data/promptAsse
 import type { TrainerStudent } from "../../../../data/students";
 import { loadStudentWorkouts, newWorkout, saveWorkout, saveWorkouts } from "../../../../data/workouts";
 import type { Exercise } from "../../../../domain/exercise";
-import { buildFichaPrompt } from "../../../../domain/fichaPrompt";
-import { kotlinTrim } from "../../../../domain/kotlin";
-import { calculateEffectiveVolume, parseWorkouts } from "../../../../domain/workoutParser";
+import { buildFichaPrompt, buildMultiFichaPrompt } from "../../../../domain/fichaPrompt";
+import { isKotlinBlank, kotlinTrim } from "../../../../domain/kotlin";
+import { calculateEffectiveVolume, parseWorkouts, type ParsedWorkout } from "../../../../domain/workoutParser";
 import { applyPaste, manualExercise, workoutErrors, type Workout } from "../../../../domain/workouts";
 import { useSession } from "../../../SessionProvider";
 import { useTrainerData } from "../../useTrainerData";
+import { GeminiPanel } from "./GeminiPanel";
 import { MultiFichaReview, type ReviewItem } from "./MultiFichaReview";
+import { RequestBuilder } from "./RequestBuilder";
 
 // GOALS.md §23g: building a ficha — PromptFichaScreen and ManualWorkoutScreen on one page, since a
 // desktop has the room: copy the §15 prompt into any AI app, paste the reply into Smart Paste
@@ -115,6 +117,10 @@ function FichaForm({
   const [review, setReview] = useState<ReviewItem[] | null>(null);
   const [reviewWarnings, setReviewWarnings] = useState<string[]>([]);
   const [reviewErrors, setReviewErrors] = useState<string[]>([]);
+  // GOALS.md §25f/§25i: two ways of asking an AI — copy a prompt to another app, or Gemini here.
+  const [tab, setTab] = useState<"copy" | "gemini">("copy");
+  const [shortPrompt, setShortPrompt] = useState(false);
+  const [includePersonal, setIncludePersonal] = useState(true);
 
   // Fetched up front, so "Copiar prompt" can copy inside the click itself — some browsers refuse a
   // clipboard write that waits on a network request first.
@@ -130,7 +136,13 @@ function FichaForm({
   }, []);
 
   async function copyPrompt(loaded: PromptAssets) {
-    const text = buildFichaPrompt(loaded.template, loaded.volumeReference, student.doc, request);
+    // New fichas ask for several treinos at once (web-only template); an existing ficha is one treino.
+    const text = existing
+      ? buildFichaPrompt(loaded.template, loaded.volumeReference, student.doc, request)
+      : buildMultiFichaPrompt(loaded.multiTemplate, loaded.volumeReference, student.doc, request, {
+          shortPrompt,
+          deidentify: !includePersonal,
+        });
     setPrompt(text);
     try {
       await navigator.clipboard.writeText(text);
@@ -140,23 +152,34 @@ function FichaForm({
     }
   }
 
+  /** Two or more treinos (new fichas only) open the review; the phone's paste would pile them into one. */
+  function openReview(workouts: ParsedWorkout[], warnings: string[]) {
+    setReviewErrors([]);
+    setReview(workouts.map((w, i) => ({ key: `${i}-${w.name}`, name: w.name, include: true, exercises: w.exercises })));
+    setReviewWarnings(warnings);
+  }
+
+  /** What Gemini returned: several treinos go to the review, a single one fills the editor below. */
+  function fromGemini(workouts: ParsedWorkout[], warnings: string[]) {
+    if (!existing && workouts.length >= 2) {
+      openReview(workouts, warnings);
+      return;
+    }
+    setReview(null);
+    setReviewWarnings([]);
+    const only = workouts[0];
+    setName((current) => (isKotlinBlank(current) ? only.name : current));
+    setExercises(only.exercises);
+  }
+
   function paste(text: string) {
     setPasted(text);
     setReviewErrors([]);
-    // Several treinos in one answer: the phone's paste would pile them into one ficha, so the web
-    // splits them and shows a review instead. An existing ficha is always a single one.
+    // An existing ficha is always a single treino.
     if (!existing) {
       const parsed = parseWorkouts(text);
       if (parsed.workouts.length >= 2) {
-        setReview(
-          parsed.workouts.map((w, i) => ({
-            key: `${i}-${w.name}`,
-            name: w.name,
-            include: true,
-            exercises: w.exercises,
-          })),
-        );
-        setReviewWarnings(parsed.warnings);
+        openReview(parsed.workouts, parsed.warnings);
         return;
       }
     }
@@ -233,48 +256,105 @@ function FichaForm({
 
       <section>
         <h2>Pedir à IA (opcional)</h2>
-        <p>
-          1. Descreva o que você quer abaixo. 2. Copie o prompt. 3. Cole em qualquer IA que você já usa (ChatGPT,
-          Gemini, Claude...). 4. Cole a resposta dela no Importador Inteligente mais abaixo.
-        </p>
-        <p>
-          <label>
-            O que você quer nesta ficha?{" "}
-            <textarea
-              value={request}
-              onChange={(e) => setRequest(e.target.value)}
-              rows={3}
-              placeholder="Ex: treino de costas e bíceps, foco em volume, 12 séries efetivas de costas na semana..."
-            />
-          </label>
-        </p>
-        <button
-          type="button"
-          disabled={assets === null || assets === "error"}
-          onClick={() => {
-            if (assets !== null && assets !== "error") void copyPrompt(assets);
-          }}
-        >
-          Copiar prompt
-        </button>
-        {assets === "error" && <p role="alert">Não foi possível carregar o modelo do prompt. Recarregue a página.</p>}
-        {copyStatus && <p role="status">{copyStatus}</p>}
-        {prompt !== null && (
-          <p>
-            <textarea readOnly value={prompt} rows={10} aria-label="Prompt" />
-          </p>
+        <RequestBuilder trainingDays={student.doc.trainingDays} request={request} onRequest={setRequest} />
+        {!existing && (
+          <div className="tabs" role="tablist" aria-label="Como pedir à IA">
+            <button
+              type="button"
+              role="tab"
+              id="tab-copy"
+              aria-selected={tab === "copy"}
+              aria-controls="panel-ai"
+              onClick={() => setTab("copy")}
+            >
+              Outra IA (copiar e colar)
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="tab-gemini"
+              aria-selected={tab === "gemini"}
+              aria-controls="panel-ai"
+              onClick={() => setTab("gemini")}
+            >
+              Gemini (gerar aqui)
+            </button>
+          </div>
         )}
+        <div
+          id="panel-ai"
+          role={existing ? undefined : "tabpanel"}
+          aria-labelledby={existing ? undefined : `tab-${tab}`}
+        >
+          {!existing && tab === "gemini" ? (
+            <GeminiPanel student={student.doc} request={request} assets={assets} onResult={fromGemini} />
+          ) : (
+            <>
+              <p>
+                1. Descreva o que você quer acima. 2. Copie o prompt. 3. Cole em qualquer IA que você já usa (ChatGPT,
+                Gemini, Claude...). 4. Cole a resposta dela no Importador Inteligente mais abaixo — se vierem vários
+                treinos (A, B, C…), o site separa um por um.
+              </p>
+              {!existing && (
+                <>
+                  <p>
+                    <label>
+                      <input type="checkbox" checked={shortPrompt} onChange={(e) => setShortPrompt(e.target.checked)} />
+                      Já tenho a tabela de exercícios no meu projeto de IA (prompt curto, sem a tabela)
+                    </label>
+                  </p>
+                  <p>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={includePersonal}
+                        onChange={(e) => setIncludePersonal(e.target.checked)}
+                      />
+                      Incluir o nome e as restrições médicas do aluno no prompt
+                    </label>
+                  </p>
+                </>
+              )}
+              <button
+                type="button"
+                disabled={assets === null || assets === "error"}
+                onClick={() => {
+                  if (assets !== null && assets !== "error") void copyPrompt(assets);
+                }}
+              >
+                Copiar prompt
+              </button>
+              {assets === "error" && (
+                <p role="alert">Não foi possível carregar o modelo do prompt. Recarregue a página.</p>
+              )}
+              {copyStatus && <p role="status">{copyStatus}</p>}
+              {prompt !== null && (
+                <p>
+                  <textarea readOnly value={prompt} rows={10} aria-label="Prompt" />
+                  <small className="section-footnote">
+                    Tamanho do prompt: ≈{" "}
+                    {new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 }).format(prompt.length / 1000)} mil
+                    caracteres
+                  </small>
+                </p>
+              )}
+            </>
+          )}
+        </div>
       </section>
 
       <section>
         <h2>Importador Inteligente</h2>
-        <p>Cole o texto (ex: Biceps 12x4) abaixo para identificar os exercícios automaticamente.</p>
+        <p>
+          Cole o texto (ex: Biceps 12x4) abaixo para identificar os exercícios automaticamente. Se ele trouxer vários
+          treinos (Treino A, B, C…), cada um vira uma ficha.
+        </p>
         <textarea
           value={pasted}
           onChange={(e) => paste(e.target.value)}
           rows={8}
           aria-label="Texto para importar"
-          placeholder={"Ex:\nFicha A\nSupino 3x12\nBiceps 12x4"}
+          placeholder={"Ex:\nTreino A\nSupino 3x12\nTreino B\nBiceps 12x4"}
         />
       </section>
 

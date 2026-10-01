@@ -332,6 +332,14 @@ button.day-cell.selected:hover { background: var(--leaf); }
 .review-card li small { color: var(--muted); font-size: 12px; }
 .review-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
 
+/* The two ways of asking an AI (GOALS.md §25i): copy a prompt, or Gemini here. */
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 16px; border-bottom: 1px solid var(--line); }
+.tabs [role="tab"] { min-height: 46px; margin-bottom: -1px; padding: 0 18px; border: 1px solid transparent; border-bottom: 0; border-radius: 8px 8px 0 0; background: transparent; color: var(--muted); font-weight: 600; }
+.tabs [role="tab"]:hover { background: var(--tint); }
+.tabs [role="tab"][aria-selected="true"] { border-color: var(--line); background: var(--white); color: var(--forest); box-shadow: inset 0 3px var(--leaf-dark); }
+.gemini-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-bottom: 14px; }
+.gemini-panel .section-footnote { margin-top: 0; }
+
 /* ---------- Public pages: landing, sign-in, invite ---------- */
 
 .public-shell { display: flex; min-height: 100vh; flex-direction: column; }

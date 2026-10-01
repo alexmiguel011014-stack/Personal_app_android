@@ -317,6 +317,17 @@ button.day-cell.selected:hover { background: var(--leaf); }
 .set-row input { min-height: 52px; font-size: 18px; font-variant-numeric: tabular-nums; text-align: center; }
 .sticky-actions { position: sticky; bottom: 0; z-index: 1; margin: 18px -4px 0; padding: 12px 4px max(12px, env(safe-area-inset-bottom)); background: linear-gradient(to top, var(--paper) 72%, transparent); }
 .sticky-actions button { width: 100%; min-height: 52px; font-size: 16px; }
+/* A set the student added (only possible when the trainer allowed it): marked, and the only kind removable. */
+.set-number small { display: block; color: var(--leaf-dark); font-size: 11px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; }
+.set-row.is-extra > button { grid-column: 2 / -1; justify-self: start; min-height: 40px; }
+/* A yes/no question in a modal box (_shared/ConfirmDialog.tsx). */
+dialog.confirm { width: min(440px, calc(100vw - 32px)); padding: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--white); color: var(--ink); box-shadow: 0 18px 50px #12352c40; }
+dialog.confirm::backdrop { background: #12352c8c; }
+.confirm-body { padding: 24px; }
+.main-content .confirm-body h2 { margin-bottom: 10px; font-size: 20px; }
+.confirm-text p { margin: 0 0 6px; color: var(--ink); line-height: 1.55; }
+.confirm-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+.confirm-actions button { min-width: 96px; }
 
 /* ---------- Ficha editor: review of several treinos pasted at once (GOALS.md §25e) ---------- */
 

@@ -7,6 +7,7 @@ import { getFirebase } from "../../../../data/firebase";
 import {
   generateInvite,
   requestAssessment,
+  setCanAddSets,
   setStudentPermissions,
   updateStudentProfile,
   type TrainerStudent,
@@ -174,7 +175,13 @@ function Detail({ trainerId, studentId }: { trainerId: string; studentId: string
   );
 }
 
-function InviteSection({ trainerId, student }: { trainerId: string; student: Extract<TrainerStudent, { kind: "draft" }> }) {
+function InviteSection({
+  trainerId,
+  student,
+}: {
+  trainerId: string;
+  student: Extract<TrainerStudent, { kind: "draft" }>;
+}) {
   const [link, setLink] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
 
@@ -249,7 +256,9 @@ function PermissionsSection({
           <input
             type="checkbox"
             checked={account.canSelfAssess}
-            onChange={(e) => void run(() => setStudentPermissions(db(), studentId, e.target.checked, account.canLogBiometrics))}
+            onChange={(e) =>
+              void run(() => setStudentPermissions(db(), studentId, e.target.checked, account.canLogBiometrics))
+            }
           />{" "}
           Pode fazer autoavaliação (PAR-Q+)
         </label>
@@ -259,10 +268,26 @@ function PermissionsSection({
           <input
             type="checkbox"
             checked={account.canLogBiometrics}
-            onChange={(e) => void run(() => setStudentPermissions(db(), studentId, account.canSelfAssess, e.target.checked))}
+            onChange={(e) =>
+              void run(() => setStudentPermissions(db(), studentId, account.canSelfAssess, e.target.checked))
+            }
           />{" "}
           Pode registrar as próprias medidas
         </label>
+      </p>
+      <p>
+        <label>
+          <input
+            type="checkbox"
+            checked={account.canAddSets}
+            onChange={(e) => void run(() => setCanAddSets(db(), studentId, e.target.checked))}
+          />{" "}
+          Pode adicionar séries extras ao registrar o treino
+        </label>
+      </p>
+      <p className="section-footnote">
+        Desligado por padrão: o aluno registra só as séries da ficha. Ligado, ele pode acrescentar séries (com
+        confirmação) e remover só as que ele mesmo acrescentou — as séries da ficha nunca saem.
       </p>
       {account.pendingAssessmentRequest ? (
         <p>Autoavaliação solicitada — aguardando o aluno.</p>

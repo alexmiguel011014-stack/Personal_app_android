@@ -14,7 +14,11 @@ import type { DraftStudentDoc, LinkedStudentDoc } from "../domain/students";
 export type TrainerStudent = { kind: "draft"; doc: DraftStudentDoc } | { kind: "linked"; doc: LinkedStudentDoc };
 
 /** `students/{id}` — FirestoreMappers' `UserEntity.toFirestoreMap(trainerId)`. */
-export function draftToFirestore(trainerId: string, profile: StudentProfile, createdAt: number): Record<string, unknown> {
+export function draftToFirestore(
+  trainerId: string,
+  profile: StudentProfile,
+  createdAt: number,
+): Record<string, unknown> {
   return {
     trainerId,
     name: profile.name,
@@ -76,6 +80,15 @@ export async function setStudentPermissions(
   canLogBiometrics: boolean,
 ): Promise<void> {
   await setDoc(doc(db, "users", studentId), { canSelfAssess, canLogBiometrics }, { merge: true });
+}
+
+/**
+ * Whether a connected student may add extra sets when logging a session. Its own function, writing
+ * only this field with merge, so granting it can never touch the two §17 permissions beside it.
+ * firestore.rules let only the owning trainer write it — a student can't switch it on for themselves.
+ */
+export async function setCanAddSets(db: Firestore, studentId: string, canAddSets: boolean): Promise<void> {
+  await setDoc(doc(db, "users", studentId), { canAddSets }, { merge: true });
 }
 
 export async function requestAssessment(db: Firestore, studentId: string): Promise<void> {

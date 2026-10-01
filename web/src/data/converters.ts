@@ -91,6 +91,7 @@ export function toLinkedStudent(id: string, data: Data): LinkedStudentDoc | null
     createdAt: int(data, "createdAt") ?? 0,
     canSelfAssess: bool(data, "canSelfAssess") ?? false,
     canLogBiometrics: bool(data, "canLogBiometrics") ?? false,
+    canAddSets: bool(data, "canAddSets") ?? false,
     pendingAssessmentRequest: bool(data, "pendingAssessmentRequest") ?? false,
   };
 }

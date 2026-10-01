@@ -50,8 +50,12 @@ describe("toDraftStudent / toLinkedStudent — FirestoreMappers' defaults and le
       inviteCode: "INV1",
       canSelfAssess: false,
       canLogBiometrics: false,
+      canAddSets: false, // web-only; a document the phone wrote has no such field
       pendingAssessmentRequest: false,
     });
+    expect(toLinkedStudent("u1", { role: "STUDENT", name: "Maria", canAddSets: true })?.canAddSets).toBe(true);
+    // Anything but a real boolean reads as off — a permission is never granted by a stray value.
+    expect(toLinkedStudent("u1", { role: "STUDENT", name: "Maria", canAddSets: "true" })?.canAddSets).toBe(false);
     expect(toLinkedStudent("u1", { role: "STUDENT", name: "Maria" })?.inviteCode).toBeNull();
   });
 });
@@ -78,7 +82,15 @@ describe("toWorkoutLog", () => {
       note: null,
     };
     const data = workoutLogToFirestore(log);
-    expect(Object.keys(data)).toEqual(["trainerId", "studentId", "workoutId", "exerciseName", "date", "performedSetsJson", "note"]);
+    expect(Object.keys(data)).toEqual([
+      "trainerId",
+      "studentId",
+      "workoutId",
+      "exerciseName",
+      "date",
+      "performedSetsJson",
+      "note",
+    ]);
     expect(toWorkoutLog("l1", data)).toEqual(log);
   });
 });
@@ -91,7 +103,15 @@ describe("toWorkout / workoutToFirestore — FirestoreMappers' workout mapping",
     name: "Ficha A",
     isActive: true,
     exercises: [
-      { name: "Supino", sets: 3, reps: "12", weight: null, restSeconds: null, notes: null, muscleActivation: { Peitoral: 1 } },
+      {
+        name: "Supino",
+        sets: 3,
+        reps: "12",
+        weight: null,
+        restSeconds: null,
+        notes: null,
+        muscleActivation: { Peitoral: 1 },
+      },
     ],
     createdAt: 5,
     status: "assigned",
@@ -224,9 +244,19 @@ describe("payments and billingPlans", () => {
 
   it("writes exactly the field set the rules accept: all eleven, nulls explicit, no id", () => {
     const written = paymentToFirestore(monthlyCharge(plan, "2026-09", 2));
-    expect(Object.keys(written).sort()).toEqual(
-      ["amountCents", "createdAt", "currency", "dueDate", "externalId", "method", "note", "paidAt", "source", "studentId", "trainerId"],
-    );
+    expect(Object.keys(written).sort()).toEqual([
+      "amountCents",
+      "createdAt",
+      "currency",
+      "dueDate",
+      "externalId",
+      "method",
+      "note",
+      "paidAt",
+      "source",
+      "studentId",
+      "trainerId",
+    ]);
     expect(written.paidAt).toBeNull();
   });
 

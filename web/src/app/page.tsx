@@ -2,10 +2,11 @@ import Link from "next/link";
 import { PublicShell } from "./_shared/PublicShell";
 import { SignedInShortcut } from "./SignedInShortcut";
 
-// GOALS.md §23i: the public landing — what the service is, and the two ways in: signing in, and
-// the invite link a student gets from their trainer. Static on purpose (it's the one page a search
-// engine or a first-time visitor sees); only the shortcut for someone already signed in runs in the
-// browser. §23k: the ALLU template's voice — a forest-green band, then plain columns.
+// GOALS.md §23i: the public landing — what the service is, and the ways in. Static on purpose (it's
+// the one page a search engine or a first-time visitor sees); only the shortcut for someone already
+// signed in runs in the browser. §23k: the ALLU template's voice — a forest-green band, then plain
+// columns. The trainer asked (2026-09-30) for as few doors as possible: one "Entrar" in the header
+// for people who already have an account, and the invite-code button — no other sign-in links.
 export default function Landing() {
   return (
     <PublicShell
@@ -26,10 +27,7 @@ export default function Landing() {
           </p>
           <SignedInShortcut />
           <div className="hero-actions">
-            <Link className="button button-leaf" href="/entrar">
-              Entrar como personal
-            </Link>
-            <Link className="button button-on-dark" href="/convite">
+            <Link className="button button-leaf" href="/convite">
               Tenho um código de convite
             </Link>
           </div>
@@ -49,9 +47,6 @@ export default function Landing() {
               <li>A evolução de cada aluno: medidas, progressão de carga, sessões registradas e o questionário PAR-Q+.</li>
               <li>A agenda da semana e as mensalidades — quem pagou e quem está em atraso.</li>
             </ul>
-            <p>
-              <Link href="/entrar">Entrar como personal</Link>
-            </p>
           </section>
 
           <section>
@@ -62,9 +57,6 @@ export default function Landing() {
               <li>A autoavaliação respondida quando o seu personal pedir.</li>
             </ul>
             <p>Para começar, peça o link de convite ao seu personal.</p>
-            <p>
-              <Link href="/convite">Tenho um código de convite</Link> · <Link href="/entrar">Já tenho conta</Link>
-            </p>
           </section>
         </div>
       </div>

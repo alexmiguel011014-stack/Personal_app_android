@@ -2563,20 +2563,20 @@ Suggested: sonnet · medium — decisions already made; the last item is the one
 - [x] History depth = **1**: the current ficha plus one previous; not configurable in v1.
 - [x] The delete is part of the replace, confirmed with a list of what goes; no background job; no bulk button.
 - [x] Logs, charts, biometrics, payments and schedules are untouched; the student never sees the history.
-- [ ] **(manual)** Confirm the two product choices: **(1)** replacing is asked **every time** the student already has an
+- [x] **(manual)** Confirm the two product choices: **(1)** replacing is asked **every time** the student already has an
       active ficha (*Substituir* / *Só adicionar*) instead of always replacing; **(2)** the previous ficha is visible
-      to the trainer only. Done when the trainer has said yes (or changed it) in chat.
+      to the trainer only. Done when the trainer has said yes (or changed it) in chat. **Confirmed 2026-10-01** ("pode fazer como sugeriu").
 
 **28c. Domain — `archivedAt` and the replacement plan (pure, no Firestore, no clock)**
 
 Suggested: opus · high — this is where the bound of the delete lives; every rule above becomes a test.
 
-- [ ] `Workout.archivedAt: number | null`. `toWorkout` reads it with the existing `int()` helper (absent or malformed ⇒
+- [x] `Workout.archivedAt: number | null`. `toWorkout` reads it with the existing `int()` helper (absent or malformed ⇒
       `null`); `workoutToFirestore` writes it **only when non-null**, so every document written for a non-archived
       treino stays exactly what it is today (what the phone reads and writes); `withDerivedStatus`: active ⇒
       `archivedAt: null` (re-activating takes a treino out of the history). Tests: absent / number / string / negative,
-      written only when set, activation clears it, every existing converter test still passes unchanged.
-- [ ] `domain/fichaHistory.ts` — `planReplacement(existing, incoming, now) → { toCreate, toArchive, toDelete }`:
+      written only when set, activation clears it, every existing converter test still passes unchanged. **Done 2026-10-01** (converter tests: absent/number/string/fraction/null, written only when set; activation clears it).
+- [x] `domain/fichaHistory.ts` — `planReplacement(existing, incoming, now) → { toCreate, toArchive, toDelete }`:
       `toArchive` = existing with `isActive`, each becoming `withDerivedStatus({ ...w, isActive: false })` +
       `archivedAt: now`; `toDelete` = existing with `archivedAt !== null && !isActive` — **and only when `toArchive` is
       non-empty** (a replace that retires nothing never deletes the history); `toCreate` = incoming, normalised active.
@@ -2584,79 +2584,93 @@ Suggested: opus · high — this is where the bound of the delete lives; every r
       existing; only active; active + history; history treino re-activated (not deleted); hand-deactivated and draft
       treinos untouched; a student with 40 old inactive treinos and no history ⇒ **none deleted**; nothing active but
       a history ⇒ **none deleted**; a second replace deletes exactly the first replace's archive; `toDelete` never
-      contains an active treino. Done when `tsc`, `eslint`, `vitest` are green.
+      contains an active treino. Done when `tsc`, `eslint`, `vitest` are green. **Done 2026-10-01** (`domain/fichaHistory.ts` + test, 15 cases incl. the 40-old-inactive and nothing-active-but-history
+      ones; also `splitFichas` for the page).
 
 **28d. Data layer — `replaceFicha`, one atomic batch**
 
 Suggested: opus · high — the write path of a delete; atomicity and the error paths are the point.
 
-- [ ] `data/workouts.ts` `replaceFicha(db, trainerId, studentId, incoming, now)`: reads the student's treinos with
+- [x] `data/workouts.ts` `replaceFicha(db, trainerId, studentId, incoming, now)`: reads the student's treinos with
       `loadStudentWorkouts` (equality filters, no composite index), runs `planReplacement`, and commits **one
       `writeBatch`**: `set` the new treinos, `set` the archived copies, `delete` the old history. Refuses with a typed
       error above 450 operations. Returns `{ created, archived, deleted }` (names included) so the screen can report it.
-      A failed commit writes nothing; a retry re-plans from fresh data.
-- [ ] Unit-test the part that does not need Firestore (the operation list built from a plan); the rest is 28e.
+      A failed commit writes nothing; a retry re-plans from fresh data. **Done 2026-10-01**; it also refuses an incoming treino of another student before reading anything.
+- [x] Unit-test the part that does not need Firestore (the operation list built from a plan); the rest is 28e. **Done:** the operation count and the lists are tested in `fichaHistory.test.ts`; the batch itself in 28e.
 
 **28e. Rules tests — through the real rules, expecting no rules change**
 
 Suggested: sonnet · high — emulator tests; the discipline is reading the failures honestly.
 
-- [ ] `web/rules/dataLayer.test.ts`: `replaceFicha` as the owning trainer lands new + archive + delete together; as
+- [x] `web/rules/dataLayer.test.ts`: `replaceFicha` as the owning trainer lands new + archive + delete together; as
       **another trainer** it fails as a whole with nothing partially written; a **student** cannot write any of it and
-      cannot read an archived treino (inactive ⇒ draft) while still reading the active ones.
-- [ ] `web/rules/firestore.rules.test.ts`: a `workouts` document carrying `archivedAt` is accepted on create and update
+      cannot read an archived treino (inactive ⇒ draft) while still reading the active ones. **Done 2026-10-01:** 5 tests through the real rules (replace; a second replace deletes exactly the first archive;
+      nothing active ⇒ history kept; another trainer / the student refused with nothing changed; another student's treino
+      refused).
+- [x] `web/rules/firestore.rules.test.ts`: a `workouts` document carrying `archivedAt` is accepted on create and update
       by the owning trainer. Run `npm run test:rules` (Java 21). If a case fails because of the rules, **stop** — that is
-      a rules change (xhigh, the "seen failing on the old rules" run, a manual publish), not part of this plan's size.
+      a rules change (xhigh, the "seen failing on the old rules" run, a manual publish), not part of this plan's size. **Done:** 2 tests; `npm run test:rules` is 90/90 and **no rules change was needed** — nothing to publish for §28.
 
 **28f. The editor — ask "Substituir" or "Só adicionar"**
 
 Suggested: sonnet · high — two save paths and a destructive choice that must be impossible to trigger by accident.
 
-- [ ] `FichaEditor.tsx`, in `save()` (a **new** treino only — editing an existing one never replaces) and `saveAll()`:
+- [x] `FichaEditor.tsx`, in `save()` (a **new** treino only — editing an existing one never replaces) and `saveAll()`:
       load the student's treinos first (if the load fails, fall back to a plain add and delete nothing); if there is at
       least one active treino, open `ConfirmDialog` **"Substituir a ficha atual?"**: "O aluno tem hoje: <names>.
       **Substituir**: a ficha atual vira a *ficha anterior* (o aluno deixa de vê-la) e a que já era a anterior
       (<names and dates, or "nenhuma">) é **excluída para sempre**. **Só adicionar**: a nova se junta às que já
       existem e nada é apagado." *Só adicionar* is the default focus, Escape and backdrop (the dialog's "Não"), *Substituir*
       is the "Sim". A student with no active treino gets no question — a plain add, as today. *Substituir* calls
-      `replaceFicha`; *Só adicionar* calls the existing `saveWorkout(s)`.
-- [ ] Error text when the replace fails: nothing was changed (it is one batch) — "Não foi possível substituir. Nada foi
-      alterado." Controls ≥ 44 px, text ≥ 12 px, no new stylesheet.
+      `replaceFicha`; *Só adicionar* calls the existing `saveWorkout(s)`. **Done 2026-10-01, with one change from the plan:** the dialog has three answers — *Cancelar* (default focus,
+      Escape, backdrop: nothing is saved), *Só adicionar*, *Substituir* — so a stray Escape can never save or delete
+      (the plan had Escape = *Só adicionar*). `ConfirmDialog` gained an optional middle button.
+- [x] Error text when the replace fails: nothing was changed (it is one batch) — "Não foi possível substituir. Nada foi
+      alterado." Controls ≥ 44 px, text ≥ 12 px, no new stylesheet. **Done** ("Não foi possível substituir. Nada foi alterado.").
 
 **28g. The student's page — "Ficha atual" and "Ficha anterior"**
 
 Suggested: sonnet · medium — a grouped list on an existing screen.
 
-- [ ] `WorkoutsSection.tsx`: group the list into **Ficha atual** (active), **Ficha anterior — histórico**
+- [x] `WorkoutsSection.tsx`: group the list into **Ficha atual** (active), **Ficha anterior — histórico**
       (`archivedAt !== null && !isActive`, each with "arquivada em dd/mm/aaaa" and the line "será excluída quando você
       substituir a ficha de novo") and **Outras (inativas)** (drafts and hand-deactivated). Editar / Ativar / Excluir
       stay on every treino; *Ativar* on a history treino goes through the normal save and so leaves the history (28c).
-      Existing classes only; phone-width check.
-- [ ] The student's own screens are untouched (an archived treino is a draft and invisible — proved in 28e).
+      Existing classes only; phone-width check. **Done 2026-10-01.**
+- [x] The student's own screens are untouched (an archived treino is a draft and invisible — proved in 28e). **Verified** in the browser and in 28e.
 
 **28h. Verification**
 
 Suggested: sonnet · high — proving the bounds of a delete from the outside is the whole job.
 
-- [ ] Run `tsc`, `eslint`, `vitest`, `npm run test:rules` (Java 21) and the static build with
-      `NEXT_PUBLIC_BASE_PATH=/Personal_app_android`. Done when all are green; record the counts here.
-- [ ] Browser, against the emulators (seeded student with an active A/B/C): save a new ficha → the dialog lists A/B/C;
+- [x] Run `tsc`, `eslint`, `vitest`, `npm run test:rules` (Java 21) and the static build with
+      `NEXT_PUBLIC_BASE_PATH=/Personal_app_android`. Done when all are green; record the counts here. **Done 2026-10-01:** `tsc`, `eslint` clean; 349 unit tests; 90 emulator tests; static build 17/17 pages.
+- [x] Browser, against the emulators (seeded student with an active A/B/C): save a new ficha → the dialog lists A/B/C;
       **Só adicionar** keeps everything; save again → **Substituir**: the old ones appear under *Ficha anterior*, the new
       ones are active, and the student (logged in) sees only the new ones; replace once more → the first history is
       **gone** and the second ficha is now the history; a hand-deactivated treino and a draft **survive both replaces**;
       re-activating a history treino takes it out of the history and it survives the next replace; a student with
       nothing active gets no question. Phone width (overflow probe), keyboard-only through the dialog (Escape = *Só
-      adicionar*). Record the result here.
-- [ ] A failure test: replace as a trainer whose write is refused — nothing is archived, created or deleted.
+      adicionar*). Record the result here. **Done 2026-10-01** (Browser pane, DOM-driven, seeded Ana with one active and one draft ficha): the dialog lists her
+      active treino and "(nenhuma)" as history; **Cancelar** (the dialog's cancel event) saves nothing; **Só adicionar**
+      adds Treino A/B with nothing archived or deleted; **Substituir** archives Ficha A, Treino A, Treino B
+      (`archivedAt` set), creates Treino C/D, and the page shows Ficha atual / Ficha anterior (histórico) / Outras
+      (inativas) with "Arquivada em 01/10/2026"; **Ativar** on a history treino clears its `archivedAt`; the next
+      replacement (the single-treino form this time) listed "Treino A, Treino B" as the history to delete, **deleted
+      exactly those**, archived C/D/Ficha A, created Treino E, and the draft "Ficha B — em revisão" survived both
+      replacements; logged in as Ana, `/aluno` shows only Treino E. At 375 px: no overflow on the student page and the
+      dialog (its three buttons wrap to two rows, 48 px tall). Keyboard-only was not run (the pane was hidden);
+      default focus on *Cancelar* and the Escape path were checked in the DOM.
+- [x] A failure test: replace as a trainer whose write is refused — nothing is archived, created or deleted. **Done in 28e:** another trainer and the student are refused and `a1`/`history1` are unchanged.
 
 **28i. Registration**
 
 Suggested: haiku · low — documentation and ticks, fully specified.
 
-- [ ] `CLAUDE.md` web section: the web-only `archivedAt` field (ignored by the phone, written only when set), the
+- [x] `CLAUDE.md` web section: the web-only `archivedAt` field (ignored by the phone, written only when set), the
       three guards (inactive + archived only; nothing deleted unless something is archived in the same replace; one
       atomic batch), that nothing is deleted outside a replace, and the accepted two-tab race. GOALS.md: tick each
-      item with what was actually verified, commit each verified item on its own, never push without being asked.
+      item with what was actually verified, commit each verified item on its own, never push without being asked. **Done 2026-10-01.**
 - [ ] Done-when for the whole section: on the live site a trainer replaces a student's ficha, sees the old one under
       *Ficha anterior*, replaces again and sees the first one gone; the student only ever saw the current one; no log,
       chart or number on the dashboard changed. Not done when the code exists.

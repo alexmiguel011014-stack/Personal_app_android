@@ -191,6 +191,21 @@ The gate holds only once the rules are republished; if the phone's student sign-
 the same flow first (GOALS.md §27g). On the emulators, `node scripts/verify-email.mjs <email>` opens the
 link.
 
+**Replacing a student's ficha keeps only the previous one** (GOALS.md §28, 2026-10-01). A "ficha" is one treino
+(`workouts/{id}`), with no cycle grouping, so the editor asks — when the student already has an active treino —
+"Substituir a ficha atual?" (*Cancelar* / *Só adicionar* / *Substituir*; `FichaEditor.tsx`, new treinos only —
+editing one never replaces). *Substituir* is `data/workouts.ts` `replaceFicha`: ONE atomic batch that creates the new
+treinos, archives the current (active) ones and deletes the history the previous replacement left. The history is
+marked by a web-only field, `workouts/{id}.archivedAt` (written only when set; the phone ignores it, and a phone save
+that drops it just makes the treino an ordinary inactive one). What may be deleted is decided in
+`domain/fichaHistory.ts` `planReplacement`, and the bound is the point: only **inactive treinos that carry
+`archivedAt`**, and **only when something is archived in the same replacement** — drafts, treinos deactivated by hand
+and anything the phone wrote are never candidates; re-activating a history treino (`withDerivedStatus`) clears the mark.
+Nothing is deleted outside a replace (no background job: Spark has no scheduler), no rules change was needed, and
+`workoutLogs` are never touched, so the progress charts keep their history. Accepted: two tabs replacing at the same
+instant (a client transaction cannot run a query) could leave two active fichas — never lost data. The student page
+(`WorkoutsSection.tsx`) groups the list as Ficha atual / Ficha anterior (histórico) / Outras (inativas).
+
 **No AI provider key ever reaches the browser** (decided 2026-09-24, GOALS.md §23e): the web builds
 the §15 prompt for the trainer to paste into whichever AI app they use, and reads the reply back
 with Smart Paste. **One exception, added 2026-09-30 (GOALS.md §25i): the ficha editor's "Gemini"

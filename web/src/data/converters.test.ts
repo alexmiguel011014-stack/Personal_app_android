@@ -116,6 +116,7 @@ describe("toWorkout / workoutToFirestore — FirestoreMappers' workout mapping",
     createdAt: 5,
     status: "assigned",
     assignedAt: 6,
+    archivedAt: null,
   };
 
   it("writes WorkoutEntity.toFirestoreMap's fields and reads them back", () => {
@@ -144,7 +145,20 @@ describe("toWorkout / workoutToFirestore — FirestoreMappers' workout mapping",
       createdAt: 0,
       status: "draft",
       assignedAt: null,
+      archivedAt: null,
     });
+  });
+
+  it("GOALS.md §28: archivedAt is web-only — written only when set, read leniently", () => {
+    expect(workoutToFirestore(workout, "trainerA")).not.toHaveProperty("archivedAt");
+    const archived = { ...workout, isActive: false, status: "draft" as const, assignedAt: null, archivedAt: 900 };
+    const data = workoutToFirestore(archived, "trainerA");
+    expect(data.archivedAt).toBe(900);
+    expect(toWorkout("w1", data)).toEqual(archived);
+    for (const bad of ["900", 1.5, null, true]) {
+      expect(toWorkout("w1", { studentId: "s1", name: "Ficha A", archivedAt: bad })?.archivedAt).toBeNull();
+    }
+    expect(toWorkout("w1", { studentId: "s1", name: "Ficha A" })?.archivedAt).toBeNull();
   });
 
   it("skips a document without a student or a name", () => {

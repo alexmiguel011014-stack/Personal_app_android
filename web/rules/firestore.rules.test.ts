@@ -406,6 +406,37 @@ describe("verified e-mail: accounts that already exist are not affected", () => 
   });
 });
 
+// GOALS.md §28: `archivedAt` is a web-only field on a treino a replacement retired. The rules validate no
+// workout fields, so it needs no rules change — this proves it, and that who may touch it did not move.
+describe("workouts carrying archivedAt (GOALS.md §28)", () => {
+  const archived = {
+    trainerId: TRAINER_A,
+    studentId: STUDENT_A,
+    name: "Ficha anterior",
+    isActive: false,
+    exercisesJson: "[]",
+    createdAt: 1,
+    status: "draft",
+    assignedAt: null,
+    archivedAt: 900,
+  };
+
+  it("the owning trainer creates, updates and deletes one", async () => {
+    const db = as(TRAINER_A);
+    await assertSucceeds(db.doc("workouts/h1").set(archived));
+    await assertSucceeds(db.doc("workouts/h1").update({ isActive: true, status: "assigned", assignedAt: 5, archivedAt: null }));
+    await assertSucceeds(db.doc("workouts/h1").delete());
+  });
+
+  it("another trainer can't write or delete it, and the student can't read it", async () => {
+    await seed((db) => db.doc("workouts/h1").set(archived));
+    await assertFails(as(TRAINER_B).doc("workouts/h1").delete());
+    await assertFails(as(TRAINER_B).doc("workouts/h1").update({ archivedAt: null }));
+    await assertFails(as(STUDENT_A).doc("workouts/h1").get());
+    await assertFails(as(STUDENT_A).doc("workouts/h1").update({ archivedAt: null }));
+  });
+});
+
 describe("workoutLogs", () => {
   function log(studentId: string): Record<string, unknown> {
     return {

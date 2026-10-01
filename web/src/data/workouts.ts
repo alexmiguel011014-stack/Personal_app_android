@@ -1,5 +1,6 @@
 import { collection, deleteDoc, doc, getDocs, query, setDoc, where, writeBatch, type Firestore } from "firebase/firestore";
 import type { Exercise } from "../domain/exercise";
+import { MAX_REPLACEMENT_OPERATIONS, planReplacement, replacementOperations } from "../domain/fichaHistory";
 import { withDerivedStatus, type Workout } from "../domain/workouts";
 import { toWorkout, workoutToFirestore } from "./converters";
 
@@ -43,6 +44,7 @@ export function newWorkout(trainerId: string, studentId: string, name: string, e
     createdAt: now,
     status: "draft",
     assignedAt: null,
+    archivedAt: null,
   };
 }
 
@@ -67,4 +69,46 @@ export async function saveWorkouts(db: Firestore, trainerId: string, workouts: r
 
 export async function deleteWorkout(db: Firestore, workoutId: string): Promise<void> {
   await deleteDoc(doc(db, "workouts", workoutId));
+}
+
+/** Too many treinos to replace in one batch — never expected, refused rather than split (it must stay atomic). */
+export class ReplacementTooLarge extends Error {}
+
+/** What a replacement did, as treino names, for the screen to say. */
+export interface ReplacementResult {
+  created: string[];
+  archived: string[];
+  deleted: string[];
+}
+
+/**
+ * GOALS.md §28: replace a student's ficha — the new treinos are created, the current (active) ones are
+ * archived as the "ficha anterior", and the previous history is deleted, all in ONE batch: all of it
+ * happens or none of it does. What may be deleted is decided in domain/fichaHistory.ts (only inactive
+ * treinos a previous replacement archived, and only when something is archived now). The student's
+ * treinos are read once and written once; a transaction cannot run a query in the client SDK, so two
+ * tabs replacing at the same instant could leave two active fichas — never lost data.
+ */
+export async function replaceFicha(
+  db: Firestore,
+  trainerId: string,
+  studentId: string,
+  incoming: readonly Workout[],
+  now: number,
+): Promise<ReplacementResult> {
+  if (incoming.some((workout) => workout.studentId !== studentId)) {
+    throw new Error("A new treino belongs to another student than the one being replaced.");
+  }
+  const plan = planReplacement(await loadStudentWorkouts(db, trainerId, studentId), incoming, now);
+  if (replacementOperations(plan) > MAX_REPLACEMENT_OPERATIONS) {
+    throw new ReplacementTooLarge(`A replacement of ${replacementOperations(plan)} treinos does not fit one batch.`);
+  }
+  const batch = writeBatch(db);
+  for (const workout of [...plan.toCreate, ...plan.toArchive]) {
+    batch.set(doc(db, "workouts", workout.id), workoutToFirestore(workout, trainerId));
+  }
+  for (const workout of plan.toDelete) batch.delete(doc(db, "workouts", workout.id));
+  await batch.commit();
+  const names = (list: readonly Workout[]) => list.map((workout) => workout.name);
+  return { created: names(plan.toCreate), archived: names(plan.toArchive), deleted: names(plan.toDelete) };
 }

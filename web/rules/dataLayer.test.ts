@@ -31,7 +31,15 @@ import {
 import { emptyProfile } from "../src/domain/studentProfile";
 import { loadMyProfile, resolveProfile } from "../src/data/session";
 import { ensureMonthlyCharges, loadTrainerSnapshot, loadTrainerView } from "../src/data/trainerData";
-import { deleteWorkout, loadMyWorkouts, loadStudentWorkouts, newWorkout, saveWorkout, saveWorkouts } from "../src/data/workouts";
+import {
+  deleteWorkout,
+  loadMyWorkouts,
+  loadStudentWorkouts,
+  newWorkout,
+  replaceFicha,
+  saveWorkout,
+  saveWorkouts,
+} from "../src/data/workouts";
 import { addBiometric, loadMyBiometrics, loadStudentBiometrics, logOwnBiometric } from "../src/data/biometrics";
 import { loadStudentAssessments, submitAssessment } from "../src/data/assessments";
 import { loadMyLogs, logSession } from "../src/data/workoutLogs";
@@ -429,6 +437,108 @@ describe("fichas (GOALS.md §23g)", () => {
     await assertFails(deleteWorkout(trainer, "other-trainer"));
     await deleteWorkout(trainer, "old");
     expect((await loadStudentWorkouts(trainer, "trainerA", "s1")).map((w) => w.id)).toEqual(["new"]);
+  });
+});
+
+// GOALS.md §28 — replacing a student's ficha: the current one becomes the history, the older history goes.
+describe("replacing a ficha (GOALS.md §28)", () => {
+  const exercises = [
+    { name: "Supino", sets: 3, reps: "12", weight: null, restSeconds: null, notes: null, muscleActivation: null },
+  ];
+  const INACTIVE = { isActive: false, status: "draft", assignedAt: null };
+
+  function stored(overrides: Record<string, unknown>): Record<string, unknown> {
+    return {
+      trainerId: "trainerA",
+      studentId: "s1",
+      name: "Treino",
+      isActive: true,
+      exercisesJson: "[]",
+      createdAt: 1,
+      status: "assigned",
+      assignedAt: 1,
+      ...overrides,
+    };
+  }
+
+  /** A document as it is in the database, read with the rules off — what the test asserts against. */
+  async function stateOf(path: string): Promise<Record<string, unknown> | null> {
+    let data: Record<string, unknown> | null = null;
+    await env.withSecurityRulesDisabled(async (context) => {
+      const snapshot = await context.firestore().doc(path).get();
+      data = snapshot.exists ? (snapshot.data() as Record<string, unknown>) : null;
+    });
+    return data;
+  }
+
+  const fresh = (...names: string[]) => names.map((name) => newWorkout("trainerA", "s1", name, exercises, 900));
+
+  beforeEach(async () => {
+    await seed({
+      "users/trainerA": { role: "TRAINER" },
+      "users/trainerB": { role: "TRAINER" },
+      "users/s1": { role: "STUDENT", trainerId: "trainerA", inviteCode: "X", name: "Ana", createdAt: 1 },
+      "workouts/a1": stored({ name: "Treino A" }),
+      "workouts/a2": stored({ name: "Treino B" }),
+      "workouts/history1": stored({ name: "Antigo", ...INACTIVE, archivedAt: 50 }),
+      "workouts/draft1": stored({ name: "Rascunho", ...INACTIVE }),
+      "workouts/other-student": stored({ studentId: "s2", name: "De outro aluno" }),
+    });
+  });
+
+  it("archives the current ficha, deletes the old history and creates the new one — together", async () => {
+    const result = await replaceFicha(signedInAs("trainerA"), "trainerA", "s1", fresh("Novo A", "Novo B"), 1000);
+    expect(result.created).toEqual(["Novo A", "Novo B"]);
+    expect([...result.archived].sort()).toEqual(["Treino A", "Treino B"]);
+    expect(result.deleted).toEqual(["Antigo"]);
+
+    expect(await stateOf("workouts/a1")).toMatchObject({ isActive: false, status: "draft", assignedAt: null, archivedAt: 1000 });
+    expect(await stateOf("workouts/a2")).toMatchObject({ isActive: false, archivedAt: 1000 });
+    expect(await stateOf("workouts/history1")).toBeNull();
+    // Untouched: the draft the trainer prepared, and another student's treino.
+    expect(await stateOf("workouts/draft1")).toMatchObject({ name: "Rascunho", isActive: false });
+    expect(await stateOf("workouts/draft1")).not.toHaveProperty("archivedAt");
+    expect(await stateOf("workouts/other-student")).toMatchObject({ isActive: true, name: "De outro aluno" });
+
+    // The student sees only the new ficha; the archived one is a draft, which the rules never show them.
+    expect((await loadMyWorkouts(signedInAs("s1"), "s1")).map((w) => w.name)).toEqual(["Novo A", "Novo B"]);
+    await assertFails(getDoc(doc(signedInAs("s1"), "workouts", "a1")));
+  });
+
+  it("a second replacement deletes exactly what the first one archived", async () => {
+    const trainer = signedInAs("trainerA");
+    await replaceFicha(trainer, "trainerA", "s1", fresh("Novo A", "Novo B"), 1000);
+    const second = await replaceFicha(trainer, "trainerA", "s1", fresh("Terceiro"), 2000);
+    expect([...second.deleted].sort()).toEqual(["Treino A", "Treino B"]);
+    expect([...second.archived].sort()).toEqual(["Novo A", "Novo B"]);
+    expect(await stateOf("workouts/a1")).toBeNull();
+    expect(await stateOf("workouts/draft1")).not.toBeNull();
+    const names = (await loadStudentWorkouts(trainer, "trainerA", "s1")).map((w) => w.name).sort();
+    expect(names).toEqual(["Novo A", "Novo B", "Rascunho", "Terceiro"]);
+  });
+
+  it("with nothing active nothing is archived, so the history is NOT deleted", async () => {
+    await seed({
+      "workouts/a1": stored({ name: "Treino A", ...INACTIVE }),
+      "workouts/a2": stored({ name: "Treino B", ...INACTIVE }),
+    });
+    const result = await replaceFicha(signedInAs("trainerA"), "trainerA", "s1", fresh("Novo A"), 1000);
+    expect(result).toMatchObject({ created: ["Novo A"], archived: [], deleted: [] });
+    expect(await stateOf("workouts/history1")).not.toBeNull();
+  });
+
+  it("another trainer, or the student, can't replace — and nothing changes", async () => {
+    const before = await stateOf("workouts/a1");
+    await expect(replaceFicha(signedInAs("trainerB"), "trainerA", "s1", fresh("Novo A"), 1000)).rejects.toThrow();
+    await expect(replaceFicha(signedInAs("s1"), "trainerA", "s1", fresh("Novo A"), 1000)).rejects.toThrow();
+    expect(await stateOf("workouts/a1")).toEqual(before);
+    expect(await stateOf("workouts/history1")).not.toBeNull();
+  });
+
+  it("refuses a new treino that belongs to another student, before writing anything", async () => {
+    const wrong = [newWorkout("trainerA", "s2", "De outro", exercises, 900)];
+    await expect(replaceFicha(signedInAs("trainerA"), "trainerA", "s1", wrong, 1000)).rejects.toThrow(/another student/);
+    expect(await stateOf("workouts/a1")).toMatchObject({ isActive: true });
   });
 });
 

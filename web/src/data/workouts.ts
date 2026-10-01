@@ -1,4 +1,4 @@
-import { collection, deleteDoc, doc, getDocs, query, setDoc, where, type Firestore } from "firebase/firestore";
+import { collection, deleteDoc, doc, getDocs, query, setDoc, where, writeBatch, type Firestore } from "firebase/firestore";
 import type { Exercise } from "../domain/exercise";
 import { withDerivedStatus, type Workout } from "../domain/workouts";
 import { toWorkout, workoutToFirestore } from "./converters";
@@ -49,6 +49,19 @@ export function newWorkout(trainerId: string, studentId: string, name: string, e
 export async function saveWorkout(db: Firestore, trainerId: string, workout: Workout, now: number): Promise<Workout> {
   const toSave = withDerivedStatus(workout, now);
   await setDoc(doc(db, "workouts", toSave.id), workoutToFirestore(toSave, trainerId));
+  return toSave;
+}
+
+/**
+ * GOALS.md §25e: several fichas of one answer (Treino A, B, C…) in a single batch, so they are all
+ * saved or none — a half-saved ABC is worse than a failed save. Each goes through the same status
+ * derivation and mapping as `saveWorkout`; the phone reads these exactly like fichas made one by one.
+ */
+export async function saveWorkouts(db: Firestore, trainerId: string, workouts: readonly Workout[], now: number): Promise<Workout[]> {
+  const toSave = workouts.map((workout) => withDerivedStatus(workout, now));
+  const batch = writeBatch(db);
+  for (const workout of toSave) batch.set(doc(db, "workouts", workout.id), workoutToFirestore(workout, trainerId));
+  await batch.commit();
   return toSave;
 }
 

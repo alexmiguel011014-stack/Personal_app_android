@@ -6,14 +6,15 @@ import { useEffect, useState, type FormEvent } from "react";
 import { getFirebase } from "../../../../data/firebase";
 import { loadPromptAssets, type PromptAssets } from "../../../../data/promptAssets";
 import type { TrainerStudent } from "../../../../data/students";
-import { loadStudentWorkouts, newWorkout, saveWorkout } from "../../../../data/workouts";
+import { loadStudentWorkouts, newWorkout, saveWorkout, saveWorkouts } from "../../../../data/workouts";
 import type { Exercise } from "../../../../domain/exercise";
 import { buildFichaPrompt } from "../../../../domain/fichaPrompt";
 import { kotlinTrim } from "../../../../domain/kotlin";
-import { calculateEffectiveVolume } from "../../../../domain/workoutParser";
+import { calculateEffectiveVolume, parseWorkouts } from "../../../../domain/workoutParser";
 import { applyPaste, manualExercise, workoutErrors, type Workout } from "../../../../domain/workouts";
 import { useSession } from "../../../SessionProvider";
 import { useTrainerData } from "../../useTrainerData";
+import { MultiFichaReview, type ReviewItem } from "./MultiFichaReview";
 
 // GOALS.md §23g: building a ficha — PromptFichaScreen and ManualWorkoutScreen on one page, since a
 // desktop has the room: copy the §15 prompt into any AI app, paste the reply into Smart Paste
@@ -30,7 +31,15 @@ export function FichaEditor() {
   return <Loader trainerId={session.uid} studentId={studentId} workoutId={workoutId} />;
 }
 
-function Loader({ trainerId, studentId, workoutId }: { trainerId: string; studentId: string; workoutId: string | null }) {
+function Loader({
+  trainerId,
+  studentId,
+  workoutId,
+}: {
+  trainerId: string;
+  studentId: string;
+  workoutId: string | null;
+}) {
   const { data } = useTrainerData(trainerId);
   const [existing, setExisting] = useState<Workout | null | undefined>(workoutId ? undefined : null);
 
@@ -51,7 +60,11 @@ function Loader({ trainerId, studentId, workoutId }: { trainerId: string; studen
 
   const account = data.snapshot.linked.find((l) => l.id === studentId);
   const draft = data.snapshot.drafts.find((d) => d.id === studentId);
-  const student: TrainerStudent | null = account ? { kind: "linked", doc: account } : draft ? { kind: "draft", doc: draft } : null;
+  const student: TrainerStudent | null = account
+    ? { kind: "linked", doc: account }
+    : draft
+      ? { kind: "draft", doc: draft }
+      : null;
   const back = `/app/alunos/detalhe?id=${encodeURIComponent(studentId)}`;
 
   if (student === null) return <p>Aluno não encontrado.</p>;
@@ -98,6 +111,10 @@ function FichaForm({
   const [addError, setAddError] = useState<string | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  // GOALS.md §25: set when the pasted answer holds two or more treinos (new fichas only).
+  const [review, setReview] = useState<ReviewItem[] | null>(null);
+  const [reviewWarnings, setReviewWarnings] = useState<string[]>([]);
+  const [reviewErrors, setReviewErrors] = useState<string[]>([]);
 
   // Fetched up front, so "Copiar prompt" can copy inside the click itself — some browsers refuse a
   // clipboard write that waits on a network request first.
@@ -125,6 +142,26 @@ function FichaForm({
 
   function paste(text: string) {
     setPasted(text);
+    setReviewErrors([]);
+    // Several treinos in one answer: the phone's paste would pile them into one ficha, so the web
+    // splits them and shows a review instead. An existing ficha is always a single one.
+    if (!existing) {
+      const parsed = parseWorkouts(text);
+      if (parsed.workouts.length >= 2) {
+        setReview(
+          parsed.workouts.map((w, i) => ({
+            key: `${i}-${w.name}`,
+            name: w.name,
+            include: true,
+            exercises: w.exercises,
+          })),
+        );
+        setReviewWarnings(parsed.warnings);
+        return;
+      }
+    }
+    setReview(null);
+    setReviewWarnings([]);
     const next = applyPaste(text, { name, exercises });
     setName(next.name);
     setExercises(next.exercises);
@@ -158,6 +195,29 @@ function FichaForm({
       router.push(back);
     } catch {
       setErrors(["Não foi possível salvar a ficha. Tente de novo."]);
+      setBusy(false);
+    }
+  }
+
+  async function saveAll() {
+    if (review === null) return;
+    const chosen = review.filter((item) => item.include);
+    const found = chosen.flatMap((item) =>
+      workoutErrors(item.name, item.exercises).map((error) => `${item.name || "Treino sem nome"}: ${error}`),
+    );
+    setReviewErrors(found);
+    if (found.length > 0 || chosen.length === 0) return;
+    setBusy(true);
+    try {
+      const now = Date.now();
+      // createdAt falls from the first treino to the last, so the trainer's newest-first list reads A, B, C.
+      const workouts = chosen.map((item, index) =>
+        newWorkout(trainerId, student.doc.id, kotlinTrim(item.name), item.exercises, now + (chosen.length - 1 - index)),
+      );
+      await saveWorkouts(getFirebase().db, trainerId, workouts, now);
+      router.push(back);
+    } catch {
+      setReviewErrors(["Não foi possível salvar as fichas. Nenhuma foi gravada — tente de novo."]);
       setBusy(false);
     }
   }
@@ -218,93 +278,111 @@ function FichaForm({
         />
       </section>
 
-      <section>
-        <h2>Ficha</h2>
-        <p>
-          <label>
-            Nome do treino (ex: Ficha A) <input value={name} onChange={(e) => setName(e.target.value)} />
-          </label>
-        </p>
-        <h3>Lista de exercícios ({exercises.length})</h3>
-        {exercises.length === 0 ? (
-          <p>Nenhum exercício ainda.</p>
-        ) : (
-          <table className="stack">
-            <thead>
-              <tr>
-                <th scope="col">Exercício</th>
-                <th scope="col">Séries</th>
-                <th scope="col">Reps</th>
-                <th scope="col">Músculos</th>
-                <th scope="col">Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {exercises.map((exercise, index) => (
-                <tr key={index}>
-                  <td data-label="Exercício">{exercise.name}</td>
-                  <td data-label="Séries">{exercise.sets}</td>
-                  <td data-label="Reps">{exercise.reps}</td>
-                  <td data-label="Músculos">
-                    {exercise.muscleActivation
-                      ? Object.entries(exercise.muscleActivation)
-                          .map(([muscle, coefficient]) => `${muscle} ${coefficient}`)
-                          .join(", ")
-                      : "—"}
-                  </td>
-                  <td data-label="">
-                    <button type="button" onClick={() => setExercises(exercises.filter((_, i) => i !== index))}>
-                      Remover
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-        <form onSubmit={addExercise}>
-          <fieldset>
-            <legend>Novo exercício</legend>
-            <label>
-              Nome <input value={newName} onChange={(e) => setNewName(e.target.value)} />
-            </label>{" "}
-            <label>
-              Séries <input inputMode="numeric" value={newSets} onChange={(e) => setNewSets(e.target.value)} />
-            </label>{" "}
-            <label>
-              Reps <input value={newReps} onChange={(e) => setNewReps(e.target.value)} />
-            </label>{" "}
-            <button type="submit">Adicionar</button>
-            {addError && <p role="alert">{addError}</p>}
-          </fieldset>
-        </form>
+      {review !== null ? (
+        <MultiFichaReview
+          items={review}
+          warnings={reviewWarnings}
+          errors={reviewErrors}
+          busy={busy}
+          onChange={setReview}
+          onSave={() => void saveAll()}
+          onCancel={() => {
+            setReview(null);
+            setReviewWarnings([]);
+            setReviewErrors([]);
+          }}
+        />
+      ) : (
+        <>
+          <section>
+            <h2>Ficha</h2>
+            <p>
+              <label>
+                Nome do treino (ex: Ficha A) <input value={name} onChange={(e) => setName(e.target.value)} />
+              </label>
+            </p>
+            <h3>Lista de exercícios ({exercises.length})</h3>
+            {exercises.length === 0 ? (
+              <p>Nenhum exercício ainda.</p>
+            ) : (
+              <table className="stack">
+                <thead>
+                  <tr>
+                    <th scope="col">Exercício</th>
+                    <th scope="col">Séries</th>
+                    <th scope="col">Reps</th>
+                    <th scope="col">Músculos</th>
+                    <th scope="col">Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {exercises.map((exercise, index) => (
+                    <tr key={index}>
+                      <td data-label="Exercício">{exercise.name}</td>
+                      <td data-label="Séries">{exercise.sets}</td>
+                      <td data-label="Reps">{exercise.reps}</td>
+                      <td data-label="Músculos">
+                        {exercise.muscleActivation
+                          ? Object.entries(exercise.muscleActivation)
+                              .map(([muscle, coefficient]) => `${muscle} ${coefficient}`)
+                              .join(", ")
+                          : "—"}
+                      </td>
+                      <td data-label="">
+                        <button type="button" onClick={() => setExercises(exercises.filter((_, i) => i !== index))}>
+                          Remover
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            <form onSubmit={addExercise}>
+              <fieldset>
+                <legend>Novo exercício</legend>
+                <label>
+                  Nome <input value={newName} onChange={(e) => setNewName(e.target.value)} />
+                </label>{" "}
+                <label>
+                  Séries <input inputMode="numeric" value={newSets} onChange={(e) => setNewSets(e.target.value)} />
+                </label>{" "}
+                <label>
+                  Reps <input value={newReps} onChange={(e) => setNewReps(e.target.value)} />
+                </label>{" "}
+                <button type="submit">Adicionar</button>
+                {addError && <p role="alert">{addError}</p>}
+              </fieldset>
+            </form>
 
-        {volume.length > 0 && (
-          <>
-            <h3>Volume efetivo por músculo (nesta ficha)</h3>
-            <p>Faixa ideal de referência (intermediário): ~12-20 séries efetivas/semana por músculo.</p>
-            <dl>
-              {volume.map(([muscle, sets]) => (
-                <div key={muscle}>
-                  <dt>{muscle}</dt>
-                  <dd>{VOLUME.format(sets)} séries efetivas</dd>
-                </div>
-              ))}
-            </dl>
-          </>
-        )}
-      </section>
+            {volume.length > 0 && (
+              <>
+                <h3>Volume efetivo por músculo (nesta ficha)</h3>
+                <p>Faixa ideal de referência (intermediário): ~12-20 séries efetivas/semana por músculo.</p>
+                <dl>
+                  {volume.map(([muscle, sets]) => (
+                    <div key={muscle}>
+                      <dt>{muscle}</dt>
+                      <dd>{VOLUME.format(sets)} séries efetivas</dd>
+                    </div>
+                  ))}
+                </dl>
+              </>
+            )}
+          </section>
 
-      {errors.length > 0 && (
-        <ul role="alert">
-          {errors.map((error) => (
-            <li key={error}>{error}</li>
-          ))}
-        </ul>
+          {errors.length > 0 && (
+            <ul role="alert">
+              {errors.map((error) => (
+                <li key={error}>{error}</li>
+              ))}
+            </ul>
+          )}
+          <button type="button" className="button-primary" disabled={busy} onClick={() => void save()}>
+            {busy ? "Salvando…" : "Salvar ficha"}
+          </button>
+        </>
       )}
-      <button type="button" className="button-primary" disabled={busy} onClick={() => void save()}>
-        {busy ? "Salvando…" : "Salvar ficha"}
-      </button>
     </main>
   );
 }

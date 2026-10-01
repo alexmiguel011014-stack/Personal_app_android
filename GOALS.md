@@ -2230,19 +2230,20 @@ Suggested: sonnet · medium — decisions already made; the item below is the on
       the only touch.
 - [x] **Client courtesy checks are labelled as such** in code comments: `domain/emailPolicy.ts` is a UX nicety,
       never a security boundary; the rules are.
-- [ ] **(manual)** Confirm the one product choice: new students **must** verify before they get their ficha (the
+- [x] **(manual)** Confirm the one product choice: new students **must** verify before they get their ficha (the
       plan's default — it is the point of the request). The alternative — let them in and merely nag — is not
-      enforceable and is not planned. Done when the trainer has said yes (or changed it) in chat.
+      enforceable and is not planned. Done when the trainer has said yes (or changed it) in chat. **Confirmed 2026-10-01** ("minha ideia é essa … quero criar essa caixinha de verificação"); a throwaway
+      inbox getting through is accepted.
 
 **27c. Rules and their tests**
 
 Suggested: opus · xhigh — an auth/security change to the one rules file every client shares; a mistake either locks students out or leaves the door open, and publishing is by hand and not testable in CI.
 
-- [ ] `firestore.rules`: add `hasVerifiedEmail()` and put it into the **self branch of `users` create** and into
+- [x] `firestore.rules`: add `hasVerifiedEmail()` and put it into the **self branch of `users` create** and into
       the **re-claim branch of `users` update** (alongside the existing `isSignedIn() && request.auth.uid ==
       uid`), and into `trainerRequests` **create**. Update the schema comment at the top of the file (one line:
-      what is gated and why). Nothing else changes; run the existing suite to prove it.
-- [ ] `web/rules/firestore.rules.test.ts` and `web/rules/dataLayer.test.ts`: the helpers build users with no
+      what is gated and why). Nothing else changes; run the existing suite to prove it. **Done 2026-10-01.**
+- [x] `web/rules/firestore.rules.test.ts` and `web/rules/dataLayer.test.ts`: the helpers build users with no
       token claims (`env.authenticatedContext(uid)`, `signedInAs(uid)`) — make the **default verified**
       (`{ email_verified: true }`) so the existing tests keep meaning what they meant, add an explicit
       **unverified** helper, and use it only in the new cases:
@@ -2251,13 +2252,16 @@ Suggested: opus · xhigh — an auth/security change to the one rules file every
       a **grandfathered unverified student** (profile already exists) can still update their own profile, create
       a `workoutLog`, an `assessment` and a biometric, and read their own profile — proving nothing else is
       gated; an unverified user still cannot claim *someone else's* uid (unchanged denial, kept as a regression
-      test); `email_verified` **absent** from the token (the old default) is treated as unverified.
-- [ ] **Seen failing on the old rules** (CLAUDE.md's discipline — `assertFails` passes on any failure): run
+      test); `email_verified` **absent** from the token (the old default) is treated as unverified. **Done 2026-10-01:** `as()`/`signedInAs()` are verified by default; `asUnverified`/`asWithoutClaim`
+      serve the new cases; "accounts that already exist are not affected" is a describe block of its own
+      (unconfirmed student: read, edit, log, assess, measure; unconfirmed trainer: read, grant, invite).
+- [x] **Seen failing on the old rules** (CLAUDE.md's discipline — `assertFails` passes on any failure): run
       `RULES_FILE=<origin/main copy of firestore.rules> npm run test:rules`; the three new "unverified is
       refused" tests **must fail** there and pass here, every other test passes on both. Record the counts in
-      this item, as §23d/§25 did.
-- [ ] `npm run test:rules` (emulators, Java 21 — see `web/README.md`) green. Done when the file is merged *and
-      not yet published*; the publish is its own manual item below.
+      this item, as §23d/§25 did. **Done 2026-10-01:** against `origin/main`'s copy exactly the 3 new tests fail (claim, re-claim and trainer
+      request from an unconfirmed address); the other 80 pass on both files.
+- [x] `npm run test:rules` (emulators, Java 21 — see `web/README.md`) green. Done when the file is merged *and
+      not yet published*; the publish is its own manual item below. **83/83 on 2026-10-01. Merged: no. Published: no.**
 - [ ] **(manual)** Publish the updated `firestore.rules` — **only after 27e is merged and deployed and, if 27g
       applies, the Android change is out** — after diffing against the live copy (CLAUDE.md: never publish
       without a diff). If §26d is also pending, publish the combined file. Then run the live checks in 27i.
@@ -2266,46 +2270,47 @@ Suggested: opus · xhigh — an auth/security change to the one rules file every
 
 Suggested: sonnet · medium — ordinary pure code with a table-driven test; the care is in not rejecting real addresses.
 
-- [ ] `validateEmail(input): { ok: true; email: string; suggestion?: string } | { ok: false; reason: ... }`:
+- [x] `validateEmail(input): { ok: true; email: string; suggestion?: string } | { ok: false; reason: ... }`:
       trim; lower-case the **domain** only (Firebase lower-cases the whole address, but the local part is shown
       back as typed); one `@`; local part 1–64 characters, no spaces, no leading/trailing/double dots; domain of
       at least two labels, each letters/digits/hyphens not starting or ending with `-`, last label ≥ 2 letters
       (or `xn--` punycode); total ≤ 254. **Deliberately does not support quoted local parts or comments** —
       nobody types them and they are a classic source of bypasses; noted in a comment. `+tags` and dots stay
       valid (`ana+treino@gmail.com` is a real address).
-- [ ] **Throwaway domains**: a short const list (~40) of the best-known disposable-mail services, matched on the
+- [x] **Throwaway domains**: a short const list (~40) of the best-known disposable-mail services, matched on the
       domain **and its subdomains**, result `{ ok: false, reason: "disposable" }` with the message "Use um e-mail
       pessoal que você acessa — endereços temporários não funcionam." The comment says plainly: *never complete,
       client-only, the rules' verification is the enforcement*. No third-party list package (100k+ entries in the
       bundle for a courtesy).
-- [ ] **Typo hint, never an auto-correction**: if the domain is exactly one edit (insert/delete/substitute/swap)
+- [x] **Typo hint, never an auto-correction**: if the domain is exactly one edit (insert/delete/substitute/swap)
       from a short list of the domains this audience uses — `gmail.com`, `hotmail.com`, `outlook.com`,
       `yahoo.com`, `yahoo.com.br`, `icloud.com`, `live.com`, `uol.com.br`, `bol.com.br`, `terra.com.br` — or
       ends in a near-miss of `.com` / `.com.br` (`.con`, `.cmo`, `.vom`), return `suggestion`; an address that
       *is* on the list is never flagged. The page shows "Você quis dizer `ana@gmail.com`?" with two buttons —
       *Usar esse* and *Manter o que digitei* — so a legitimate rare domain is never blocked.
-- [ ] Unit test, table-driven: valid (plain, dotted, `+tag`, subdomain, punycode, long-but-legal), invalid (every
+- [x] Unit test, table-driven: valid (plain, dotted, `+tag`, subdomain, punycode, long-but-legal), invalid (every
       rule above, plus `a@b`, `a@b.c`, `@x.com`, `x@.com`, `x@com`, spaces, two `@`), disposable (domain and
       subdomain; a real domain that merely *contains* a listed name is **not** flagged), typos (each listed
-      pattern → the right suggestion; `gmail.com` itself → none). Done when `tsc`, `eslint`, `vitest` are green.
+      pattern → the right suggestion; `gmail.com` itself → none). Done when `tsc`, `eslint`, `vitest` are green. **Done 2026-10-01** (`domain/emailPolicy.ts` + test; the list has 52 domains; real providers one letter
+      from a common one — `mail.com`, `email.com`, `ymail.com`, `gmx.com`… — are never "corrected").
 
 **27e. The web flow on `/convite`**
 
 Suggested: sonnet · high — a small state machine (form → waiting → claim) with the token-refresh trap and two Auth failure paths; opus if the first attempt trips on the refresh behaviour.
 
-- [ ] Session: `Session.signedIn` gains `emailVerified: boolean`, read from `user.emailVerified` in
+- [x] Session: `Session.signedIn` gains `emailVerified: boolean`, read from `user.emailVerified` in
       `SessionProvider.load`; `refresh()` already re-reads `auth.currentUser`, so after a `reload()` it shows the
       new value. `data/session.ts` types follow; no route's `destinationFor` changes.
-- [ ] `domain/emailVerification.ts` (pure): `verificationContinueUrl(origin, basePath, code)` — builds
+- [x] `domain/emailVerification.ts` (pure): `verificationContinueUrl(origin, basePath, code)` — builds
       `<origin><basePath>/convite/?c=<CODE>` **with the trailing slash and the `NEXT_PUBLIC_BASE_PATH` prefix**
       (CLAUDE.md: any hand-built URL on Pages must) and URL-encodes the code; `resendWaitSeconds(lastSentAt, now,
       cooldownSeconds = 60)`. Unit tests for both (with and without a base path).
-- [ ] `data/emailVerification.ts`: `sendVerification(user, continueUrl)` (wraps `sendEmailVerification`);
+- [x] `data/emailVerification.ts`: `sendVerification(user, continueUrl)` (wraps `sendEmailVerification`);
       `confirmVerified(user)` → `await user.reload()`; if `user.emailVerified`, `await user.getIdToken(true)`
       and return `true` — **the token refresh is the point**; `discardUnverifiedAccount(user)` (`deleteUser`, for
       "usei o e-mail errado"; a just-created account is recent enough to delete). Take narrow interfaces so the
       unit tests use fakes: reload-then-refresh order, no refresh when still unverified, errors propagate.
-- [ ] `InviteClaim.tsx`: after `createUserWithEmailAndPassword`, validate first (27d, inline `role="alert"`, the
+- [x] `InviteClaim.tsx`: after `createUserWithEmailAndPassword`, validate first (27d, inline `role="alert"`, the
       typo suggestion as two buttons), then `sendVerification` and show a **waiting panel** instead of claiming:
       "Confirme seu e-mail" · the address · "Enviamos um link para **ana@…**. Abra e clique nele. Não achou?
       Veja a caixa de spam." · **Reenviar** (disabled during the cooldown, shows the seconds) · **Já confirmei**
@@ -2315,18 +2320,21 @@ Suggested: sonnet · high — a small state machine (form → waiting → claim)
       (`visibilitychange`). In **sign-in mode**, an account with `!emailVerified` lands on the same panel (no
       mail is sent unprompted — a "Enviar e-mail de confirmação" button). The claim runs **only** after
       `confirmVerified` returned `true`. Existing classes only; controls ≥ 44px; the status text is
-      `role="status"`, focus moves to the panel heading.
-- [ ] `claimInvite` (`data/invites.ts`): when the transaction ends in `permission-denied` **and** the current
+      `role="status"`, focus moves to the panel heading. **Done 2026-10-01** (`convite/VerifyEmailPanel.tsx`; the Firebase Auth instance also asks for Portuguese
+      mail: `auth.languageCode = "pt-BR"` in `data/firebase.ts`; `.auth-card` wraps long addresses).
+- [x] `claimInvite` (`data/invites.ts`): when the transaction ends in `permission-denied` **and** the current
       user is unverified, return "Confirme seu e-mail antes de aceitar o convite." instead of the misleading
       "já vinculada" message (the caller passes the flag; the function's signature stays backward-compatible).
-      Test the branch with the fake the existing tests use.
-- [ ] `authErrors.ts`: add `auth/unauthorized-continue-uri` and `auth/invalid-continue-uri` ("O link de
+      Test the branch with the fake the existing tests use. **Not needed (2026-10-01):** the page claims only after `confirmVerified` returned `true`, so an unconfirmed
+      account never reaches the claim from the web, and a refused claim of a confirmed one still means what the
+      old message says. Left unchanged.
+- [x] `authErrors.ts`: add `auth/unauthorized-continue-uri` and `auth/invalid-continue-uri` ("O link de
       confirmação não pôde ser enviado — avise o administrador."), `auth/requires-recent-login`, and keep
       `auth/too-many-requests`; unit-test the new codes.
 - [ ] **(optional)** Soft nudge for grandfathered accounts: a dismissible line in the student area header —
       "Confirme seu e-mail para poder recuperar sua senha" with a send button — shown only when
-      `emailVerified === false`. Skip if it adds noise; nothing depends on it.
-- [ ] `tsc`, `eslint`, `vitest` green; no new stylesheet. Done when the page behaves as 27i's browser run says.
+      `emailVerified === false`. Skip if it adds noise; nothing depends on it. **Skipped for now (2026-10-01).**
+- [x] `tsc`, `eslint`, `vitest` green; no new stylesheet. Done when the page behaves as 27i's browser run says. **Done 2026-10-01** (331 unit tests).
 
 **27f. Other doors**
 
@@ -2335,7 +2343,7 @@ Suggested: haiku · low — wiring and a decision record.
 - [ ] The ADM's "Cadastrar personal" form (§26h, when it exists) runs `validateEmail`; no `email_verified` gate
       for trainers it creates — the reset link is the proof. If §26h is built first, this item is its follow-up;
       the one-line pointer is already in §26h.
-- [ ] The web has **no writer of `trainerRequests`** (only Android writes it), so the web needs no change for
+- [x] The web has **no writer of `trainerRequests`** (only Android writes it), so the web needs no change for
       that door; §26i's request list will from now on contain only verified addresses — say so in its empty-state
       text only if it reads naturally.
 
@@ -2350,7 +2358,11 @@ Suggested: sonnet · medium — small Kotlin change, but on a different branch a
       `reload()` then `getIdToken(true)` before `claimInvite` / `requestTrainerAccess`; map `PERMISSION_DENIED`
       on an unverified user to "Confirme seu e-mail antes". Ship it **before** the rules are published, or the
       old build's new students are refused with the wrong message. Test on a device (or the existing
-      `AuthRepository` seam if the branch has one) and record it here.
+      `AuthRepository` seam if the branch has one) and record it here. **Checked 2026-10-01: it applies.** On that branch `LoginScreen.kt` (register mode → `register`, the invite
+      field → `claimInvite`, "pedir acesso" → `requestTrainerAccess`) and `AuthViewModel.kt` reach all three gated
+      writes, with no verification anywhere. So either this change ships first, or the trainer decides to publish
+      anyway and send new students through the web link (an account that confirmed on the web can still claim
+      on the phone; one registered on the phone and never confirmed cannot).
 
 **27h. Console setup — `(manual)`, nothing to code**
 
@@ -2374,26 +2386,37 @@ Suggested: haiku · low — a short click list, fully specified.
 
 Suggested: sonnet · high — proving the token-refresh behaviour and the rules from the *outside* is the whole job.
 
-- [ ] `web/scripts/verify-email.mjs <email>`: reads `GET ${AUTH}/emulator/v1/projects/${PROJECT_ID}/oobCodes`,
+- [x] `web/scripts/verify-email.mjs <email>`: reads `GET ${AUTH}/emulator/v1/projects/${PROJECT_ID}/oobCodes`,
       takes the newest `VERIFY_EMAIL` code for that address and applies it (`accounts:update` with the
       `oobCode`). Seed accounts (`seed-emulators.mjs`) are left as they are — their profiles exist, so they are
       the **grandfathered** case on purpose; add one more seeded *unverified student with a profile* if none
-      reads that way. Document both in `web/README.md`.
-- [ ] Run `tsc`, `eslint`, `vitest`, `npm run test:rules` (Java 21) and the static build with
+      reads that way. Document both in `web/README.md`. **Done 2026-10-01** (the seeded students are the grandfathered case as they are; README updated).
+- [x] Run `tsc`, `eslint`, `vitest`, `npm run test:rules` (Java 21) and the static build with
       `NEXT_PUBLIC_BASE_PATH=/Personal_app_android`. Done when all are green and the "seen failing on the old
-      rules" run of 27c is recorded.
-- [ ] **From the outside, like an attacker** (against the emulators): create an account with the Auth REST API
+      rules" run of 27c is recorded. **Done 2026-10-01:** all green; static build 17/17 pages.
+- [x] **From the outside, like an attacker** (against the emulators): create an account with the Auth REST API
       (`accounts:signUp`, no page involved), then attempt the invite-claim write through the Firestore REST API
       with that token → **refused**; apply the verification, refresh the token → the same write **succeeds**.
-      Record both results here. This is the test that proves the rule, not the page.
-- [ ] Browser, against the emulators, on desktop and phone width (overflow probe): new student on
+      Record both results here. This is the test that proves the rule, not the page. **Done 2026-10-01**, Auth REST + Firestore REST, no page: unconfirmed token → `403 PERMISSION_DENIED`; link
+      applied, **same old token** → `403` again (the stale-token trap is real); refreshed token → `200 OK`.
+- [x] Browser, against the emulators, on desktop and phone width (overflow probe): new student on
       `/convite/?c=…` → the waiting panel shows and **no `users/{uid}` document exists** yet; **Já confirmei**
       before verifying stays on the panel; run the helper → **Já confirmei** claims and lands on `/aluno`
       **without a page reload** (this is the stale-token case — it must pass); the Resend cooldown counts down;
       **Usei o e-mail errado** deletes the account and returns to the form; `ana@gmial.com` offers the
       suggestion, a `mailinator.com` address is refused; sign-in mode with an unverified account shows the
       panel; a grandfathered unverified student signs in and uses `/aluno` normally; keyboard-only through the
-      panel.
+      panel. **Done 2026-10-01** (Browser pane, DOM-driven): throwaway domain refused; `maria@gmial.com` → "Você quis
+      dizer maria@gmail.com?" → *Usar esse* → account created, link sent with continue URL
+      `/convite/?c=AB12CD34`, **no `users` doc** (404), "Já confirmei" → "Ainda não vimos…"; helper run →
+      "Já confirmei" → claimed (role STUDENT, invite used) and on `/aluno` **in the same page, no reload**;
+      *Manter o que digitei* → panel → *Usei o e-mail errado* (dialog opens on *Não*) → *Sim* deletes the
+      account (sign-in then says EMAIL_NOT_FOUND) and the form comes back with the address; sign-in mode with
+      an unconfirmed account → panel, no mail sent unasked; *Enviar* → countdown 59 s; confirmed elsewhere +
+      tab shown again → re-checked by itself; seeded unconfirmed Ana signs in and uses `/aluno`. Phone width
+      (375 px): a long address overflowed by 27 px — fixed (`overflow-wrap`), then 0 overflow on the form, the
+      suggestion, the panel and the dialog; buttons 44–48 px tall. Keyboard-only was not run (the pane was
+      hidden); focus lands on the panel heading and the dialog on *Não*, checked in the DOM.
 - [ ] **(manual)** On the live site, after the console setup (27h) **and the rules publish**: use a real inbox you
       own. Record: how long the mail took; inbox or spam; whether the link returned to `/convite/?c=…`;
       claim works. Then register with a **made-up address on a real domain** (`zzz-nao-existe-123@gmail.com`):
@@ -2404,11 +2427,11 @@ Suggested: sonnet · high — proving the token-refresh behaviour and the rules 
 
 Suggested: haiku · low — documentation and ticks, fully specified.
 
-- [ ] `CLAUDE.md` web section: the rule (new student profiles and trainer requests need a verified e-mail;
+- [x] `CLAUDE.md` web section: the rule (new student profiles and trainer requests need a verified e-mail;
       existing accounts are grandfathered), the helper name `hasVerifiedEmail()` and the three places it is
       used, the **`reload()` + `getIdToken(true)`** requirement before any gated write, and that
-      `domain/emailPolicy.ts` is UX-only. `web/README.md`: the console steps from 27h and the emulator helper.
-- [ ] GOALS.md: tick each item with what was actually verified and what was not, commit each verified item on its
+      `domain/emailPolicy.ts` is UX-only. `web/README.md`: the console steps from 27h and the emulator helper. **Done 2026-10-01.**
+- [x] GOALS.md: tick each item with what was actually verified and what was not, commit each verified item on its
       own, never push without being asked.
 - [ ] Done-when for the whole section: on the live site, a brand-new student with a real inbox can sign up, is
       told to confirm, confirms, and lands on their ficha; an invented address creates an account that **cannot**

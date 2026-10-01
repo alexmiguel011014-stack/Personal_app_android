@@ -176,6 +176,21 @@ On the logging screen (`aluno/treino/LogSession.tsx`) every prescribed set has i
 (`domain/sessionLog.ts` `isExtraRow`/`canAddExtraRow`). It is a screen rule, not a data rule: Firestore
 does not check how many sets a log holds, and the phone's own button is unchanged.
 
+**A new account needs a confirmed e-mail before it gets a profile** (GOALS.md §27, 2026-10-01).
+Firebase checks only an address's shape, so `firestore.rules`' `hasVerifiedEmail()`
+(`request.auth.token.email_verified`) guards the entry doors — the invite claim (create *and* re-claim of
+`users/{uid}`) and `trainerRequests` create — and nothing else: every account that already has a profile
+(none was ever asked to confirm) keeps working. The rule reads the **ID token**, which does not change
+when the link is opened elsewhere: before a gated write call `confirmVerified` (`data/emailVerification.ts`
+— `reload()` *then* `getIdToken(true)`); skip the second step and the rules still see `false`. `/convite`
+sends the link (its continue URL is the same invite) and waits on `convite/VerifyEmailPanel.tsx` (resend
+with a cooldown, "Já confirmei", a re-check when the tab is shown again, "Usei o e-mail errado" deletes
+the unconfirmed account). `domain/emailPolicy.ts` (stricter syntax, "você quis dizer…?", throwaway
+domains) runs on new sign-ups only and is a courtesy, not security — a throwaway inbox can confirm.
+The gate holds only once the rules are republished; if the phone's student sign-up is live, it needs
+the same flow first (GOALS.md §27g). On the emulators, `node scripts/verify-email.mjs <email>` opens the
+link.
+
 **No AI provider key ever reaches the browser** (decided 2026-09-24, GOALS.md §23e): the web builds
 the §15 prompt for the trainer to paste into whichever AI app they use, and reads the reply back
 with Smart Paste. **One exception, added 2026-09-30 (GOALS.md §25i): the ficha editor's "Gemini"

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getFirebase } from "../../../data/firebase";
+import { trackActivity } from "../../../data/activity";
 import { bookSlot, loadSchedules, removeBooking } from "../../../data/schedules";
 import { addDays, weekdayOf } from "../../../domain/dates";
 import { AGENDA_DAYS, AGENDA_HOURS, bookingsAt, bookingsOn, type Schedule } from "../../../domain/schedules";
@@ -43,6 +44,7 @@ function Agenda({ trainerId }: { trainerId: string }) {
   if (data.status === "loading" || schedules === null) return <p className="loading">Carregando…</p>;
   if (data.status === "error") return <p role="alert">{data.message}</p>;
   if (schedules === "error") return <p role="alert">Não foi possível carregar a agenda.</p>;
+  const timeZone = data.timeZone;
 
   // Every student document, drafts included, so an older booking still shows a name.
   const names = new Map([...data.snapshot.drafts, ...data.snapshot.linked].map((s) => [s.id, s.name]));
@@ -54,10 +56,11 @@ function Agenda({ trainerId }: { trainerId: string }) {
   const monday = addDays(data.today, -AGENDA_DAYS.indexOf(todayName));
   const selectedDate = addDays(monday, AGENDA_DAYS.indexOf(selectedDay));
 
-  async function run(write: () => Promise<unknown>) {
+  async function run(write: () => Promise<unknown>, tracksBooking = false, activityAt?: number) {
     setError(null);
     try {
       await write();
+      if (tracksBooking && activityAt !== undefined) await trackActivity(getFirebase().db, trainerId, "bookingAdded", activityAt, timeZone);
       setVersion((v) => v + 1);
     } catch {
       setError("Não foi possível salvar. Tente de novo.");
@@ -155,7 +158,7 @@ function Agenda({ trainerId }: { trainerId: string }) {
                       type="button"
                       disabled={picked === undefined}
                       aria-label={`Agendar ${picked ?? "aluno"} em ${selectedDay} às ${hour}`}
-                      onClick={() => void run(() => bookSlot(db(), trainerId, studentId, selectedDay, hour))}
+                      onClick={() => void run(() => bookSlot(db(), trainerId, studentId, selectedDay, hour), true, Date.now())}
                     >
                       Agendar
                     </button>

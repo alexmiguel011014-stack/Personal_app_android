@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { getFirebase } from "../../data/firebase";
+import { trackActivity, writeTrainerStats } from "../../data/activity";
 import { loadSchedules } from "../../data/schedules";
 import { billingOwners } from "../../domain/billing";
 import { dashboardFigures, ADHERENCE_WINDOW_DAYS, QUIET_AFTER_DAYS, SESSIONS_WINDOW_DAYS } from "../../domain/dashboard";
@@ -37,6 +38,23 @@ export default function TrainerHome() {
 function Dashboard({ trainerId }: { trainerId: string }) {
   const { data, reload } = useTrainerData(trainerId, { ensureCharges: true });
   const [schedules, setSchedules] = useState<Schedule[] | "error" | null>(null);
+
+  useEffect(() => {
+    if (data.status !== "ready") return;
+    const now = data.now;
+    const { db } = getFirebase();
+    const key = `trainer-login:${trainerId}`;
+    try {
+      if (window.sessionStorage.getItem(key) !== "1") {
+        window.sessionStorage.setItem(key, "1");
+        void trackActivity(db, trainerId, "login", now, data.timeZone);
+      }
+    } catch {
+      // Session storage can be unavailable in a restricted browser; summary tracking still works.
+    }
+    const figures = dashboardFigures(data.snapshot, data.today, data.timeZone);
+    void writeTrainerStats(db, trainerId, figures, data.snapshot, now, data.timeZone).catch(() => {});
+  }, [data, trainerId]);
 
   useEffect(() => {
     let cancelled = false;

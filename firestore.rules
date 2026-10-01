@@ -56,7 +56,9 @@ service cloud.firestore {
 
     // The caller is the TRAINER who owns this record.
     function isOwningTrainer(trainerId) {
-      return isSignedIn() && request.auth.uid == trainerId && myRole() == 'TRAINER';
+      let user = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      return isSignedIn() && request.auth.uid == trainerId &&
+        field(user, 'role') == 'TRAINER' && field(user, 'accessStatus') != 'suspended';
     }
 
     // GOALS.md §23d: a student's own write can never result in a §17 permission their trainer
@@ -127,6 +129,11 @@ service cloud.firestore {
             field(request.resource.data, 'canLogBiometrics') == field(resource.data, 'canLogBiometrics') &&
             // Trainer-granted too: without this line a student could switch canAddSets on for themselves.
             field(request.resource.data, 'canAddSets') == field(resource.data, 'canAddSets') &&
+            field(request.resource.data, 'accessStatus') == field(resource.data, 'accessStatus') &&
+            field(request.resource.data, 'suspendedAt') == field(resource.data, 'suspendedAt') &&
+            field(request.resource.data, 'suspendedReason') == field(resource.data, 'suspendedReason') &&
+            field(request.resource.data, 'createdBy') == field(resource.data, 'createdBy') &&
+            field(request.resource.data, 'plan') == field(resource.data, 'plan') &&
             // GOALS.md §23d: the trainer's web dashboard reads both — inviteCode to drop the draft a
             // claim superseded, createdAt to size the adherence and "gone quiet" windows. A student
             // editing either could hide from their trainer's numbers.
@@ -351,6 +358,117 @@ service cloud.firestore {
       allow update: if isOwningTrainer(resource.data.trainerId) &&
         isBillingPlan(request.resource.data) &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['amountCents', 'dueDay', 'active']);
+    }
+
+    // §26c summaries are self-reported by the owning trainer. Their exact shapes are allow-listed
+    // so an ADM sees bounded, non-student data and cannot manufacture another trainer's metrics.
+    match /trainerStats/{trainerId} {
+      function isTrainerStats(d) {
+        let fields = ['trainerId', 'updatedAt', 'lastSeenAt', 'students', 'sessions7d', 'adherence28d',
+                      'quiet', 'pendingAssessments', 'billing'];
+        let studentFields = ['total', 'linked', 'pending'];
+        let billingFields = ['month', 'activePlans', 'planCents', 'expectedCents', 'receivedCents', 'overdueCents'];
+        return d.keys().hasAll(fields) && d.keys().hasOnly(fields) &&
+          d.trainerId == trainerId && d.trainerId is string && d.updatedAt is int &&
+          d.lastSeenAt is int && d.students is map && d.students.keys().hasAll(studentFields) &&
+          d.students.keys().hasOnly(studentFields) && d.students.total is int && d.students.total >= 0 &&
+          d.students.linked is int && d.students.linked >= 0 && d.students.pending is int && d.students.pending >= 0 &&
+          d.sessions7d is int && d.sessions7d >= 0 &&
+          (d.adherence28d == null || (d.adherence28d is number && d.adherence28d >= 0 && d.adherence28d <= 1)) &&
+          d.quiet is int && d.quiet >= 0 && d.pendingAssessments is int && d.pendingAssessments >= 0 &&
+          d.billing is map && d.billing.keys().hasAll(billingFields) && d.billing.keys().hasOnly(billingFields) &&
+          d.billing.month is string && d.billing.month.matches('[0-9]{4}-(0[1-9]|1[0-2])') &&
+          d.billing.activePlans is int && d.billing.activePlans >= 0 &&
+          d.billing.planCents is int && d.billing.planCents >= 0 &&
+          d.billing.expectedCents is int && d.billing.expectedCents >= 0 &&
+          d.billing.receivedCents is int && d.billing.receivedCents >= 0 &&
+          d.billing.overdueCents is int && d.billing.overdueCents >= 0;
+      }
+
+      allow read: if isAdmin() || isOwningTrainer(trainerId);
+      allow create, update: if isOwningTrainer(trainerId) && isTrainerStats(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /trainerActivity/{activityId} {
+      function allowedActions() {
+        return ['login', 'studentCreated', 'inviteGenerated', 'fichaSaved', 'geminiGenerated',
+                'chargePaid', 'bookingAdded', 'measurementAdded', 'assessmentRequested'];
+      }
+
+      function isTrainerActivity(d) {
+        let fields = ['trainerId', 'month', 'updatedAt', 'actions', 'activeDays'];
+        return d.keys().hasAll(fields) && d.keys().hasOnly(fields) &&
+          d.trainerId is string && d.month is string && d.month.matches('[0-9]{4}-(0[1-9]|1[0-2])') &&
+          activityId == d.trainerId + '_' + d.month && d.updatedAt is int &&
+          d.actions is map && d.actions.keys().hasOnly(allowedActions());
+      }
+
+      function actionsAreNonnegative(actions) {
+        return (!('login' in actions) || (actions.login is int && actions.login >= 0)) &&
+          (!('studentCreated' in actions) || (actions.studentCreated is int && actions.studentCreated >= 0)) &&
+          (!('inviteGenerated' in actions) || (actions.inviteGenerated is int && actions.inviteGenerated >= 0)) &&
+          (!('fichaSaved' in actions) || (actions.fichaSaved is int && actions.fichaSaved >= 0)) &&
+          (!('geminiGenerated' in actions) || (actions.geminiGenerated is int && actions.geminiGenerated >= 0)) &&
+          (!('chargePaid' in actions) || (actions.chargePaid is int && actions.chargePaid >= 0)) &&
+          (!('bookingAdded' in actions) || (actions.bookingAdded is int && actions.bookingAdded >= 0)) &&
+          (!('measurementAdded' in actions) || (actions.measurementAdded is int && actions.measurementAdded >= 0)) &&
+          (!('assessmentRequested' in actions) || (actions.assessmentRequested is int && actions.assessmentRequested >= 0));
+      }
+
+      function actionsDoNotDecrease(next, previous) {
+        return (('login' in next) ? next.login >= previous.get('login', 0) : previous.get('login', 0) == 0) &&
+          (('studentCreated' in next) ? next.studentCreated >= previous.get('studentCreated', 0) : previous.get('studentCreated', 0) == 0) &&
+          (('inviteGenerated' in next) ? next.inviteGenerated >= previous.get('inviteGenerated', 0) : previous.get('inviteGenerated', 0) == 0) &&
+          (('fichaSaved' in next) ? next.fichaSaved >= previous.get('fichaSaved', 0) : previous.get('fichaSaved', 0) == 0) &&
+          (('geminiGenerated' in next) ? next.geminiGenerated >= previous.get('geminiGenerated', 0) : previous.get('geminiGenerated', 0) == 0) &&
+          (('chargePaid' in next) ? next.chargePaid >= previous.get('chargePaid', 0) : previous.get('chargePaid', 0) == 0) &&
+          (('bookingAdded' in next) ? next.bookingAdded >= previous.get('bookingAdded', 0) : previous.get('bookingAdded', 0) == 0) &&
+          (('measurementAdded' in next) ? next.measurementAdded >= previous.get('measurementAdded', 0) : previous.get('measurementAdded', 0) == 0) &&
+          (('assessmentRequested' in next) ? next.assessmentRequested >= previous.get('assessmentRequested', 0) : previous.get('assessmentRequested', 0) == 0);
+      }
+
+      function validDays(days) {
+        return days is list && days.size() <= 31 &&
+          (days.size() < 1 || days[0] is string) && (days.size() < 2 || days[1] is string) &&
+          (days.size() < 3 || days[2] is string) && (days.size() < 4 || days[3] is string) &&
+          (days.size() < 5 || days[4] is string) && (days.size() < 6 || days[5] is string) &&
+          (days.size() < 7 || days[6] is string) && (days.size() < 8 || days[7] is string) &&
+          (days.size() < 9 || days[8] is string) && (days.size() < 10 || days[9] is string) &&
+          (days.size() < 11 || days[10] is string) && (days.size() < 12 || days[11] is string) &&
+          (days.size() < 13 || days[12] is string) && (days.size() < 14 || days[13] is string) &&
+          (days.size() < 15 || days[14] is string) && (days.size() < 16 || days[15] is string) &&
+          (days.size() < 17 || days[16] is string) && (days.size() < 18 || days[17] is string) &&
+          (days.size() < 19 || days[18] is string) && (days.size() < 20 || days[19] is string) &&
+          (days.size() < 21 || days[20] is string) && (days.size() < 22 || days[21] is string) &&
+          (days.size() < 23 || days[22] is string) && (days.size() < 24 || days[23] is string) &&
+          (days.size() < 25 || days[24] is string) && (days.size() < 26 || days[25] is string) &&
+          (days.size() < 27 || days[26] is string) && (days.size() < 28 || days[27] is string) &&
+          (days.size() < 29 || days[28] is string) && (days.size() < 30 || days[29] is string) &&
+          (days.size() < 31 || days[30] is string);
+      }
+
+      allow read: if isAdmin() || isOwningTrainer(resource.data.trainerId);
+      allow create: if isOwningTrainer(request.resource.data.trainerId) &&
+        isTrainerActivity(request.resource.data) && actionsAreNonnegative(request.resource.data.actions) && validDays(request.resource.data.activeDays);
+      allow update: if isOwningTrainer(request.resource.data.trainerId) &&
+        isTrainerActivity(request.resource.data) && resource.data.trainerId == request.resource.data.trainerId &&
+        actionsAreNonnegative(request.resource.data.actions) && actionsDoNotDecrease(request.resource.data.actions, resource.data.actions) &&
+        validDays(request.resource.data.activeDays);
+      allow delete: if isAdmin();
+    }
+
+    match /adminAudit/{auditId} {
+      function validAudit(d) {
+        let fields = ['at', 'adminUid', 'action', 'targetUid', 'note'];
+        return d.keys().hasAll(fields) && d.keys().hasOnly(fields) && d.at is int &&
+          d.adminUid == request.auth.uid && d.action in ['trainer.create', 'trainer.suspend', 'trainer.reactivate',
+          'trainer.promote', 'request.reject', 'trainer.resetEmail'] && d.targetUid is string &&
+          d.note is string && d.note.size() <= 200;
+      }
+
+      allow read: if isAdmin();
+      allow create: if isAdmin() && validAudit(request.resource.data);
     }
 
     // Everything else: denied by default (no catch-all match).

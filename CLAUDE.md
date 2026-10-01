@@ -115,6 +115,32 @@ Two more web conventions (§23f) that differ from Android on purpose:
   tab). That keeps the invariant the Android code protects above — Firebase never holds a session
   the UI pretends isn't there — by construction. Don't port the Android startup sign-out to the web.
 
+**ADM area (§26).** `/admin` has its own `RequireArea` guard and `AppShell`; its navigation is
+Visão geral, Personais, Solicitações and Minha conta. `destinationFor` sends an ADM to `/admin`,
+so opening `/app` sends them back to their admin area. The browser screens query trainer profile
+documents and aggregate collections only: `trainerStats`, `trainerActivity`, count-only student
+queries, and `adminAudit`; they do not fetch student documents. An ADM can technically read every
+`users` document under the existing Firestore rules, so this UI boundary is not a claim that the
+underlying role lacks that permission.
+
+`trainerStats/{trainerId}` is written by the trainer's web `/app` visit from the existing dashboard
+figures and snapshot, with `lastSeenAt` throttled by `shouldWriteLastSeen`. It contains counts and
+billing totals, not student records. `trainerActivity/{trainerId}_{YYYY-MM}` is written by the
+trainer client through `trackActivity`: action counters and local calendar days, with telemetry
+errors swallowed so they cannot block the trainer's action. `adminAudit` is append-only from the
+admin client for create, suspend/reactivate, promotion/rejection and reset-email actions; profile
+and status changes write their audit entry in the same Firestore transaction/batch.
+
+Suspension sets `users/{uid}.accessStatus` to `suspended` (plus timestamp/reason) and Firestore
+rules then deny that trainer's protected reads and writes. It does not disable or delete the Firebase
+Auth account; the trainer can still read their own user profile so the site can explain the status.
+The self-update rule freezes `accessStatus`, `suspendedAt` and `suspendedReason`, preventing
+self-reactivation. Linked students retain access to their assigned data and their own logs. The
+ADM create-personal flow uses a named secondary Firebase app/Auth instance, then signs it out and
+deletes it so the ADM session stays active. When emulators are enabled, the secondary Auth instance
+must connect to the Auth emulator too; the primary Firestore client continues to handle the profile
+and audit write. See `web/src/data/adminCreate.ts` and GOALS.md §26 for the manual App Check caveat.
+
 Before writing route code in `web/`, read `web/AGENTS.md`: this Next differs from what models
 remember (global `PageProps`/`LayoutProps` helpers, `params` as a Promise).
 

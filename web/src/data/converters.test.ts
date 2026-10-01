@@ -12,6 +12,10 @@ import {
   toLinkedStudent,
   toPayment,
   toSchedule,
+  toAuditEntry,
+  toTrainerActivity,
+  toTrainerStats,
+  toTrainerUser,
   toWorkout,
   toWorkoutLog,
   workoutLogToFirestore,
@@ -57,6 +61,32 @@ describe("toDraftStudent / toLinkedStudent — FirestoreMappers' defaults and le
     // Anything but a real boolean reads as off — a permission is never granted by a stray value.
     expect(toLinkedStudent("u1", { role: "STUDENT", name: "Maria", canAddSets: "true" })?.canAddSets).toBe(false);
     expect(toLinkedStudent("u1", { role: "STUDENT", name: "Maria" })?.inviteCode).toBeNull();
+  });
+});
+
+describe("§26e admin converters", () => {
+  it("defaults missing trainer fields and treats unknown access status as active", () => {
+    expect(toTrainerUser("t1", { role: "TRAINER", accessStatus: "future" })).toMatchObject({
+      id: "t1", name: "", email: "", createdAt: 0, accessStatus: "active", suspendedAt: null,
+    });
+    expect(toTrainerUser("x", { role: "STUDENT" })).toBeNull();
+  });
+
+  it("fills absent stats and activity fields, and skips malformed identifying fields", () => {
+    expect(toTrainerStats("t1", { trainerId: "t1" })).toMatchObject({
+      updatedAt: 0, lastSeenAt: null, students: { total: 0, linked: 0, pending: 0 }, billing: { month: "", planCents: 0 },
+    });
+    expect(toTrainerStats("broken", {})).toBeNull();
+    expect(toTrainerActivity("t1_2026-10", { trainerId: "t1", month: "2026-10" })).toMatchObject({
+      updatedAt: 0, activeDays: [], actions: { login: 0, studentCreated: 0 },
+    });
+    expect(toTrainerActivity("broken", { trainerId: "t1" })).toBeNull();
+  });
+
+  it("accepts known audit actions and drops malformed entries", () => {
+    expect(toAuditEntry("a1", { at: 1, adminUid: "admin", action: "trainer.suspend", targetUid: "t1" }))
+      .toMatchObject({ id: "a1", note: "" });
+    expect(toAuditEntry("bad", { at: 1, adminUid: "admin", action: "other", targetUid: "t1" })).toBeNull();
   });
 });
 

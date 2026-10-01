@@ -67,6 +67,13 @@ Os dados trafegam via conexões criptografadas (HTTPS/TLS) para os servidores do
 APIs de IA. O acesso ao banco de dados é restrito por regras de segurança do Firestore
 (`firestore.rules`), garantindo que um trainer só acesse os dados dos próprios alunos.
 
+> ⚠️ **Rascunho para revisão do trainer — não publicar sem aprovação.** O operador da plataforma
+> pode ver, por personal, contagens agregadas de alunos, ações, dias de uso e resumos de cobrança
+> na área administrativa. Essas telas não leem documentos de alunos. Ainda assim, as regras do
+> Firestore permitem tecnicamente que uma conta ADM leia documentos da coleção `users`; portanto,
+> a limitação descrita aqui se refere às telas administrativas, não a uma impossibilidade técnica
+> de acesso do papel ADM.
+
 ## 7. Dados de menores de idade
 
 [PREENCHER: se alunos menores de idade poderão ter conta própria no app, ou se o cadastro é feito

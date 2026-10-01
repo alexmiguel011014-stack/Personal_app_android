@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { addBiometric, loadStudentBiometrics } from "../../../../data/biometrics";
+import { trackActivity } from "../../../../data/activity";
 import { getFirebase } from "../../../../data/firebase";
 import { formatBodyFat, formatKg, parseMeasurement, type Biometric } from "../../../../domain/biometrics";
 import { formatDate, localDate } from "../../../../domain/dates";
@@ -50,7 +51,10 @@ export function MeasurementsSection({
     }
     setBusy(true);
     try {
-      await addBiometric(getFirebase().db, trainerId, studentId, measurement, Date.now());
+      const { db } = getFirebase();
+      const now = Date.now();
+      await addBiometric(db, trainerId, studentId, measurement, now);
+      await trackActivity(db, trainerId, "measurementAdded", now, timeZone);
       setWeight("");
       setBodyFat("");
       setMessage(null);

@@ -1,4 +1,4 @@
-// GOALS.md §23f/§23g: puts the local emulators into a known state for exercising the web app by hand
+// GOALS.md §23f/§23g and §26j: puts the local emulators into a known state for exercising the web app by hand
 // or from a browser — fake accounts and data under the demo project, never the real one.
 //
 //   1. start the emulators:  npx firebase emulators:start --config ../firebase.json
@@ -24,6 +24,10 @@
 //   Diego  has a pending assessment request and no training plan; logged in, he may answer it.
 //   Maria  a draft with an open invite (the /convite flow).
 //   Pedro  a draft with no invite.
+//   Admin  admin@teste.dev can inspect the ADM area. The original trainer has recent activity and an
+//          overdue charge; quiet@teste.dev has three linked students and a fresh but quiet summary;
+//          away@teste.dev has a stale summary and overdue balance; never@teste.dev has never signed in
+//          (no stats document); suspended@teste.dev has recent usage but suspended access.
 
 import { initializeTestEnvironment } from "@firebase/rules-unit-testing";
 
@@ -34,6 +38,11 @@ const TIME_ZONE = "America/Sao_Paulo"; // UTC-3 all year since 2019
 const PASSWORD = "senha123";
 
 const TRAINER_EMAIL = "treinador@teste.dev";
+const ADMIN_EMAIL = "admin@teste.dev";
+const QUIET_TRAINER_EMAIL = "quiet@teste.dev";
+const AWAY_TRAINER_EMAIL = "away@teste.dev";
+const NEVER_TRAINER_EMAIL = "never@teste.dev";
+const SUSPENDED_TRAINER_EMAIL = "suspended@teste.dev";
 const OPEN_INVITE = "AB12CD34";
 
 // Small copies of src/domain/dates.ts, kept inline so this script runs on plain Node.
@@ -49,6 +58,32 @@ function addDays(date, days) {
 /** 07:00 in São Paulo, `days` days before today. */
 function morningOf(daysAgo) {
   return Date.parse(`${addDays(localDate(Date.now()), -daysAgo)}T07:00:00-03:00`);
+}
+
+function trainerStats(trainerId, daysAgo, values) {
+  return {
+    trainerId,
+    updatedAt: morningOf(daysAgo),
+    lastSeenAt: morningOf(values.lastSeenDaysAgo),
+    students: values.students,
+    sessions7d: values.sessions7d,
+    adherence28d: values.adherence28d,
+    quiet: values.quiet,
+    pendingAssessments: values.pendingAssessments,
+    billing: { month: localDate(Date.now()).slice(0, 7), ...values.billing },
+  };
+}
+
+function trainerActivity(trainerId, daysAgo, actions) {
+  const day = localDate(morningOf(daysAgo));
+  const month = day.slice(0, 7);
+  return [`trainerActivity/${trainerId}_${month}`, {
+    trainerId,
+    month,
+    updatedAt: morningOf(daysAgo),
+    actions,
+    activeDays: [day],
+  }];
 }
 
 async function resetAuth() {
@@ -91,10 +126,28 @@ try {
   const lastMonth = addDays(`${thisMonth}-01`, -1).slice(0, 7);
 
   const trainerId = await createAccount(TRAINER_EMAIL);
+  const adminId = await createAccount(ADMIN_EMAIL);
+  const quietTrainerId = await createAccount(QUIET_TRAINER_EMAIL);
+  const awayTrainerId = await createAccount(AWAY_TRAINER_EMAIL);
+  const neverTrainerId = await createAccount(NEVER_TRAINER_EMAIL);
+  const suspendedTrainerId = await createAccount(SUSPENDED_TRAINER_EMAIL);
   const ana = await createAccount("ana@teste.dev");
   const bruno = await createAccount("bruno@teste.dev");
   const carla = await createAccount("carla@teste.dev");
   const diego = await createAccount("diego@teste.dev");
+  const lucia = await createAccount("lucia@teste.dev");
+  const marco = await createAccount("marco@teste.dev");
+  const nina = await createAccount("nina@teste.dev");
+
+  const trainerUser = (name, email, createdDaysAgo, overrides = {}) => ({
+    role: "TRAINER",
+    name,
+    email,
+    createdAt: morningOf(createdDaysAgo),
+    createdBy: adminId,
+    accessStatus: "active",
+    ...overrides,
+  });
 
   const linked = (name, uid, inviteCode, createdAt, overrides = {}) => [
     `users/${uid}`,
@@ -112,7 +165,63 @@ try {
   ];
 
   const documents = Object.fromEntries([
-    [`users/${trainerId}`, { role: "TRAINER" }],
+    [`users/${adminId}`, { role: "ADM", name: "Admin de teste", email: ADMIN_EMAIL, createdAt: morningOf(60) }],
+    [`users/${trainerId}`, trainerUser("Treinador de teste", TRAINER_EMAIL, 60)],
+    [`users/${quietTrainerId}`, trainerUser("Personal Quieto", QUIET_TRAINER_EMAIL, 45)],
+    [`users/${awayTrainerId}`, trainerUser("Personal Sumido", AWAY_TRAINER_EMAIL, 90)],
+    [`users/${neverTrainerId}`, trainerUser("Personal Novo", NEVER_TRAINER_EMAIL, 5)],
+    [`users/${suspendedTrainerId}`, trainerUser("Personal Suspenso", SUSPENDED_TRAINER_EMAIL, 50, {
+      accessStatus: "suspended",
+      suspendedAt: morningOf(2),
+      suspendedReason: "Conta suspensa para teste",
+    })],
+
+    // §26j: the second trainer has three linked students; the other profiles exercise ADM usage states.
+    [`users/${lucia}`, { role: "STUDENT", trainerId: quietTrainerId, ...profile("Lúcia Martins"), createdAt: morningOf(40) }],
+    [`users/${marco}`, { role: "STUDENT", trainerId: quietTrainerId, ...profile("Marco Silva", { gender: "Masculino" }), createdAt: morningOf(35) }],
+    [`users/${nina}`, { role: "STUDENT", trainerId: quietTrainerId, ...profile("Nina Costa"), createdAt: morningOf(20) }],
+
+    [`trainerStats/${trainerId}`, trainerStats(trainerId, 0, {
+      lastSeenDaysAgo: 0,
+      students: { total: 6, linked: 4, pending: 2 },
+      sessions7d: 4,
+      adherence28d: 0.72,
+      quiet: 1,
+      pendingAssessments: 1,
+      billing: { activePlans: 2, planCents: 27000, expectedCents: 27000, receivedCents: 15000, overdueCents: 12000 },
+    })],
+    [`trainerStats/${quietTrainerId}`, trainerStats(quietTrainerId, 14, {
+      lastSeenDaysAgo: 14,
+      students: { total: 3, linked: 3, pending: 0 },
+      sessions7d: 0,
+      adherence28d: 0.4,
+      quiet: 2,
+      pendingAssessments: 0,
+      billing: { activePlans: 3, planCents: 45000, expectedCents: 45000, receivedCents: 45000, overdueCents: 0 },
+    })],
+    [`trainerStats/${awayTrainerId}`, trainerStats(awayTrainerId, 35, {
+      lastSeenDaysAgo: 40,
+      students: { total: 2, linked: 2, pending: 0 },
+      sessions7d: 0,
+      adherence28d: 0,
+      quiet: 2,
+      pendingAssessments: 0,
+      billing: { activePlans: 2, planCents: 30000, expectedCents: 30000, receivedCents: 15000, overdueCents: 15000 },
+    })],
+    [`trainerStats/${suspendedTrainerId}`, trainerStats(suspendedTrainerId, 2, {
+      lastSeenDaysAgo: 3,
+      students: { total: 1, linked: 1, pending: 0 },
+      sessions7d: 1,
+      adherence28d: 0.5,
+      quiet: 0,
+      pendingAssessments: 0,
+      billing: { activePlans: 1, planCents: 15000, expectedCents: 15000, receivedCents: 15000, overdueCents: 0 },
+    })],
+    // never@teste.dev intentionally has no trainerStats/lastSeenAt document: "Nunca entrou".
+    trainerActivity(trainerId, 0, { login: 2, studentCreated: 1, geminiGenerated: 1, chargePaid: 1, fichaSaved: 2 }),
+    trainerActivity(quietTrainerId, 14, { login: 1, fichaSaved: 1, measurementAdded: 1 }),
+    trainerActivity(awayTrainerId, 35, { login: 1, studentCreated: 1 }),
+    trainerActivity(suspendedTrainerId, 3, { login: 1, bookingAdded: 1 }),
 
     // Ana: claimed invite ANA00001, which was minted from draft-ana.
     ["students/draft-ana", { trainerId, role: "student", ...profile("Ana Costa"), createdAt: morningOf(60) }],

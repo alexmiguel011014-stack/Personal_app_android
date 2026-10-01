@@ -89,6 +89,20 @@ export default function LoginPage() {
     );
   }
 
+  if (session.status === "signedIn" && session.profile.role === "TRAINER" && session.profile.accessStatus === "suspended") {
+    return (
+      <PublicShell>
+        <div className="public-main">
+          <div className="auth-card">
+            <h1>Conta suspensa</h1>
+            <p role="alert">Sua conta de personal está suspensa. Fale com o administrador da plataforma.</p>
+            <SignOutButton />
+          </div>
+        </div>
+      </PublicShell>
+    );
+  }
+
   return (
     <PublicShell>
       <div className="public-main">

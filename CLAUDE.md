@@ -153,13 +153,31 @@ that branch):
 | `domain/schedules.ts`, `data/schedules.ts` | `ScheduleScreen`; `TrainerViewModel.bookSlot` |
 
 Web-only, with no Kotlin original: mensalidades (`domain/payments.ts`, `domain/billing.ts` — the
-trainer decided the phone doesn't show payments) and the dashboard's numbers (`domain/metrics.ts`,
-`domain/dashboard.ts`).
+trainer decided the phone doesn't show payments), the dashboard's numbers (`domain/metrics.ts`,
+`domain/dashboard.ts`), and the **several-treinos-at-once ficha flow** (GOALS.md §25):
+`parseWorkouts` in `domain/workoutParser.ts` splits one pasted answer ("Treino A / B / C…") into one
+treino each — it is *added beside* `parseWorkoutName`/`parseExercises`/`applyPaste`, which mirror
+`WorkoutParser.kt` and must NOT change (the phone still pastes one ficha at a time, and the two must
+agree on it); `data/workouts.ts` `saveWorkouts` writes the treinos in one atomic batch (same stored
+documents as one-by-one); the review screen is `fichas/editar/MultiFichaReview.tsx`. The multi-treino
+prompt (`web/prompt/ficha_prompt_multi.md`) and the Gemini system instruction
+(`web/prompt/ficha_system_gemini.md`) are web-only for the same reason — the shared
+`ficha_prompt_template.md` asks for one ficha — and `scripts/copy-prompt-assets.mjs` copies them next
+to the shared assets.
 
 **No AI provider key ever reaches the browser** (decided 2026-09-24, GOALS.md §23e): the web builds
 the §15 prompt for the trainer to paste into whichever AI app they use, and reads the reply back
-with Smart Paste. Direct generation (`GenerativeAiService`, BYO keys, Firebase AI Logic) stays on
-Android; a server-side proxy would be its own item (a Cloud Function, which needs the Blaze plan).
+with Smart Paste. **One exception, added 2026-09-30 (GOALS.md §25i): the ficha editor's "Gemini"
+tab calls Gemini through Firebase AI Logic** (`data/gemini.ts`) — the Gemini Developer API's free
+tier from the browser with *no key in the page* (access is configured in the Firebase console and
+every request carries an App Check token), so the rule about keys still holds. Rules for that call:
+the model id is one constant (`GEMINI_DEFAULT_MODEL`, overridable by the Remote Config parameter
+`ficha_model_name`) because ids rotate and a retired one answers 404; the student's name and medical
+notes are NOT sent unless the trainer ticks the box (on the free tier Google may use content to improve
+its products); every failure points at the copy-and-paste tab, which stays the fallback. Any other
+provider, or any key in the browser, still needs its own decision. Direct generation with BYO keys
+(`GenerativeAiService`) stays on Android; a server-side proxy would be its own item (a Cloud
+Function, which needs the Blaze plan).
 
 Checks, from `web/`: `npm test`, `npm run lint`, `npx tsc --noEmit` (run `npx next typegen` first
 on a fresh checkout), `npm run build`, and `npm run test:rules` (emulators, Java 21).

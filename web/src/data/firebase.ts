@@ -20,6 +20,9 @@ export interface FirebaseClients {
 
 const useEmulators = process.env.NEXT_PUBLIC_FIREBASE_EMULATORS === "true";
 
+/** True when the app runs against the local emulators (no App Check there — see getFirebase). */
+export const usingEmulators = useEmulators;
+
 let clients: FirebaseClients | null = null;
 
 /** Browser-only: call from client components. Initialises once per page load. */

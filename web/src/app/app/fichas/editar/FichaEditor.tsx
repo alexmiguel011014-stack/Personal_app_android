@@ -6,14 +6,17 @@ import { useEffect, useState, type FormEvent } from "react";
 import { getFirebase } from "../../../../data/firebase";
 import { loadPromptAssets, type PromptAssets } from "../../../../data/promptAssets";
 import type { TrainerStudent } from "../../../../data/students";
-import { loadStudentWorkouts, newWorkout, saveWorkout } from "../../../../data/workouts";
+import { loadStudentWorkouts, newWorkout, saveWorkout, saveWorkouts } from "../../../../data/workouts";
 import type { Exercise } from "../../../../domain/exercise";
-import { buildFichaPrompt } from "../../../../domain/fichaPrompt";
-import { kotlinTrim } from "../../../../domain/kotlin";
-import { calculateEffectiveVolume } from "../../../../domain/workoutParser";
+import { buildFichaPrompt, buildMultiFichaPrompt } from "../../../../domain/fichaPrompt";
+import { isKotlinBlank, kotlinTrim } from "../../../../domain/kotlin";
+import { calculateEffectiveVolume, parseWorkouts, type ParsedWorkout } from "../../../../domain/workoutParser";
 import { applyPaste, manualExercise, workoutErrors, type Workout } from "../../../../domain/workouts";
 import { useSession } from "../../../SessionProvider";
 import { useTrainerData } from "../../useTrainerData";
+import { GeminiPanel } from "./GeminiPanel";
+import { MultiFichaReview, type ReviewItem } from "./MultiFichaReview";
+import { RequestBuilder } from "./RequestBuilder";
 
 // GOALS.md §23g: building a ficha — PromptFichaScreen and ManualWorkoutScreen on one page, since a
 // desktop has the room: copy the §15 prompt into any AI app, paste the reply into Smart Paste
@@ -30,7 +33,15 @@ export function FichaEditor() {
   return <Loader trainerId={session.uid} studentId={studentId} workoutId={workoutId} />;
 }
 
-function Loader({ trainerId, studentId, workoutId }: { trainerId: string; studentId: string; workoutId: string | null }) {
+function Loader({
+  trainerId,
+  studentId,
+  workoutId,
+}: {
+  trainerId: string;
+  studentId: string;
+  workoutId: string | null;
+}) {
   const { data } = useTrainerData(trainerId);
   const [existing, setExisting] = useState<Workout | null | undefined>(workoutId ? undefined : null);
 
@@ -51,7 +62,11 @@ function Loader({ trainerId, studentId, workoutId }: { trainerId: string; studen
 
   const account = data.snapshot.linked.find((l) => l.id === studentId);
   const draft = data.snapshot.drafts.find((d) => d.id === studentId);
-  const student: TrainerStudent | null = account ? { kind: "linked", doc: account } : draft ? { kind: "draft", doc: draft } : null;
+  const student: TrainerStudent | null = account
+    ? { kind: "linked", doc: account }
+    : draft
+      ? { kind: "draft", doc: draft }
+      : null;
   const back = `/app/alunos/detalhe?id=${encodeURIComponent(studentId)}`;
 
   if (student === null) return <p>Aluno não encontrado.</p>;
@@ -98,6 +113,14 @@ function FichaForm({
   const [addError, setAddError] = useState<string | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  // GOALS.md §25: set when the pasted answer holds two or more treinos (new fichas only).
+  const [review, setReview] = useState<ReviewItem[] | null>(null);
+  const [reviewWarnings, setReviewWarnings] = useState<string[]>([]);
+  const [reviewErrors, setReviewErrors] = useState<string[]>([]);
+  // GOALS.md §25f/§25i: two ways of asking an AI — copy a prompt to another app, or Gemini here.
+  const [tab, setTab] = useState<"copy" | "gemini">("copy");
+  const [shortPrompt, setShortPrompt] = useState(false);
+  const [includePersonal, setIncludePersonal] = useState(true);
 
   // Fetched up front, so "Copiar prompt" can copy inside the click itself — some browsers refuse a
   // clipboard write that waits on a network request first.
@@ -113,7 +136,13 @@ function FichaForm({
   }, []);
 
   async function copyPrompt(loaded: PromptAssets) {
-    const text = buildFichaPrompt(loaded.template, loaded.volumeReference, student.doc, request);
+    // New fichas ask for several treinos at once (web-only template); an existing ficha is one treino.
+    const text = existing
+      ? buildFichaPrompt(loaded.template, loaded.volumeReference, student.doc, request)
+      : buildMultiFichaPrompt(loaded.multiTemplate, loaded.volumeReference, student.doc, request, {
+          shortPrompt,
+          deidentify: !includePersonal,
+        });
     setPrompt(text);
     try {
       await navigator.clipboard.writeText(text);
@@ -123,8 +152,39 @@ function FichaForm({
     }
   }
 
+  /** Two or more treinos (new fichas only) open the review; the phone's paste would pile them into one. */
+  function openReview(workouts: ParsedWorkout[], warnings: string[]) {
+    setReviewErrors([]);
+    setReview(workouts.map((w, i) => ({ key: `${i}-${w.name}`, name: w.name, include: true, exercises: w.exercises })));
+    setReviewWarnings(warnings);
+  }
+
+  /** What Gemini returned: several treinos go to the review, a single one fills the editor below. */
+  function fromGemini(workouts: ParsedWorkout[], warnings: string[]) {
+    if (!existing && workouts.length >= 2) {
+      openReview(workouts, warnings);
+      return;
+    }
+    setReview(null);
+    setReviewWarnings([]);
+    const only = workouts[0];
+    setName((current) => (isKotlinBlank(current) ? only.name : current));
+    setExercises(only.exercises);
+  }
+
   function paste(text: string) {
     setPasted(text);
+    setReviewErrors([]);
+    // An existing ficha is always a single treino.
+    if (!existing) {
+      const parsed = parseWorkouts(text);
+      if (parsed.workouts.length >= 2) {
+        openReview(parsed.workouts, parsed.warnings);
+        return;
+      }
+    }
+    setReview(null);
+    setReviewWarnings([]);
     const next = applyPaste(text, { name, exercises });
     setName(next.name);
     setExercises(next.exercises);
@@ -162,6 +222,29 @@ function FichaForm({
     }
   }
 
+  async function saveAll() {
+    if (review === null) return;
+    const chosen = review.filter((item) => item.include);
+    const found = chosen.flatMap((item) =>
+      workoutErrors(item.name, item.exercises).map((error) => `${item.name || "Treino sem nome"}: ${error}`),
+    );
+    setReviewErrors(found);
+    if (found.length > 0 || chosen.length === 0) return;
+    setBusy(true);
+    try {
+      const now = Date.now();
+      // createdAt falls from the first treino to the last, so the trainer's newest-first list reads A, B, C.
+      const workouts = chosen.map((item, index) =>
+        newWorkout(trainerId, student.doc.id, kotlinTrim(item.name), item.exercises, now + (chosen.length - 1 - index)),
+      );
+      await saveWorkouts(getFirebase().db, trainerId, workouts, now);
+      router.push(back);
+    } catch {
+      setReviewErrors(["Não foi possível salvar as fichas. Nenhuma foi gravada — tente de novo."]);
+      setBusy(false);
+    }
+  }
+
   const volume = Object.entries(calculateEffectiveVolume(exercises)).sort(([, a], [, b]) => b - a);
 
   return (
@@ -173,138 +256,213 @@ function FichaForm({
 
       <section>
         <h2>Pedir à IA (opcional)</h2>
-        <p>
-          1. Descreva o que você quer abaixo. 2. Copie o prompt. 3. Cole em qualquer IA que você já usa (ChatGPT,
-          Gemini, Claude...). 4. Cole a resposta dela no Importador Inteligente mais abaixo.
-        </p>
-        <p>
-          <label>
-            O que você quer nesta ficha?{" "}
-            <textarea
-              value={request}
-              onChange={(e) => setRequest(e.target.value)}
-              rows={3}
-              placeholder="Ex: treino de costas e bíceps, foco em volume, 12 séries efetivas de costas na semana..."
-            />
-          </label>
-        </p>
-        <button
-          type="button"
-          disabled={assets === null || assets === "error"}
-          onClick={() => {
-            if (assets !== null && assets !== "error") void copyPrompt(assets);
-          }}
-        >
-          Copiar prompt
-        </button>
-        {assets === "error" && <p role="alert">Não foi possível carregar o modelo do prompt. Recarregue a página.</p>}
-        {copyStatus && <p role="status">{copyStatus}</p>}
-        {prompt !== null && (
-          <p>
-            <textarea readOnly value={prompt} rows={10} aria-label="Prompt" />
-          </p>
+        <RequestBuilder trainingDays={student.doc.trainingDays} request={request} onRequest={setRequest} />
+        {!existing && (
+          <div className="tabs" role="tablist" aria-label="Como pedir à IA">
+            <button
+              type="button"
+              role="tab"
+              id="tab-copy"
+              aria-selected={tab === "copy"}
+              aria-controls="panel-ai"
+              onClick={() => setTab("copy")}
+            >
+              Outra IA (copiar e colar)
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="tab-gemini"
+              aria-selected={tab === "gemini"}
+              aria-controls="panel-ai"
+              onClick={() => setTab("gemini")}
+            >
+              Gemini (gerar aqui)
+            </button>
+          </div>
         )}
+        <div
+          id="panel-ai"
+          role={existing ? undefined : "tabpanel"}
+          aria-labelledby={existing ? undefined : `tab-${tab}`}
+        >
+          {!existing && tab === "gemini" ? (
+            <GeminiPanel student={student.doc} request={request} assets={assets} onResult={fromGemini} />
+          ) : (
+            <>
+              <p>
+                1. Descreva o que você quer acima. 2. Copie o prompt. 3. Cole em qualquer IA que você já usa (ChatGPT,
+                Gemini, Claude...). 4. Cole a resposta dela no Importador Inteligente mais abaixo — se vierem vários
+                treinos (A, B, C…), o site separa um por um.
+              </p>
+              {!existing && (
+                <>
+                  <p>
+                    <label>
+                      <input type="checkbox" checked={shortPrompt} onChange={(e) => setShortPrompt(e.target.checked)} />
+                      Já tenho a tabela de exercícios no meu projeto de IA (prompt curto, sem a tabela)
+                    </label>
+                  </p>
+                  <p>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={includePersonal}
+                        onChange={(e) => setIncludePersonal(e.target.checked)}
+                      />
+                      Incluir o nome e as restrições médicas do aluno no prompt
+                    </label>
+                  </p>
+                </>
+              )}
+              <button
+                type="button"
+                disabled={assets === null || assets === "error"}
+                onClick={() => {
+                  if (assets !== null && assets !== "error") void copyPrompt(assets);
+                }}
+              >
+                Copiar prompt
+              </button>
+              {assets === "error" && (
+                <p role="alert">Não foi possível carregar o modelo do prompt. Recarregue a página.</p>
+              )}
+              {copyStatus && <p role="status">{copyStatus}</p>}
+              {prompt !== null && (
+                <p>
+                  <textarea readOnly value={prompt} rows={10} aria-label="Prompt" />
+                  <small className="section-footnote">
+                    Tamanho do prompt: ≈{" "}
+                    {new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 }).format(prompt.length / 1000)} mil
+                    caracteres
+                  </small>
+                </p>
+              )}
+            </>
+          )}
+        </div>
       </section>
 
       <section>
         <h2>Importador Inteligente</h2>
-        <p>Cole o texto (ex: Biceps 12x4) abaixo para identificar os exercícios automaticamente.</p>
+        <p>
+          Cole o texto (ex: Biceps 12x4) abaixo para identificar os exercícios automaticamente. Se ele trouxer vários
+          treinos (Treino A, B, C…), cada um vira uma ficha.
+        </p>
         <textarea
           value={pasted}
           onChange={(e) => paste(e.target.value)}
           rows={8}
           aria-label="Texto para importar"
-          placeholder={"Ex:\nFicha A\nSupino 3x12\nBiceps 12x4"}
+          placeholder={"Ex:\nTreino A\nSupino 3x12\nTreino B\nBiceps 12x4"}
         />
       </section>
 
-      <section>
-        <h2>Ficha</h2>
-        <p>
-          <label>
-            Nome do treino (ex: Ficha A) <input value={name} onChange={(e) => setName(e.target.value)} />
-          </label>
-        </p>
-        <h3>Lista de exercícios ({exercises.length})</h3>
-        {exercises.length === 0 ? (
-          <p>Nenhum exercício ainda.</p>
-        ) : (
-          <table className="stack">
-            <thead>
-              <tr>
-                <th scope="col">Exercício</th>
-                <th scope="col">Séries</th>
-                <th scope="col">Reps</th>
-                <th scope="col">Músculos</th>
-                <th scope="col">Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {exercises.map((exercise, index) => (
-                <tr key={index}>
-                  <td data-label="Exercício">{exercise.name}</td>
-                  <td data-label="Séries">{exercise.sets}</td>
-                  <td data-label="Reps">{exercise.reps}</td>
-                  <td data-label="Músculos">
-                    {exercise.muscleActivation
-                      ? Object.entries(exercise.muscleActivation)
-                          .map(([muscle, coefficient]) => `${muscle} ${coefficient}`)
-                          .join(", ")
-                      : "—"}
-                  </td>
-                  <td data-label="">
-                    <button type="button" onClick={() => setExercises(exercises.filter((_, i) => i !== index))}>
-                      Remover
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-        <form onSubmit={addExercise}>
-          <fieldset>
-            <legend>Novo exercício</legend>
-            <label>
-              Nome <input value={newName} onChange={(e) => setNewName(e.target.value)} />
-            </label>{" "}
-            <label>
-              Séries <input inputMode="numeric" value={newSets} onChange={(e) => setNewSets(e.target.value)} />
-            </label>{" "}
-            <label>
-              Reps <input value={newReps} onChange={(e) => setNewReps(e.target.value)} />
-            </label>{" "}
-            <button type="submit">Adicionar</button>
-            {addError && <p role="alert">{addError}</p>}
-          </fieldset>
-        </form>
+      {review !== null ? (
+        <MultiFichaReview
+          items={review}
+          warnings={reviewWarnings}
+          errors={reviewErrors}
+          busy={busy}
+          onChange={setReview}
+          onSave={() => void saveAll()}
+          onCancel={() => {
+            setReview(null);
+            setReviewWarnings([]);
+            setReviewErrors([]);
+          }}
+        />
+      ) : (
+        <>
+          <section>
+            <h2>Ficha</h2>
+            <p>
+              <label>
+                Nome do treino (ex: Ficha A) <input value={name} onChange={(e) => setName(e.target.value)} />
+              </label>
+            </p>
+            <h3>Lista de exercícios ({exercises.length})</h3>
+            {exercises.length === 0 ? (
+              <p>Nenhum exercício ainda.</p>
+            ) : (
+              <table className="stack">
+                <thead>
+                  <tr>
+                    <th scope="col">Exercício</th>
+                    <th scope="col">Séries</th>
+                    <th scope="col">Reps</th>
+                    <th scope="col">Músculos</th>
+                    <th scope="col">Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {exercises.map((exercise, index) => (
+                    <tr key={index}>
+                      <td data-label="Exercício">{exercise.name}</td>
+                      <td data-label="Séries">{exercise.sets}</td>
+                      <td data-label="Reps">{exercise.reps}</td>
+                      <td data-label="Músculos">
+                        {exercise.muscleActivation
+                          ? Object.entries(exercise.muscleActivation)
+                              .map(([muscle, coefficient]) => `${muscle} ${coefficient}`)
+                              .join(", ")
+                          : "—"}
+                      </td>
+                      <td data-label="">
+                        <button type="button" onClick={() => setExercises(exercises.filter((_, i) => i !== index))}>
+                          Remover
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            <form onSubmit={addExercise}>
+              <fieldset>
+                <legend>Novo exercício</legend>
+                <label>
+                  Nome <input value={newName} onChange={(e) => setNewName(e.target.value)} />
+                </label>{" "}
+                <label>
+                  Séries <input inputMode="numeric" value={newSets} onChange={(e) => setNewSets(e.target.value)} />
+                </label>{" "}
+                <label>
+                  Reps <input value={newReps} onChange={(e) => setNewReps(e.target.value)} />
+                </label>{" "}
+                <button type="submit">Adicionar</button>
+                {addError && <p role="alert">{addError}</p>}
+              </fieldset>
+            </form>
 
-        {volume.length > 0 && (
-          <>
-            <h3>Volume efetivo por músculo (nesta ficha)</h3>
-            <p>Faixa ideal de referência (intermediário): ~12-20 séries efetivas/semana por músculo.</p>
-            <dl>
-              {volume.map(([muscle, sets]) => (
-                <div key={muscle}>
-                  <dt>{muscle}</dt>
-                  <dd>{VOLUME.format(sets)} séries efetivas</dd>
-                </div>
-              ))}
-            </dl>
-          </>
-        )}
-      </section>
+            {volume.length > 0 && (
+              <>
+                <h3>Volume efetivo por músculo (nesta ficha)</h3>
+                <p>Faixa ideal de referência (intermediário): ~12-20 séries efetivas/semana por músculo.</p>
+                <dl>
+                  {volume.map(([muscle, sets]) => (
+                    <div key={muscle}>
+                      <dt>{muscle}</dt>
+                      <dd>{VOLUME.format(sets)} séries efetivas</dd>
+                    </div>
+                  ))}
+                </dl>
+              </>
+            )}
+          </section>
 
-      {errors.length > 0 && (
-        <ul role="alert">
-          {errors.map((error) => (
-            <li key={error}>{error}</li>
-          ))}
-        </ul>
+          {errors.length > 0 && (
+            <ul role="alert">
+              {errors.map((error) => (
+                <li key={error}>{error}</li>
+              ))}
+            </ul>
+          )}
+          <button type="button" className="button-primary" disabled={busy} onClick={() => void save()}>
+            {busy ? "Salvando…" : "Salvar ficha"}
+          </button>
+        </>
       )}
-      <button type="button" className="button-primary" disabled={busy} onClick={() => void save()}>
-        {busy ? "Salvando…" : "Salvar ficha"}
-      </button>
     </main>
   );
 }

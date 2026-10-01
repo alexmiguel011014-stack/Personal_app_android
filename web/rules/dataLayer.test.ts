@@ -31,7 +31,7 @@ import {
 import { emptyProfile } from "../src/domain/studentProfile";
 import { loadMyProfile, resolveProfile } from "../src/data/session";
 import { ensureMonthlyCharges, loadTrainerSnapshot, loadTrainerView } from "../src/data/trainerData";
-import { deleteWorkout, loadMyWorkouts, loadStudentWorkouts, newWorkout, saveWorkout } from "../src/data/workouts";
+import { deleteWorkout, loadMyWorkouts, loadStudentWorkouts, newWorkout, saveWorkout, saveWorkouts } from "../src/data/workouts";
 import { addBiometric, loadMyBiometrics, loadStudentBiometrics, logOwnBiometric } from "../src/data/biometrics";
 import { loadStudentAssessments, submitAssessment } from "../src/data/assessments";
 import { loadMyLogs, logSession } from "../src/data/workoutLogs";
@@ -377,6 +377,39 @@ describe("fichas (GOALS.md §23g)", () => {
     expect(await loadStudentWorkouts(trainer, "trainerA", "s1")).toEqual([
       { ...saved, isActive: false, status: "draft", assignedAt: null },
     ]);
+  });
+
+  // GOALS.md §25e — the treinos of one pasted answer, saved together.
+  it("saves several fichas in one batch: all visible to the student, listed newest first", async () => {
+    await seed({
+      "users/trainerA": { role: "TRAINER" },
+      "users/s1": { role: "STUDENT", trainerId: "trainerA", inviteCode: "X", name: "Ana", createdAt: 1 },
+    });
+    const trainer = signedInAs("trainerA");
+    // createdAt descending from A, so the trainer's newest-first list reads A, B, C.
+    const batch = ["Treino A", "Treino B", "Treino C"].map((name, i) =>
+      newWorkout("trainerA", "s1", name, exercises, 100 + (2 - i)),
+    );
+    const saved = await saveWorkouts(trainer, "trainerA", batch, 100);
+    expect(saved.map((w) => w.status)).toEqual(["assigned", "assigned", "assigned"]);
+
+    expect((await loadStudentWorkouts(trainer, "trainerA", "s1")).map((w) => w.name)).toEqual(["Treino A", "Treino B", "Treino C"]);
+    const student = signedInAs("s1");
+    expect((await loadMyWorkouts(student, "s1")).map((w) => w.name)).toEqual(["Treino A", "Treino B", "Treino C"]);
+  });
+
+  it("a batch with one forbidden ficha writes none of them", async () => {
+    await seed({
+      "users/trainerA": { role: "TRAINER" },
+      "users/trainerB": { role: "TRAINER" },
+      "users/s1": { role: "STUDENT", trainerId: "trainerA", inviteCode: "X", name: "Ana", createdAt: 1 },
+    });
+    const trainerB = signedInAs("trainerB");
+    // trainerB tries to write fichas under trainerA's id — the rules refuse it, and with it the batch.
+    const batch = ["Treino A", "Treino B"].map((name) => newWorkout("trainerA", "s1", name, exercises, 100));
+    await assertFails(saveWorkouts(trainerB, "trainerA", batch, 100));
+    const trainerA = signedInAs("trainerA");
+    expect(await loadStudentWorkouts(trainerA, "trainerA", "s1")).toEqual([]);
   });
 
   it("lists only this trainer's fichas for the student, newest first; deletes only their own", async () => {

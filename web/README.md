@@ -15,6 +15,38 @@ plain, and `package.json` still depends on `next`/`react`/`react-dom` only. Resp
 in the stylesheet's media queries (>1050, 861–1050, ≤860, ≤600, ≤430px); a table with more than three
 columns takes `className="stack"` and a `data-label` per cell so it becomes labelled rows on a phone.
 
+## Fichas: several treinos at once, and the Gemini tab (GOALS.md §25)
+
+The ficha editor (`/app/fichas/editar`, new fichas) takes **one answer with several treinos** and makes
+one ficha of each: paste an AI's reply that has "Treino A / B / C…" (markdown, bullets, code fences and
+chatter are tolerated; a spreadsheet paste works too) and a review screen shows what was found before
+**Salvar N fichas** writes them in one batch. Two ways of asking the AI sit in tabs: **Outra IA** (copy the
+prompt, paste the answer) and **Gemini** (generated here, same review screen).
+
+Web-only files: `prompt/ficha_prompt_multi.md` (the copy-and-paste prompt) and
+`prompt/ficha_system_gemini.md` (the Gemini system instruction), copied to `public/prompt/` by
+`scripts/copy-prompt-assets.mjs` next to the shared Android assets; the reference table
+(`hypertrophy_volume_reference.md`) stays single-sourced in `app/src/main/assets/`.
+
+**Making the Gemini tab work for real needs the Firebase console** (nothing here can do it from code):
+
+1. Build → **AI Logic** → make sure the **Gemini Developer API** is enabled (the "Firebase AI Logic API" and
+   "Gemini Developer API" must both be on, or calls fail with 403 `api-not-enabled`).
+2. **App Check** → APIs → enforce it for **Firebase AI Logic** (mandatory for AI Logic from 2026-11-02 anyway).
+   The site already initialises App Check with reCAPTCHA Enterprise; for `localhost` use a debug token
+   (`self.FIREBASE_APPCHECK_DEBUG_TOKEN = true`, then register the token the console prints).
+3. If the web API key has *API restrictions*, `firebasevertexai.googleapis.com` must be on the list.
+4. Optional: a **Remote Config** parameter `ficha_model_name` (e.g. `gemini-3.8-flash`) switches the model
+   without a deploy — Google retires model ids (a retired one answers 404). The default lives in
+   `src/data/gemini.ts` (`GEMINI_DEFAULT_MODEL`); the Spark-plan free list is at
+   <https://firebase.google.com/docs/ai-logic/models>.
+5. Free-tier limits are per project and not published per model: read them in Google AI Studio
+   (<https://aistudio.google.com/rate-limit>). On the free tier Google may use the content to improve its
+   products, which is why the student's name and medical notes are not sent unless the trainer ticks the box.
+
+The `npm test` suite covers the pure parts (splitting, request building, response mapping, error messages);
+the network call is not tested in CI — try it on the deployed site after steps 1–2.
+
 ## Routes
 
 | URL | Directory | Who |

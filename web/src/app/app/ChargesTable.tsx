@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { adjustCharge, markPaid, undoPayment } from "../../data/billing";
+import { trackActivity } from "../../data/activity";
 import { getFirebase } from "../../data/firebase";
 import { METHOD_LABELS, STATUS_LABELS, paidAtFor, parseAdjustment } from "../../domain/billing";
 import { formatDate, localDate } from "../../domain/dates";
@@ -82,11 +83,12 @@ function ChargeRow({
   const month = charge.dueDate.slice(0, 7);
   const label = `${name ? `${name}, ` : ""}vencimento ${formatDate(charge.dueDate)}`;
 
-  async function run(write: () => Promise<void>) {
+  async function run(write: () => Promise<void>, tracksPayment = false, activityAt?: number) {
     setBusy(true);
     setError(null);
     try {
       await write();
+      if (tracksPayment && activityAt !== undefined) await trackActivity(db(), charge.trainerId, "chargePaid", activityAt, timeZone);
       setMode("idle");
       onChanged();
     } catch {
@@ -100,13 +102,14 @@ function ChargeRow({
 
   function pay(event: FormEvent) {
     event.preventDefault();
-    const result = paidAtFor(paidOn, today, Date.now());
+    const now = Date.now();
+    const result = paidAtFor(paidOn, today, now);
     if ("error" in result) {
       setError(result.error);
       return;
     }
     const trimmed = note.trim();
-    void run(() => markPaid(db(), charge.id, result.paidAt, method, trimmed === "" ? null : trimmed));
+    void run(() => markPaid(db(), charge.id, result.paidAt, method, trimmed === "" ? null : trimmed), true, now);
   }
 
   function adjust(event: FormEvent) {

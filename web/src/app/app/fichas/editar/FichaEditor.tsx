@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { getFirebase } from "../../../../data/firebase";
+import { trackActivity } from "../../../../data/activity";
 import { loadPromptAssets, type PromptAssets } from "../../../../data/promptAssets";
 import type { TrainerStudent } from "../../../../data/students";
 import { loadStudentWorkouts, newWorkout, replaceFicha, saveWorkout, saveWorkouts } from "../../../../data/workouts";
@@ -98,7 +99,7 @@ function Loader({
       </p>
     );
   }
-  return <FichaForm trainerId={trainerId} student={student} existing={existing} back={back} />;
+  return <FichaForm trainerId={trainerId} student={student} existing={existing} back={back} timeZone={data.timeZone} />;
 }
 
 function FichaForm({
@@ -106,11 +107,13 @@ function FichaForm({
   student,
   existing,
   back,
+  timeZone,
 }: {
   trainerId: string;
   student: TrainerStudent;
   existing: Workout | null;
   back: string;
+  timeZone: string;
 }) {
   const router = useRouter();
   const [assets, setAssets] = useState<PromptAssets | "error" | null>(null);
@@ -175,6 +178,7 @@ function FichaForm({
 
   /** What Gemini returned: several treinos go to the review, a single one fills the editor below. */
   function fromGemini(workouts: ParsedWorkout[], warnings: string[]) {
+    void trackActivity(getFirebase().db, trainerId, "geminiGenerated", Date.now(), timeZone);
     if (!existing && workouts.length >= 2) {
       openReview(workouts, warnings);
       return;
@@ -247,6 +251,7 @@ function FichaForm({
       if (choice === "replace") await replaceFicha(db, trainerId, student.doc.id, workouts, now);
       else if (workouts.length === 1) await saveWorkout(db, trainerId, workouts[0], now);
       else await saveWorkouts(db, trainerId, workouts, now);
+      await trackFichas(db, workouts.length, now);
       router.push(back);
     } catch {
       const message =
@@ -261,22 +266,25 @@ function FichaForm({
     }
   }
 
-  async function save() {
+  async function save(now: number) {
     const found = workoutErrors(name, exercises);
     setErrors(found);
     if (found.length > 0) return;
     setBusy(true);
     try {
-      const now = Date.now();
       if (existing) {
         // ManualWorkoutScreen: existing.copy(name, exercises)
-        await saveWorkout(getFirebase().db, trainerId, { ...existing, name: kotlinTrim(name), exercises }, now);
+        const { db } = getFirebase();
+        await saveWorkout(db, trainerId, { ...existing, name: kotlinTrim(name), exercises }, now);
+        await trackFichas(db, 1, now);
         router.push(back);
         return;
       }
       const workout = newWorkout(trainerId, student.doc.id, kotlinTrim(name), exercises, now);
       if (await askBeforeSaving([workout], now, false)) return;
-      await saveWorkout(getFirebase().db, trainerId, workout, now);
+      const { db } = getFirebase();
+      await saveWorkout(db, trainerId, workout, now);
+      await trackFichas(db, 1, now);
       router.push(back);
     } catch {
       setErrors(["Não foi possível salvar a ficha. Tente de novo."]);
@@ -284,7 +292,7 @@ function FichaForm({
     }
   }
 
-  async function saveAll() {
+  async function saveAll(now: number) {
     if (review === null) return;
     const chosen = review.filter((item) => item.include);
     const found = chosen.flatMap((item) =>
@@ -296,7 +304,6 @@ function FichaForm({
     if (found.length > 0 || chosen.length === 0) return;
     setBusy(true);
     try {
-      const now = Date.now();
       // createdAt falls from the first treino to the last, so the trainer's newest-first list reads A, B, C.
       const workouts = chosen.map((item, index) =>
         newWorkout(
@@ -308,12 +315,18 @@ function FichaForm({
         ),
       );
       if (await askBeforeSaving(workouts, now, true)) return;
-      await saveWorkouts(getFirebase().db, trainerId, workouts, now);
+      const { db } = getFirebase();
+      await saveWorkouts(db, trainerId, workouts, now);
+      await trackFichas(db, workouts.length, now);
       router.push(back);
     } catch {
       setReviewErrors(["Não foi possível salvar as fichas. Nenhuma foi gravada — tente de novo."]);
       setBusy(false);
     }
+  }
+
+  async function trackFichas(db: ReturnType<typeof getFirebase>["db"], count: number, now: number) {
+    await Promise.all(Array.from({ length: count }, () => trackActivity(db, trainerId, "fichaSaved", now, timeZone)));
   }
 
   const volume = Object.entries(calculateEffectiveVolume(exercises)).sort(([, a], [, b]) => b - a);
@@ -436,7 +449,7 @@ function FichaForm({
           errors={reviewErrors}
           busy={busy}
           onChange={setReview}
-          onSave={() => void saveAll()}
+          onSave={() => void saveAll(Date.now())}
           onCancel={() => {
             setReview(null);
             setReviewWarnings([]);
@@ -529,7 +542,7 @@ function FichaForm({
               ))}
             </ul>
           )}
-          <button type="button" className="button-primary" disabled={busy} onClick={() => void save()}>
+          <button type="button" className="button-primary" disabled={busy} onClick={() => void save(Date.now())}>
             {busy ? "Salvando…" : "Salvar ficha"}
           </button>
         </>

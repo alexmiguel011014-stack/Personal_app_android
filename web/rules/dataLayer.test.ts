@@ -46,6 +46,10 @@ import { loadMyLogs, logSession } from "../src/data/workoutLogs";
 import { PAR_Q } from "../src/domain/assessments";
 import { bookSlot, loadSchedules, removeBooking } from "../src/data/schedules";
 import { adjustCharge, createPlan, markPaid, setPlanActive, undoPayment, updatePlan } from "../src/data/billing";
+import { countLinkedStudents, loadTrainers, setAccessStatus } from "../src/data/admin";
+import { loadActivity } from "../src/data/admin";
+import { trackActivity, writeTrainerStats } from "../src/data/activity";
+import { dashboardFigures } from "../src/domain/dashboard";
 
 // GOALS.md §23e: the data layer against the Firestore emulator, through the real rules — the same
 // modular SDK calls the app makes, signed in as a given uid. This is where the three layers meet:
@@ -276,7 +280,7 @@ describe("claimInvite and resolveProfile (GOALS.md §23f)", () => {
       createdAt: 5,
     });
     expect((await read(`invites/${CODE}`))?.used).toBe(true);
-    expect(await resolveProfile(signedInAs("newStudent"), "newStudent")).toEqual({ role: "STUDENT", trainerId: "trainerA" });
+    expect(await resolveProfile(signedInAs("newStudent"), "newStudent")).toEqual({ role: "STUDENT", trainerId: "trainerA", accessStatus: "active" });
   });
 
   it.each([
@@ -302,9 +306,9 @@ describe("claimInvite and resolveProfile (GOALS.md §23f)", () => {
 
   it("resolves a trainer, and an account with no document yet as an unclaimed student", async () => {
     await seed({ "users/trainerA": { role: "TRAINER" } });
-    expect(await resolveProfile(signedInAs("trainerA"), "trainerA")).toEqual({ role: "TRAINER", trainerId: null });
+    expect(await resolveProfile(signedInAs("trainerA"), "trainerA")).toEqual({ role: "TRAINER", trainerId: null, accessStatus: "active" });
     // Reading one's own users/{uid} before it exists must be allowed, or a new account can't load.
-    expect(await resolveProfile(signedInAs("brandNew"), "brandNew")).toEqual({ role: "STUDENT", trainerId: null });
+    expect(await resolveProfile(signedInAs("brandNew"), "brandNew")).toEqual({ role: "STUDENT", trainerId: null, accessStatus: "active" });
   });
 });
 
@@ -340,6 +344,68 @@ describe("loadTrainerSnapshot", () => {
       ["maria-uid", true],
     ]);
     expect(snapshot.logs.map((l) => l.id)).toEqual(["l1"]);
+  });
+});
+
+describe("§26e admin data and §26f activity", () => {
+  async function read(path: string): Promise<Record<string, unknown> | undefined> {
+    let data: Record<string, unknown> | undefined;
+    await env.withSecurityRulesDisabled(async (context) => { data = (await context.firestore().doc(path).get()).data(); });
+    return data;
+  }
+
+  it("tracks counters across calls and month boundaries, with unique local active days", async () => {
+    await seed({ "users/trainerA": { role: "TRAINER" } });
+    const db = signedInAs("trainerA");
+    await trackActivity(db, "trainerA", "login", Date.parse("2026-10-31T23:30:00-03:00"), ZONE);
+    expect(await read("users/trainerA")).toMatchObject({ role: "TRAINER" });
+    expect(await read("trainerActivity/trainerA_2026-10")).toBeDefined();
+    await trackActivity(db, "trainerA", "studentCreated", Date.parse("2026-10-31T23:40:00-03:00"), ZONE);
+    await trackActivity(db, "trainerA", "login", Date.parse("2026-11-01T00:10:00-03:00"), ZONE);
+    const october = await loadActivity(db, "trainerA", ["2026-10"]);
+    const november = await loadActivity(db, "trainerA", ["2026-11"]);
+    expect(october[0]).toMatchObject({ actions: { login: 1, studentCreated: 1 }, activeDays: ["2026-10-31"] });
+    expect(november[0]).toMatchObject({ actions: { login: 1 }, activeDays: ["2026-11-01"] });
+  });
+
+  it("swallows an activity permission error", async () => {
+    await expect(trackActivity(signedInAs("no-profile"), "no-profile", "login", 1, ZONE)).resolves.toBeUndefined();
+  });
+
+  it("loads only trainers and counts only that trainer's linked students", async () => {
+    await seed({
+      "users/trainerA": { role: "TRAINER", name: "Ana", email: "ana@example.test" },
+      "users/admin": { role: "ADM" },
+      "users/studentA": { role: "STUDENT", trainerId: "trainerA" },
+      "users/studentB": { role: "STUDENT", trainerId: "trainerB" },
+    });
+    const trainers = await loadTrainers(signedInAs("admin"));
+    expect(trainers.map((trainer) => trainer.id)).toEqual(["trainerA"]);
+    expect(await countLinkedStudents(signedInAs("admin"), "trainerA")).toBe(1);
+  });
+
+  it("sets access status and appends the audit entry in the same batch", async () => {
+    await seed({ "users/admin": { role: "ADM" }, "users/trainerA": { role: "TRAINER" } });
+    await setAccessStatus(signedInAs("admin"), "admin", "trainerA", "suspended", "revisão");
+    expect(await read("users/trainerA")).toMatchObject({ accessStatus: "suspended", suspendedReason: "revisão" });
+    let entries: Record<string, unknown>[] = [];
+    await env.withSecurityRulesDisabled(async (context) => {
+      entries = (await context.firestore().collection("adminAudit").get()).docs.map((document) => document.data());
+    });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ adminUid: "admin", action: "trainer.suspend", targetUid: "trainerA", note: "revisão" });
+  });
+
+  it("writes dashboard summaries and throttles last-seen updates", async () => {
+    await seed({ "users/trainerA": { role: "TRAINER" } });
+    const db = signedInAs("trainerA");
+    const snapshot = await loadTrainerSnapshot(db, "trainerA");
+    const figures = dashboardFigures(snapshot, "2026-10-01", ZONE);
+    await writeTrainerStats(db, "trainerA", figures, snapshot, Date.parse("2026-10-01T12:00:00-03:00"));
+    const stats = await read("trainerStats/trainerA");
+    expect(stats).toMatchObject({ trainerId: "trainerA", students: { total: 0, linked: 0, pending: 0 }, billing: { month: "2026-10" } });
+    await writeTrainerStats(db, "trainerA", figures, snapshot, Date.parse("2026-10-01T12:05:00-03:00"));
+    expect(await read("trainerStats/trainerA")).toEqual(stats);
   });
 });
 

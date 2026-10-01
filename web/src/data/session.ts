@@ -11,6 +11,8 @@ export interface Profile {
   role: UserRole;
   /** Set only for a STUDENT who has claimed an invite. */
   trainerId: string | null;
+  /** Missing or unknown values are active; the rules enforce suspension for trainer writes. */
+  accessStatus: "active" | "suspended";
 }
 
 export type Session =
@@ -26,7 +28,7 @@ export type Session =
       profile: Profile;
     };
 
-export type Area = "/entrar" | "/app" | "/aluno" | "/convite";
+export type Area = "/entrar" | "/app" | "/admin" | "/aluno" | "/convite";
 
 const ROLES: readonly UserRole[] = ["ADM", "TRAINER", "STUDENT", "NONE"];
 
@@ -39,7 +41,8 @@ export function profileFrom(data: Record<string, unknown> | undefined): Profile 
   const raw = typeof data?.role === "string" ? data.role.toUpperCase() : "STUDENT";
   const role = ROLES.includes(raw as UserRole) ? (raw as UserRole) : "STUDENT";
   const trainerId = typeof data?.trainerId === "string" ? data.trainerId : null;
-  return { role, trainerId };
+  const accessStatus = data?.accessStatus === "suspended" ? "suspended" : "active";
+  return { role, trainerId, accessStatus };
 }
 
 /** A connected student's own profile — StudentRepository.getMyProfile, read once. */
@@ -55,15 +58,16 @@ export async function resolveProfile(db: Firestore, uid: string): Promise<Profil
 }
 
 /**
- * RoleRouter's `when`, as routes. One difference by design: an ADM lands on /app — the Android
- * app's admin dashboard has no web counterpart in §23, and /app is where a staff account belongs.
- * A STUDENT who hasn't claimed an invite goes to /convite; a NONE account to /entrar, which says
+ * RoleRouter's `when`, as routes. §26g gives ADM its own /admin area. Suspended trainers are sent
+ * to /entrar, where the page explains the suspension and offers sign-out. A STUDENT who hasn't
+ * claimed an invite goes to /convite; a NONE account to /entrar, which says
  * the account has no role yet — as the Android LoginScreen does.
  */
 export function destinationFor(session: Exclude<Session, { status: "loading" }>): Area {
   if (session.status === "signedOut") return "/entrar";
-  const { role, trainerId } = session.profile;
-  if (role === "ADM" || role === "TRAINER") return "/app";
+  const { role, trainerId, accessStatus } = session.profile;
+  if (role === "ADM") return "/admin";
+  if (role === "TRAINER") return accessStatus === "suspended" ? "/entrar" : "/app";
   if (role === "STUDENT") return trainerId !== null ? "/aluno" : "/convite";
   return "/entrar";
 }

@@ -502,3 +502,93 @@ describe("existing rules the web relies on, unchanged by §23d", () => {
     await assertFails(as(TRAINER_B).doc(`users/${STUDENT_A}`).get());
   });
 });
+
+describe("GOALS.md §26d — suspended trainers, summaries and audit", () => {
+  const stats = {
+    trainerId: TRAINER_A, updatedAt: 1, lastSeenAt: 1,
+    students: { total: 1, linked: 1, pending: 0 }, sessions7d: 0, adherence28d: null,
+    quiet: 0, pendingAssessments: 0,
+    billing: { month: "2026-10", activePlans: 0, planCents: 0, expectedCents: 0, receivedCents: 0, overdueCents: 0 },
+  };
+  const activity = {
+    trainerId: TRAINER_A, month: "2026-10", updatedAt: 1, actions: { login: 1 }, activeDays: ["2026-10-01"],
+  };
+
+  it("denies suspended trainers across trainer-owned collections but leaves their users doc readable", async () => {
+    await seed(async (db) => {
+      await db.doc(`users/${TRAINER_A}`).update({ accessStatus: "suspended" });
+      await db.doc("students/d1").set({ trainerId: TRAINER_A, name: "Ana" });
+      await db.doc("workouts/w1").set({ trainerId: TRAINER_A, studentId: STUDENT_A, status: "assigned" });
+      await db.doc("schedules/s1").set({ trainerId: TRAINER_A, studentId: STUDENT_A });
+      await db.doc("biometrics/b1").set({ trainerId: TRAINER_A, studentId: STUDENT_A });
+      await db.doc("payments/p1").set({ trainerId: TRAINER_A, studentId: STUDENT_A });
+      await db.doc("billingPlans/p1").set({ ...stats.billing, trainerId: TRAINER_A, studentId: STUDENT_A });
+      await db.doc("trainerStats/trainerA").set(stats);
+      await db.doc("trainerActivity/trainerA_2026-10").set(activity);
+    });
+    const db = as(TRAINER_A);
+    await assertSucceeds(db.doc(`users/${TRAINER_A}`).get());
+    for (const path of ["students/d1", "workouts/w1", "schedules/s1", "biometrics/b1", "payments/p1", "billingPlans/p1", "trainerStats/trainerA", "trainerActivity/trainerA_2026-10"]) {
+      await assertFails(db.doc(path).get());
+    }
+    await assertFails(db.doc("students/new").set({ trainerId: TRAINER_A, name: "Nova" }));
+    await assertFails(db.doc("invites/NEWCODE1").set({ trainerId: TRAINER_A, used: false }));
+  });
+
+  it("prevents self-reactivation and lets an ADM suspend and reactivate", async () => {
+    await seed(async (db) => {
+      await db.doc("users/admin").set({ role: "ADM" });
+      await db.doc("users/legacyTrainer").set({ role: "TRAINER" });
+    });
+    await assertFails(as(TRAINER_A).doc(`users/${TRAINER_A}`).update({ accessStatus: "active" }));
+    await assertFails(as("legacyTrainer").doc("users/legacyTrainer").update({ accessStatus: "active" }));
+    await assertSucceeds(as("admin").doc(`users/${TRAINER_A}`).update({ accessStatus: "suspended", suspendedAt: 2, suspendedReason: "pausa" }));
+    await assertSucceeds(as("admin").doc(`users/${TRAINER_A}`).update({ accessStatus: "active", suspendedAt: null, suspendedReason: null }));
+  });
+
+  it("keeps student access to assigned workouts and personal logs during trainer suspension", async () => {
+    await seed(async (db) => {
+      await db.doc(`users/${TRAINER_A}`).update({ accessStatus: "suspended" });
+      await db.doc("workouts/assigned").set({ trainerId: TRAINER_A, studentId: STUDENT_A, status: "assigned" });
+    });
+    const student = as(STUDENT_A);
+    await assertSucceeds(student.doc("workouts/assigned").get());
+    await assertSucceeds(student.doc("workoutLogs/l1").set({
+      trainerId: TRAINER_A, studentId: STUDENT_A, workoutId: "assigned", exerciseName: "Supino",
+      date: 1, performedSetsJson: "[]", note: null,
+    }));
+  });
+
+  it("allows only the owning active trainer to write valid stats and monotonic activity", async () => {
+    await assertSucceeds(as(TRAINER_A).doc("trainerStats/trainerA").set(stats));
+    await assertFails(as(TRAINER_A).doc("trainerStats/trainerA").update({ "billing.planCents": 1.5 }));
+    const incompleteBilling = {
+      month: stats.billing.month, activePlans: stats.billing.activePlans, planCents: stats.billing.planCents,
+      expectedCents: stats.billing.expectedCents, overdueCents: stats.billing.overdueCents,
+    };
+    await assertFails(as(TRAINER_A).doc("trainerStats/trainerA").set({ ...stats, billing: incompleteBilling }));
+    await assertFails(as(TRAINER_B).doc("trainerStats/trainerA").set(stats));
+    await assertFails(as(TRAINER_B).doc("trainerStats/trainerA").get());
+    await assertFails(as("admin").doc("trainerStats/trainerA").set(stats));
+
+    const own = as(TRAINER_A);
+    await assertSucceeds(own.doc("trainerActivity/trainerA_2026-10").set(activity));
+    await assertSucceeds(own.doc("trainerActivity/trainerA_2026-10").update({ "actions.login": 2 }));
+    await assertFails(own.doc("trainerActivity/trainerA_2026-10").update({ "actions.login": 1 }));
+    await assertFails(own.doc("trainerActivity/trainerA_2026-10").update({ actions: {} }));
+    await assertSucceeds(own.doc("trainerActivity/trainerA_2026-10").update({ actions: { login: 2, geminiGenerated: 1 } }));
+    await assertFails(own.doc("trainerActivity/not-the-path").set(activity));
+    await assertFails(as(TRAINER_B).doc("trainerActivity/trainerA_2026-10").set(activity));
+    await assertFails(as("admin").doc("trainerActivity/trainerA_2026-10").set(activity));
+  });
+
+  it("accepts ADM audit creates only and keeps entries append-only", async () => {
+    const entry = { at: 1, adminUid: "admin", action: "trainer.suspend", targetUid: TRAINER_A, note: "pausa" };
+    await seed((db) => db.doc("users/admin").set({ role: "ADM" }));
+    const admin = as("admin");
+    await assertSucceeds(admin.doc("adminAudit/a1").set(entry));
+    await assertFails(admin.doc("adminAudit/a1").update({ note: "alterado" }));
+    await assertFails(admin.doc("adminAudit/a1").delete());
+    await assertFails(as(TRAINER_A).doc("adminAudit/a2").set({ ...entry, adminUid: TRAINER_A }));
+  });
+});

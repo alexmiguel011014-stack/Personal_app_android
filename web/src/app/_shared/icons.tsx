@@ -47,6 +47,24 @@ const PATHS = {
       <path d="M15 7h5v5" />
     </>
   ),
+  shield: (
+    <>
+      <path d="M12 3 19 6v5c0 4.5-2.8 7.8-7 10-4.2-2.2-7-5.5-7-10V6l7-3z" />
+      <path d="m9 12 2 2 4-4" />
+    </>
+  ),
+  inbox: (
+    <>
+      <path d="M4 5h16v14H4zM4 13h4l1.5 2h5L16 13h4" />
+      <path d="M12 8v4m-2-2 2 2 2-2" />
+    </>
+  ),
+  account: (
+    <>
+      <circle cx="12" cy="8" r="3.3" />
+      <path d="M5 20c.7-3.5 3.2-5.3 7-5.3s6.3 1.8 7 5.3" />
+    </>
+  ),
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof PATHS;

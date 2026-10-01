@@ -8,8 +8,9 @@ import { useSession } from "./SessionProvider";
 // to wherever destinationFor says they belong. Nothing for a visitor, nor for an account with no
 // role yet (its place is /entrar, which explains that; the header already links there).
 
-const LABELS: Record<"/app" | "/aluno" | "/convite", string> = {
+const LABELS: Record<"/app" | "/admin" | "/aluno" | "/convite", string> = {
   "/app": "Ir para o painel",
+  "/admin": "Ir para a administração",
   "/aluno": "Ir para as minhas fichas",
   "/convite": "Usar um código de convite",
 };

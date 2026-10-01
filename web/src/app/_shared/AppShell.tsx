@@ -37,7 +37,7 @@ export function AppShell({
   nav,
   children,
 }: {
-  area: "trainer" | "student";
+  area: "trainer" | "student" | "admin";
   home: string;
   caption: string;
   note: string;
@@ -92,6 +92,9 @@ export function AppShell({
               <span>
                 ALLU personal <span className="footer-dot" aria-hidden="true" /> Caderno de treino
               </span>
+              {area === "trainer" && (
+                <span>O uso do site é contabilizado de forma agregada (quantidade de ações e dias de uso) para a administração da plataforma; nenhum dado de aluno é incluído.</span>
+              )}
             </footer>
           </div>
         </div>

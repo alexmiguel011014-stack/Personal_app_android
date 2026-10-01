@@ -6,6 +6,7 @@ import type { Workout } from "../domain/workouts";
 import type { BillingPlan, Payment, PaymentMethod, PaymentSource } from "../domain/payments";
 import type { Schedule } from "../domain/schedules";
 import type { DraftStudentDoc, LinkedStudentDoc } from "../domain/students";
+import { ACTIVITY_KINDS, emptyActions, type ActivityKind } from "../domain/activity";
 
 // GOALS.md §23e: Firestore document ⇄ domain type, mirroring FirestoreMappers.kt. Same field names,
 // same defaults (gender "Masculino", empty strings, trainingDays [], createdAt 0, flags false), and
@@ -17,6 +18,49 @@ import type { DraftStudentDoc, LinkedStudentDoc } from "../domain/students";
 // on these same conventions.
 
 type Data = Record<string, unknown>;
+
+export interface TrainerUser {
+  id: string;
+  role: "TRAINER";
+  name: string;
+  email: string;
+  createdAt: number;
+  createdBy: string | null;
+  accessStatus: "active" | "suspended";
+  suspendedAt: number | null;
+  suspendedReason: string | null;
+}
+
+export interface TrainerStats {
+  trainerId: string;
+  updatedAt: number;
+  lastSeenAt: number | null;
+  students: { total: number; linked: number; pending: number };
+  sessions7d: number;
+  adherence28d: number | null;
+  quiet: number;
+  pendingAssessments: number;
+  billing: { month: string; activePlans: number; planCents: number; expectedCents: number; receivedCents: number; overdueCents: number };
+}
+
+export interface TrainerActivity {
+  trainerId: string;
+  month: string;
+  updatedAt: number;
+  actions: Record<ActivityKind, number>;
+  activeDays: string[];
+}
+
+export type AuditAction = "trainer.create" | "trainer.suspend" | "trainer.reactivate" | "trainer.promote" | "request.reject" | "trainer.resetEmail";
+
+export interface AuditEntry {
+  id: string;
+  at: number;
+  adminUid: string;
+  action: AuditAction;
+  targetUid: string;
+  note: string;
+}
 
 function str(data: Data, key: string): string | null {
   const value = data[key];
@@ -50,6 +94,72 @@ function stringList(data: Data, key: string): string[] | null {
 function oneOf<T extends string>(data: Data, key: string, allowed: readonly T[]): T | null {
   const value = data[key];
   return allowed.includes(value as T) ? (value as T) : null;
+}
+
+function object(data: Data, key: string): Data | null {
+  const value = data[key];
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Data : null;
+}
+
+const AUDIT_ACTIONS: readonly AuditAction[] = ["trainer.create", "trainer.suspend", "trainer.reactivate", "trainer.promote", "request.reject", "trainer.resetEmail"];
+
+export function toTrainerUser(id: string, data: Data): TrainerUser | null {
+  if (str(data, "role") !== "TRAINER") return null;
+  return {
+    id,
+    role: "TRAINER",
+    name: str(data, "name") ?? "",
+    email: str(data, "email") ?? "",
+    createdAt: int(data, "createdAt") ?? 0,
+    createdBy: str(data, "createdBy"),
+    accessStatus: data.accessStatus === "suspended" ? "suspended" : "active",
+    suspendedAt: int(data, "suspendedAt"),
+    suspendedReason: str(data, "suspendedReason"),
+  };
+}
+
+export function toTrainerStats(_id: string, data: Data): TrainerStats | null {
+  const trainerId = str(data, "trainerId");
+  if (trainerId === null) return null;
+  const students = object(data, "students") ?? {};
+  const billing = object(data, "billing") ?? {};
+  return {
+    trainerId,
+    updatedAt: int(data, "updatedAt") ?? 0,
+    lastSeenAt: int(data, "lastSeenAt"),
+    students: { total: int(students, "total") ?? 0, linked: int(students, "linked") ?? 0, pending: int(students, "pending") ?? 0 },
+    sessions7d: int(data, "sessions7d") ?? 0,
+    adherence28d: num(data, "adherence28d"),
+    quiet: int(data, "quiet") ?? 0,
+    pendingAssessments: int(data, "pendingAssessments") ?? 0,
+    billing: {
+      month: str(billing, "month") ?? "",
+      activePlans: int(billing, "activePlans") ?? 0,
+      planCents: int(billing, "planCents") ?? 0,
+      expectedCents: int(billing, "expectedCents") ?? 0,
+      receivedCents: int(billing, "receivedCents") ?? 0,
+      overdueCents: int(billing, "overdueCents") ?? 0,
+    },
+  };
+}
+
+export function toTrainerActivity(_id: string, data: Data): TrainerActivity | null {
+  const trainerId = str(data, "trainerId");
+  const month = str(data, "month");
+  if (trainerId === null || month === null) return null;
+  const rawActions = object(data, "actions") ?? {};
+  const actions = emptyActions();
+  for (const kind of ACTIVITY_KINDS) actions[kind] = int(rawActions, kind) ?? 0;
+  return { trainerId, month, updatedAt: int(data, "updatedAt") ?? 0, actions, activeDays: stringList(data, "activeDays") ?? [] };
+}
+
+export function toAuditEntry(id: string, data: Data): AuditEntry | null {
+  const adminUid = str(data, "adminUid");
+  const action = oneOf(data, "action", AUDIT_ACTIONS);
+  const targetUid = str(data, "targetUid");
+  const at = int(data, "at");
+  if (adminUid === null || action === null || targetUid === null || at === null) return null;
+  return { id, at, adminUid, action, targetUid, note: str(data, "note") ?? "" };
 }
 
 /** `students/{id}` — FirestoreMappers.toUserEntity. */

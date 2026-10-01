@@ -12,6 +12,7 @@ import {
   updateStudentProfile,
   type TrainerStudent,
 } from "../../../../data/students";
+import { trackActivity } from "../../../../data/activity";
 import type { StudentProfile } from "../../../../domain/studentProfile";
 import { useSession } from "../../../SessionProvider";
 import { useTrainerData } from "../../useTrainerData";
@@ -133,9 +134,9 @@ function Detail({ trainerId, studentId }: { trainerId: string; studentId: string
       </section>
 
       {student.kind === "draft" ? (
-        <InviteSection trainerId={trainerId} student={student} />
+        <InviteSection trainerId={trainerId} student={student} timeZone={data.timeZone} />
       ) : (
-        <PermissionsSection studentId={student.doc.id} account={student.doc} onChanged={reload} />
+        <PermissionsSection trainerId={trainerId} studentId={student.doc.id} account={student.doc} timeZone={data.timeZone} onChanged={reload} />
       )}
 
       <BillingSection
@@ -178,9 +179,11 @@ function Detail({ trainerId, studentId }: { trainerId: string; studentId: string
 function InviteSection({
   trainerId,
   student,
+  timeZone,
 }: {
   trainerId: string;
   student: Extract<TrainerStudent, { kind: "draft" }>;
+  timeZone: string;
 }) {
   const [link, setLink] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -188,7 +191,10 @@ function InviteSection({
   async function create() {
     setStatus(null);
     try {
-      const code = await generateInvite(getFirebase().db, trainerId, student.doc, Date.now());
+      const { db } = getFirebase();
+      const now = Date.now();
+      const code = await generateInvite(db, trainerId, student.doc, now);
+      await trackActivity(db, trainerId, "inviteGenerated", now, timeZone);
       // The basePath by hand (a full URL, not a Link), and the trailing slash trailingSlash implies.
       setLink(`${window.location.origin}${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/convite/?c=${code}`);
     } catch {
@@ -227,12 +233,16 @@ function InviteSection({
 }
 
 function PermissionsSection({
+  trainerId,
   studentId,
   account,
+  timeZone,
   onChanged,
 }: {
+  trainerId: string;
   studentId: string;
   account: Extract<TrainerStudent, { kind: "linked" }>["doc"];
+  timeZone: string;
   onChanged: () => void;
 }) {
   const [error, setError] = useState<string | null>(null);
@@ -296,7 +306,11 @@ function PermissionsSection({
           <button
             type="button"
             disabled={!account.canSelfAssess}
-            onClick={() => void run(() => requestAssessment(db(), studentId))}
+            onClick={() => void run(async () => {
+              const now = Date.now();
+              await requestAssessment(db(), studentId);
+              await trackActivity(db(), trainerId, "assessmentRequested", now, timeZone);
+            })}
           >
             Solicitar autoavaliação
           </button>

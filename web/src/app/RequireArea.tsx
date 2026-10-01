@@ -8,7 +8,7 @@ import { useSession } from "./SessionProvider";
 // GOALS.md §23f: route-level gating — each area's layout guards itself, rather than one root
 // switching on the role (the "one surface serving two audiences" §23 exists to undo). Anyone who
 // belongs elsewhere is sent where destinationFor says they belong.
-export function RequireArea({ area, children }: { area: "/app" | "/aluno"; children: ReactNode }) {
+export function RequireArea({ area, children }: { area: "/app" | "/admin" | "/aluno"; children: ReactNode }) {
   const { session, error, refresh } = useSession();
   const router = useRouter();
   const destination = session.status === "loading" ? null : destinationFor(session);

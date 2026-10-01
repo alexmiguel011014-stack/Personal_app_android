@@ -71,10 +71,38 @@ mail comes from Firebase's own sender and can land in spam — the page tells th
 | `/convite?c=CODE` | `src/app/convite/` | A student's first visit: create an account, confirm the e-mail (GOALS.md §27), claim the invite (§23f) |
 | `/app` | `src/app/app/` | Trainer (§23g) — "Hoje", Agenda, Alunos, Registros, Mensalidades |
 | `/aluno` | `src/app/aluno/` | Student (§23h) — mobile-first |
+| `/admin` | `src/app/admin/` | ADM (§26g) — Visão geral |
+| `/admin/personais` | `src/app/admin/personais/` | ADM — directory, CSV export and trainer detail/create links |
+| `/admin/personais/detalhe?id=UID` | `src/app/admin/personais/detalhe/` | ADM — one trainer's aggregate stats, activity and audit history; status controls |
+| `/admin/personais/novo` | `src/app/admin/personais/novo/` | ADM — create a trainer account and send its password-reset link |
+| `/admin/solicitacoes` | `src/app/admin/solicitacoes/` | ADM — approve or reject trainer requests |
+| `/admin/conta` | `src/app/admin/conta/` | ADM — own account and password-reset link |
 
 `src/app/app/` is not a typo: the outer `app/` is the App Router directory, the inner one is the
 `/app` URL segment. `/app` and `/aluno` have separate layouts on purpose — see §23's decisions —
-and each guards itself (`RequireArea`): whoever belongs elsewhere is sent there.
+and each guards itself (`RequireArea`): whoever belongs elsewhere is sent there. `/admin` has its
+own guard and shell with Visão geral, Personais, Solicitações and Minha conta; `destinationFor`
+sends ADM to `/admin`, including when they open `/app`.
+
+### First ADM account (manual Firebase console setup; GOALS.md §26b)
+
+The first administrator cannot be created from the site. In Firebase Console:
+
+1. Authentication → Users → **Add user**. Use an e-mail you control that is not already used by a
+   personal or student, and a long unique password. Copy the resulting User UID.
+2. Firestore Database → Data → collection `users` → **Add document**. Set the document ID to that
+   exact UID and add `role` (string) `ADM`, `name` (string), `email` (string, same address), and
+   `createdAt` (number, current Unix time in milliseconds). Do not add `trainerId`.
+3. Sign in at `/entrar`; the ADM should land on `/admin`. Use “Esqueci minha senha” once to verify
+   account recovery, then create a second ADM the same way with another e-mail you control.
+
+The admin pages read trainer profiles and aggregate stats/activity/audit; they use count-only
+queries for linked students and do not read student documents. Firestore rules still technically
+allow an ADM to read any `users` document. Trainer suspension is a rules-enforced status flag: it
+does not disable Firebase Auth or remove linked students' access, and self-updates cannot clear the
+flag. Creating a trainer uses a secondary Auth app to preserve the ADM session; in emulator mode
+that secondary Auth instance connects to the Auth emulator. See `../GOALS.md` §26 and
+`../CLAUDE.md` for the data model and caveats.
 
 **This is a static export** (`output: "export"`): no server exists in production, so no Server
 Actions, route handlers, cookies, redirects or dynamic path segments — Next refuses them even in

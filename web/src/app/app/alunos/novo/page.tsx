@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { getFirebase } from "../../../../data/firebase";
 import { createDraftStudent } from "../../../../data/students";
+import { trackActivity } from "../../../../data/activity";
 import { emptyProfile } from "../../../../domain/studentProfile";
 import { useSession } from "../../../SessionProvider";
 import { StudentForm } from "../StudentForm";
@@ -22,7 +23,10 @@ export default function NewStudentPage() {
         initial={emptyProfile()}
         submitLabel="Cadastrar"
         onSubmit={async (profile) => {
-          const id = await createDraftStudent(getFirebase().db, trainerId, profile, Date.now());
+          const { db } = getFirebase();
+          const now = Date.now();
+          const id = await createDraftStudent(db, trainerId, profile, now);
+          await trackActivity(db, trainerId, "studentCreated", now, Intl.DateTimeFormat().resolvedOptions().timeZone);
           router.push(`/app/alunos/detalhe?id=${encodeURIComponent(id)}`);
         }}
       />

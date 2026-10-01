@@ -81,7 +81,8 @@ management view.
 
 > On `main` the website arrived as one piece (2026-09-30): `web/`, its two workflows and the live
 > `firestore.rules`. The plan it was built from — GOALS.md §23 and the references to it in the code
-> comments — lives in GOALS.md on `feature/kmp-web`; `main`'s GOALS.md does not have it yet.
+> comments — is in `main`'s GOALS.md too since 2026-10-01 (§19–§25 were brought over from
+> `feature/kmp-web` and the template branch; §26–§28 are the later web plans).
 
 `web/` is a Next.js 16 app (App Router, npm), the only website — it replaced the Kotlin/JS web
 build, which is gone (no `js` target, no `jsMain`; removed at §23l, 2026-09-28). Phase 1 — every

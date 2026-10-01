@@ -1638,6 +1638,2820 @@ flowchart TD
 
 ---
 
+## 19. Build — Cross-platform: bring the app to Web (Compose Multiplatform for Web)
+(2026-09-12, via `/newgoal`; implementation started same day via `/execgoals`)
+
+**Business framing (confirmed with the user):** a viability test, not a commitment — the trainer
+wants to know whether a browser build is good enough to show real students *before* paying
+Apple's $99/yr Developer fee that §18's iOS path eventually needs. **iOS is not paused or
+dropped** — it keeps evolving independently on `feature/kmp-ios`; this is explicitly a
+**separate front**, done on its own `feature/kmp-web` branch (forked from `feature/kmp-ios` to
+reuse its Koin/GitLive/SQLDelight/Compose-Multiplatform groundwork instead of re-doing it) so
+neither line of work blocks or interferes with the other.
+
+**The one fact that makes Web worth trying before/alongside iOS:** unlike iOS (§18a — no Mac, CI
+is the only verification gate), Kotlin/JS compiles and runs **locally on this Windows dev
+machine**, in a real browser, no cloud rental and no CI wait.
+
+```mermaid
+flowchart TD
+    A[19a. Design: js vs wasmJs,\nweb-specific scope cuts] --> B[19b. shared module: add js\ntarget, fix js-incompatible deps]
+    B --> C[19c. Data layer: skip SQLDelight\noffline cache, read Firestore direct]
+    B --> D[19d. Auth: GitLive on jsMain\nreused from 18f]
+    D --> E[19e. Security: App Check\nreCAPTCHA v3 web bridge]
+    C --> F[19f. UI: webApp entry point,\nKoin bootstrap, responsive layout]
+    E --> F
+    F --> G[19g. Hosting: GitHub Pages\nvia GitHub Actions]
+    G --> H[19h. Testing: Kotlin/JS\nbrowser test runner]
+    H --> I[19i. Registration/cutover\n+ docs]
+```
+
+**19a. Design rationale and scope cuts**
+Suggested: sonnet · high — architecture decision with real downstream cost if wrong, but
+already researched, not open-ended.
+- [x] **Target: Kotlin/JS (`js`), not `wasmJs`, for v1.** GitLive's `firebase-kotlin-sdk` (§18f's
+      Auth/Firestore layer) publishes no `wasmJs` variant, only `js` (confirmed via the published
+      Gradle module metadata, not guessed) — targeting `js` reuses that code as-is. `wasmJs`
+      (JetBrains' longer-term direction) is a documented future migration, not built now.
+- [x] **Branch: `feature/kmp-web`, forked from `origin/feature/kmp-ios`, not from `main`.**
+      Discovered mid-session that `main`'s `GOALS.md`/code was stale relative to real progress —
+      the actual Koin/GitLive/SQLDelight/Compose-Multiplatform migration lives on
+      `feature/kmp-ios` (54 commits ahead of `main` at the time), not on `main`. Confirmed with
+      the user: iOS keeps going on its own branch untouched; Web is a parallel front, not a
+      replacement.
+- [x] **Scope cut: no SQLDelight offline cache on Web v1** (see 19c) — SQLDelight's web driver
+      (`web-worker-driver`, Web Worker + OPFS-backed) exists and does publish a `js` target, but
+      its driver-creation is asynchronous (Worker spin-up), which doesn't match this project's
+      existing synchronous `expect fun createDriver(): SqlDriver` contract — adapting that is
+      real work with no viability-test payoff yet. The Student/Trainer screens read Firestore
+      directly instead, no local mirror — acceptable because a browser tab already assumes an
+      active connection.
+- [x] **Scope cut: no Crashlytics-equivalent on Web v1.** `dev.gitlive:firebase-crashlytics`
+      publishes no `js` variant either (confirmed via a real dependency-resolution failure while
+      implementing 19b, not guessed) — `util/CrashReporter.kt`'s web actual logs to the browser
+      console instead. Real Crashlytics-for-web wiring is additive polish, not
+      viability-blocking.
+- [x] **reCAPTCHA v3 vs Enterprise — decided 2026-09-13, reversed from the initial v3 default.**
+      First picked v3 (simpler, no GCP setup) per this item's own original reasoning. **Reversed
+      once actually reached in the Firebase Console**: the console itself shows "O reCAPTCHA foi
+      descontinuado. Use o reCAPTCHA Enterprise" on the classic v3 provider — confirmed live,
+      more current than the research this item was originally written from. Also found while
+      there: classic v3 needs a separate key pair created at google.com/recaptcha/admin first
+      (a secret key field App Check asks for), not just an auto-generated site key the way
+      Enterprise's flow works — one more reason Enterprise is the simpler path now, not just the
+      more current one. Still free up to 10k assessments/month (same research as this item's
+      original pass). Code updated accordingly (19e).
+
+**19b. Shared module: add the `js` target — done and verified 2026-09-12**
+Suggested: sonnet · high — spans multiple systems; ended up surfacing three real, previously-
+unknown dependency-compatibility blockers, not just "add a target line."
+- [x] **`js { browser() }` added to `:shared`'s `kotlin { }` block** (`shared/build.gradle.kts`),
+      alongside the existing `android`/`iosArm64`/`iosSimulatorArm64` targets — same module,
+      same `commonMain`, no parallel module created (per 19a/§18's own "don't duplicate the
+      shared work" framing).
+- [x] **Three real, previously-undiscovered `js`-target dependency gaps found and fixed** —
+      each confirmed via an actual `:shared:compileKotlinJs` failure, not predicted in advance:
+      1. **`androidx.datastore` (both `datastore-core` and `datastore-preferences-core`)
+         publishes no `js` variant** (only `wasmJs`) — `SettingsRepository` depended on
+         `DataStore<Preferences>` directly in `commonMain`, which would have broken dependency
+         resolution for the whole module the moment `js()` was added. Fixed by introducing
+         `data/local/SettingsStore.kt` (`expect class`, no declared constructor — same pattern
+         `DatabaseDriverFactory` already used): android/iOS actuals wrap the exact same
+         DataStore/OkioStorage code that existed before (same on-disk filename,
+         `settings.preferences_pb`, so existing installs' saved API keys aren't lost), and a new
+         `js` actual backs it with plain browser `localStorage` instead (single-tab scope, no
+         cross-tab sync — acceptable for a viability test). `SettingsRepository` now depends on
+         `SettingsStore`, not `DataStore<Preferences>`, directly. The old commonMain
+         `SettingsDataStore.kt` factory (and its android/iOS counterparts) were deleted, folded
+         into the new `SettingsStore.{android,ios}.kt` actuals directly.
+      2. **`dev.gitlive:firebase-crashlytics` publishes no `js` variant** either (unlike
+         `firebase-auth`/`firebase-firestore`, which do) — `GenerativeAiService`,
+         `AIWorkoutViewModel`, and `TrainerRepository` all called `Firebase.crashlytics.*`
+         directly from `commonMain`. Fixed with a small `util/CrashReporter.kt` expect/object
+         (android/iOS actuals still call the real GitLive Crashlytics, unchanged behavior; the
+         `js` actual logs to the browser console per 19a's scope cut).
+      3. **`ktor-client-content-negotiation` and `ktor-serialization-kotlinx-json` publish no
+         `js` variant** either (only `wasmJs`) — `GenerativeAiService`/`UpdateChecker`'s
+         `HttpClient` used the `ContentNegotiation` plugin for OpenAI/DeepSeek/Claude calls and
+         the update-manifest fetch. Fixed by dropping the plugin entirely and (de)serializing by
+         hand with the existing `kotlinx.serialization.json.Json` instance
+         (`json.encodeToString(...)`/`json.decodeFromString<T>(...)` around `setBody`/
+         `bodyAsText()`) — works identically on every target, needs nothing beyond
+         `ktor-client-core`. Added `ktor-client-js` (the `js` target's fetch/XHR-backed engine)
+         and `kotlinx-browser` (browser API bindings, `localStorage`/`window`/`navigator`) to a
+         new `jsMain.dependencies` block.
+      - `Platform` enum gained a `WEB` entry (`util/Platform.kt`) with a `js` actual
+        (`currentPlatform() = Platform.WEB`); `UpdateChecker`'s `when (currentPlatform())`
+        gained a `Platform.WEB -> UpdateStatus.UpToDate` branch (a web build has no separate
+        install to go stale — reloading the page always serves the latest GitHub Pages deploy,
+        per 19g).
+      - `util/TimeUtil.kt`'s `js` actual: `kotlin.js.Date().getTime().toLong()`.
+      - `ui/platform/PlatformActions.kt`'s `js` actual: `openUrl` via `kotlinx.browser.window.open`,
+        `shareText` via the Web Share API when available, clipboard-copy fallback otherwise (raw
+        `js("...")` interop — Navigator.share/clipboard aren't part of `kotlinx-browser`'s typed
+        bindings).
+      - `data/local/DatabaseDriverFactory.kt`'s `js` actual is an intentional `error(...)` stub
+        (satisfies the `expect class` contract; per 19c, nothing on web should ever call it — the
+        web Koin module, 19f, wires repositories without it).
+      - **Verified for real, not just "configured"**: `:shared:compileKotlinJs` — **BUILD
+        SUCCESSFUL**. Re-ran the existing Android verification bar to confirm no regression from
+        touching `SettingsRepository`/`TrainerRepository`/`GenerativeAiService`/
+        `AIWorkoutViewModel`/`UpdateChecker`/both `AppModule.kt`s:
+        `:shared:testAndroidHostTest`, `:app:compileDebugKotlin`, `:app:verify`
+        (lint + `testDebugUnitTest`), `:app:assembleDebug` — **all green**.
+      - **Not yet verified**: iOS. This Windows machine can't compile Kotlin/Native locally
+        (same confirmed limitation §18a already documents) — iOS CI (`ios-ci.yml`) is the real
+        gate, and it hasn't run against this branch's changes yet (nothing pushed). The
+        `SettingsStore.ios.kt`/`CrashReporter.ios.kt` changes are mechanical (same DataStore/
+        GitLive calls, just repackaged behind the new abstractions), but "mechanical" isn't
+        "confirmed" — don't skip this check once there's a reason to push.
+
+**19c. Data layer: read Firestore directly, no offline mirror — done and verified 2026-09-12**
+Suggested: sonnet · medium — mostly ViewModel/repository wiring, not new architecture, given
+19a's decision already made.
+- [x] **`TrainerRepository` extracted to an interface**, matching the exact method
+      signatures the concrete class already had — zero change needed in any ViewModel/screen
+      (they all reference the type name `TrainerRepository`, which now resolves to the
+      interface instead of a class). Two implementations:
+      `SqlDelightTrainerRepository` (the old class body, renamed, unchanged behavior —
+      Android/iOS) and `FirestoreTrainerRepository` (new, `commonMain`, no `AppDao`/
+      `DatabaseDriverFactory` — every read is a live Firestore query/listener via the exact same
+      `FirestoreMappers.kt` extension functions `StudentRepository` already used for this,
+      `getStudents()` combines the `students`-drafts and `users`-linked queries
+      `SqlDelightTrainerRepository.startListening`'s two separate mirrors used to feed into one
+      local table). `startListening`/`stopListening` are no-ops on the Firestore-direct side —
+      nothing to start, every read already listens directly.
+      `StudentRepository` needed **zero changes** — it already only depended on
+      `FirebaseFirestore` + the `TrainerRepository` interface type (for one delegated write,
+      `insertWorkoutLog`), never on `AppDao` directly, so it was already web-safe by
+      construction.
+      **Verified for real**: `:shared:compileKotlinJs` — **BUILD SUCCESSFUL**. Re-ran the full
+      Android verification bar again (`:shared:testAndroidHostTest`, `:app:verify`,
+      `:app:assembleDebug`, all green) since this touched the Koin wiring in both
+      `AppModule.kt`/`AppModule.ios.kt` (now bind `TrainerRepository` to
+      `SqlDelightTrainerRepository`, not construct it directly) — no regression.
+      **Not yet observed in a real browser** — that needs 19f's entry point to exist first; the
+      "workout created on web shows up on Android's own view" end-to-end check happens there,
+      not here.
+- [x] Writes go straight to Firestore in `FirestoreTrainerRepository`, same collection/field
+      shapes as `SqlDelightTrainerRepository`'s Firestore half, same swallow-and-`CrashReporter`
+      behavior on failure (kept for consistency with Android/iOS and to avoid reintroducing the
+      §17c crash class — documented trade-off: no optimistic local copy to fall back on if a
+      write fails, so the UI simply doesn't update rather than showing stale data).
+      `insertHistory` is a no-op on web (dead code today per `CLAUDE.md` — `HistoryEntity` was
+      never synced to Firestore on any platform, and nothing currently calls this method; only
+      exists to satisfy the interface).
+- [x] **Real bug found and fixed 2026-09-13, via the user's own first real-account login** —
+      opening a student's "Detalhes" screen failed with a live
+      `FirebaseFirestoreException: PERMISSION_DENIED`. Root cause, confirmed by direct comparison
+      against `SqlDelightTrainerRepository.startListening`'s already-proven-working query shapes,
+      not guessed: `firestore.rules` authorizes `biometrics`/`workouts`/`assessments`/
+      `workoutLogs` reads via `resource.data.trainerId` — a Firestore list query whose `where`
+      clause doesn't *also* constrain `trainerId` can't be proven safe by the rules engine and is
+      denied outright, independent of whether the actual matching documents would satisfy the
+      rule. `getBiometricsByUser`/`getActiveWorkoutsByStudent`/`getAssessmentsForStudent`/
+      `getWorkoutLogsByStudent`/`getWorkoutLogsByWorkout` all originally filtered by
+      `studentId`/`workoutId` only (no `trainerId`) — unlike every Android/iOS mirror query
+      (`SqlDelightTrainerRepository`), which has always filtered `where trainerId equalTo
+      trainerId` for exactly this reason. Fixed: every one of those five queries now also filters
+      `trainerId equalTo currentTrainerId()` (pure-equality compound `where`, same pattern
+      `getStudents()`'s linked-users query already used — needs no new Firestore composite index,
+      confirmed by that existing query's own production history). Re-verified:
+      `:shared:compileKotlinJs` + `:shared:testAndroidHostTest` + `:app:verify` all green (this
+      file is commonMain — compiled for every target even though only web constructs this class).
+      **Not yet re-confirmed against the real account that hit this** — the user was mid-test
+      when this was found; next real login should confirm "Detalhes" now opens clean.
+
+**19d. Auth: reuse GitLive on `jsMain` — done and verified 2026-09-12 (code); browser login not yet observed**
+Suggested: sonnet · medium — the SDK already resolves on this target (confirmed, 19b); work was
+wiring a web Koin module, not a new auth mechanism.
+- [x] New `di/AppModule.js.kt` (`webAppModule`), mirroring `AppModule.kt`/`AppModule.ios.kt`:
+      `AuthRepository`, `SettingsRepository(SettingsStore())`, `TrainerRepository` bound to
+      `FirestoreTrainerRepository` (19c), `StudentRepository`, every `viewModel { }` the other
+      two platforms register. New `WebGeminiProvider` (honest "not available" stub, same pattern
+      `IosGeminiProvider` already uses for the same underlying reason — Firebase AI Logic/Gemini
+      is Android-only).
+      **Known gap, not silently dropped**: `GenerativeAiService`'s `volumeReference` and
+      `PromptFichaViewModel`'s `fichaTemplate` (bundled `.md` files, read from Android assets/iOS
+      NSBundle on the other platforms) are passed as an empty string on web for now — AI
+      generation still works, just without the extra grounding table. Follow-up: serve those
+      files as static assets alongside the deployed JS bundle and fetch them at startup.
+      `UpdateChecker` gets placeholder version numbers (`0`/`"web"`) — harmless, since
+      `Platform.WEB`'s branch (19b) never reads them.
+      **Verified**: `:shared:compileKotlinJs` — **BUILD SUCCESSFUL**. Pure addition (no existing
+      file touched), so the Android verification bar wasn't re-run for this specific item — it
+      was already re-confirmed green immediately beforehand by 19c's changes.
+      **Not yet verified**: nothing calls `startKoin { modules(webAppModule) }` yet — that's
+      19f's entry point. "A real login reaches the correct role-routed screen" can't be observed
+      until then.
+
+**19e. Security: Firebase App Check on web — done and verified live 2026-09-13**
+Suggested: opus · high — security-relevant (`firestore.rules` assumes App Check is active on
+every client, per §18g), and the JS-interop bridge was genuinely fiddly.
+- [x] `util/externals/AppCheck.js.kt` + `util/externals/FirebaseAppExternals.js.kt` (new
+      `@JsModule("firebase/app-check")`/`@JsModule("firebase/app")` external bindings) +
+      `util/WebAppCheck.js.kt` (`initWebAppCheck()`, wired into 19f's entry point). Real,
+      previously-unknown snag found and fixed while writing this: GitLive's own `FirebaseApp.js`
+      accessor (meant to expose the underlying native JS app instance, per GitLive's documented
+      "every class has js/android/ios properties" design) is **not actually usable from outside
+      GitLive's module** — its backing constructor property is `internal`, and Kotlin resolves
+      the identically-named public top-level extension property to the (inaccessible) class
+      member first, so `Firebase.app.js` fails to compile ("it is internal in FirebaseApp"),
+      confirmed via a real compile error. Worked around by declaring `getApp()` directly against
+      the same `"firebase/app"` npm module GitLive's own externals bind — it returns the exact
+      same default-app singleton GitLive's `Firebase.initialize(...)` already registered, so
+      there's no duplicate app/config. The `firebase` npm package (v10.12.2) needs no new Gradle
+      `npm()` dependency — it's already transitive via GitLive's own
+      `firebase-auth`/`firebase-firestore` `api(npm("firebase", "10.12.2"))` declaration.
+      **Verified**: `:shared:compileKotlinJs` **and** a real browser run (19f) — App Check's real
+      failure mode is visible live in the console (`appCheck/recaptcha-error`, a real 400 from
+      Google's reCAPTCHA endpoint) once the site key is a well-formed-but-placeholder string, not
+      just a compile-time abstraction.
+- [x] **Register a Web app** for this Firebase project — done 2026-09-13 (Console → Project
+      settings → Add app → Web, "Personal Tracker Web"). Unlike Android's
+      `google-services.json`/iOS's `GoogleService-Info.plist`, there is **no auto-configuring
+      file for `js`** — the real config (`apiKey`/`authDomain`/`projectId`/`storageBucket`/
+      `messagingSenderId`/`appId`) is now in `main.kt`'s `webFirebaseOptions` (19f). Confirmed
+      live: the earlier `auth/api-key-not-valid` error is gone from the browser console now that
+      this is real, not a placeholder.
+- [x] **reCAPTCHA v3 → Enterprise, reversed 2026-09-13** (see 19a's item for why: Firebase
+      Console itself flags classic v3 as deprecated, discovered while actually registering it,
+      not from stale docs). `ReCaptchaV3Provider` → `ReCaptchaEnterpriseProvider` in
+      `AppCheck.js.kt`/`WebAppCheck.js.kt` — same `firebase/app-check` module, same call shape,
+      only the provider class differs. Re-verified: `:shared:compileKotlinJs` BUILD SUCCESSFUL.
+- [x] **Registered for real 2026-09-13** — reCAPTCHA Enterprise key created at
+      console.cloud.google.com (Security → reCAPTCHA Enterprise, domain `localhost`), registered
+      in Firebase App Check, site key pasted into `WebAppCheck.js.kt`'s
+      `RECAPTCHA_ENTERPRISE_SITE_KEY` (no longer a placeholder).
+- [x] **Real init-order bug found and fixed 2026-09-13, confirmed via `@firebase/app-check`'s
+      own source, not guessed.** `initWebAppCheck()` was called *before* `ComposeViewport`
+      mounted — App Check's `initializeEnterprise()` synchronously appends its own placeholder
+      `<div id="fire_app_check_[DEFAULT]">` to `document.body` immediately, then (async, once
+      reCAPTCHA's own remote script loads) looks that div back up by id to render into. Compose
+      taking over `document.body!!` in between removed it, so the later lookup failed —
+      `renderInvisibleWidget`/`grecaptcha.render(divId, ...)` in
+      `node_modules/@firebase/app-check/dist/index.cjs.js` (read directly to find this, not
+      trial-and-error) received an id with no matching element anymore. Fixed by moving
+      `initWebAppCheck()` in `main.kt` to run *after* the `ComposeViewport { ... }` call instead
+      of before it — Compose's DOM setup happens first, App Check's div survives.
+      **Verified live, not just compiled**: a genuinely fresh browser tab (not just a re-navigate
+      — webpack-dev-server's HMR reconnect cycle was muddying earlier checks) loads with **zero**
+      console errors — no `auth/api-key-not-valid`, no `appCheck/recaptcha-error`, no placeholder
+      error. `LoginScreen` renders correctly, centered at the 19f max-width. This is the first
+      point in §19 where the web build is actually clean end to end, not just "renders with a
+      known, documented error."
+- [x] **`jsBrowserDevelopmentRun` (webpack-dev-server/HMR) is measurably less reliable than the
+      real production build for this specific check — confirmed by comparing both, not assumed.**
+      The same fresh-tab App Check check above came back flaky on repeated dev-server runs (the
+      placeholder error reappeared intermittently even with the double-`requestAnimationFrame`
+      ordering fix below), while a real `:shared:jsBrowserDistribution` production bundle
+      (`jsBrowserProductionWebpack`, ~26 min on this machine — no incremental cache yet, size
+      limit warnings on the unsplit 5.95 MiB bundle are expected at this stage, not investigated)
+      served statically (`python -m http.server`, no HMR/dev-server client script at all) loaded
+      with zero console errors, consistently, every time. Treat the dev server as a fast
+      iteration tool, not the verification bar — 19g's actual GitHub Pages deploy serves a
+      production-style static bundle, matching the environment that's actually clean.
+
+**19f. UI: webApp entry point, Koin bootstrap, responsive layout — done and observed live in a
+real browser 2026-09-13**
+Suggested: sonnet · high — turned out to need real Gradle/tooling debugging, not just UI code.
+- [x] **Real browser verification, not just a compile.** `./gradlew :shared:jsBrowserDevelopmentRun`
+      (webpack-dev-server on `localhost:8080`) — `LoginScreen` renders correctly: Personal/Aluno
+      tabs, email/senha fields, "Manter conectado" checkbox, "Entrar" button, matching the exact
+      Android UI. Confirms the full pipeline end to end: `main()` → `Firebase.initialize` →
+      `initWebAppCheck()` → `startKoin` → `ComposeViewport` → `RoleRouter` → `LoginScreen`, all
+      real Compose rendering via Skiko/Wasm in an actual browser, not a simulated/headless
+      assumption. One found-and-fixed bug on the way: the custom `index.html` (19f) needs its
+      own explicit `<script src="shared.js"></script>` — Kotlin/JS's webpack-dev-server does
+      **not** auto-inject one into a user-supplied `index.html` the way html-webpack-plugin's
+      default template does; a bare custom `index.html` serves as pure static passthrough with no
+      bundle reference at all, confirmed by literally curling the served HTML and finding no
+      `<script>` tag. One console error appears, exactly as expected from 19e's TODO placeholder,
+      not a surprise: `initializeAppCheck`'s reCAPTCHA v3 provider fails to initialize
+      ("reCAPTCHA placeholder element must be an element or id") because the site key isn't real
+      yet — doesn't block rendering, blocks real login until the manual Console steps (19e) are
+      done.
+- [x] **No separate `webApp` module needed** — revised from the original plan: `:shared` already
+      declares the `js { browser() }` target itself (unlike Android, which needs its own
+      `androidApp` module for APK packaging), so the entry point is just
+      `shared/src/jsMain/kotlin/com/example/personalapp/main.kt` + `shared/src/jsMain/
+      resources/index.html`, directly in the same module. `main()`: `Firebase.initialize(...)` →
+      `initWebAppCheck()` (19e) → `startKoin { modules(webAppModule) }` (19d) →
+      `ComposeViewport(document.body!!) { MaterialTheme { Surface(...) { RoleRouter() } } }` —
+      same wrapping `MainActivity.kt` uses on Android, same ordering `MainApplication.kt` uses
+      (Koin + App Check before any UI). `index.html` has a `viewport` meta tag for the
+      phone-width-first render (the actual responsive-layout item below is deferred, not
+      dropped — needs to be judged against a real render first, see open item).
+      **`webFirebaseOptions` now holds the real registered Web app's config** (19e) — confirmed
+      live: the browser console's `auth/api-key-not-valid` error is gone since this landed.
+      **Found and fixed a second real bug getting the dev server to actually show anything**: a
+      custom `src/jsMain/resources/index.html` is served as pure static passthrough by
+      `jsBrowserDevelopmentRun` — Kotlin/JS does **not** auto-inject a `<script>` tag into a
+      user-supplied `index.html` the way html-webpack-plugin's own default template does.
+      Confirmed by literally `curl`-ing the served HTML and finding no `<script>` tag at all, not
+      guessed; fixed with an explicit `<script src="shared.js"></script>` (the real emitted
+      bundle filename, confirmed from the webpack build log).
+- [x] **Three real, previously-unknown local build-tooling blockers found and fixed while
+      getting this far** (none are code problems — all are this Gradle+Kotlin
+      2.3.20+Windows-specific plumbing, confirmed via actual failed builds):
+      1. `js { browser() }` needed `binaries.executable()` added (only a klib was produced
+         without it — no `main()`-invoking output, no browser-distribution tasks existed at
+         all).
+      2. `ComposeViewport` needs `@OptIn(ExperimentalComposeUiApi::class)`.
+      3. **Kotlin/JS's own Node.js/Yarn auto-download conflicts with this project's locked-down
+         `settings.gradle.kts` (`repositoriesMode = FAIL_ON_PROJECT_REPOS`)** — both tools try to
+         add their own download repository at evaluation time, which that policy correctly
+         rejects. Fixed by using what's already on this machine instead of downloading a second
+         copy: root `build.gradle.kts` sets `NodeJsEnvSpec.download = false` (reuses system
+         Node), `gradle.properties` sets `kotlin.js.yarn=false` (plain npm, bundled with Node,
+         instead of also needing Yarn).
+      4. **The root Gradle project name ("Personal APP") has a space**, which broke
+         `kotlinNpmInstall` (`EINVALIDPACKAGENAME` — npm package names must be URL-friendly,
+         confirmed via a real failed install, not guessed). This is the exact same root cause
+         `shared/build.gradle.kts`'s pre-existing comment already flagged for why
+         `compose.components.resources` was left out (Android dex step, different symptom, same
+         cause). Fixed narrowly for `js` only, without renaming the whole Gradle project:
+         `outputModuleName.set("personal-app-shared")` on the `js { }` target block (the
+         originally-tried `moduleName` property is deprecated-for-removal as of exactly Kotlin
+         2.3, this project's pinned version — confirmed via a real compile error pointing at
+         that).
+      **Verified**: `:shared:compileKotlinJs` and `:shared:compileProductionExecutableKotlinJs`
+      — both **BUILD SUCCESSFUL** (the full production-optimized js executable compiles clean,
+      not just the library klib) — this is real proof every file across 19b–19f's Kotlin code is
+      correct, not just individually-compiling pieces.
+      **Fourth build-tooling issue found, and fully fixed 2026-09-14 (corrects the
+      "Windows/local-only" call below — it wasn't).** `jsBrowserProductionWebpack` failed trying
+      to invoke a Node.js binary from `~/.gradle/nodejs/node-v24.10.0-.../node`, a path the
+      `download = false` root hook should have prevented it from expecting. **This session first
+      assumed it was Windows/local-tooling-specific** (§18a's iOS precedent, "a clean CI runner
+      won't carry it") — **wrong**: the identical failure reproduced on a real
+      `ubuntu-latest` GitHub Actions run (`~/.gradle/nodejs/node-v24.10.0-linux-x64/node`, same
+      error text), proving it deterministic, not platform noise.
+      **Real root cause, confirmed against Kotlin's own source** (not further guessing):
+      `download = false` alone doesn't stop `NodeJsPlugin` from *also* trying to register its own
+      project-level ivy repository for `nodejs.org/dist` — that's controlled by a *separate*
+      property, `downloadBaseUrl`, which stays non-null by default regardless of `download`.
+      `FAIL_ON_PROJECT_REPOS` was rejecting that redundant registration attempt every time,
+      independent of whether a matching repo already existed. Found by reading Kotlin's own
+      integration test fixture for this exact scenario
+      (`nodejs-setup-with-user-repositories`, `kotlin/kotlin@v2.3.20`), not trial and error.
+      **The real fix, two parts, both required**:
+      1. `settings.gradle.kts`: the `nodejs.org/dist` ivy repository declared centrally
+         (`dependencyResolutionManagement`), copied verbatim from Kotlin's own fixture.
+      2. `shared/build.gradle.kts` (**not** the root `build.gradle.kts` — confirmed by testing
+         both: the root-level hook alone left the failure unchanged):
+         `NodeJsEnvSpec.downloadBaseUrl.set(null as String?)`, which stops the plugin's own
+         redundant repo-registration attempt now that the central one satisfies it.
+      The old `download = false` root-level hook is removed (superseded, not layered underneath
+      — a stale disabled setting sitting next to the real fix would misdescribe what's actually
+      happening).
+      **Verified for real**: removed the local manual Node-binary placement from the earlier
+      session (so this run couldn't accidentally reuse it), then `:shared:kotlinNodeJsSetup`
+      downloaded a genuine fresh Node binary through the new repo, and
+      `:shared:jsBrowserDistribution` — the full production build, including the webpack step
+      that was failing — **BUILD SUCCESSFUL in 21m 54s**. `./gradlew verify` re-run clean
+      afterward (these are root/shared build-config files, so an Android regression was the real
+      risk, not assumed away).
+- [x] **Responsive layout pass — done 2026-09-13, judged against a real render, not guessed.**
+      The user tested the live dev build in their own browser (desktop-width Brave window) and
+      confirmed the phone-shaped screens (fillMaxWidth fields/buttons throughout) stretched
+      edge-to-edge ugly on a wide viewport. Fixed in `main.kt` only (web-specific, no change to
+      the shared screens Android also uses): a centered `Box` + `Surface(Modifier.widthIn(max =
+      480.dp))` around `RoleRouter()`, phone-width column centered on the page instead of
+      stretched. Re-verified live in the browser after the fix.
+- [x] **Real end-to-end login attempted and diagnosed — done 2026-09-13.** The user's own first
+      login attempt (real account, real password) failed with `auth/invalid-email` — a
+      syntactically valid email Firebase's own client-side check should never reject. **Root
+      cause found and reproduced independently** (typed a fresh test email, pressed physical Tab,
+      watched the second field's keystrokes land back in the *email* field instead —
+      `"test@example.com testpass1"` in one field, confirmed via screenshot, not inferred):
+      **Compose Multiplatform's `js` (canvas) target does not route physical Tab or Enter key
+      presses into Compose's key-event/IME-action system at all.** Tried two app-level
+      mitigations — an explicit `onPreviewKeyEvent` Tab intercept, and
+      `KeyboardActions(onDone = ...)` on Enter — **neither fired**, confirming this is a
+      framework-level gap on this specific target (matches a known class of upstream
+      Compose-for-Web `js`-target hardware-keyboard issues), not something patchable from app
+      code. Removed the non-functional `onPreviewKeyEvent` handler (confirmed dead code, not left
+      in speculatively); kept `keyboardOptions`/`keyboardActions` (`ImeAction.Next`/`Done`) since
+      mobile soft-keyboard "next"/"done" buttons may route through a different, untested-but-
+      plausible working path.
+      **The actual, confirmed-working mitigation: click each field instead of tabbing between
+      them.** Verified for real: filling both fields by clicking (no Tab) and submitting by
+      clicking "Entrar" (Enter doesn't submit either, same root cause) produced a real
+      `auth/invalid-credential` response for a fake test account — the *correct* rejection for a
+      syntactically-valid-but-nonexistent login, proving the email reaches Firebase intact and
+      the entire pipeline (App Check token, real Firebase config, GitLive
+      `signInWithEmailAndPassword`) works end to end when driven by clicks. **Known real
+      limitation for the viability test itself**: desktop users who Tab between fields out of
+      habit will silently corrupt their input — worth the trainer knowing about explicitly, not
+      something to discover mid-demo. Not scoped to fix further here (would mean pursuing
+      `wasmJs` for the UI layer specifically, reopening the GitLive-`js`-only constraint 19a
+      already weighed) — flagged as a known follow-up if the viability test itself goes well.
+
+**19g. Hosting: GitHub Pages**
+Suggested: sonnet · low — a new CI workflow plus repo settings, reuses the GitHub Actions setup
+§18k already built. **Workflow green and deployed 2026-09-14.**
+- [x] **Decided 2026-09-12 (discussed with the user): GitHub Pages, not Firebase Hosting.**
+      ~100GB/month bandwidth + 1GB storage on a public repo, vs. Firebase Hosting's
+      360MB/day (~10.8GB/month) — meaningfully more headroom for the same zero cost, and reuses
+      the exact GitHub Actions infra §18k already stood up for iOS CI (new workflow file, not a
+      new signup). Trade-off accepted: pure static hosting, no server-side rewrites/functions —
+      irrelevant here, Compose Web builds to a static SPA.
+- [x] New `.github/workflows/web-deploy.yml`: `ubuntu-latest` (no macOS needed), triggered on
+      push to `main` (or `feature/kmp-web` while this stays a separate front), running
+      `jsBrowserDistribution` then `actions/deploy-pages`.
+- [x] **(manual)** Enable GitHub Pages in the repo's Settings → Pages, source "GitHub Actions" —
+      done by the user 2026-09-14.
+- [x] **Second real CI-only failure found and fixed 2026-09-14, after 19f's Node-download fix
+      was confirmed working** (Web CI's compile step and Web Deploy's build step both got past
+      the old failure point): `:kotlinStorePackageLock` failed with `Lock file was changed. Run
+      the kotlinUpgradePackageLock task to actualize lock file`. **Not the same root cause as
+      19f** — different task, different plugin class (`NodeJsRootPlugin`, not `NodeJsPlugin`),
+      confirmed by reading its own distinct error rather than assumed. Running
+      `./gradlew kotlinUpgradePackageLock` locally reported `BUILD SUCCESSFUL`, everything
+      already UP-TO-DATE — the committed `kotlin-js-store/package-lock.json` is internally
+      consistent on this Windows machine but doesn't byte-match what a clean `ubuntu-latest`
+      Linux runner resolves for the same dependencies.
+      **Fix, found by reading Kotlin's own source** (`BaseNpmExtension.kt`,
+      `NodeJsRootPlugin.kt`, `LockStoreTask.kt` at `kotlin/kotlin@v2.3.20`):
+      `NpmExtension.packageLockMismatchReport` (a root-project-scoped extension, applied by
+      `NodeJsRootPlugin`) defaults to `FAIL`; set to `WARNING` in root `build.gradle.kts`, it
+      logs the drift and proceeds instead of throwing. Accepted because this app has no
+      native/platform-pinned npm dependencies where a silent lockfile drift could matter — the
+      lockfile is advisory here, not load-bearing reproducibility, and blocking every push over a
+      cross-OS hash difference isn't worth it for a viability test.
+      **Verified locally**: `./gradlew :shared:jsBrowserDistribution` — `:kotlinStorePackageLock`
+      now executes (not skipped) without throwing, full production build **BUILD SUCCESSFUL**.
+      `./gradlew verify` re-run clean afterward (Android unaffected, same discipline as every
+      other root/shared build-config change this session).
+
+**19h. Testing**
+Suggested: sonnet · medium.
+- [ ] `WorkoutParserTest` (already dependency-free `commonTest`) runs against the `js` test
+      target via Kotlin/JS's Karma browser-based test runner.
+      **Blocked, found 2026-09-14 by actually running `:shared:jsTest`** (during `/fixproject`):
+      it fails at configuration with the exact §19f error — `kotlinNodeJsSetup`'s *test* path
+      registers `https://nodejs.org/dist` as a repository itself, which this repo's
+      `FAIL_ON_PROJECT_REPOS` rejects, and it does so regardless of the root
+      `NodeJsEnvSpec.download = false` that fixed the main compile path. Not a one-liner: needs
+      either the Node distribution declared centrally in `settings.gradle.kts`'s
+      `dependencyResolutionManagement` (an `ivy` repo with Kotlin's expected layout) or the test
+      compilation's own env spec configured — decide which when this is picked up. Until then
+      `web-ci.yml` gates the js target on compile only, and says so in its header.
+- [x] The tests that *do* exist now actually run where CI looks: `/scanproject` 2026-09-14 found
+      that `verify` (what `android-ci.yml` calls) only ran `:app`'s placeholder
+      `ExampleUnitTest` — `WorkoutParserTest` lives in `shared/commonTest` and ran only via
+      `:shared:testAndroidHostTest`, which nothing in CI invoked. `verify` now depends on it;
+      proven by forcing a rerun: 15 tests, 0 failures, in the JUnit XML report.
+
+**19i. Registration/cutover**
+Suggested: haiku · low. **Not started.**
+- [ ] Update `CLAUDE.md` to describe the `js`/web target and its deliberate divergences from
+      Android/iOS (19c's direct-Firestore read, no SQLDelight; `SettingsStore`'s localStorage
+      backing; no Crashlytics yet).
+- [ ] Once 19a–19h are green, the actual viability check this section exists for: have the
+      trainer use the deployed web build with a real/test student account and report back.
+
+---
+
+## 20. Feature — Adaptive "real website" shell: sidebar navigation + list-detail on wide screens
+(2026-09-13, via `/newgoal`)
+
+**What this section is and isn't.** The request was "converter o sistema para aceitar um site e
+um app; tornar o app com cara de site". The first half — one system serving both a native app and
+a website off the same codebase and the same Firestore backend — **is already done by §19** (web
+target builds, deploys as a static bundle, real login confirmed end to end on 2026-09-13). This
+section is only the second half: the web build currently looks like *a phone app centered in a
+browser window* (§19f deliberately clamped it to a 480dp column as a viability-test shortcut).
+The ask is to make it read as **a real responsive website/dashboard** instead.
+
+**Scope confirmed with the user 2026-09-13**: structural redesign, not a styling pass. That
+means the navigation model itself changes on wide screens — persistent sidebar instead of a
+bottom bar, students list and the selected student's details side by side instead of a push/pop
+stack — the shape a real trainer-facing web dashboard (Trainerize/TrueCoach's web app) has.
+
+**"Responsivo" here means phone *and* computer, both first-class** (clarified by the user in the
+same exchange). The desktop dashboard is the visible half of the work, but the phone-browser half
+is the one with more users behind it — the trainer's students will open a link on a phone. It is
+also the half that is easiest to *assume* is already handled, because the phone layout reuses the
+same composables the Android app already ships; what differs is the runtime underneath them
+(canvas rendering, the browser's own soft keyboard, touch scrolling, a viewport that moves when
+browser chrome collapses). 20f exists specifically so that half gets proven, not presumed.
+
+**Key decision: this is adaptive shared code, not a web-only fork.** `RoleRouter.kt`,
+`AppNavigation.kt` and `MainScreen.kt` all live in `commonMain` and are used by Android *and*
+web. Driving the new layout off available width (not off `currentPlatform()`) means phones keep
+exactly today's bottom-nav single-column UI, while *any* wide viewport gets the dashboard — web
+desktop today, Android tablets/foldables for free. It also avoids a second, divergent copy of
+the trainer UI, which is the failure mode this whole KMP migration exists to prevent.
+
+```mermaid
+flowchart TD
+    A[20a. Design: viewport classes,\nadaptive-library decision] --> B[20b. Responsive shell:\nsidebar vs bottom bar]
+    A --> C[20c. Remove 19f's 480dp\nweb-only clamp]
+    C --> B
+    B --> D[20d. Students list-detail\ntwo-pane on wide]
+    D --> E[20e. Desktop affordances:\nhover, dialogs, content width]
+    B --> M[20f. Phone browser:\nkeyboard, touch, viewport]
+    E --> F[20g. Tests + verification\nat all three viewports]
+    M --> F
+    F --> G[20h. Registration:\nCLAUDE.md, screenshots]
+```
+
+Suggested: sonnet · high — spans the whole trainer UI surface and changes navigation structure,
+but every decision below is already researched and the screens themselves are small.
+
+**20a. Design rationale and open decisions**
+- [x] **Breakpoint: 840dp — and the site has to be genuinely responsive on both sides of it**
+      (confirmed with the user 2026-09-13: phone *and* computer, not desktop-first with the phone
+      as an afterthought). Material 3's window size classes (Compact <600dp, Medium 600–840dp,
+      Expanded ≥840dp) are the standard thresholds; ≥840dp is where Google's own guidance puts
+      permanent navigation + multi-pane. One threshold, not three, mapping to:
+      - **Phone browser (~360–430dp)** → compact layout. Same composables the Android app uses on
+        a phone, but a *different runtime* (canvas rendering, browser soft keyboard, touch) —
+        which is why it gets its own verification pass in 20f rather than being assumed covered.
+      - **Tablet / narrow desktop window (600–840dp)** → also compact, deliberately. A portrait
+        tablet gets the phone layout; that is a choice, not an oversight, and it keeps this
+        section at two layouts instead of three.
+      - **Desktop (≥840dp)** → the dashboard: sidebar + list-detail.
+- [x] **Use `BoxWithConstraints`, not the Material3 adaptive libraries — for now.** Verified
+      against the real published metadata rather than assumed (the same check that caught three
+      js-variant gaps in §19b/§19e):
+      - `org.jetbrains.compose.material3.adaptive:adaptive` / `:adaptive-layout` — newest stable
+        **1.2.0**, and it *does* publish a `js` variant. `ListDetailPaneScaffold` is genuinely
+        available to this project.
+      - `org.jetbrains.compose.material3:material3-adaptive-navigation-suite` (the artifact that
+        provides `NavigationSuiteScaffold`, i.e. automatic bottom-bar ↔ rail ↔ drawer switching)
+        — newest **stable** is **1.9.0** (js variant confirmed); the 1.10/1.11 lines are
+        alpha-only. This project pins Compose Multiplatform **1.11.0**, so adopting it means a
+        real version skew between a 1.9.0 Material3 component artifact and a 1.11.0 Compose
+        runtime.
+      Decision: `BoxWithConstraints` (already in the Compose UI artifact this project depends on,
+      zero new dependencies, guaranteed on every target) is enough for one breakpoint, three nav
+      destinations and one two-pane split — and it sidesteps both the version skew and the fact
+      that `ListDetailPaneScaffold` wants to own navigation state that today lives in the outer
+      `NavHost` (a disproportionate integration for a two-pane case). The verified coordinates
+      above are recorded so a future pass can adopt the libraries without re-researching, once
+      navigation-suite has a stable release on the 1.11+ line.
+- [x] **Sidebar carries three destinations, not two.** Today's bottom bar has two tabs (Alunos,
+      Agenda) and Settings is reached from the app bar's overflow. Two items is thin for a
+      sidebar; Configurações joins them as a third destination on wide layouts. The compact
+      layout keeps today's two-tab bottom bar + app-bar Settings unchanged.
+- [ ] **Open (decide during 20e, not now): do short forms become dialogs on wide screens?**
+      `AddStudentScreen`/`EditStudentScreen` are full-screen pushes today. On a dashboard they'd
+      read better as modal dialogs over the list. This is the single most invasive remaining
+      idea, so it is deliberately last and separable — the section is valuable without it.
+
+**20b. Responsive shell: sidebar on wide, bottom bar on compact**
+- [x] `MainScreen.kt` wraps its content in `BoxWithConstraints` and branches on
+      `maxWidth >= 840.dp` (`ExpandedWidth`). Compact branch (`CompactMainLayout`) is today's
+      `Scaffold` + `NavigationBar`, unchanged; expanded branch (`ExpandedMainLayout`) is a `Row`
+      with a 240dp `NavigationRail` + content pane. Destination list extracted to a single
+      `MainDestinations` list so both branches render the same set from one source, and the
+      duplicated `navigate {}` block collapsed into `navigateToMainDestination`.
+      Compiles green (`:shared:compileKotlinJs`, `:shared:testAndroidHostTest`, `:app:verify`).
+      Live render across the breakpoint verified in 20g.
+- [x] The existing inner `NavHost` inside `MainScreen` keeps owning destination state for both
+      branches — one `rememberNavController` above the branch, both layouts read the same
+      `currentRoute` and call the same navigate helper, so a resize can't reset the selection.
+- [x] A persistent top bar on the expanded branch (app title + logout). Settings moves into the
+      rail as a third item on this branch (it pushes an outer route, so it is rendered as a rail
+      *action* and never shows as selected — noted in the code, since a reader would otherwise
+      expect selection state).
+
+**20c. Remove §19f's web-only 480dp clamp**
+- [x] Done, landed in the same pass as 20b as the ordering note required. `main.kt` is now a
+      plain full-width `Surface { RoleRouter() }`; the centered-480dp `Box`/`widthIn` wrapper and
+      its now-unused imports are gone. Width is a layout concern inside `MainScreen` (shared with
+      Android) instead of a web-only override.
+      <!-- original item kept below for the reasoning, which still explains why this had to go -->
+- [x] `main.kt`'s `Box`/`Surface(Modifier.widthIn(max = 480.dp))` wrapper (added in §19f to stop
+      the phone-shaped UI stretching edge to edge) must go — it would cap the viewport at 480dp
+      and prevent the ≥840dp branch from *ever* engaging on web. Replace it with a plain
+      full-width `Surface`; readability at ultra-wide is handled inside the content pane (20e),
+      not by clamping the whole app. Done when: the web build reports a `maxWidth` above 840dp in
+      `BoxWithConstraints` on a maximized desktop browser — i.e. the sidebar actually appears.
+      **Ordering note: this must land together with 20b, not before it** — on its own it just
+      restores the edge-to-edge stretch §19f fixed.
+
+**20d. Students list-detail two-pane**
+- [x] Implemented. The expanded branch renders `Row { StudentsScreen(360dp, singleColumn) |
+      VerticalDivider | detail-or-empty }`. Selection is `rememberSaveable` state in `MainScreen`
+      (survives switching to Agenda and back, and a resize), and the selected row is outlined via
+      a new `selected` param on `StudentCard`.
+      **Wiring decision worth recording**: `StudentDetailsScreen` needs six navigation callbacks,
+      so rather than thread all six through `MainScreen` → `StudentsScreen`, the details UI is
+      passed down as a single slot lambda (`studentDetailPane`) built in `AppNavigation.kt`,
+      where those callbacks already live. One new parameter instead of six, and navigation
+      concerns stay in the navigation file.
+      Live click-through verified in 20g.
+- [x] Empty state for the right pane when no student is selected ("Selecione um aluno").
+- [x] Deeper pushes stay pushes: `WorkoutBuilder`, `ManualWorkout`, `EditWorkout`, `AIWorkout`,
+      `PromptFicha` continue to use the outer `NavHost` on both layouts. Scoping the two-pane
+      change to exactly the list↔details step keeps this section bounded — three-level pane
+      nesting is what `ListDetailPaneScaffold` exists for, and 20a deliberately deferred it.
+
+**20e. Desktop affordances**
+- [x] **`LoginScreen` caps its own width (480dp) — a gap this plan missed, found by looking at
+      the render.** 20c removed the app-wide clamp on the assumption that "width is handled
+      inside the layout", but `LoginScreen` is a `RoleRouter` sibling of `MainScreen`, not inside
+      it — so the login form immediately went edge-to-edge across a 1440px window, exactly the
+      ugliness §19f had fixed. Capped in the screen itself; on a phone the cap never binds, so
+      Android is untouched. Verified in the browser at desktop width.
+- [ ] Content max-width inside the detail pane (~900dp) so text and forms don't run the full
+      width of an ultra-wide monitor. Done when: at 2560px the detail pane's content stays
+      readable rather than spanning the window.
+- [x] `Modifier.pointerHoverIcon(PointerIcon.Hand)` on `StudentCard` — the clickable element the
+      trainer hits most on the dashboard. Deliberately not sprayed across every button in the app
+      in this pass: Material 3's own buttons already read as interactive, and a blanket change
+      would touch every screen for little gain. Revisit if the trainer reports specific spots
+      that don't feel clickable.
+- [ ] Revisit 20a's open dialog-vs-push question for `AddStudent`/`EditStudent` with the new
+      layout actually on screen, and either implement it or record the decision not to.
+
+**20f. The site on a phone browser — the other half of "responsivo"**
+Not the same runtime as the Android app on the same phone: Compose renders to a `<canvas>`, input
+goes through the browser's own soft keyboard and touch events, and the viewport moves as browser
+chrome collapses. A desktop window narrowed below 840dp exercises the *layout* branch but proves
+nothing about any of that, so this gets its own verification pass. **Likely the highest-traffic
+path of all** — the trainer's students will open a link on their phone, not on a computer.
+- [ ] **Soft keyboard on a real phone browser — verify before building anything else in 20f.**
+      Two upstream Compose-for-Web bugs covered exactly this (`JetBrains/compose-multiplatform`
+      **#4836** "TextField not opening keyboard in mobile browser", **#3943** "software keyboard
+      is not shown again if focus not changing"); both are **closed/fixed** (confirmed via the
+      GitHub API, last updated Dec 2024) and this project is far past those versions on Compose
+      Multiplatform 1.11.0 — but §19 produced three separate `js`-target surprises that all
+      looked fine on paper, so this is checked, not assumed. Done when: tapping the e-mail field
+      on the deployed site in mobile Chrome *and* mobile Safari raises the keyboard and the typed
+      characters land in the right field. **If it fails, stop and re-plan** — an unusable login
+      on phones would undercut the whole point of the web target, and the fallback (Kotlin/Wasm
+      instead of Kotlin/JS) reopens §19a's GitLive-is-`js`-only constraint.
+- [ ] Touch scrolling and tap targets through the canvas: the students list scrolls with a finger
+      (momentum, no stuck/jumpy behavior), rows are comfortably tappable, and the page itself
+      doesn't double-scroll (canvas scroll fighting browser scroll). Done when: a full scroll
+      through a list longer than the screen behaves like a normal mobile page.
+- [ ] Viewport height with collapsing browser chrome: the layout doesn't leave a dead strip or
+      clip the bottom nav when the mobile address bar hides on scroll. Done when: the bottom bar
+      stays reachable at both address-bar states.
+- [ ] The 840dp breakpoint behaves on a real phone in **landscape** — many phones exceed 840dp
+      wide in landscape and would flip to the sidebar dashboard mid-session. Decide deliberately
+      whether that's wanted (it is defensible: a landscape phone genuinely has the width) or
+      whether the expanded branch should also require a minimum height; record the decision
+      either way rather than letting orientation decide it by accident.
+- [ ] **(manual)** All of the above needs a real phone pointed at the deployed URL (19g) — a
+      desktop browser's device-emulation mode does not reproduce the soft keyboard or real touch
+      behavior faithfully enough to close these items.
+
+**20g. Tests and verification**
+- [x] `./gradlew verify` (lint + unit tests) and `:shared:compileKotlinJs` stay green — run after
+      the 20b/20c/20d batch: `:shared:compileKotlinJs`, `:shared:testAndroidHostTest` and
+      `:app:verify` all BUILD SUCCESSFUL, with only a pre-existing unrelated deprecation warning
+      (`MenuAnchorType` in `Components.kt`). Re-run after any further 20e/20f work.
+- [ ] `TrainerGoldenPathTest.kt` (§9's Compose UI test, Android-instrumented) still passes — it
+      drives the trainer flow through the real screens, so a navigation restructure is exactly
+      what it exists to catch. **(manual)** if no emulator is available in the environment doing
+      the work; note the result rather than skipping silently.
+- [ ] Verified live on the web build at **three** viewports, with a screenshot of each, since
+      "responsivo" is the acceptance criterion and only a render proves it: a real phone browser
+      (20f), a narrow desktop window (<840dp — should be indistinguishable from the phone layout),
+      and maximized desktop (sidebar + two-pane). Use the production static bundle, not
+      `jsBrowserDevelopmentRun` — §19e recorded that the dev server's HMR is measurably less
+      reliable for this kind of check.
+      **Partially done.** 2026-09-13, logged-out at both widths: at 1024px/DPR-1.25 (819dp, just
+      under the breakpoint) the compact layout is correctly active, and at 1500px (1200dp) the
+      login form renders as a centered 480dp column instead of spanning the monitor.
+      **2026-09-21, logged in (§21a/§21d): confirmed at both desktop widths too** — sidebar +
+      list + "Selecione um aluno" above 840dp, compact bottom-bar layout below it, on the real
+      trainer account. **Still open: the real-phone-browser pass (§20f)** — none of this used an
+      actual phone, and §20f's own items (soft keyboard, touch scroll, viewport chrome) are a
+      distinct runtime from a resized desktop window.
+      Two dev-server gotchas worth knowing for whoever runs this next: viewport emulation leaves
+      the Compose canvas blank until a reload (it re-measures on load, not on resize), and DPR
+      matters — the 840dp breakpoint is ~1050 CSS px at DPR 1.25, not 840.
+- [ ] Confirm on a real Android phone that the **native app** didn't change (the compact branch is
+      supposed to be byte-for-byte today's behavior). **(manual)** — needs the physical device,
+      and is a separate check from 20f's phone-*browser* pass.
+
+**20h. Registration**
+- [ ] Update `CLAUDE.md`: the trainer UI now has two layouts driven by one 840dp breakpoint in
+      `MainScreen.kt`, the sidebar carries a third destination the bottom bar doesn't, and the
+      list-detail split replaces a push on wide screens. This is exactly the kind of
+      non-obvious-from-reading-one-file convention `CLAUDE.md` exists to hold.
+- [ ] Update §19f's own note in this file to point at §20 — its "responsive layout pass" item
+      recorded the 480dp clamp as the answer, and 20c supersedes it. Leave the history, add the
+      pointer.
+
+---
+
+## 21. Fix — Login reaches a frozen screen on the web build
+(2026-09-13, via `/newgoal`)
+
+**Symptom, reported by the user 2026-09-13:** "não consegui logar, deu tela travada" — logging in
+on the web build lands on a stuck screen. Nobody has yet seen §20's dashboard as a result, which
+is why §22 (the visual redesign they actually asked for) is blocked behind this section: you
+cannot judge, let alone iterate on, the appearance of a screen that never renders.
+
+**Timing makes §20 the prime suspect, not a coincidence.** Login worked end to end on this same
+build earlier the same day (§19e/§19f: a real account reached the trainer screens, and a fake one
+correctly returned `auth/invalid-credential`). The only thing that changed in between is §20's
+restructure of `MainScreen` — the screen that renders immediately after a TRAINER logs in.
+
+```mermaid
+flowchart TD
+    A[21a. Reproduce with the\nconsole open] --> B[21b. Root cause]
+    B --> C[21c. Fix]
+    C --> D[21d. Regression check:\nlogged in, both widths]
+```
+
+Suggested: sonnet · high — small surface, but it is a blocking regression and the first suspect
+below is subtle enough that "it looks fine" is not the same as "it is fixed".
+
+**21a. Reproduce and capture evidence — before changing any code**
+- [x] **(manual) Done 2026-09-21, on the live GitHub Pages deploy of `c92bbda` (the `weight(1f)`
+      fix's own commit).** Real trainer account, DevTools open. (1) The "Entrar" spinner did not
+      hang — login completed and rendered "Meus Alunos" immediately. (2) No red console error
+      reported. (3) First attempt was a narrower effective width (DevTools docked, eating half
+      the window) and correctly showed the **compact** layout (bottom bar, single column) — not a
+      bug, exactly §20a's designed behavior below 840dp. Closing DevTools and maximizing then
+      showed the **expanded** layout: sidebar, students list, "Selecione um aluno" in the detail
+      pane. **This resolves the suspect question below**: a clean render with no console error
+      and a spinner that stopped rules out Suspect 2 (an uncaught `Flow` exception would either
+      show a red error or leave the spinner spinning forever) — it was Suspect 1 alone.
+
+**21b. Root cause — two concrete candidates, found by reading the §20 diff**
+- [x] **Suspect 1 (strongest, confirmed present in the code): `Modifier.fillMaxSize()` on `Row`
+      children that should be `Modifier.weight(1f)`.** `MainScreen.kt:195` (the content pane next
+      to the 240dp `NavigationRail`) and `MainScreen.kt:207` (the detail pane next to the 360dp
+      list). Inside a `Row`, `fillMaxSize()` claims the *full* incoming width rather than what is
+      left after a fixed-width sibling — so the content pane is laid out 240dp (and the detail
+      pane 360dp) wider than the space available and is pushed off the right edge. The screen is
+      not frozen, it is drawn where nobody can see it. This alone plausibly produces exactly the
+      reported symptom on a wide window.
+      **Fixed 2026-09-13** — both children now use `weight(1f).fillMaxHeight()`. Compiles green
+      (`:shared:compileKotlinJs`, `:shared:testAndroidHostTest`, `:app:verify`).
+      **Whether this was *the* cause is still unconfirmed** — it is definitely a bug and is
+      definitely gone, but a wrongly-positioned pane and a never-resolving spinner look different
+      to a user, and 21a's evidence (which of the two it was) has not been captured yet. Do not
+      close §21 on this item alone.
+- [x] **Suspect 2: ruled out 2026-09-21** — §21a's live login showed a clean console and a
+      spinner that stopped, which is the opposite of what an uncaught `Flow` exception in
+      `combine(drafts, linked)` would produce. `getStudents()` was never touched by this fix and
+      didn't need to be.
+- [x] Recorded: **Suspect 1 (the `fillMaxSize()`/`weight(1f)` bug) was the actual cause**, ruled
+      in by §21a's evidence, not just "fixed something and it started working".
+
+**21c. Fix**
+- [x] Suspect 1 confirmed (21a/21b) — the `weight(1f)`/`fillMaxHeight()` fix already applied is
+      the actual, sufficient fix. No further change needed here.
+- [x] While in `MainScreen`: `StudentsScreen` carries its own `Scaffold` (it owns the FAB), so
+      the expanded layout currently nests a `Scaffold` inside the outer one, inside a `Row`.
+      **Checked and deliberately left alone**: the inner `Scaffold` only places the FAB at the
+      bottom-right *of the 360dp list pane*, which is where it belongs for a list pane, and it
+      is not implicated in the freeze. §22c removes the FAB outright, which dissolves the nesting
+      on its own — flattening it now would be churn that §22 immediately undoes.
+
+**21d. Regression check**
+- [x] `./gradlew verify`, `:shared:compileKotlinJs`, `:shared:testAndroidHostTest` green
+      (2026-09-13, after the `weight(1f)` fix).
+- [x] **(manual) Done 2026-09-21** — logged in, on the deployed web build, at a window **above**
+      840dp: sidebar (Alunos/Agenda/Configurações), students list, and "Selecione um aluno" in
+      the detail pane, all visible at once. This is also §20g's own long-open "logged-in
+      dashboard... cannot be [verified] from this side" item — closing it here too.
+- [x] **(manual) Done 2026-09-21** — the same session at a narrower effective width (DevTools
+      docked) rendered the compact bottom-bar layout, matching the Android app's shape.
+- [ ] **(manual)** The Android app itself (not the web build) still logs in and navigates
+      normally on a real device — `MainScreen` is shared code, so a fix here lands on the phone
+      too, but this needs an actual Android install to confirm, not just the shared-code review.
+
+---
+
+## 22. Feature — Visual identity: stop looking like an Android app
+(2026-09-13, via `/newgoal`)
+
+**The request:** after §20 changed the *structure* (sidebar, two panes), the user's verdict was
+still "o visual ainda parece com de um app". That is a different axis from §20 and the reason
+§20 alone was never going to satisfy it: §20 moved boxes around, but every box is still drawn in
+stock Material 3 — baseline purple, heavily rounded corners, elevation on everything, a circular
+floating action button, a card grid with lots of air. Those are Android-app signals regardless of
+where the panes sit.
+
+**Direction, confirmed with the user 2026-09-13** (they picked all three offered axes):
+1. **Theme** — colours, fonts, corner radii, shadows: stop reading as Material baseline.
+2. **Components and density** — cards/FAB/whitespace → denser rows, ordinary buttons, more
+   information per screen, the way a web dashboard presents a list.
+3. **Site chrome** — a real header with brand identity, and a footer. The app currently opens
+   straight into content, the way an app does.
+
+**Was blocked on §21; unblocked 2026-09-21** once §21a/§21d confirmed the login fix live. 22a–22e
+built and verified below (compiles/tests green; the human "does it still look like an app?"
+verdict is still the trainer's own call, not this session's — see 22e).
+
+```mermaid
+flowchart TD
+    Z[§21 login fix] --> A[22a. Design decisions:\npalette, shape, density, fonts]
+    A --> B[22b. Theme tokens:\ncolour, shape, elevation]
+    B --> C[22c. Components:\nrows over cards, no FAB]
+    B --> D[22d. Site chrome:\nheader + footer]
+    C --> E[22e. Verification\nat all viewports]
+    D --> E
+    E --> F[22f. Registration]
+```
+
+Suggested: sonnet · high — broad surface (touches most screens) and the acceptance criterion is
+subjective, which means more iteration passes than a typical feature.
+
+**22a. Design decisions**
+- [x] **Typography is the one axis with a hard technical blocker, and it is worth knowing before
+      anyone promises a font change.** Compose for Web does *not* use the browser's or system's
+      fonts — Skiko renders text itself, so a custom typeface has to be bundled as font *bytes*
+      through Compose Resources (`commonMain/composeResources/font/...`). This project
+      **deliberately excludes `compose.components.resources`**, documented in
+      `shared/build.gradle.kts`: its resource-ID codegen embeds the project's own folder path,
+      which contains a space (`Personal APP`), and DEX rejects space characters in class names —
+      the *same* root cause that broke `kotlinNpmInstall` in §19f. So a custom font requires
+      first resolving that: rename the project directory (fixes the root cause once and unblocks
+      Compose Resources generally) or keep the built-in typeface and get the "not an app" effect
+      from weight/size/letter-spacing/colour instead.
+- [x] **Decided 2026-09-21 by taking this item's own stated default** (the user was not asked —
+      "no custom font" was already the recorded fallback if they didn't care either way): no
+      folder rename, built-in typeface, "not an app" effect comes from palette/density instead.
+      Revisit if the trainer specifically asks for a custom font later.
+- [x] Palette and shape scale picked and implemented as named constants in
+      `shared/.../ui/theme/AppTheme.kt` (§22b) — indigo accent, neutral slate secondary (replaces
+      Material's default pale-lavender secondaryContainer, the actual source of the old
+      screenshots' purple tint), a distinct teal tertiary, 4–10dp corner radii.
+      **One real limitation found empirically, not assumed**: Material3's `Button` composable
+      does not read its shape from the theme's `Shapes` at all — it defaults to a fixed pill/
+      stadium shape regardless of what `Shapes(...)` is passed to `MaterialTheme`. Confirmed by
+      screenshot on this exact Compose Multiplatform 1.11.1 build: every `Shapes` value changed
+      except buttons, which stayed fully rounded. `Shapes` still reduces every `Card`/`Dialog`/
+      `OutlinedTextField` corner (they do read the theme scale) — buttons specifically would need
+      an explicit `shape = MaterialTheme.shapes.medium` passed at each call site, which was not
+      swept across the app in this pass (recorded as open work in §22c).
+      **Elevation → 1dp borders is not yet swept either** — `Outline`/`OutlineVariant` tokens now
+      exist in `AppTheme.kt` for this, but no existing `Card` was changed to use a border instead
+      of its default elevation. Left for a follow-up pass rather than touching every `Card` call
+      site in this one.
+
+**22b. Theme tokens**
+- [x] `ui/theme/AppTheme.kt` added: `lightColorScheme(...)` from 22a's palette + a reduced-radius
+      `Shapes`, wrapped in one `AppTheme { }` composable. Replaces the bare `MaterialTheme { }` in
+      both `main.kt` (web) and `MainActivity.kt` (Android) — one theme, both platforms, one import
+      each. Elevation conventions (1dp borders) are the one piece **not** carried through — see
+      22a's note.
+- [x] Swept and verified 2026-09-21 (not just assumed): `grep -rn "Color(0x" ui/screen/*.kt` finds
+      exactly one hit, `SuccessGreen` in `Components.kt`, already documented as filling a real
+      Material3 gap (no "success" role exists). §5d's earlier sweep held.
+- [x] Dark theme confirmed out of scope — `AppTheme.kt` has no dark branch, recorded in its own
+      header comment.
+
+**22c. Components and density**
+- [x] `StudentsScreen` rewritten: the old 2-column `LazyVerticalGrid` of 100dp `StudentCard`s
+      (renamed `StudentListItem`, `Components.kt`) is now a dense single-column list of rows —
+      small avatar (still carries the gender distinction that used to tint the whole card),
+      name + goal, a left accent bar for the selected row instead of a border. Used identically
+      by the compact layout (a full-width phone list) and the §20d 360dp desktop pane.
+- [x] `FloatingActionButton` replaced with an ordinary `Button` in a header row next to "Meus
+      Alunos" (shorter label "Novo" on the narrow desktop pane, full "Cadastrar Aluno" elsewhere).
+- [x] Desktop-only padding tightened (16dp → 12/8dp) inside `StudentsScreen`, gated on the same
+      `singleColumn` flag §20d already uses to mean "the desktop list pane" — the compact/phone
+      path is untouched, still full 16dp and the row height stays touch-friendly.
+- [ ] **Not done — scope cut, recorded rather than rushed.** `StudentDetailsScreen` (274 lines: six
+      navigation callbacks, four dialogs, invite-code flow, biometrics/workout/assessment lists)
+      still reads as "a stack of cards", not "a heading + section structure". This screen carries
+      real business logic beyond layout, and reworking its structure in the same pass as the
+      theme/list changes above risked a regression nobody would catch without dedicated
+      attention. Left for its own follow-up pass.
+
+**22d. Site chrome**
+- [x] Brand header: `ExpandedMainLayout`'s `TopAppBar` title is now an icon + "Personal Tracker"
+      wordmark instead of the plain text `TopAppBar` title §20b added.
+- [x] Footer added below the content `Row`, expanded-layout only: "Personal Tracker" / a version
+      string. **The version is a static placeholder** ("v1.0"), not wired to
+      `UpdateChecker.currentVersionName` (`SettingsScreen`'s real source) — that lives behind a
+      `koinViewModel()` this pure-chrome composable doesn't take. Fine for "nothing heavy" today;
+      wire it for real if it needs to track releases without a manual edit.
+- [x] Confirmed both are expanded-layout only — `CompactMainLayout` (the phone/phone-browser path)
+      is untouched, still its original plain-title `Scaffold` + bottom bar.
+
+**22e. Verification**
+- [x] Green 2026-09-21 after the 22b/22c/22d batch: `:shared:compileKotlinJs`,
+      `:shared:testAndroidHostTest`, `:app:verify` (unit tests + lint) — all `BUILD SUCCESSFUL`.
+      Also self-checked the pre-login screen live via `:shared:jsBrowserDevelopmentRun` in a
+      local browser: the neutral background, indigo accent and reduced text-field/card radii all
+      render as intended (this is also where the button-shape limitation above was found).
+- [ ] **(manual)** Side-by-side screenshots, before and after, at desktop width — the acceptance
+      criterion here is a human verdict ("ainda parece app?"), so the check is the trainer looking
+      at it, not a passing test. **Needs the trainer to open the deployed site post-push and say
+      whether this reads as "less app" or not** — expect at least one iteration round regardless.
+- [ ] **(manual)** Confirm on a real Android phone that the compact layout still looks right with
+      the new theme — the theme is shared, so this pass *does* change the native app's appearance
+      (unlike §20, which left it alone). **If the trainer wants the phone app to keep its current
+      look, that is a real fork the two platforms would need — flag it, don't assume the answer.**
+
+**22f. Registration**
+- [x] `CLAUDE.md` updated: where `AppTheme` lives and that it's the one file to touch for
+      palette/shape changes, plus the button-shape and elevation-vs-border gaps so they aren't
+      silently reopened by a future edit.
+- [x] Typography decision (no rename, built-in font) recorded next to the existing
+      `compose.components.resources` note in `shared/build.gradle.kts`.
+
+---
+
+## 23. Build — The web front as its own product: React/Next, backend first
+(2026-09-22, via `/newgoal`)
+
+**The request:** "o front do site e do android não precisa ser o mesmo, até pq os sites costumam
+ter caras diferentes. o site que você fez está inteiramente android expandido."
+
+That verdict is correct, and §22 was aimed at the wrong layer. The cause is not palette or corner
+radius — it is the rendering model. Confirmed on the deployed build 2026-09-22 by reading the live
+DOM: the entire page is
+
+```
+DIV#app > DIV > DIV > #shadow-root > DIV > CANVAS
+```
+
+`document.body.innerText` returns an **empty string**; the word "Entrar" does not exist in the
+HTML. Compose Multiplatform's `js` target paints the whole UI into one `<canvas>` via Skiko.
+Measured consequences, all verifiable on the live site:
+
+- no text selection, no Ctrl+F, no copying a student's name
+- Google indexes a blank page — zero SEO
+- password managers and browser autofill cannot see the fields
+- **no URLs**: a student cannot be opened in a new tab, a screen cannot be linked or shared
+- fonts are rasterised by Skia, not the browser's text engine — the reason the text "doesn't read
+  as web"
+- **4.9 MB transferred / 14.5 MB decoded** on first load (`shared.js` 6,095 KB + `.wasm` 8,450 KB)
+
+A strategic fact that pushed the decision: JetBrains' own FAQ states they have shifted focus away
+from JS Canvas to Wasm "due to resource constraints" — `js` is the de-prioritised target, and this
+project cannot move to `wasmJs` because GitLive's Firebase SDK publishes only a `js` variant
+(already recorded in `shared/build.gradle.kts`).
+
+**Decisions, confirmed with the user 2026-09-22:**
+
+1. **Option C — a separate web front in a web stack** (React/Next + the Firebase JS SDK), chosen
+   over forking the Compose UI into a `webMain` source set (keeps every canvas limitation above)
+   and over Compose HTML (real DOM, reuses the Kotlin logic, but loses Material 3 entirely and
+   means hand-building every input, dialog and date picker).
+2. **Mensalidades: level 1 (manual tracking) only — but with a gate** so level 2 (real charging)
+   plugs in later without a model change. See 23c.
+3. **Separate route trees: `/app` (trainer) and `/aluno` (student)**, not one role-switching root.
+   Rejected specifically because one surface serving two audiences is the exact mistake this
+   section exists to undo.
+4. **A simple public landing page is in scope.** Not a vanity item — §12's refresh shows it is a
+   category-standard feature (TrueCoach's "Public profiles", `trainerize.me`).
+5. **The project is called "Personal Tracker".** The user does not care which name; this one is
+   already the `<title>`, the Pages deployment and the expanded top bar. Only `CompactMainLayout`
+   still says "Personal APP" — see 23m.
+
+**The price of Option C, stated plainly so it is never a surprise:** business logic gets a second
+implementation in TypeScript. `commonMain` is 7,617 lines, of which ~2,843 are logic
+(ViewModels, repositories, `FirestoreMappers`, `WorkoutParser`, `GenerativeAiService`). The Kotlin
+copies stay — Android needs them — so the two must be kept in step **by hand**; there is no
+compiler catching a drift. The Kotlin originals are the reference implementation, and any TS port
+that disagrees with them is a bug in the TS port. It also discards the web half of §19–§22: §19's
+js target and deploy plumbing and §21's web-only login fix go away entirely, while §20's adaptive
+layout and §22's theme survive because they live in `commonMain` and Android keeps using them.
+
+**Method, chosen by the user 2026-09-22 — backend first, no CSS.** Build the whole data layer,
+rules and every screen as unstyled HTML, validate it works, and only then design. This is the
+direct lesson of §22: a visual pass over something unproven is wasted twice.
+
+> **The one constraint that makes this method safe:** "simple CSS" must not mean "loose HTML
+> files". Phase 1 is already Next.js with the real component tree — just with no styling at all:
+> bare `<form>`, bare `<table>`, unclassed `<h1>`. If phase 1 is static HTML instead, phase 2
+> stops being a visual pass and becomes a rewrite, which defeats the whole point.
+
+```mermaid
+flowchart TD
+    A[23a. Decisions + stack] --> B[23b. Scaffold: Next.js in web/,\nKotlin-JS build frozen]
+    B --> C[23c. Data model:\npayments + dashboard metrics]
+    C --> D[23d. firestore.rules\nfor both web surfaces]
+    D --> E[23e. TS data layer +\nreimplemented business rules]
+    E --> F[23f. Auth, routing,\n/convite?c=code]
+    F --> G[23g. /app unstyled]
+    F --> H[23h. /aluno unstyled]
+    F --> I[23i. landing unstyled]
+    G --> J[23j. VALIDATION GATE]
+    H --> J
+    I --> J
+    J --> K[23k. Visual pass\n-- blocked until 23j passes]
+    K --> L[23l. Deploy cutover]
+    L --> M[23m. Registration]
+```
+
+Suggested: opus · high for 23c–23f — a new data model, security rules and hand-ported business
+rules are where a wrong decision is expensive and quiet. sonnet · medium for 23g–23i, which are
+mechanical CRUD screens once the data layer exists.
+
+**23a. Decisions and stack**
+- [x] Record the canvas evidence above as the justification, so a future session does not "fix"
+      the look by tuning the theme again.
+      **Done 2026-09-22 in two places:** this section's preamble (the live-DOM evidence), and
+      `CLAUDE.md`'s "Visual theme (GOALS.md §22)" section — which is where a future session about
+      to edit `AppTheme.kt` actually looks. It now states the web build's app-like look is the
+      canvas renderer, not the palette, and that `AppTheme.kt` is no longer the lever for the site.
+- [x] Confirm Next.js version and whether the App Router is used. Default to the App Router —
+      `/app` and `/aluno` as separate route groups is precisely its model.
+      **Confirmed 2026-09-22** by scaffolding with `create-next-app@latest` (23b): **Next.js
+      16.3.6**, Turbopack as the default bundler, **React 19.2.8** (pinned by Next itself —
+      `npm view react` reports 19.3.0, Next deliberately trails it; don't "upgrade" React past
+      what Next pins), TypeScript, **App Router**, `src/` directory, ESLint 9 flat config.
+      Two conventions that differ from pre-16 Next and bite anyone writing routes from memory:
+      `PageProps<'/route'>` / `LayoutProps<'/route'>` are **global type helpers, no import
+      needed**, generated by `next dev`/`next build`/`next typegen`; and a page's `params` is a
+      **Promise** (`const { slug } = await props.params`). The scaffold's own `web/AGENTS.md` warns
+      that this Next differs from model training data and points at
+      `web/node_modules/next/dist/docs/` — **read those before writing route code.**
+- [ ] Decide the component library **for phase 2 only**, and write the decision down now so phase
+      1 does not accidentally pick one: **shadcn/ui** is the recommendation (components are copied
+      into the repo and owned outright, Tailwind, no inherited look). **MUI is explicitly ruled
+      out** — it is Material Design, the exact visual language this section exists to escape;
+      choosing it would reproduce the problem in a new language.
+      **Status 2026-09-22 — left open on purpose.** The half that protects phase 1 is done and
+      verified: the scaffold has no Tailwind and no component dependency (`web/package.json`
+      depends only on `next`/`react`/`react-dom`). The pick itself is still the trainer's. They
+      reacted well to `ui.shadcn.com/blocks` as a *reference site*, which is not the same as
+      choosing the library — and shadcn/ui brings Tailwind with it, a real consequence for 23k.
+      Confirm with them before 23k starts, not after.
+      **Resolved 2026-09-30: no library.** The trainer brought their own static template (the
+      ALLU prototype: `DESIGN.md` + five HTML pages and one `styles.css`) and asked for it to be
+      implemented on the web front (those files live untracked in the outer checkout, not in git).
+      Its CSS is plain and small, so `web/` still depends on
+      `next`/`react`/`react-dom` only — no Tailwind, no shadcn/ui, no icon package (the navigation
+      icons are inline SVG, as in the template). Nothing here is built on Material.
+
+**23b. Scaffold, and what happens to the Kotlin/JS build**
+- [x] Next.js project at `web/` in this repo. Same repo, not a separate one — the Firestore schema
+      and `firestore.rules` are shared with Android and must not diverge across repositories.
+      **Scaffolded 2026-09-22:** `create-next-app@latest web --typescript --app --src-dir --eslint
+      --no-tailwind --empty --use-npm --disable-git`. `--no-tailwind` and `--empty` are what make
+      phase 1 CSS-free from the first commit (the default template ships Tailwind plus a styled
+      splash page); `--disable-git` because this is already inside a git worktree. The folder-name
+      space (`Personal APP`) that broke `kotlinNpmInstall` in §19f did not bite here — npm derives
+      the package name from `web`, not from the path. Three route stubs, each with its own layout:
+      `/` (23i), `/app` (23g), `/aluno` (23h).
+      **Verified:** `npm run build` (4 static routes); `npx eslint .` exit 0; zero `.css` files
+      emitted under `.next/static`; and driven in the browser against `next start` — the link on
+      `/` navigates to `/app`, each area renders its own layout header, `lang="pt-BR"`, no console
+      errors, **0 stylesheets, 0 `<style>`, 0 elements with `class`** (the only `style` attribute
+      on the page is Next's own `next-route-announcer`, framework accessibility plumbing). And the
+      check this whole section exists for: `document.body.innerText` now returns the page's text,
+      where the canvas build returned an empty string.
+      `web/README.md` replaced — the boilerplate pointed at a wrong path (`app/page.tsx`), offered
+      four package managers, and recommended a deploy target 23l hasn't chosen. The generated
+      `web/AGENTS.md` and `web/CLAUDE.md` (a one-line `@AGENTS.md` import) were kept: they carry
+      Next 16-specific guidance and are directory-scoped, so they add to the root `CLAUDE.md`
+      rather than competing with it. `npm install` warns that `unrs-resolver`'s postinstall script
+      wasn't allowed (npm 11's allow-scripts); lint passes without it, so it was left unapproved.
+- [x] **Do not delete the Kotlin/JS web build yet.** It works and it is deployed; deleting it
+      first leaves the trainer with nothing while the replacement is half-built. Freeze it: no new
+      web-only work lands in `shared/src/jsMain`, and it keeps deploying until 23l.
+      **Done 2026-09-22:** nothing deleted, `web-deploy.yml` untouched and still deploying. The
+      freeze is written into `CLAUDE.md` (new "Web front (GOALS.md §23)" section) so any session
+      in this repo sees it before touching `jsMain`.
+- [x] Record the eventual removal list so it is a decision, not an oversight: the `js` target in
+      `shared/build.gradle.kts`, `shared/src/jsMain/**`, `web-deploy.yml`/`web-ci.yml`, and
+      `.claude/launch.json`'s `web` entry. Removed at 23l, not before.
+      **Completed 2026-09-22 — the list above was short by five items**, found by grepping for
+      every Kotlin/JS artifact outside `jsMain` rather than trusting it. The full list:
+      - `shared/build.gradle.kts`: the `js { }` target block, the `jsMain.dependencies { }` block,
+        and its own `NodeJsPlugin` hook (the `downloadBaseUrl` workaround near the top)
+      - `shared/src/jsMain/**`
+      - root `build.gradle.kts`: **both** Kotlin/JS hooks — `NodeJsPlugin`'s `downloadBaseUrl`
+        (§19f) and `NodeJsRootPlugin`'s `packageLockMismatchReport` (§19g)
+      - `kotlin-js-store/` — the committed npm lock for Kotlin/JS's own dependencies
+      - `gradle.properties`: `kotlin.js.yarn=false`
+      - `gradle/libs.versions.toml`: the `kotlinxBrowser` version and the `ktor-client-js` /
+        `kotlinx-browser` library entries
+      - `.github/workflows/web-ci.yml` (runs `:shared:compileKotlinJs`) and `web-deploy.yml`
+        (`:shared:jsBrowserDistribution` → Pages)
+      - `.claude/launch.json`'s `web` entry
+      - `CLAUDE.md`: the `main.kt (web)` mention in the Visual theme section, and the freeze notes
+
+      **Carry over before deleting — 23e needs these and they exist nowhere else in the repo:**
+      - the Firebase web app config, `webFirebaseOptions` in `shared/src/jsMain/.../main.kt`
+        (applicationId, apiKey, projectId, storageBucket, gcmSenderId, authDomain)
+      - the reCAPTCHA Enterprise site key for App Check, in
+        `shared/src/jsMain/.../util/WebAppCheck.js.kt`
+
+      Both are public client identifiers by design, not secrets — Firebase's security lives in
+      `firestore.rules` and App Check, and the secret half of the reCAPTCHA key stays in Google
+      Cloud. But they only exist in those two files, so deleting `jsMain` first loses them.
+
+      **Found while completing the list — this one matters for 23l.** The site key's own comment
+      says it was registered for **domain `localhost`**, and on 2026-09-22 the live deploy's
+      console showed `appCheck/recaptcha-error` on `alexmiguel011014-stack.github.io`. That's
+      consistent with the Pages domain never having been added to the key. Login still works live
+      (§21a), so App Check isn't rejecting these requests today — but whatever host 23l picks must
+      be added to the key's allowed domains, and App Check enforcement must not be switched on for
+      web until it is. Two cutover details that follow from how Pages works: deleting
+      `web-deploy.yml` alone changes nothing visible, because Pages keeps serving the last deployed
+      artifact; and if 23l moves to another host, the Pages site has to be unpublished or
+      redirected, or the old canvas build keeps living at the old URL.
+
+**23c. Data model — mensalidades (level 1) and the dashboard's numbers**
+
+Built 2026-09-22 as pure TypeScript in `web/src/domain/` (`dates.ts`, `payments.ts`,
+`students.ts`, `metrics.ts`): types that mirror the Firestore documents, plus every derivation the
+dashboard needs. No Firestore calls (that is 23e) and no clock — every "today" is an argument.
+**Verified:** `npm test` → 50 tests, 4 files; `npx eslint .` exit 0; `npm run build` type-checks
+all of it. And, because the whole point of `dates.ts` is that results don't depend on the machine:
+the suite was re-run with every Node process forced into UTC+14 (`Pacific/Kiritimati`) and UTC−10
+(`Pacific/Honolulu`) — 7 processes confirmed in each zone, 50/50 both times. (Setting `TZ` in the
+shell does *not* work on this Windows machine — Node silently ignored it and kept São Paulo; the
+zone has to be set from inside Node, which is how the check was actually done.)
+Test runner: **Vitest 5, alone** — not the six-package recipe in Next's bundled guide, which is
+for React component tests (jsdom, Testing Library); those arrive with the first component test.
+Installing it surfaced a peer conflict with the scaffold's `@types/node@^20`: resolved by aligning
+the types with the actual runtime (`@types/node@^24`, `"engines": {"node": ">=24"}`), not by
+forcing — Node 20 reached end of life in April 2026, and this project runs on Node 24.
+
+- [x] New trainer-scoped Firestore collection `payments`, one document **per month per student** —
+      not a "subscription" object. Recurring billing expressed as generated rows keeps history
+      honest and turns "who is late" into a plain query instead of a computed projection.
+      **Modeled:** the id is deterministic, `{studentId}_{YYYY-MM}`, so generating a month's
+      charges twice (two tabs, a reload mid-write) lands on the same documents instead of
+      duplicating them — writers must still create-if-absent, never a blind `set`, or regenerating
+      would wipe a recorded `paidAt`. **Plus a second collection this item didn't foresee:**
+      `billingPlans/{studentId}` (`amountCents`, `dueDay` 1–31 clamped to the month's last day,
+      `active`), the source a monthly charge is generated from. It cannot be fields on
+      `users/{uid}`: **Firestore rules are per document, not per field**, a linked student reads
+      their own users doc, and the trainer decided the student doesn't see their billing (23d).
+      The collections themselves come into existence with 23e's first write and 23d's rules.
+- [x] Document shape: `id, trainerId, studentId, amountCents, currency, dueDate, paidAt?, method?,
+      source, externalId?, note?, createdAt`.
+      **Corrected while modeling — no field is optional.** `paidAt`, `method`, `externalId` and
+      `note` are always written, `null` when empty: `where("paidAt", "==", null)` only matches
+      documents where the field *exists* and is null, so a charge saved without it would vanish
+      from every "unpaid" query. And `dueDate` is a calendar date string `"YYYY-MM-DD"`, not an
+      instant — a due date is a day, and storing it as a timestamp is how "due on the 10th"
+      becomes the 9th after a UTC conversion. Instants (`paidAt`, `createdAt`) stay epoch ms, the
+      Kotlin side's convention.
+- [x] **`amountCents` is an integer.** Money is never a float anywhere in this codebase.
+      **Enforced:** `isValidAmountCents` (safe integer > 0) gates charge creation, and
+      `parseAmountCents` turns what the trainer types into cents *without* a float ever existing —
+      `"150,10"` parsed as 150.1 × 100 is 15009.999…, which is exactly the bug it prevents. pt-BR
+      only (`,` decimal, `.` thousands); an ambiguous `"150.50"` is rejected, not guessed.
+- [x] **Status is derived, never stored**: `paidAt != null` → paid; else `dueDate` in the past →
+      overdue; else pending. A stored status drifts away from `paidAt` the first time a write
+      half-fails.
+      **Implemented** as `paymentStatus(payment, today)`. Due *today* is pending, not overdue.
+- [x] **This is the gate the user asked for.** `source` (`"manual" | "gateway"`) and `externalId`
+      exist from day one even though only `"manual"` is ever written. When level 2 arrives, a
+      gateway webhook writes the *identical* document shape with `source: "gateway"` — a new
+      writer, not a new model, and every existing query keeps working untouched. Level 2 itself
+      (gateway choice, Cloud Function, webhook, fiscal responsibility) stays out of scope and
+      becomes its own section.
+      **In the type, with its meaning pinned:** `source` says which system owns the charge's
+      lifecycle. A manual charge paid by Pix outside the app is still `source: "manual"`,
+      `method: "pix"`; a gateway only ever touches documents it owns.
+- [x] Decide whether the Android app shows `payments` at all. Recommendation: **not initially** —
+      it is a desk activity, and leaving it web-only avoids a Kotlin model + sync listener for a
+      screen nobody opens on a phone. Flag it rather than assuming; it is a real product choice.
+      **Decided by the trainer 2026-09-22: no.** Payments are web-only — no Kotlin model, no
+      SQLDelight table, no sync listener.
+- [x] Specify the dashboard's metrics against collections that already exist, so the home screen
+      needs no new data beyond `payments`: student count and connected-vs-pending split (`users`);
+      sessions logged this week (`workout_logs`); adherence, logged vs scheduled (`workout_logs` ×
+      `schedules`); **students gone quiet**, last log older than N days (`workout_logs`); pending
+      assessment requests (`users.pendingAssessmentRequest`); month revenue and overdue list
+      (`payments`).
+      **Specified as tested functions in `metrics.ts` — and the spec above was wrong in three
+      places, each found by reading the Kotlin side rather than trusting the plan:**
+      1. **Students are two collections, not `users`.** Drafts the trainer registered live in
+         `students/{id}` (role `"student"`); accounts that claimed an invite live in `users/{uid}`
+         (role `"STUDENT"`, uppercase). And claiming an invite never deletes or marks the draft, so
+         afterwards the same person is in both — **the Kotlin app lists them twice today**
+         (`FirestoreTrainerRepository.getStudents` concatenates with no dedup;
+         `SqlDelightTrainerRepository` mirrors both into one table under different ids). The only
+         link is two hops away: `users/{uid}.inviteCode` → `invites/{code}.draftId` →
+         `students/{draftId}`, and `draftId` is written but never read anywhere. `mergeStudents`
+         takes that map (23e builds it from the trainer's invites) and drops claimed drafts; it
+         never matches by name. The Kotlin-side fix is out of §23's scope and was flagged as a
+         separate task — it touches `firestore.rules` (the claiming student can't write the trainer's
+         `students/{draftId}`), so it needs a rules publish too.
+      2. **A session is not a document.** The Kotlin app writes one `workoutLogs` document per
+         *exercise* (`StudentViewModel.logSession`), each with its own `currentTimeMillis()` taken
+         inside the loop — six exercises, six documents, six timestamps. Counting documents
+         inflates "sessions" six- to tenfold; grouping by timestamp splits one session into many.
+         A session is a **(student, local day) with at least one log** (`trainedDays`). Also: the
+         Firestore collection is `workoutLogs`; `workout_logs` is the SQLDelight table name.
+      3. **Adherence is measured against `users.trainingDays`, not `schedules`.** `schedules`
+         documents are weekly recurring appointment slots (`dayOfWeek`, `hour`) that exist only for
+         students trained in person; `trainingDays` is on every student and is literally "the days
+         this student should train". Both use the Kotlin UI's strings — `"Segunda"`, `"Terça"`, …,
+         `"Sábado"`, `"Domingo"`, accented — so matching is exact (with NFC normalisation, tested).
+         Every trained day counts, planned or not (swapping Monday for Tuesday is still full
+         adherence), capped at 100%, and the window starts no earlier than the day the student
+         joined. Drafts have no adherence — they can't log anything yet.
+
+      Definitions 23g's dashboard should use — proposed, the trainer can change any of them, and
+      all computed in the trainer's zone (`America/Sao_Paulo`, passed explicitly):
+      - **Sessions** = the last 7 days, rolling — not a Monday-to-Sunday week, which reads 0 every
+        Monday morning, exactly when a trainer looks.
+      - **Adherence** = the last 28 days: exactly four of every weekday, where a 7-day window lets a
+        single missed day swing a 3-day plan by 33 points.
+      - **Gone quiet** = linked, joined at least N days ago, no trained day in the last N days
+        (N = 7); never-trained first, then the longest silence.
+      - **Money** = three numbers, not one: *expected* (charges due this month, paid or not),
+        *received* (charges paid this month in the trainer's local calendar, whatever month they
+        were due — a Pix at 23:00 on the 31st is that month's money even though UTC says the 1st),
+        and *overdue* (unpaid past due, any month, oldest first).
+
+**23d. Security rules**
+
+Done 2026-09-24, and it started with a near miss worth reading before anyone touches
+`firestore.rules` again. **The two KMP lines each implemented §17 on their own, and their rules
+files diverged.** What the trainer published on 2026-09-21 is the Android line's version
+(`claude/tarefas-abertas-front-9834f6`, commit `af2b9b0`), which makes `canSelfAssess` /
+`canLogBiometrics` immutable for the student and ties clearing `pendingAssessmentRequest` to the
+assessment batch. This branch still had its own older §17 rules, where a student could grant
+themselves both permissions with a plain update. Had 23d been written on top of this branch's file
+and published, that hole would have gone back into production. So the first commit only synced
+this file to the published version, byte for byte (`b9c19ac`), and 23d's changes sit on top of it,
+where their diff against production is readable. **This branch's `firestore.rules` is now the one
+to publish; the Android branch's copy is behind it and must not be published again** — that would
+drop the rules for `payments`/`billingPlans` (so the web's charges would be denied) and reopen the
+holes below. (Published 2026-09-28 — see the last item.)
+
+**Verified against the real Firestore emulator:** `npm run test:rules` → 48 rules tests, all green
+(`web/rules/firestore.rules.test.ts`; emulator via `firebase.json` at the repo root, a `demo-`
+project id so it never reaches the real project, Java 21 — this machine's PATH has Java 8; the JDK
+21 Gradle already provisioned under `~/.gradle/jdks/` is used for the command, nothing installed
+system-wide). **And the proof the tests mean something:** `assertFails` passes on *any* failure, so
+the same suite was run against the published rules (`RULES_FILE=…`) — 14 rules tests fail there,
+exactly the ones encoding a new guarantee, and the other 34 pass on both, including the Android
+app's real flows (its claim transaction and its assessment batch), reproduced as the app writes
+them. (The 48th test and one rules change came from 23e — see there. Counting 23e's 3 data-layer
+tests, which run in the same suite: 16 fail against the published rules, 35 pass on both.)
+`firebase-tools` pulls in 5 moderate advisories (OpenTelemetry, `uuid`, via Google Cloud client
+libraries); all are dev-only — `npm audit --omit=dev` reports 0 for what ships to the browser.
+
+- [x] Extend `firestore.rules` for `payments`: a trainer reads/writes only their own
+      `trainerId`-scoped documents. **A student must not read them** — decide explicitly whether a
+      student may see their own payment status; defaulting to "no" until asked is the safe read.
+      **Decided by the trainer 2026-09-22: no** — a student does not see their own payment status.
+      The same trainer-only rule applies to `billingPlans`, the second collection 23c added; and
+      this decision is precisely why neither can store anything on `users/{uid}`, which the student
+      reads.
+      **Done, and stricter than planned — the rules now enforce 23c's model server-side**, so it no
+      longer depends on every client behaving: the exact field set (every field present, `paidAt`
+      explicitly null — a missing field would drop the charge from unpaid queries; no stored
+      `status`; no `id` field, the document id carries it as in `FirestoreMappers.kt`, which 23e's
+      converter must match), `amountCents` an integer > 0, `BRL` only, a real `YYYY-MM-DD` due date,
+      the method from a fixed list, and the document id equal to `{studentId}_{month of dueDate}`.
+      Clients may only create `source: "manual"` charges (a level-2 gateway would write through the
+      Admin SDK, which bypasses rules); a gateway-owned charge can't be edited or deleted from a
+      client. Updates may change the amount, the due day *within* the month (the id encodes the
+      month), and settlement — including undoing a mistaken "paid". `billingPlans/{studentId}`:
+      trainer-only, doc id = studentId, `dueDay` 1–31.
+- [x] Rules for the student web surface: a student reads their own `users` document, their own
+      `workouts`, `workoutLogs`, `biometrics` and `assessments`, and writes only what §17 already
+      permits. This should largely reuse §17's existing rules rather than inventing a parallel set.
+      (Collection name corrected 2026-09-22: this item originally said `workout_logs`, which is the
+      SQLDelight table — a rule written for it would match nothing.)
+      **The existing rules already cover the reads** (tested: own profile, own *assigned* fichas
+      only, the query `/aluno` will run). The web does change the threat model, though: in the
+      Android app, abusing a permissive rule means modifying the app; in a browser, the Firebase SDK
+      is already loaded on the page and the console is one keystroke away. Three gaps in the
+      published rules were closed for that reason, each with a test that fails against the
+      published version:
+      1. A student could edit their own `inviteCode` and `createdAt` — harmless until 23c, which made
+         them the inputs for dropping a claimed draft and for the adherence and "gone quiet"
+         windows. Now immutable for the student.
+      2. §17's rule says the request flag may be cleared "only in the same batch that creates the
+         assessment", but it only checked `existsAfter` — pointing `lastAssessmentId` at an *older*
+         assessment dismissed the trainer's request without submitting anything. Now it must not
+         have existed before the batch (`!exists` + `existsAfter`); the Android app's real batch
+         still passes.
+      3. `workoutLogs` updates checked only the *new* `studentId`, so one student could overwrite
+         another's log and re-attribute it to themselves. Now the existing document must be theirs.
+- [x] Rules for claiming an invite by URL (23f) — the same constraint as the in-app flow: a user
+      can never write their own `role` or `trainerId` (see `CLAUDE.md`'s Role routing note).
+      **Same transaction as the app, so same rules — and two gaps closed in them.** The invite was
+      not single-use: the create rule checked the invite was unused but not that the same write
+      marked it used, so a claim could leave it open for the next person. Now the batch must leave
+      it used (`getAfter`), and marking an invite used is only accepted when the caller's own users
+      doc names it after the batch — nobody can burn someone else's invite. And a claim (create or
+      the §13d re-claim) could arrive with `canSelfAssess` / `canLogBiometrics` already switched on;
+      the self-update branch froze those flags, but not the claim. Now it can't. A
+      `/convite?c=<code>` link gets seen by more eyes than a typed code (chat previews, browser
+      history), which is what made these worth closing now.
+- [x] **Human-in-the-loop:** publishing rules happens in the Firebase console and cannot be done
+      from here. Same standing pattern as §7/§17 — hand the user the file and wait.
+      **Published by the trainer on 2026-09-28** — this branch's file as of 23e (`004a029`), which
+      nothing after it changed, sent again that day. The live rules are now this branch's copy.
+      Not read back from here (that needs the trainer's login): the first trainer-side check in 23j
+      is the confirmation, since the dashboard only loads under these rules — under the old ones it
+      shows its "regras do §23d já foram publicadas?" message instead. **Confirmed live the same
+      day:** the trainer signed in on the deployed site and the dashboard loaded their real numbers
+      (1 student, connected; 0 sessions in 7 days).
+      **File ready 2026-09-24** — publish **this branch's** `firestore.rules`, not the Android
+      branch's copy (see the note at the top of 23d). Safe to publish before the web uses any of
+      it: every flow the Android app runs today passes against it (the 34 shared tests). **Sent to
+      the trainer twice the same day:** the first copy (commit `b25adab`) lacked the
+      missing-charge read that 23e found; the second (with 23e's commit) supersedes it, and
+      publishing the first one first does no harm. **This is now a prerequisite for 23j, not
+      optional polish:** `loadTrainerSnapshot` queries `payments` and `billingPlans`, which the
+      published rules deny outright (no rules = default deny), so the trainer dashboard cannot load
+      against production until this is published — the emulator run against the published rules
+      shows exactly that. Copy-paste in the console as before, or — now that `firebase.json`
+      exists — `firebase deploy --only firestore:rules --project personalapp-88129` after
+      `firebase login` (the trainer's own credentials; not something this session can do).
+
+**23e. TypeScript data layer and the ported business rules**
+
+Done 2026-09-24. **"The Kotlin side is the reference" first needed an answer to *which* Kotlin**,
+because §23d had just found the two KMP lines diverged. Compared before porting anything: the
+document shapes both lines write are the same (same field names, same defaults) — the Android
+line's `FirestoreMappers.kt` differs in *how* it reads (a lenient `fieldOrNull`: a wrongly-typed
+field reads as its default instead of throwing), which the web adopts. `WorkoutParser.kt` and its
+test differ only cosmetically; `PromptFichaViewModel` differs only in how it loads the template;
+and the two prompt assets are byte-identical across lines (the Android line moved them to
+`composeResources/files/`). So every port below matches what the phone runs.
+
+**Verified:** `npm test` → 93 unit tests; `npm run test:rules` → 51 emulator tests (48 rules + 3
+data layer); eslint clean, no warnings; clean `next build` type-checks all of it.
+
+- [x] Firebase JS SDK wiring: Auth, Firestore, App Check. The web App Check config already exists
+      and works (§19e/§19g) — reuse those values rather than re-registering the app.
+      **`web/src/data/firebase.ts`** — one browser-only `getFirebase()`; everything else takes a
+      `Firestore` as a parameter, so the same code runs against production, the emulators and the
+      tests. The Firebase web config and the App Check site key are carried over from `jsMain`
+      into `web/src/data/firebaseConfig.ts` — the two values §23b said must survive §23l — with the
+      note that they're public identifiers, not secrets. `NEXT_PUBLIC_FIREBASE_EMULATORS=true`
+      points the app at the local emulators under the demo project (App Check skipped there; the
+      emulators don't enforce it). Its runtime behaviour gets exercised by 23f's login, in the
+      browser; here it is covered by the type-check only.
+- [x] Collection accessors mirroring `FirestoreMappers.kt`'s document shapes exactly. Any
+      disagreement with the Kotlin mapper is a bug in the TS side.
+      **`web/src/data/converters.ts`** — drafts, linked students, workout logs, payments and billing
+      plans: the Kotlin defaults, the Android line's leniency, and payment writes that produce
+      exactly the field set the rules accept (all eleven fields, nulls explicit, no `id`).
+      **`web/src/data/trainerData.ts`** — `loadTrainerSnapshot` runs the same queries the Kotlin
+      app does (so no new composite index), fetches each invite by code to build the dedup map
+      (the rules forbid listing invites), and hands it all to 23c's pure functions;
+      `ensureMonthlyCharges` does create-if-absent in a transaction. Readers and writers for
+      workouts, schedules, biometrics and assessments land with the screens that use them
+      (23g/23h), on the same conventions — built and tested where they're used, not ahead.
+      **The emulator test caught a real rules bug, predicted before it ran:** create-if-absent
+      has to *read* the charge first, and for a charge that doesn't exist yet `resource` is null,
+      so `isOwningTrainer(resource.data.trainerId)` denied the read — monthly charges could never
+      have been generated. The payments read rule now takes ownership of a missing charge from the
+      plan it would be generated from (`billingPlans/{studentId}` — no plan, no answer, so no
+      probing). Against the previous §23d candidate, exactly the two tests covering this fail.
+- [x] Port `WorkoutParser` (§15, Smart Paste). **Keep its deliberate sets-vs-reps rule** — the
+      smaller of the two numbers is sets, so both `"Supino 3x12"` and `"Biceps 12x4"` mean the
+      same thing. `WorkoutParserTest` is the specification; port the test cases alongside it, or
+      this quietly regresses.
+      **Ported to `web/src/domain/workoutParser.ts` with all 15 `WorkoutParserTest.kt` cases.**
+      Copying the regexes literally would have changed behaviour *without any error*: Java's
+      `[^]]` means "anything but `]`", while in JavaScript `[^]` means "any character" — a mutation
+      run with the literal regex compiled fine and failed 5 tests, 3 of them original Kotlin
+      cases. Java's `\s` is ASCII-only, so the phone skips a line joined by the no-break space
+      WhatsApp copies (U+00A0); the web does the same rather than parse text the phone rejects —
+      normalising it would have to happen on both platforms at once. Kotlin's 32-bit
+      `toIntOrNull` and its whitespace set (it keeps a byte-order mark JavaScript's `trim` strips)
+      are mirrored in `web/src/domain/kotlin.ts`. **One deliberate difference:** a `NaN` or
+      `Infinity` muscle coefficient is rejected — Kotlin accepts it and then can't serialize the
+      ficha (kotlinx refuses NaN by default). `exercisesJson` / `performedSetsJson` are written the
+      way kotlinx writes them (nulls omitted) and read the way it reads them (one malformed element
+      fails the whole list).
+- [x] Port `GenerativeAiService`'s OpenAI/DeepSeek/Claude paths. Gemini goes through Firebase AI
+      Logic and is Android-only (`IosGeminiProvider` is already an honest stub) — decide whether
+      web gets Gemini at all, or the same honest stub.
+      **Superseded by the trainer's decision, 2026-09-24:** the web gets the §15 prompt flow, not
+      direct AI calls — the trainer copies the prompt into whichever AI app they already use and
+      pastes the reply into Smart Paste. `web/src/domain/fichaPrompt.ts` ports
+      `PromptFichaViewModel.buildPrompt` exactly, including a Kotlin quirk worth knowing:
+      `trimIndent()` runs *after* interpolation, so a multi-line medical note keeps the whole
+      profile block indented on the phone — reproduced so both build the same prompt. The template
+      is spliced with split/join, not `replace`, because `$&` in the table would be read as a
+      replacement pattern. The templates stay single-sourced in `app/src/main/assets/` (the tests
+      read them there); how the page loads them is 23g's call. Direct generation stays on Android.
+- [x] **New security problem Option C introduces, with no equivalent on Android.** The trainer's
+      AI provider key lives in `SettingsDataStore` on-device on Android. In a browser it would sit
+      in `localStorage`, readable by any XSS and by any browser extension. Options: proxy the
+      calls through a Cloud Function so the key never reaches the client; or keep BYO-key on web
+      and state the exposure in the UI. **Do not silently copy the Android approach into the
+      browser** — the threat model is not the same.
+      **Resolved by the same decision:** no provider key ever reaches the browser, because the web
+      makes no AI calls at all. A Cloud Function proxy stays possible later as its own item (it
+      needs the Blaze plan).
+
+**23f. Auth, routing and the invite link**
+
+Done 2026-09-24. **One structural decision made here, because it fixes the invite link's shape:
+the site is a static export** (`output: "export"` in `web/next.config.ts`). Phase 1 needs no
+server — auth and data are the Firebase client SDK in the browser, and security is
+`firestore.rules` — and a static build deploys to any host 23l picks, including where the site
+lives today (GitHub Pages). It also makes Next fail fast, in `next dev` too, on anything that would
+need a server (Server Actions, route handlers reading the request, cookies, redirects, dynamic
+routes without `generateStaticParams`; see `node_modules/next/dist/docs/01-app/02-guides/
+static-exports.md`). Its cost: a path segment whose value isn't known at build time needs a server,
+so **the invite link is `/convite?c=CODE`, not `/convite/CODE`**. Invites are single-use and
+short-lived, so no link of value exists in the old shape. Reversible by deleting one line, if 23l
+ever picks a server-rendered host.
+
+**Verified end to end in the browser**, against the Auth + Firestore emulators with the §23d/§23e
+rules loaded (`npm run seed:emulators` sets up a trainer, a draft and its invite; the app runs with
+`NEXT_PUBLIC_FIREBASE_EMULATORS=true`) — every network call went to `127.0.0.1`, none to the real
+project: the invite link with the code in lowercase (normalised to `AB12CD34`, as the Android field
+does) → create an account → the claim → landed on `/aluno`; the emulator then showed the invite
+`used: true` and a `STUDENT` account with the trainer's id and the invite's pre-filled name. The
+student sent to `/app` bounced to `/aluno`; "Sair" went to `/entrar`; a wrong password showed "E-mail
+ou senha incorretos."; the trainer's login — with the e-mail padded with spaces and a trailing tab,
+the bug found on the Android emulator on 2026-09-17 — landed on `/app`; the trainer sent to `/aluno`
+bounced to `/app`; reopening the used invite with a new account showed "Código de convite já
+utilizado" and left that account signed in, unclaimed, able to try another code — as on Android.
+Console: dev-server noise plus the one expected 400 (the wrong-password request). Plus `npm test` →
+98 unit tests (role mapping, routing, messages) and `npm run test:rules` → 56 emulator tests (the
+claim through the real rules, its refusal messages, the profile read of an account with no document
+yet); eslint clean; static build of all six routes.
+
+- [x] Login and session, reusing the `stayLoggedIn` semantics documented in `CLAUDE.md` — if the
+      preference is false, actually call `signOut()`; do not leave Firebase's session alive while
+      the UI pretends otherwise.
+      **Same invariant, kept by construction instead of by a sign-out at startup:** "Manter
+      conectado" maps onto Firebase's own persistence — checked is `browserLocalPersistence`,
+      unchecked is `browserSessionPersistence`, a session that ends with the tab. So there is
+      never a Firebase session alive that the UI pretends isn't there, and nothing to sign out of
+      on the next visit. Default unchecked, as on Android. Also: the e-mail is trimmed (the
+      2026-09-17 bug), "Esqueci minha senha" sends Firebase's reset e-mail with a message that
+      doesn't reveal whether the account exists, and the fields are real form fields (`type=email`,
+      `autocomplete`) — so the browser's password manager works, one of the things the canvas
+      build couldn't do.
+- [x] Role gate: `ADM`/`TRAINER` → `/app`, `STUDENT` → `/aluno`, unclaimed student → the invite
+      flow. Route-level, not a component-level `when`.
+      **Each area's layout guards itself** (`RequireArea`), fed by `destinationFor` — a port of
+      `RoleRouter`'s `when` over `AuthRepository.resolveRole` (role uppercased; a missing document
+      or unknown value reads as `STUDENT`; a `NONE` account gets the Android LoginScreen's "no role
+      assigned yet" message). One difference by design: an ADM lands on `/app`, since the Android
+      admin dashboard has no web counterpart in §23. The gate is navigation, not security — the
+      data is protected by `firestore.rules`.
+- [x] **`/convite/<código>`** — the student opens a link, creates an account and lands connected.
+      This is the single clearest thing Option C buys that the canvas build could not do at all,
+      and it is the student-onboarding path, so it is not optional polish.
+      **Built as `/convite?c=CODE`** (static export, above). `claimInvite` ports
+      `AuthRepository.claimInvite` — the same transaction, document and messages, including the
+      translation of a permission error into "Esta conta já está vinculada a um perfil existente —
+      fale com o administrador." A signed-in trainer, an already-connected student and an
+      unclaimed account each get their own screen; a link without a code offers a field to type it.
+      The generator of these links is the trainer's screen (23g) — until then an invite comes from
+      the Android app's "Compartilhar", and the web link needs only its code.
+
+**23g. `/app` — the trainer surface, unstyled**
+
+In progress — built and committed in parts. Entity pages use query parameters
+(`/app/alunos/detalhe?id=…`), not path segments, because of 23f's static export.
+
+**Part 1 done 2026-09-24 — dashboard and student list, verified in the browser** against the
+emulators, with a seed (`web/scripts/seed-emulators.mjs`) where every student exists to make one
+number checkable by eye, and the expected values written down *before* opening the page. All
+matched on the second attempt: 6 students (4 connected, 2 waiting — the draft Ana's invite
+superseded not counted twice), **4 sessions in 7 days out of 12 per-exercise log documents** in that
+window, 35% adherence (Carla excluded: no planned day since she joined), Bruno gone quiet since the
+12th and Carla — joined two days ago — not flagged, Diego's pending assessment, R$ 270,00 expected /
+R$ 150,00 received / R$ 120,00 overdue. **The first attempt showed R$ 150,00 expected — a real race,
+found here and not by the unit tests:** React's dev double-mount ran two loads at once; both read
+before either wrote, one created Bruno's September charge, the other found it existing, created
+nothing and — since the reload depended on having created something — showed a snapshot without
+it. The database was right (one charge, no duplicate); the screen was stale. In production the
+same happens with two tabs. `loadTrainerView` now reloads whenever a charge was missing, whoever
+created it; an emulator test runs two loads in parallel and fails 3/3 against the old logic, passes
+3/3 against the new. (One dev-only leftover: the "N cobranças geradas agora" notice usually doesn't
+show under the double-mount, because the run that survives is the one that found the charge already
+there; the numbers are right regardless.) Every console error in the session accounted for: the
+deliberate wrong-password 400, a lookup 400 for an account the emulator reset had deleted, HMR
+reconnects across a dev-server restart, and two 409s — the race's transaction contention, retried
+by the SDK. 103 unit + 58 emulator tests, eslint and tsc clean.
+
+- [x] Dashboard home with 23c's metrics as a plain list of numbers.
+      **`/app`**, with §23c's windows. Opening it is what keeps mensalidades current:
+      `loadTrainerView` creates this month's charge for any active plan missing one (and skips the
+      transactions entirely when nothing is missing). "Today" is taken once per load in the
+      browser's own zone — the trainer's calendar — so every figure on screen agrees. A
+      permission error names the likeliest cause at this stage: §23d's rules not yet published.
+- [x] Student list with search and filter, and the student detail view (data + performance charts).
+      **List done (part 1):** `/app/alunos` — name, goal, connection and a medical-restriction flag
+      (what the Android list shows), accent- and case-insensitive search ("ALVES" finds Bruno
+      Alves), filter by connection, sorted by pt-BR collation.
+      **Registration, invite and the detail's data done (part 2, 2026-09-24):** `/app/alunos/novo`
+      and `/app/alunos/detalhe?id=` port the Android add/edit forms and `SqlDelightTrainerRepository`'s
+      writes field for field — including a value that would have gone wrong unnoticed: the Android
+      form stores intermediate level as the abbreviation **`"Interm."`**, so the web stores exactly
+      that. A draft's page generates the invite link (the Android code format, 8 uppercase hex; a
+      taken code comes back as permission-denied from the rules and gets a fresh one); a connected
+      student's page carries §17's permissions and the assessment request. **The whole onboarding
+      loop now runs on the web alone, verified in the browser against the emulators:** register
+      Júlia (the form refused her until a training day was picked, as Android does) → generate her
+      link → sign out → open it, create her account → back as the trainer, she's listed once, as
+      connected (her draft superseded) → grant self-assessment → request one → the dashboard lists
+      her under pending assessments. The emulator then showed her account in exactly the shape the
+      phone reads (`"Interm."`, `["Terça", "Quinta"]`, the invite code, the §17 flags). The same loop
+      is an emulator test (create → invite → claim → one connected student), plus rules-level tests
+      for the draft rewrite, the account merge, the permissions and the request.
+      **Left out on purpose:** the Android form's optional first measurement (weight/height into
+      `biometrics`) — those are Doubles on the Kotlin side, a whole number from JavaScript lands in
+      Firestore as an integer, and whether the phone's lenient reader then shows it or shows 0 is
+      unverified; measurements come with the evolution part once that's settled. And deleting a
+      student — on Android it deletes a connected student's own profile document; destructive, and
+      nothing in §23 asks for it.
+      **Performance done (part 4, 2026-09-28) — the phone's charts as tables, phase 1:** a connected
+      student's page adds "Autoavaliações" (every PAR-Q+ sent, newest first, the "sim" answers
+      spelled out with their questions), "Medidas" (all measurements, newest first, plus "Nova
+      medida"), "Progressão de carga" (pick an exercise, see each session's heaviest set) and
+      "Atividade recente" (the last ten logs with their sets). A draft's page shows only its
+      measurements — it has no account, so no sessions or self-assessments of its own.
+      **The int/Double question is settled:** GitLive 2.7.0's decoder reads any `Number` as a Double
+      (`decoders.kt`, `is Number -> value.toDouble()`), so a whole number written from JavaScript —
+      stored as a Firestore integer — shows on the phone as the same value. Measurements are now
+      written from the web, in `BiometricEntity`'s exact field set. Two things it does differently,
+      on purpose: `height` is 0 (the Android trainer path fills it by parsing the student's
+      *medical notes* as a number — a bug, harmless since height is never shown, and the student's
+      own path already writes 0); and a comma decimal ("72,5") is accepted, as the Android
+      add-student form does and its measurement dialog doesn't. **New measurements only for a
+      connected student**, for the reason fichas are (below) — which is also why the web's
+      registration form has no first measurement: it would land on the draft.
+      **Kept identical to the phone, for the trainer to judge in 23j:** a set's load counts in the
+      progression only if the phone's `toFloatOrNull` reads it — "22.5" yes, **"22,5" no** — so the
+      table and the phone's chart agree. A student typing Brazilian decimals has those sets silently
+      left out on both; whether to accept commas is a decision for both platforms at once.
+      **Verified in the browser against the emulators** (the seed now has Ana's measurements, loads
+      rising 1 kg a day with a comma-typed second set, and Bruno's PAR-Q+ with one "sim"), expected
+      values written down first — all matched: Ana's progression 20 → 22 → 24 → 27 → 29 → 31 kg (the
+      comma sets ignored), switching exercise; her last ten logs newest first ("31x12 · 33,5x10");
+      her measurements; "abc" refused, "72,5" saved — the emulator held `weight` 72.5 and `height`/
+      `bodyFat` as integer 0, `BiometricEntity`'s fields exactly; Bruno's assessment flagged with
+      the bone/joint question; Maria's draft page with no assessments or progress, and measurements
+      blocked with the reason. Emulator tests: the phone's own student query sees a web-recorded
+      measurement; another trainer can't list a student's assessments. 144 unit + 65 emulator
+      tests, eslint and tsc clean, static build.
+- [x] Ficha: list, manual creation, Smart Paste, AI generation.
+      **Done (part 3, 2026-09-24).** A student's page lists their fichas with
+      `WorkoutBuilderScreen`'s controls (edit, activate/deactivate, delete after a confirmation).
+      `/app/fichas/editar?aluno=…[&id=…]` is `PromptFichaScreen` and `ManualWorkoutScreen` on one
+      page: copy the §15 prompt (23e's port, fed by the Android asset files — `predev`/`prebuild`
+      copy them into `public/prompt/`, generated and gitignored, so there is still one copy), paste
+      the AI's reply into Smart Paste, add or remove exercises by hand, read the effective volume per
+      muscle, save. Saves port `withDerivedStatus`: active means `status: "assigned"`, the only
+      fichas the rules let a student read — skip it and every web-made ficha is invisible on the
+      phone (an emulator test runs the phone's own student query and fails when it's skipped).
+      Smart Paste matches both Android screens, including a detail easy to miss: a recognised name
+      fills the name only while it's blank.
+      **Stricter than Android, on purpose: new fichas only for a connected student.** A ficha is
+      keyed to the student's id, and claiming an invite gives the student a new one (their
+      account's uid), so a ficha made for a draft stays on the draft and the student never sees it.
+      Android allows it; the web says on screen why not. Same root as the duplicate-student task.
+      **Verified in the browser against the emulators:** a draft's page and a direct editor URL both
+      refuse a new ficha, with the reason; saving an empty ficha shows both errors; the prompt came
+      out with the profile and the request in the Kotlin shape; an AI reply wrapped in prose filled
+      "Ficha A" and three exercises (the reps-first "Biceps 12x4" as 4×12), with Peitoral 4,0 /
+      Costas 3,0 / Delt.ant 2,0 / Bíceps 1,5 effective sets; a non-numeric set count was refused;
+      add, remove, save → listed as active since today, and the emulator held exactly
+      `WorkoutEntity.toFirestoreMap`'s fields (integer times, a kotlinx-readable `exercisesJson`);
+      deactivate → `draft` with `assignedAt` null; activate again; edit — a second paste replaced
+      the exercises but not the typed name, the name saved trimmed, same document, `createdAt` kept;
+      delete, cancelled once, then confirmed. **Not verifiable here:** the in-app browser denies
+      clipboard writes outright, so "Copiar prompt" showed its fallback (the prompt in a box, to
+      copy by hand); the copy itself is for 23j, in a real browser. 122 unit + 63 emulator tests,
+      eslint and tsc clean, static build of ten routes.
+      **Found, for the next rules change:** `workouts` create checks the trainer but not that the
+      student is theirs, and the phone's student query doesn't filter by trainer — a trainer who
+      knew another trainer's student's uid could put a ficha in that student's app. `biometrics`
+      and `schedules` have the same shape. uids aren't discoverable, so the risk is low; batch it
+      with the archive change below.
+- [x] Schedule. Mensalidades: register, mark paid, overdue list.
+      (The overdue list is on the dashboard already; registering plans and marking paid is not.)
+      **Mensalidades done (part 6, 2026-09-28).** A student's page gets "Mensalidade": register the
+      plan (amount in reais, due day 1–31), edit it (future charges only — a charge already
+      generated is adjusted on its own), pause and reactivate it, and every charge so far.
+      `/app/mensalidades` ("Mensalidades" in the nav, and linked from the dashboard) shows a month's
+      charges (this one by default; a picker lists every month with charges), what's still overdue
+      from earlier months, and who has no plan yet. On each unpaid charge: "Marcar como pago" (how,
+      and on which day — so a Pix recorded on the 2nd still counts in the month it arrived) and
+      "Ajustar" (amount, and due date within the month — the rules allow no more, since the id
+      carries the month); on a paid one, "Desfazer pagamento". No delete: an active plan would
+      regenerate a deleted charge on the next load.
+      **Two things found and fixed along the way.** (1) **A new plan billed a month already past
+      due:** registering on the 28th with due day 10 made the dashboard create this month's charge,
+      overdue the moment it existed. Now a plan charges from `firstBillableMonth` — its creation
+      month if that month's due date was still ahead, else the next month — from its `createdAt`,
+      so no schema or rules change. (2) **Billing on a draft now follows the person.** Plans are
+      allowed for drafts (billing is web-only and doesn't need the app — unlike fichas), but a claim
+      gives the person a new id while the plan stays keyed by the draft's. `TrainerSnapshot` now
+      carries `claimedDraftByAccount`, and `domain/billing.ts` maps a claimed draft's plan and
+      charges to the account — its page shows them and never offers a second plan; the dashboard's
+      overdue list names them too.
+      **Verified in the browser against the emulators,** expected values written down first:
+      September R$ 270,00 expected / R$ 150,00 received, Bruno's August charge overdue, four students
+      without a plan. Marked that August charge paid in cash on 02/09 → September's received became
+      R$ 270,00 and the overdue list emptied; August showed it "Pago em 02/09/2026 (Dinheiro)" with
+      R$ 0,00 received in August; the emulator held `method: "cash"`. Undone → overdue again, month
+      kept. Adjusted Bruno's September charge to R$ 100,00 due 30/09 → expected R$ 250,00; an October
+      date was refused (the browser's own `max`, and the same check in code for browsers without a
+      date picker). Carla, due day 5 → "A primeira cobrança sai em outubro", no charge created;
+      Diego, due day 30 → September's charge created at once; pause and reactivate; Maria, still a
+      draft, got a plan and a charge. **Then Maria claimed her invite** (a test account on the Auth
+      emulator): she's listed once, connected, under her new id; her account's page shows the plan
+      and the charge made on the draft, with no form to register another; she's not in "sem
+      mensalidade". Emulator tests: plan create/update/pause, a second registration refused by the
+      rules, settle/undo/adjust, a cross-month adjustment and another trainer's write refused.
+      169 unit + 68 emulator tests, eslint and tsc clean, static build.
+      **Schedule done (part 5, 2026-09-28):** `/app/agenda` ("Agenda" in the nav) is
+      `ScheduleScreen` as one table — Segunda to Domingo across, 06h to 21h down, the day's count in
+      each header (the phone's "N agendados"). Pick a student, then "Agendar" in a free slot; each
+      booking is a `schedules` document in `ScheduleEntity`'s exact shape. Two additions: "Remover"
+      (the phone's repository has the delete, its screen never offers it — a wrong booking couldn't
+      be undone), and a slot shows every booking in it (the phone shows the first it finds; two
+      devices can book the same slot at once, and none should hide). Only connected students can be
+      booked, for the reason fichas can't go to a draft. **Verified in the browser against the
+      emulators** (the seed books Ana 07h on her three days, Bruno 18h on his two): the five
+      bookings in the right cells, 107 free slots with "Agendar" disabled until a student is picked,
+      the picker listing only the four connected students; booking Carla on Segunda 08h → the cell
+      and "Segunda (2)", the emulator holding `{dayOfWeek: "Segunda", hour: "08h"}`; "Remover" →
+      free again. Emulator test: the booked student can read their slot, another trainer can't
+      remove it. 150 unit + 66 emulator tests.
+- [ ] Archive/pause a student (one boolean, per §12's cheap-wins list).
+      **Needs a decision before it's built:** a linked student's boolean would live on `users/{uid}`,
+      where the trainer's update rule allows only a fixed field list — so it needs a rules change
+      (another publish), and the Android app, which doesn't know the field, would keep listing
+      archived students. Worth batching with the next rules change rather than shipping alone.
+- [ ] **No CSS.** Not "minimal styling" — none. A stylesheet in phase 1 is how phase 1 becomes
+      phase 2 by accident.
+      **Holding so far:** every page under `web/src` is bare HTML — no stylesheet, `className` or
+      `style` anywhere.
+
+**23h. `/aluno` — the student surface, unstyled**
+
+Done 2026-09-28. Ports of the phone's student screens, through `StudentRepository`'s exact queries
+and writes. **They already work under the rules published today (af2b9b0)** — run against that copy
+(`RULES_FILE`), every student-side emulator test passes; what fails there is the trainer side,
+which reads `payments`/`billingPlans` and so needs §23d published (already 23j's prerequisite).
+
+- [x] My ficha, log a session, my evolution, PAR-Q+ self-assessment (§17's permission rules still
+      govern what is even offered).
+      **`/aluno`** (StudentWorkoutsScreen): the assigned fichas only — the phone's query, and all
+      the rules let a student read — each with its exercises in a `<details>` and "Registrar treino
+      de hoje"; plus the pending-assessment banner when the trainer asked and self-assessment is
+      granted. **`/aluno/treino?ficha=`** (StudentLogSessionScreen): rows of weight and reps per
+      exercise; on save, one `workoutLogs` document per exercise with a complete row, in
+      `WorkoutLogEntity`'s shape — in one batch, so a session saves whole or not at all. Kept from
+      the phone: rows keyed by exercise name, `setNumber` = the row's position (a skipped row
+      leaves a gap), weight as free text. Changed on purpose: rows start at the ficha's target set
+      count (the phone starts at one); zero reps don't count; and **a plain comma decimal is saved
+      with a dot** — a Brazilian phone keyboard types "32,5", which the progression can't read on
+      either platform (part 4's open question), so what the web writes is readable everywhere.
+      **`/aluno/evolucao`** (StudentEvolutionScreen): own measurements, "Registrar medida" only
+      while `canLogBiometrics` (hidden, not disabled — the rules are the gate), and the same
+      progression and recent-activity tables as the trainer's page (moved to `app/_shared/`).
+      **`/aluno/avaliacao`** (StudentAssessmentScreen): the seven PAR-Q+ questions as Sim/Não
+      radios, goal, level and training days prefilled from the profile; one batch writes the
+      assessment and clears the request (`lastAssessmentId`), which the rules require.
+- [x] Mobile-first from the first line of markup. The student is on a phone browser essentially
+      always; this surface never inherits the dashboard's layout.
+      Its own layout (two links, the phone's two tabs), one column, no wide tables, `inputMode`
+      on every number field so a phone opens the numeric keyboard. **Verified at 375 px, against
+      the emulators** (the seed now gives Ana an assigned and an inactive ficha plus measurement
+      permission, and lets Diego answer his pending request): no horizontal scroll on any page;
+      Ana saw only "Ficha A"; logged Supino 32,5×12 and 32,5×10 (the middle row blank) and
+      Agachamento 40×10 plus a 0-rep row → exactly two documents, `"32.5"` with set numbers 1 and
+      3, the 0-rep row dropped, Remada absent; her progression then showed today's 32,5 kg, her own
+      "71,8" measurement listed first; her assessment page said none pending. Diego saw the banner
+      and answered with one "sim" (medication), "Interm." and Terça/Quinta → the banner gone, and
+      the trainer's page showed it flagged, newest first. Trainer side: the dashboard's pending
+      list emptied; Ana's page showed her session and measurement. **One testing lesson:** the
+      browser tool's form fill sets radios and checkboxes in the DOM without the click React
+      listens for, so the first attempt submitted the defaults — redone with real element clicks
+      (text fields and selects fill fine). 178 unit + 73 emulator tests, eslint and tsc clean.
+
+**23i. Public landing, unstyled**
+- [x] One page: what the service is, and the entry points to login and invite.
+      **Done 2026-09-28.** `/` says what Personal Tracker is, then one section per audience — what
+      the trainer gets (dashboard, fichas with the AI they already use, each student's evolution,
+      agenda and mensalidades) and what the student gets — with the ways in: "Entrar" (header and
+      the trainer's section) and, for students, "Tenho um código de convite" (`/convite`) or "Já
+      tenho conta". Static on purpose: the build's `out/index.html` carries all of it, for a
+      first visit or a search engine; the only client code is a shortcut for someone already
+      signed in ("Ir para o painel" / "Ir para as minhas fichas" / "Usar um código de convite",
+      from `destinationFor`), shown to nobody else. Verified in the browser against the
+      emulators: nothing for a visitor, the trainer's and the student's shortcut each pointing at
+      their area.
+
+**23j. Validation gate — blocks 23k**
+
+Passed 2026-09-28.
+
+- [x] Every flow in 23g/23h/23i exercised end to end against real Firestore data, with the browser
+      tooling driving it (DOM, page text, console, network — not screenshots; there is nothing to
+      look at yet, by design).
+      **Met in two halves, stated plainly.** The tooling drove every flow end to end (each 23g/23h
+      part and 23i, as recorded there) against the Firestore emulator running the real
+      `firestore.rules`, checking the stored documents; it can't drive production, since that
+      means signing in with the trainer's own credentials. Production data was the trainer's half:
+      the next item.
+- [x] The trainer runs their own real workflow on the unstyled build and confirms the *data* and
+      the *flows* are right.
+      **Confirmed by the trainer 2026-09-28** on the deployed site ("parece que deu tudo certo"):
+      their dashboard with their real numbers, then the trainer flows.
+- [x] Rules verified against a real student account, not just a trainer one. §17's live test
+      failed on exactly this (`assessments/… PERMISSION_DENIED` from unpublished rules) — a
+      trainer-only pass proves nothing about a student's permissions.
+      **Confirmed by the trainer 2026-09-28:** signed in with a student account on the deployed
+      site and used the student side (ficha, logging a session), with §23d's rules live.
+- [x] **Do not start 23k until this item is checked.** That is the entire point of the method.
+      **Checked 2026-09-28.** 23k starts with 23a's open item: the component library.
+
+**23k. Visual pass — started 2026-09-30 from the trainer's ALLU template**
+- [x] Only now: component library, design tokens, layout, typography.
+      **Done 2026-09-30, on branch `claude/template-web-allu` (from `feature/kmp-web`).** One
+      stylesheet, `web/src/app/globals.css`, imported by the root layout: the template's tokens
+      (forest `#173d32`, leaf `#c6e778`, paper `#f8f8f3`…), its system-font stack and its class
+      names, plus a layer of defaults for bare elements (forms, tables, `<dl>`, `<details>`,
+      alerts) so every phase-1 screen picks up the look without a class per tag. The phase-1 tree
+      was kept: same routes, same data hooks, same `domain/` and `data/` (untouched); only
+      markup around them changed. Frame: `_shared/AppShell.tsx` (rail + nav, used by `/app` and
+      `/aluno`) and `_shared/PublicShell.tsx` (landing, sign-in, invite). Screens rebuilt to the
+      template's layouts: **Hoje** (`/app`: week strip, agenda of the day, roster, last record;
+      §23c's numbers kept below), **Agenda** (week strip picks the day, hours listed under it),
+      **Alunos** (directory of cards), the student page (avatar heading, panels), and a new
+      **Registros** (`/app/registros`: the book of sessions, measurements and self-assessments,
+      by day — `ledger.ts` + tests). The student area reuses the shell with a 720px centred
+      column, 52px set rows and a sticky save button.
+      **Responsive:** >1050px rail + two-column work grid; 861–1050px rail, narrower grid;
+      ≤860px (tablet portrait and phone) the rail becomes a slim top bar and navigation moves
+      to a bottom tab bar (a deliberate step beyond the template's ≤760px top bar: five
+      destinations do not fit a top row, and the tab bar is where a thumb reaches); ≤600px one
+      column, week strip in 4 columns, tables turn into labelled rows (`table.stack`), form
+      fields 16px so iOS does not zoom. **Verified:** `tsc`, `eslint`, `vitest` (187), and a
+      static `next build` with `NEXT_PUBLIC_BASE_PATH=/Personal_app_android` (17 routes); in the
+      Browser pane against the seeded emulators, every trainer, student and public route at
+      335/390/600/768/834/1024/1440px has no horizontal overflow, the tab-bar labels are not
+      truncated from 335px, booking and removing an agenda slot still work, and screens were
+      looked at on phone, tablet and desktop. **Not verified:** a real phone or tablet (touch,
+      safe-area inset on a notched iPhone, `env()` behaviour), a contrast measurement of every
+      pair (the template's greens were kept as given; `#729846` focus ring and the muted greys
+      are the ones worth measuring), keyboard-only and screen-reader passes, Safari/Firefox.
+      **Name, decided by the trainer 2026-09-30: "ALLU personal"** (web only) — supersedes
+      §23m's "Personal Tracker" for the website. The wordmark is the template's "ALLU." with
+      "personal" beside it (`_shared/Wordmark.tsx`), tab titles read "<page> — ALLU personal",
+      the landing heading and footers say it too. The Android app's name is untouched.
+      **Deviations from the template, left to Claude's judgement by the trainer 2026-09-30
+      ("faz do seu jeito"):** on a tablet or phone the navigation is a bottom tab bar, not the
+      template's top row (five destinations do not fit one row; a thumb reaches the bottom);
+      "Mensalidades" stays as a fifth navigation item beyond the template's four. The template's
+      demo labels ("Página demonstrativa", fictitious names) were not carried over — the screens
+      show real data.
+- [x] Reference sites the trainer reacted positively to (2026-09-22): `ui.shadcn.com/blocks` for
+      the dashboard shape (sidebar + metric cards + data table), `truecoach.co` and
+      `trainerize.com` for category language, `linear.app` for density.
+      **Superseded 2026-09-30** by the trainer's own template, which takes the sidebar shape from
+      the first reference but deliberately avoids the metric-card wall (`DESIGN.md`).
+- [x] Carry §22's findings forward so they are not rediscovered: the "everything is purple" effect
+      came from Material's default containers, and density beat decoration. Both are Material 3
+      lessons, so verify they still apply once Material is gone.
+      **Checked 2026-09-30:** no Material anywhere on the web (the palette is the template's
+      greens on off-white), and the screens stay dense — lists with hairline rules instead of
+      cards, except the student directory where a card is the tap target.
+
+**23l. Deploy cutover**
+- [x] Deploy the Next.js build. Decide the target — GitHub Pages needs a static export, which
+      constrains the App Router's server features; Vercel/Firebase Hosting do not. Pick based on
+      whether anything server-side is actually needed (the Cloud Function from 23e might decide
+      this).
+      **Narrowed 2026-09-24:** 23e's decision removed the Cloud Function (no AI calls on the web),
+      and 23f made the site a static export — so this is now a free choice of *static* host, with
+      no technical constraint left. Two things to carry into it: on GitHub Pages the site is served
+      under `/Personal_app_android/`, which needs `basePath`/`assetPrefix` in `next.config.ts`
+      (Firebase Hosting serves at the root and doesn't) — and then the one hand-written fetch of a
+      `public/` file, `web/src/data/promptAssets.ts`, needs the same prefix, since Next doesn't add
+      it to `fetch`; and the chosen domain must be added to the App Check reCAPTCHA key (23b's
+      finding).
+      **Done 2026-09-28 — GitHub Pages, the trainer's choice, at the same address as before:**
+      `https://alexmiguel011014-stack.github.io/Personal_app_android/`. The new site took the
+      Kotlin/JS build's place there (the trainer accepted the old one going down before 23j ends).
+      `web/next.config.ts` reads the sub-path from `NEXT_PUBLIC_BASE_PATH` (empty locally) and sets
+      `trailingSlash`, so every route is a directory `index.html` any static host serves; the two
+      hand-built URLs — the prompt assets' `fetch` and the invite link, now
+      `…/Personal_app_android/convite/?c=CODE` — read the same variable. `web-deploy.yml` builds
+      `web/` (lint, unit tests, static build with the sub-path) instead of the Kotlin/JS target,
+      which still compiles in `web-ci.yml` until the removal below. **Verified before the push:**
+      that exact build served locally the way Pages serves a project site (sub-path, directory
+      index, `404.html`), against the emulators — landing, sign-in, dashboard, list, a student's
+      page, the ficha editor loading its prompt assets, an invite link carrying the sub-path and
+      claimed through to the student area, direct loads of the agenda and mensalidades pages.
+      **After the deploy:** every route answers 200 and an unknown one the site's 404; the served
+      HTML is the Next site (no `<canvas>`); reCAPTCHA Enterprise loads with the App Check key on
+      this domain, with no console errors. The App Check token exchange itself only happens on the
+      first Firebase call — the trainer's first sign-in is its check (same domain and key the
+      Kotlin/JS site used). **Checked the same day:** the trainer signed in on the live site and the
+      dashboard loaded from production — App Check accepted the domain. **Watch out:** `main`'s own copy of `web-deploy.yml` still builds the
+      Kotlin/JS target, so a push to `main` before this branch is merged would put the old site
+      back.
+- [x] Only after the new site is live and verified: remove 23b's list.
+      **Done 2026-09-28, after 23j passed and with the trainer's go-ahead** — the whole list:
+      the `js { }` target, the `jsMain` dependencies and the `NodeJsPlugin` hook in
+      `shared/build.gradle.kts`; both Kotlin/JS hooks in the root `build.gradle.kts`; the
+      `nodejs.org/dist` ivy repository (and its now-unused `URI` import) in `settings.gradle.kts`
+      — one more item the list missed; `kotlin.js.yarn` in `gradle.properties`; `kotlinxBrowser`,
+      `ktor-client-js` and `kotlinx-browser` in the version catalog; `shared/src/jsMain/**`;
+      `kotlin-js-store/`; and `.claude/launch.json`, whose only entry ran the Kotlin/JS dev
+      server. `web-ci.yml` wasn't deleted but repurposed: it now checks `web/` on every push and
+      pull request (lint, unit tests, build, emulator tests), since `web-deploy.yml` only guards
+      what gets published. **Verified:** `./gradlew verify assembleDebug` — `android-ci.yml`'s
+      own gate, which only runs on `main`, so run locally here — BUILD SUCCESSFUL.
+
+**23m. Registration**
+- [x] `CLAUDE.md` gains a web section: `web/` layout, which business rules are hand-ported and
+      where their Kotlin originals live, and the rule that the Kotlin side is authoritative.
+      **Done 2026-09-28:** "Web front (GOALS.md §23)" now has the layout of `web/`, the rule (the
+      Android line in production is the reference; a web-only difference must change nothing the
+      phone reads), and a table of every hand port against its Kotlin original — each path
+      checked to exist on `claude/tarefas-abertas-front-9834f6`.
+- [x] Standardise the name to **"Personal Tracker"** — `CompactMainLayout`'s title is the one
+      remaining "Personal APP".
+      **Done on this branch**, plus one this item missed: the launcher label (`app_name` in
+      `strings.xml`), whose note in `store-listing/listing-copy.md` is updated to match. Both are
+      string-only changes; the `commonMain` one compiled in CI (`web-ci.yml`'s `compileKotlinJs`,
+      green on `4933cb8`). **Not done on the Android line in production**
+      (`claude/tarefas-abertas-front-9834f6`), whose top bar and launcher label still say "Personal
+      APP" — a visible change on the installed app, for that branch's next release. What stays
+      "Personal APP" on purpose: the root Gradle project name and the folder, which are not
+      user-facing (§19f is why renaming them costs more than it's worth).
+- [x] Record the AI-key decision from 23e wherever the final answer lands.
+      **In `CLAUDE.md`'s web section:** no AI provider key ever reaches the browser; the web builds
+      the §15 prompt and reads the pasted reply; direct generation stays on Android.
+
+---
+
+## 24. Feature — Visual pass: a design system for the trainer and student areas
+(2026-09-29, via `/newgoal`)
+
+**The request:** "faz um template de sugestão para o app personal. pense na área do aluno e
+personal" — the day after the trainer asked "existe algum site com templates pré-definidos que
+ajudam a escolher isso? se você já tiver sugestões me fale também". §23j passed on 2026-09-28, so
+§23k (the visual pass) is unblocked; **this section is §23k made concrete**: where templates come
+from, three suggested directions to choose between (each drawn for both areas), and the ordered
+work that applies the pick.
+
+**Goal type: Feature** — a restyle of an app that works and was just validated, so *behaviour must
+not change*. Two things come first on purpose: research (24a) and a human pick (24b). Changing a
+direction inside a preview costs an edit; changing it after every screen is built costs a rewrite.
+The trainer can stop after 24b and still have what they asked for — a suggestion to look at and
+choose from.
+
+**Not touched by this section:** `web/src/domain/**` and `web/src/data/**` (validated, hand-ported
+from Kotlin; not visual concerns), `firestore.rules`, and the Android app (Material 3 stays — the
+trainer said the two needn't match, 2026-09-22).
+
+### What the research found (2026-09-29)
+
+**1. Where "templates" come from.** No single site hands over a finished template for this app;
+the useful ones split into layouts, themes and full starters:
+
+| Source | What it gives | Cost | Verdict |
+|---|---|---|---|
+| `ui.shadcn.com/create` | Pick a *style*, base colour, theme, font, icons and radius with a live preview; the CLI then writes components to match (`--preset`). Styles: Vega (classic), Nova (compact), Maia (soft, rounded), Lyra (boxy, sharp), Mira (dense), Luma, Sera, Rhea | free, open source | **the template chooser** |
+| `ui.shadcn.com/blocks` | Whole layouts installable by CLI: `dashboard-01` (sidebar + charts + data table), `sidebar-03`/`-07`, `login-03`/`-04`, signup | free | **layouts** (the trainer already liked it) |
+| `tweakcn.com` | Visual theme editor with preset themes for shadcn; exports the CSS variables (Tailwind v3/v4, OKLCH or HSL) | free, open source | **palettes** |
+| `tremor.so` | 35+ dashboard/chart components on React + Tailwind + Radix | free; premium blocks | overlaps shadcn's `chart` — not needed |
+| Vercel's Next.js templates gallery | Complete starters, filterable by use case and CSS library | mostly free | browsing only; not evaluated per template |
+| shadcnblocks.com, shadcncraft.com, shadcndesign.com | Commercial block libraries and Figma kits for shadcn | paid tiers | not needed; not evaluated in depth |
+
+**2. What the category looks like — measured, not guessed** (computed styles read from the live
+sites on 2026-09-29):
+
+| Site | Page / ink | Main button | Radius | Type |
+|---|---|---|---|---|
+| truecoach.co | white / `#12161C` | orange `#F44E27`, white label | 5 px | Gotham + HongKong, weights 700–900 |
+| trainerize.com | white / `#241F20` | yellow `#FFCA10` with dark label (or dark with yellow label) | 4 px | Poppins |
+| everfit.io | transparent (white) / `#1B1B1B` | black, white label | 8 px and pill | Inter |
+| hevyapp.com | white / `#0A0A0A` | blue `#1D83EA`, white label | 3 px | Inter |
+| linear.app (density reference) | `#08090A` / `#F7F8F8` | light grey pill | pill | Inter Variable, weight 510 |
+
+The category is **white surfaces, near-black ink, one loud accent, small radii, a grotesque sans**.
+Two of those accents fail WCAG AA with the white label they use — TrueCoach's orange is 3.52:1 and
+Hevy's blue 3.83:1, against the 4.5:1 required — so an accessible palette is a small edge over the
+category, not a compromise.
+
+**3. What each area needs** (the principles every direction below follows):
+
+- **Trainer, `/app` — a desk tool, used for long stretches:** a sidebar, dense readable tables,
+  numbers that line up (tabular figures), a triage view first ("who needs me today"), and the
+  student page split into tabs instead of one long scroll. Density from Linear, layouts from
+  shadcn's `dashboard-01`. Text is real text — selectable, searchable — the point of Option C.
+- **Student, `/aluno` — a phone in a gym, one hand, sometimes sweaty or in dim light:** one thing
+  at a time, a bottom tab bar, controls of 48 px, primary actions at the thumb (sticky bottom bar),
+  native inputs and pickers (numeric keypad via `inputMode`), high contrast. On a desktop it is a
+  *centred column*, never a stretched phone screen (the 2026-09-22 complaint, in reverse).
+- **The logging screen follows the pattern Hevy made standard:** one row per set with the previous
+  value, weight and reps, a numeric keypad and large tap targets. Sources describe Hevy's rows as
+  previous / kg / reps / check with a rest timer. Our rows are weight and reps today; 24m offers
+  the "Anterior" column.
+- **One brand, two densities.** Same tokens, same components; `data-area` on each layout switches
+  base size and control height. Two audiences want opposite layouts (§23 decision 3), not two brands.
+
+**4. Stack.** Tailwind CSS v4 + shadcn/ui, unchanged from the recommendation of 2026-09-22 and now
+better supported: shadcn's default base is **Base UI since July 2026** (`npx shadcn init -b radix`
+keeps Radix; both are supported and every update ships for both). Its catalogue has everything the
+screens need — `sidebar`, `table`, `tabs`, `field`, `native-select`, `toggle-group`, `sheet`,
+`alert-dialog`, `skeleton`, `spinner`, `empty`, `progress`, `chart` (Recharts v3, with an
+`accessibilityLayer` prop for keyboard and screen readers) — and its tokens are plain CSS variables
+(`--background`, `--primary`, `--radius`, `--chart-1…5`, `.dark` overrides), so a direction is a
+block of variables, not a fork. MUI stays ruled out (it is Material — the look this whole effort
+escapes); a runtime CSS-in-JS kit adds cost a static export doesn't need; hand-building every
+dialog, menu and table in plain CSS repeats what §23 chose Option C to avoid. Static-export facts,
+from the local Next 16 docs: `next/font/google` self-hosts at build time (the browser makes no
+request to Google); the default image loader isn't supported (no `next/image` needed here);
+Tailwind v4 installs as `tailwindcss @tailwindcss/postcss` + `@import 'tailwindcss'`.
+
+### Three suggested directions (a "template" for each area)
+
+Same information architecture in all three; they differ in tokens, type, shape and feel.
+
+| | **A · Estúdio** | **B · Energia** | **C · Acolhedor** |
+|---|---|---|---|
+| Feel | calm, professional; Linear / Vercel | sporty, confident; TrueCoach | warm, encouraging; wellness apps |
+| Accent | indigo `#4F46E5` (the Android app's own accent) | burnt orange `#C2410C` | deep teal `#0F766E` |
+| Surfaces | cool grey page, white cards, hairline borders | warm white page, white cards, ink headings | cream page, soft tinted panels |
+| Type | Inter | Barlow Condensed (headings) + Inter | Figtree |
+| Radius | 8 px | 6 px | 14 px |
+| shadcn style | Nova (compact) | Vega | Maia (soft) |
+| Trainer area | white sidebar, indigo active item, dense tables | ink sidebar with orange active item, large condensed titles | cream sidebar, roomy cards |
+| Student area | white column, indigo full-width buttons, bottom tabs | condensed section titles, orange CTA, big numerals for weight × reps | big rounded cards, teal CTA, friendly empty states |
+
+Palette (hex is the source of truth; light mode; dark is 24j):
+
+| Token | A · Estúdio | B · Energia | C · Acolhedor |
+|---|---|---|---|
+| page (`--background`) | `#F7F7F8` | `#FAF9F7` | `#FBF8F3` |
+| card / popover | `#FFFFFF` | `#FFFFFF` | `#FFFFFF` |
+| foreground | `#111113` | `#12161C` | `#1F1B16` |
+| muted | `#F0F0F2` | `#F1EEE9` | `#F3EEE6` |
+| muted-foreground | `#5C5C66` | `#575C66` | `#645C52` |
+| border (cards, dividers) | `#E3E3E8` | `#E6E3DE` | `#E9E1D5` |
+| input (control border) | `#8A8A96` | `#87837D` | `#89806F` |
+| primary and ring | `#4F46E5` | `#C2410C` | `#0F766E` |
+| primary-foreground | `#FFFFFF` | `#FFFFFF` | `#FFFFFF` |
+| accent (hover, selected) | `#EEF0FF` | `#FFEDD5` | `#D7F3EE` |
+| accent-foreground | `#312E81` | `#7C2D12` | `#134E4A` |
+| chart 1–5 | `#4F46E5 #0F766E #C2410C #64748B #BE185D` | `#C2410C #1D4ED8 #0F766E #57534E #A21CAF` | `#0F766E #C2410C #A16207 #7E22CE #475569` |
+
+Status colours, shared by all three (never colour alone — every badge also carries its word: "Pago",
+"A vencer", "Em atraso", "Conectado"): success `#15803D` (badge `#166534` on `#DCFCE7`), warning
+`#B45309` (`#92400E` on `#FEF3C7`), destructive `#B91C1C` (`#991B1B` on `#FEE2E2`). The accent is
+never green, red or amber, so it can't be mistaken for a status — B's burnt orange sits nearest to
+warning amber, which is why the word always travels with the colour.
+
+**Checked with a script (WCAG 2.2 contrast), every pair passes:** body text 16.2–17.6:1 on the page;
+secondary text 6.2–6.4:1 (5.7–5.8:1 on muted chips); primary with a white label 5.2–6.3:1, and as
+link text on the page 4.9–5.9:1; accent pairs ≥ 8.1:1; control border vs card ≥ 3.4:1 (the tightest
+is A's against the page, 3.19:1, over the 3:1 non-text minimum); focus ring vs page ≥ 4.9:1; chart
+colours vs card 4.7–7.6:1; status text on white 5.0–6.5:1 and badges 6.4–6.8:1. Card borders
+(≈ 1.2:1) are decorative and deliberately light. shadcn's stock light `--input` (≈ `#E5E5E5`) is only
+about 1.3:1 on white, below the 3:1 non-text minimum, so `input` is darker here on purpose. Option B's
+vivid orange (`#F44E27`, TrueCoach's) needs an ink label — 5.16:1 — and fails with white; the deep
+orange above is the one that works with white labels and as link text.
+
+**Recommendation: A · Estúdio for both areas** — the shape the trainer already reacted to (shadcn
+blocks + Linear density); its indigo keeps the Android app's accent, so the two products read as
+one brand without matching; and it's the only accent with no collision risk against the status
+colours. If the trainer wants the student side warmer, C's tokens on `/aluno` alone are the
+natural mix (tokens live on the area's layout root, so the two areas can differ). B is the boldest
+and the one most likely to be chosen for taste rather than fit.
+
+### Delivery strategy — read before touching `web/`
+
+- **Work on a branch, `feature/web-visual`, cut from `feature/kmp-web`.** Installing Tailwind turns
+  on its Preflight reset for *every* page — the bare, still-unstyled ones included — and
+  `web-deploy.yml` publishes every push to `feature/kmp-web`. Pushing the foundation there would put
+  a half-styled site on the live URL the trainer now uses. The workflow doesn't watch the new
+  branch; Web CI does run on pull requests into `feature/kmp-web`, so a draft PR gets lint, unit
+  tests, build and emulator tests. **Opening a PR or pushing is the trainer's call.**
+- **Seeing the real app before merging:** a `workflow_dispatch` run of `web-deploy.yml` on the
+  branch puts the branch's build on the Pages URL until the next deploy from `feature/kmp-web`
+  restores the current one. Only with the trainer's OK, and when no real student is on the site
+  (ask). The alternative that never touches the live URL is running it locally against the seeded
+  emulators.
+- Commits per area, verified before moving on (the standing cadence). `feature/kmp-web` receives
+  the branch once, at 24l.
+
+```mermaid
+flowchart TD
+    A["24a. Research + stack<br/>done in this plan"] --> B{"24b. Preview + the pick<br/>(trainer)"}
+    B --> C["24c. Foundation on a branch:<br/>Tailwind v4, shadcn/ui, fonts"]
+    C --> D["24d. Final tokens + brand + metadata"]
+    D --> E["24e. Shells + public/auth pages"]
+    E --> F["24f. Trainer screens"]
+    E --> G["24g. Student screens"]
+    F --> H["24h. Charts"]
+    G --> H
+    H --> I["24i. States, feedback, polish"]
+    I --> J["24j. Dark mode<br/>optional"]
+    I --> K["24k. Verification gate"]
+    J --> K
+    K --> L["24l. Trainer review, merge, cutover"]
+    L --> M["24m. Optional extras"]
+    L --> N["24n. Registration"]
+```
+
+Suggested: sonnet · high for 24b–24e and 24k — the choices are visual and subjective (direction,
+shells, the accessibility gate), so a wrong call costs iterations, not data; sonnet · medium for
+24c and 24f–24i — repeated patterns once tokens and shells exist; haiku · low for 24n. No opus
+anywhere: nothing here touches data, rules or auth, so nothing is irreversible. This is a manual
+recommendation only; it doesn't switch the model.
+
+**24a. Research, stack and directions**
+- [x] Template sources compared and a stack recommended (tables above): Tailwind v4 + shadcn/ui,
+      `lucide-react`, shadcn `chart`, `native-select` for mobile forms, shadcn's toast component
+      (Sonner-based or Base UI's — whichever the CLI offers for the chosen base), optional
+      `next-themes`. Sources fetched 2026-09-29: shadcn installation, theming, blocks, chart,
+      sidebar, dark-mode, native-select, component-catalogue and changelog pages (`create`, July
+      2026 Base UI default); `tweakcn.com`; `tremor.so`; Tailwind's install and theme docs; the
+      local Next 16.3.6 docs (CSS, static exports, fonts).
+- [x] Category language measured from the live sites (table above) and Hevy's set-logging pattern
+      researched; the trainer's own references (2026-09-22) carried in: `ui.shadcn.com/blocks` for
+      the dashboard shape, TrueCoach / Trainerize for category language, Linear for density.
+- [x] Three directions defined and their palettes contrast-checked (table above); §22's lessons kept
+      — "everything is purple" came from Material's default surfaces, not the accent, and density
+      beat decoration — re-checked now that Material is gone: none of the palettes tint surfaces with
+      the accent beyond the single `accent` token.
+- [x] Font availability confirmed in Next 16.3.6's own Google-font list: Inter, Barlow Condensed,
+      Figtree (plus Geist, Plus Jakarta Sans, DM Sans, Sora, Outfit, Manrope, Onest, Public Sans as
+      substitutes if the trainer wants a different feel).
+
+**24b. The suggestion preview and the pick (manual)**
+- [ ] Persist the preview as `web/design/preview.html` (outside `src/` and `public/`, so it never
+      ships): one self-contained file — no framework, no Firebase, fixtures with the seed's names
+      (Ana, Bruno, Carla, Diego) — with a switcher for the three directions and, per direction, four
+      screens: the trainer's Painel, a trainer's student page (tabs + a chart), the student's home,
+      and the student's log-session at 375 px. The first version was shown inline in the
+      conversation on 2026-09-29. Done when it opens by double-click, works offline, and every
+      screen renders in every direction using exactly the hex values above.
+- [ ] **(manual)** The trainer answers, after opening it: (1) a direction for `/app` and one for
+      `/aluno` — they may differ; (2) anything to change — accent hue, corner radius, font; (3) dark
+      mode: yes, later or no (default: later); (4) a logo to use, or a wordmark is fine. Written
+      here with the date. **Also settles §23a's open item: shadcn/ui + Tailwind is the default if
+      the trainer doesn't object.**
+- [ ] Iterate the preview on their changes until they say which. One round is the target, three the
+      limit; each round is an edit of the same file. Done when the pick is recorded under this item.
+
+**24c. Foundation, on the branch (no visual decisions in it)**
+- [ ] Cut `feature/web-visual` from `feature/kmp-web` (see the delivery strategy). Done when the
+      branch exists locally and `git status` is clean.
+- [ ] Baseline before touching anything, written here for 24k: `npm test` 178+ and `npm run
+      test:rules` 73 passing, and the production bundle — transfer size and JS chunk count of `/`,
+      `/entrar/`, `/app/`, `/aluno/`, from `out/` or the network panel.
+- [ ] Tailwind v4 per the local Next docs (`web/node_modules/next/dist/docs/01-app/01-getting-started/11-css.md`):
+      `npm install -D tailwindcss @tailwindcss/postcss`, `postcss.config.mjs` with the
+      `@tailwindcss/postcss` plugin, `src/app/globals.css` with `@import 'tailwindcss'`, imported
+      in the root layout — **before** shadcn's init, whose Next guide assumes Tailwind exists. Done
+      when a utility class renders in `next dev` and `npm run build` passes.
+- [ ] `npx shadcn@latest init` in `web/` (check `--help` for the flags first; the default base is
+      Base UI, `-b radix` for Radix — take the default unless a block needed later lacks it). The
+      repo already has the `@/*` → `./src/*` alias it needs. Base colour `neutral`, CSS variables
+      on. Done when `components.json`, `src/lib/utils.ts` (`cn`) and the token block in
+      `globals.css` exist, `package.json` gained only what the CLI added, and lint + build are green.
+- [ ] Fonts with `next/font/google` in `src/app/fonts.ts` — `subsets: ["latin"]` covers pt-BR
+      accents — as CSS variables. Only the chosen direction's families remain after 24d. Done when
+      the built HTML links self-hosted font files and no request goes to Google.
+- [ ] Add the components the screens need (all confirmed in the catalogue): button, input, label,
+      textarea, field, native-select, select, checkbox, radio-group, switch, toggle-group, badge,
+      card, table, tabs, dropdown-menu, dialog, alert-dialog, sheet, sidebar, separator, skeleton,
+      spinner, empty, alert, avatar, breadcrumb, tooltip, progress, toast, chart. Done when each
+      imports and the build passes; nothing is rendered with them yet.
+- [ ] Token guard: `web/scripts/check-contrast.mjs` (`npm run check:contrast`) reads the token pairs
+      from `globals.css` and fails below 4.5:1 for text and 3:1 for UI, wired into `web-ci.yml`.
+      Done when it passes on the chosen palette and a deliberately bad token makes it fail.
+- [ ] Conventions written **now**, not at the end (a friend joins and reviews PRs): `CLAUDE.md`'s
+      "No CSS until §23k starts" bullet becomes the design-system rules — colours only through
+      tokens (no raw hex or arbitrary colour in components), Tailwind classes only (no inline
+      `style`, no CSS modules), primitives in `src/components/ui/`, composed pieces in
+      `src/components/`, one theme file, native controls on the student side. Done when the branch's
+      `CLAUDE.md` says it.
+- [ ] A populated demo seed, `npm run seed:demo` (`scripts/seed-demo.mjs`, separate from
+      `seed-emulators.mjs` so §23g's checkable numbers stay put): ~12 students, 8 weeks of sessions,
+      three months of measurements, a few overdue charges — so tables and charts have a real shape
+      when reviewed. Done when it runs on a fresh emulator and the dashboard shows it.
+
+**24d. Final tokens, brand and metadata (after the pick)**
+- [ ] `globals.css` `:root` from the chosen palette — page, card, foreground, muted, border, input,
+      primary, accent, ring, sidebar, chart 1–5, the three status colours and their badge tints —
+      plus `--radius`, the font variables, and two densities set by a `data-area` attribute on each
+      area's layout root: trainer 14 px text / 36 px controls, student 16 px / 48 px. Tailwind v4
+      derives spacing utilities from `--spacing`, so a per-area override may scale paddings and
+      heights for free — **verify that it does**; if not, size props per area. If the areas use
+      different directions, each layout carries its own token block. Done when both areas render
+      from tokens alone and `check:contrast` is green.
+- [ ] Drop the unchosen directions' fonts and tokens.
+- [ ] Brand: a wordmark ("Personal Tracker") and a simple glyph as SVG — `src/app/icon.svg` (Next's
+      metadata-file convention; the base path is handled) — used in the sidebar, login and landing.
+      **(manual)** if the trainer supplies a logo instead. Done when the tab shows the icon on the
+      deployed path.
+- [ ] Metadata: a title template `%s · Personal Tracker`, a description and `theme-color`. **Every
+      route gets its own title** — client pages can't export `metadata`, so each is wrapped by a
+      server `page.tsx` that does, as `app/fichas/editar/page.tsx` already is. `/app/`, `/aluno/`
+      and `/convite/` are `noindex` (they are login shells; only `/` should be found by a search
+      engine). Open Graph title, description and image for `/` and `/convite/`, so a WhatsApp
+      preview of an invite link shows "Seu personal convidou você" on a real card (`metadataBase`
+      = the Pages URL, a static `opengraph-image` per route). Done when the built HTML of those
+      routes carries the tags.
+
+**24e. Shells and public/auth pages**
+- [ ] Root layout: fonts, the toast host, a "pular para o conteúdo" skip link, a global
+      `:focus-visible` ring, `prefers-reduced-motion` respected. Done when tabbing from a fresh load
+      reaches the skip link first.
+- [ ] Trainer shell (`/app`): shadcn `Sidebar` (icon-collapsible; a `Sheet` below `md`) with Painel,
+      Alunos, Agenda, Mensalidades and lucide icons; a header with the page title / breadcrumb and a
+      user menu (name and e-mail, "Sair"; the theme toggle joins in 24j). Basis: the `dashboard-01`
+      and `sidebar-07` blocks (CLI-installable; check Base UI support when adding them). Done when
+      the four pages render inside it at 1280 px, the sidebar becomes a sheet at 375 px, and the
+      current item carries `aria-current`.
+- [ ] Student shell (`/aluno`): a compact header (wordmark, Sair) and a bottom tab bar (Fichas,
+      Evolução — the phone's two tabs) on narrow screens, respecting safe-area insets; on wide
+      screens a centred column no wider than ~560 px. Done when it holds at 375 / 768 / 1280 with
+      no full-width table and no stretched-phone look.
+- [ ] `/entrar/`, `/convite/` (a `login-03`/`-04`-style card; the invite screen says what happens
+      next; "Manter conectado" keeps its meaning), `/` (hero, the two audience sections already
+      written, one call to action each; no stock photography), `not-found` (this is what GitHub
+      Pages serves as its 404) and `error`. Done when each passes 24k's checks.
+- [ ] `RequireArea`'s bare "Carregando…" becomes a branded full-page skeleton, so the auth check
+      doesn't flash raw text before the shell appears.
+
+**24f. Trainer screens** (in order of value to the trainer; each is restyle only — the domain
+functions and their numbers don't change)
+- [ ] **Painel:** four KPI cards (alunos conectados, sessões em 7 dias, aderência em 28 dias,
+      a receber / em atraso), one prioritised "Atenção" card that merges *sem treinar há 7 dias ou
+      mais*, *avaliações pendentes* and *em atraso* with a link to each student, and the money
+      table as a compact card. Numbers set in tabular figures. Done when the seed's known values
+      still read exactly: 6 students (4 connected, 2 waiting), 4 sessions / 7 days, 35 % adherence,
+      Bruno quiet, Diego pending, R$ 270,00 / R$ 150,00 / R$ 120,00.
+- [ ] **Alunos:** a table — name with an initials avatar, goal, connection badge, medical-restriction
+      flag as icon *and* text — with a search field, the connection filter as a toggle group, "N de M
+      alunos", an empty state and a primary "Cadastrar aluno"; the name is the link. Below `md` rows
+      become stacked cards. Done when search ("ALVES" finds Bruno), filter and sort behave as in §23g.
+- [ ] **Novo / editar aluno** (`StudentForm`): shadcn `Field` groups (dados, treino, saúde), gender
+      and level as radio / toggle groups, training days as a Seg–Dom toggle group, inline field
+      errors plus a summary alert, a sticky action bar. `profileErrors` is untouched.
+- [ ] **Aluno:** a header (avatar, name, connection badge, phone, actions) and `Tabs` — Resumo,
+      Fichas, Evolução, Avaliações, Mensalidade — instead of eight stacked sections; the tab lives in
+      `?tab=` so it is linkable and survives the static export; the medical note is a warning
+      callout; permissions are switch rows with a one-line explanation; the invite link is a
+      read-only field with a copy button and a visible "Copiado". Done when a draft shows only the
+      tabs it can have (no Evolução / Avaliações), as today.
+- [ ] **Fichas:** the list as rows with an Ativa / Inativa badge and an action menu; the editor
+      (`/app/fichas/editar/`) as two columns — left the three steps (pedir à IA → importador →
+      ficha), right a sticky preview with the exercise table and the effective-volume bars drawn
+      against the 12–20 band the phone only states in a sentence; delete through an `AlertDialog`.
+      Smart Paste and the prompt are unchanged. Done when a paste still fills the name and exercises
+      exactly as verified in §23g part 3.
+- [ ] **Agenda:** the week grid with hour rows and booking chips; an empty slot reveals a "+" on hover
+      *and* focus; the student picker as a combobox; below `md` a one-day-at-a-time switcher. The
+      `aria-label`s of §23g part 5 are kept (they are what a screen reader and the tests find).
+- [ ] **Mensalidades:** month select, two KPI cards (previsto, recebido), the table with a
+      `StatusBadge`, a row menu (Marcar como pago → a dialog with method, day and note; Ajustar →
+      a dialog; Desfazer → an `AlertDialog`), earlier-months overdue as a warning card, and the
+      "sem mensalidade" list. Done when marking paid moves the totals exactly as verified in §23g
+      part 6.
+
+**24g. Student screens** (phone first; verified at 375 px, then checked at 1280)
+- [ ] **Home:** a greeting, the pending-assessment banner as a primary-tinted card, one card per
+      ficha — name, "N exercícios", "Última vez: dd/mm" (from the student's own logs), the exercise
+      list in an accordion, a full-width "Iniciar treino" — and the empty state "Nenhuma ficha
+      atribuída ainda. Fale com seu personal."
+- [ ] **Registrar treino:** a progress line ("2 de 5 exercícios"); each exercise a card with its
+      target ("Alvo: 3×12 · 40kg") and rows `Série | Peso (kg) | Reps` of 48 px inputs
+      (`inputMode` decimal / numeric, `enterKeyHint="next"`); "Adicionar série"; a sticky bottom bar
+      "Salvar sessão", disabled until a row is complete, with a live count; a success screen that
+      summarises the session. Comma-decimal normalisation and the row rules of §23h are untouched.
+- [ ] **Evolução:** the latest weight as a large figure with the change since the previous one and a
+      mini chart; "Registrar medida" in a bottom sheet, only while `canLogBiometrics` (still
+      hidden, not disabled); the exercise picker as a **native** select plus the progression chart;
+      recent sessions as cards, not a table.
+- [ ] **Autoavaliação PAR-Q+:** an intro card; each question a card with a 48 px Não | Sim segmented
+      control; a progress bar ("3 de 7"); a "sim" gets a subtle warning border; goal, level
+      (segmented) and training days; a sticky "Enviar para o personal"; a success state. The seven
+      questions and their order are `PAR_Q`'s, untouched.
+- [ ] Native controls on this side wherever a phone has a better one (`select`, number inputs): the
+      trainer side may use the custom `Select`; this side uses `native-select`. Done when no student
+      screen scrolls horizontally at 375 px and every tap target is ≥ 44 px (48 px for primary ones).
+
+**24h. Charts** (phase 1 has none; the tables were the stand-in)
+- [ ] Wrappers over shadcn's `chart` (Recharts v3): **weight** line (student Evolução, trainer's
+      student tab); **load progression** for the selected exercise (maximum per session, the
+      series `loadProgression` already yields); **sessions per week** bars for the Painel — needs a
+      new pure `sessionsPerWeek(logs, today, zone, weeks)` in `domain/metrics.ts` on top of
+      `trainedDays` (the definition of a session is unchanged: a student-day) with unit tests.
+- [ ] Each chart: a title and unit, colours from `--chart-n`, `accessibilityLayer`, the phone's own
+      empty message ("Adicione mais medidas para ver o gráfico"), and a **"Ver dados" toggle that
+      shows the existing table** — the tables stay: they are the accessible and no-JS view, and they
+      were validated in §23g.
+- [ ] Loaded through `next/dynamic` so pages without charts don't pay for Recharts. Done when the
+      route sizes are recorded against 24c's baseline and the difference is explained.
+
+**24i. States, feedback and polish**
+- [ ] Skeletons replace every "Carregando…"; errors share one `Alert` with a retry; empty states use
+      the `Empty` component with a next step; numbers use tabular figures everywhere.
+- [ ] Toasts on: ficha salva, pagamento registrado / desfeito, horário agendado / removido, medida
+      salva, autoavaliação enviada. Today several of these navigate or refresh in silence.
+- [ ] `window.confirm` becomes an `AlertDialog` (excluir ficha, desfazer pagamento), with focus
+      returning to the trigger.
+- [ ] Motion stays small (≈ 150 ms, opacity / transform only) and vanishes under
+      `prefers-reduced-motion`.
+- [ ] Copy pass: every visible string in pt-BR; **validation messages that tests assert are not
+      reworded** (`workoutErrors`, `parseMeasurement`, `profileErrors`, …).
+
+**24j. Dark mode (optional — only with the trainer's "sim" from 24b)**
+- [ ] `next-themes` per shadcn's guide (`attribute="class"`, `defaultTheme="system"`,
+      `suppressHydrationWarning` on `<html>`, no flash — verify on the static export), `.dark`
+      tokens derived from the chosen palette (tweakcn can generate them), a toggle in the trainer's
+      user menu; the student side follows the system setting. Done when `check:contrast` also
+      passes the dark tokens and the charts stay legible.
+
+**24k. Verification gate**
+- [ ] Automated: `npm test` (178 + new), `npm run lint`, `npx tsc --noEmit`, `npm run build`,
+      `npm run test:rules` (73, unchanged), `check:contrast`, Web CI green.
+- [ ] Every route driven with the browser tooling against the seeded emulators at 375 / 768 / 1280 /
+      1920 px: no horizontal page scroll (tables scroll inside their container), no console errors,
+      and the flows of §23g / §23h repeated — remembering that the new radios, switches and
+      checkboxes are custom elements the earlier form-fill shortcut can't set: use real clicks.
+- [ ] `axe-core` injected into each route (install as a dev dependency, evaluate its bundle in the
+      page): zero serious or critical violations; a keyboard-only pass through trainer login →
+      Painel → an aluno → salvar uma ficha, and student login → registrar um treino.
+- [ ] Bundle vs the 24c baseline: no route grows unexplained; charts are lazy.
+- [ ] `/designreview` on the deployed URL (or on page captures at 1280 and 375 px if the browser pane
+      can render them) — the repo's design-critique command, run against the rubric.
+- [ ] The original complaints, checked literally: at ≥ 1024 px `/app` reads as a web dashboard
+      (sidebar, tables, selectable text); `/aluno` at 1280 px is a centred column, not a stretched
+      phone; nothing resembles Material (no FAB, no tonal-purple surfaces).
+
+**24l. Trainer review, merge and cutover**
+- [ ] **(manual)** The trainer reviews the branch build — a temporary deploy from the branch (see the
+      delivery strategy; needs their OK and no real students online) or locally against the demo
+      seed — as trainer and as student, on desktop and on their phone, and signs off or lists fixes.
+      Screenshots welcome; fixes are new items here, not a reopened 24f–24g.
+- [ ] **(manual)** Merge `feature/web-visual` into `feature/kmp-web` (push and PR only on their say),
+      let Web CI and the deploy run, then repeat the route sweep of 24k on the live URL —
+      unauthenticated routes, then the trainer's own login.
+- [ ] `main` still deploys the Kotlin/JS build until this branch reaches it (memory:
+      *pages-deploy-main-risk*). **(manual)** decide with the trainer when `feature/kmp-web` goes to
+      `main`; until then, no push to `main`.
+
+**24m. Optional extras (each independent; only with the trainer's yes)**
+- [ ] **"Anterior" column** in Registrar treino — last session's weight × reps for that exercise and
+      set, the Hevy pattern. A pure `previousSets(logs, exercise)` in `domain/progression.ts`, with
+      tests; the student's own logs are already loaded on that screen.
+- [ ] A command palette (`Ctrl/⌘ K`, shadcn `command`) to jump to a student from anywhere in `/app`.
+- [ ] An installable student site: a web manifest and icons, with `start_url` and `scope` carrying
+      the base path — check first that the static export supports the manifest file convention.
+- [ ] A print stylesheet for a ficha ("imprimir ficha"), for trainers who still hand out paper.
+
+**24n. Registration**
+- [ ] `CLAUDE.md`'s web section finalised: the design-system rules from 24c, the two densities, the
+      tokens file, "native controls on the student side", the accessibility contract (contrast
+      pairs, targets ≥ 44 px on the student side, focus visible, names on every control, colour never
+      alone), and the note that the seed / e2e recipes now need real clicks. `web/README.md`
+      updated (`check:contrast`, `seed:demo`, the preview file).
+- [ ] GOALS.md: §23k and §23a's library item ticked with the decision recorded; the memory notes
+      updated — the *backend-first* method's design phase is done and the "no CSS" rule is lifted;
+      the chosen direction is recorded.
+- [ ] Remove what shouldn't ship: the unchosen tokens and fonts, and `web/design/preview.html` if
+      the trainer doesn't want to keep it as a living reference.
+
+**Out of scope (deliberately):** new product features beyond 24m's four (chat, nutrition, habits,
+payment gateway — §12's backlog); the Android app's look; translations; photography, illustration
+or video; brand identity beyond a wordmark and a glyph; analytics; email templates; an offline /
+service-worker mode.
+
+**Risks, and what contains them**
+- *A half-styled site reaches production* — the branch strategy; nothing merges before 24k.
+- *Preflight restyles the bare pages the moment Tailwind is installed* — same containment.
+- *Markup changes break behaviour* — the domain and data layers are untouched and covered by 178 unit
+  and 73 emulator tests; screens keep their labels, `aria-label`s and validation messages; the
+  browser sweep of 24k repeats the §23g / §23h flows.
+- *Bundle growth* (Recharts, the primitives) — measured against a baseline; charts are lazy.
+- *Subjective quality* — the pick comes first, in a preview; trainer checkpoints at 24b and 24l;
+  captures or the live URL at four widths.
+- *Base UI is new to this project* — it's shadcn's default and Radix stays one flag away
+  (`-b radix`); decide at 24c, don't mix the two.
+- *The browser pane can be hidden, and then captures fail* — fall back to DOM checks plus the
+  trainer's own screenshots, which is how earlier passes worked.
+- *A friend joins mid-way* — the conventions land at 24c, and the branch goes through PR review.
+
+---
+
+## 25. Feature — Make creating fichas as easy as possible: several treinos at once, a PDF-backed exercise catalog, and (gated) in-site generation
+(2026-09-30, via `/newgoal`)
+
+**The request:** "facilitar o máximo possível a criação da ficha." The trainer has a PDF of exercises
+with their partial muscle activations and wants an AI chat inside the site that always has that
+context — but found no free chat, and believes Gemini Flash no longer has a free tier. Second idea:
+keep the copy-the-prompt / paste-the-answer flow, but make the site understand that the answer holds
+**1, 2, 3 … N treinos** (Ficha A, B, C…) and split them automatically, "like Excel does". Plus: "if
+there is an easier way I did not think of, tell me."
+
+**Goal type: Feature** — a bounded addition to a web front that works and is live — with a research
+block in front (25a) because two of the trainer's assumptions needed checking before designing.
+Research is done (2026-09-30); 25a records the result so nothing is looked up twice.
+
+**What the research changed, in five lines (the short answer to the trainer):**
+1. **Gemini Flash is still free** — on Google's own pricing page today (`gemini-3.8-flash`,
+   `gemini-3.5-flash`, `gemini-3.5-flash-lite`… are "Free of charge"), and Firebase AI Logic lists
+   `gemini-3.8-flash` and `gemini-3.5-flash-lite` as available on the free Spark plan. What went
+   away is the **2.5 family** on AI Logic ("limited to projects that actively used them in the
+   past"; 2.5 Flash retires 2026-10-16) — the likely reason it "stopped existing". Model ids rotate,
+   so nothing here may hard-code one in more than one place. Caveat that matters for a health app:
+   on the free tier "content used to improve our products" — student data must not go there by
+   default (25i).
+2. **A chat is not the easiest way in.** The two real problems are (i) the AI must know the PDF and
+   (ii) the site must cope with several treinos in one answer. (i) is solved by putting the PDF's
+   table **in the site** as a catalog (25c) — it is then "always saved", needs no chat memory, and
+   the site can compute every muscle coefficient itself instead of trusting the AI to copy them.
+   (ii) is solved by a splitter + review screen + one-click save of all fichas (25d–25e).
+3. Do those first. They work with **any** AI app the trainer already uses, cost nothing, and need no
+   quota, key, or server. The in-site chat (25h–25i) is second, and gated on a spike.
+4. The in-site chat, if the spike passes, is **Firebase AI Logic from the browser** — the same
+   no-key, App-Check-protected, Spark-plan path the Android app already uses. It needs no server, so
+   §23e's "no provider key ever reaches the browser" still holds; what it reverses is §23e's "the web
+   makes no AI calls", and only with the trainer's explicit say-so (given 2026-09-30, conditional on
+   the spike).
+5. A no-code bridge exists today: keep the PDF in a **Claude Project / ChatGPT Project** and use a
+   short prompt (25f's "já tenho a tabela" switch). Fragile — each vendor changes limits — so it is a
+   fallback, not the plan.
+
+**Not touched by this section (explicit, to stop scope creep):** the Android app and its parser
+(`WorkoutParser.kt`, `ficha_prompt_template.md` — the phone reads the same stored documents and keeps
+pasting one ficha at a time); `firestore.rules` (no new collection or field); Mensalidades, Agenda,
+Registros; editing an *existing* ficha (stays single-ficha); the student area; paid AI tiers;
+muscle heat-maps; persisting chat history; OCR of scanned pages beyond the one-time PDF conversion.
+
+**Where this executes:** the web front lives on `main` since PR #4 (2026-09-30) and on
+`feature/kmp-web`. Execute on a branch from `main` and open a PR (the deploy gates on lint + tests +
+build). `main`'s `GOALS.md` does not contain §23 or this section — copy §25 there first, or run
+`/execgoals` from a checkout whose `GOALS.md` has it. Numbering: §24 is an uncommitted plan in the
+`feature-kmp-web` worktree (superseded by §23k's ALLU template) — that is why this is §25.
+
+**Status 2026-09-30 (executed in part, on `feature/multi-ficha`, PR #6 against `main`):** 25d, 25e (all but
+the catalog enrichment), 25f, and 25i's code are built and verified as far as a laptop allows — splitter,
+review screen, atomic save, multi-treino prompt with quick picks, and the **Gemini tab**, whose network call
+was exercised with a stubbed server (the real SDK ran). **Open:** 25c (the catalog — the trainer confirmed the
+PDF is the same table as `hypertrophy_volume_reference.md`, so there is nothing to convert, only the lookup to
+build), the Firebase console steps and the live check of the Gemini call (25h, `(manual)`), and the AI Studio
+limits. The trainer's go-ahead to build the Gemini tab came before the 25h spike, so the spike was folded into
+the implementation; its go/no-go criteria remain the acceptance test of the live tab.
+
+```mermaid
+flowchart TD
+    A[25a. Research — done] --> B[25b. Decisions recorded]
+    B --> C[25c. Exercise catalog from the PDF]
+    B --> D[25d. parseWorkouts: split N treinos]
+    C --> E[25e. Import review screen + save all]
+    D --> E
+    C --> F[25f. Prompt v2 + quick picks]
+    E --> G[25g. Verification on real answers]
+    F --> G
+    G --> H{25h. Spike: Gemini from the browser}
+    H -- go --> I[25i. In-site generation + adjust]
+    H -- no-go --> J[stay on copy/paste — section complete]
+    I --> K[25j. Registration]
+    J --> K
+```
+
+Suggested: sonnet · high — additive TypeScript in a tested domain layer; the parser (25d) and the catalog match (25c) are where a wrong edge case silently corrupts a saved ficha, so they get high effort; the rest is medium.
+
+**25a. Research — what the free options really are (checked 2026-09-30)**
+
+Suggested: sonnet · medium — already done; kept so the decision can be re-read, not repeated.
+
+- [x] Gemini Developer API free tier: **exists.** Source: <https://ai.google.dev/gemini-api/docs/pricing> —
+      free input/output for `gemini-3.8-flash`, `3.7-flash`, `3.6-flash`, `3.5-flash`,
+      `3.5-flash-lite`, `3.1-flash-lite`, `2.5-flash`, `2.5-flash-lite`, `2.5-pro` and others;
+      context caching free; "Content used to improve our products" applies to every free-tier
+      model. Rate limits are **not published per model** — "viewed in Google AI Studio"
+      (<https://ai.google.dev/gemini-api/docs/rate-limits>). Third-party blogs quote 5–15 requests
+      per minute and 100–1,500 per day for Flash-class models and mention quota cuts on 2025-12-07
+      and in April 2026; treat those numbers as indicative only — read the real ones in AI Studio
+      (manual item below).
+- [x] Firebase AI Logic (the route that keeps the key out of the browser):
+      <https://firebase.google.com/docs/ai-logic/models> — on the free Spark plan:
+      `gemini-3.8-flash`, `gemini-3.5-flash-lite` (plus TTS/Live models); Blaze only:
+      `gemini-3.1-pro-preview` and image models; Gemini 2.5 models "limited to projects that
+      actively used them in the past"; **App Check enforcement becomes required for AI Logic on
+      2026-11-02** (this site already initialises App Check with reCAPTCHA Enterprise in
+      `web/src/data/firebase.ts`). Web SDK: `import { getAI, getGenerativeModel, GoogleAIBackend }
+      from "firebase/ai"` (<https://firebase.google.com/docs/ai-logic/get-started?platform=web&api=dev>);
+      works in a pure static browser app; no billing needed for the Gemini Developer API; structured
+      output via `generationConfig.responseMimeType = "application/json"` + `responseSchema`
+      (<https://firebase.google.com/docs/ai-logic/generate-structured-output>). The web docs fetched do
+      **not** show system instructions or `startChat` samples — the spike (25h) must confirm both.
+- [x] Android's `AndroidGeminiProvider.kt` pins `gemini-3.7-flash`, which is **not** in the Spark list
+      fetched today (`gemini-3.8-flash`, `gemini-3.5-flash-lite`). Not this section's job to fix, but
+      it may be why the phone's Gemini call misbehaves — recorded as the last item of 25j.
+- [x] Chat apps with persistent project context — a zero-code way to "keep the PDF": ChatGPT
+      Projects on the free plan allow 5 files per project (secondary source; OpenAI's help page
+      returned 403 to the fetch tool); Claude Projects exist on the free plan, 30 MB per file
+      (secondary sources); **Gemini Gems are being migrated to "Skills"** — personal accounts lose
+      Gems in November 2026, and Skills only "will gain … adding Google Drive files or notebooks for
+      context" (<https://9to5google.com/2026/09/30/gemini-skills-free/>). Verdict: usable today,
+      unstable over months; never make the site depend on one vendor's project feature.
+- [x] Chrome's built-in AI (Gemini Nano, Prompt API): **rejected.** Desktop only — "Chrome for
+      Android, iOS … not yet supported"; needs 22 GB free disk and a >4 GB-VRAM GPU or 16 GB RAM;
+      supported languages "en, ja, es, de, fr" — no Portuguese; small context
+      (<https://developer.chrome.com/docs/ai/prompt-api>).
+- [x] Puter.js (<https://developer.puter.com/tutorials/free-llm-api/>): "user-pays" model, no API key
+      and no backend — works on a static site, but every user must sign in to a third-party (Puter)
+      account and student data would pass through it. **Not chosen**: one more vendor and account for
+      no gain over Firebase AI Logic, which the project already uses.
+- [x] Free APIs that need a key (Groq, OpenRouter `:free` models, Mistral "Experiment", Cerebras,
+      Cloudflare Workers AI): all would need a **server-side proxy** to keep the key out of the
+      browser (a Cloudflare Worker would do; Firebase Functions needs Blaze, which §3 refused), i.e.
+      a second vendor plus a server. Their limits change fast (a secondary source reports Groq's
+      Llama 3.3 70B leaving the free tier on 2026-08-16). **Plan B only**, if the 25h spike fails on
+      quota and the trainer still wants an in-site chat.
+- [x] **Field research for the browser integration (2026-09-30)** — what Firebase documents for AI Logic on the
+      Web, so the tab is built the documented way: **(1)** initialise with `getAI(app, { backend: new
+      GoogleAIBackend(), useLimitedUseAppCheckTokens })`; limited-use tokens are minted per request, live 5
+      minutes and, with replay protection enforced, can be used once — the site turns them on whenever App Check
+      is initialised (everywhere but the emulators). **(2)** Enforce App Check for the AI Logic API in the
+      console (Security → App Check → APIs); without a valid token the answer is `403 PERMISSION_DENIED: To
+      access this model, you must enforce Firebase App Check`; `localhost` needs a registered debug token
+      (<https://firebase.google.com/docs/ai-logic/app-check>). **(3)** `systemInstruction` goes in
+      `getGenerativeModel` and `model.startChat()` keeps the history, so a follow-up is just `sendMessage`
+      (<https://firebase.google.com/docs/ai-logic/chat>, `.../system-instructions>`) — the open question from
+      the first pass is closed. **(4)** Structured output is `generationConfig.responseMimeType =
+      "application/json"` + a `Schema` (its size counts as input tokens). **(5)** Errors worth telling the
+      trainer about: 403 (App Check / API not enabled — both "Gemini Developer API" and "Firebase AI Logic API"
+      must be on; or an API-key restriction missing `firebasevertexai.googleapis.com`), 404 (retired model), 429
+      (quota), 503 (overloaded) (<https://firebase.google.com/docs/ai-logic/error-codes>). **(6)** The default
+      per-user limit is 100 requests/minute; the Spark free quota amounts are NOT on Firebase's pricing page —
+      they point to the Gemini pricing page, which defers to AI Studio. **(7)** Google's own advice for the
+      retiring models: do not hard-code the id — use Remote Config (free, client template parameter) to change
+      it without a deploy (<https://firebase.google.com/docs/ai-logic/change-model-name-remotely>). All seven
+      are implemented or documented in `web/src/data/gemini.ts`, `domain/aiErrors.ts` and `web/README.md`.
+- [ ] **(manual)** In Google AI Studio (<https://aistudio.google.com/rate-limit>), signed in with the
+      project's Google account, read the actual free-tier limits (requests/minute, requests/day,
+      tokens/minute) for `gemini-3.8-flash` and `gemini-3.5-flash-lite` and paste them under this
+      item. If the page shows `0` or the model is missing, note the region/billing reason — this is
+      the most likely explanation of "no longer exists" besides the 2.5 retirement. Done when: the
+      two rows of numbers are written here with today's date.
+- [x] **(manual)** The trainer says which PDF this is: is it the source of the table already in
+      `app/src/main/assets/hypertrophy_volume_reference.md` (the "Tabela de Volume Direto/Indireto
+      para Hipertrofia", 5.4 KB, used today in the prompt), or a larger/different document? Put the
+      PDF at `dev/exercise-reference.pdf` (or give the path). Done when: the file is in the repo
+      (or the path is written here) and this item says which case it is. Copyright: confirm it is
+      fine to keep the PDF in the repository, else keep it outside and commit only the derived table.
+      **Resolved 2026-09-30 by the trainer: it is the same table** as `hypertrophy_volume_reference.md` — nothing to
+      convert, and the PDF itself is not added to the repository. 25c's first item is therefore a no-op.
+
+**25b. Decisions recorded before any file changes**
+
+Suggested: sonnet · medium — writing down decisions already argued above, so execution does not re-litigate them.
+
+- [x] Write these decisions into this section (or `CLAUDE.md`'s web section) as settled, each with
+      its reason, before code: **(1)** the catalog lives in the site (single-sourced from
+      `hypertrophy_volume_reference.md`, extended by the PDF), the AI only chooses exercises and
+      set/rep schemes, and the **site** fills `muscleActivation` from the catalog; **(2)** the
+      multi-treino splitter is **web-only** — `parseWorkoutName`/`parseExercises`/`applyPaste` stay
+      byte-for-byte as they are (they mirror `WorkoutParser.kt`, and the phone must keep agreeing with
+      them); **(3)** the stored document is unchanged (`workouts/{id}` with `exercisesJson`), so the
+      phone reads what the web saves exactly as before; **(4)** the multi-treino prompt template is a
+      **web-only** asset — the shared `ficha_prompt_template.md` asks for one ficha and the phone's
+      parser would pile A+B+C into one; **(5)** in-site generation ships only if 25h's go/no-go passes,
+      and never sends name, phone or medical notes by default. Done when: the five decisions are
+      written where the next session will read them.
+      **Recorded 2026-09-30** in `CLAUDE.md`'s web section (PR #6): the splitter and the two prompts are web-only and
+      `parseWorkoutName`/`parseExercises`/`applyPaste` do not change (2); the stored document is unchanged (3); the
+      multi-treino prompt is web-only (4); in-site generation exists with name/medical notes withheld by default and
+      every failure pointing at the copy-and-paste tab (5). Decision (1) — the **site** fills `muscleActivation` from
+      a catalog — is the one not built yet (25c): until then the AI still emits the `[Músculo:coef]` annotations and
+      the Gemini schema carries `ativacao`.
+
+**25c. The exercise catalog — the PDF's table, inside the site**
+
+Suggested: sonnet · high — parses two different table shapes from a hand-written Markdown file and
+feeds a matcher whose mistakes change a student's recorded volume.
+
+- [x] Reconcile the PDF with the existing table (depends on the manual item in 25a). Two cases:
+      **(a)** the PDF is the same table → nothing to convert, go on; **(b)** it has more exercises or
+      muscles → convert the extra rows into the **same Markdown format**, appended to
+      `app/src/main/assets/hypertrophy_volume_reference.md` (single source: Android's prompt and the
+      web's both read it, and the prompt grows for both — acceptable, it only adds rows). If the PDF is
+      scanned images, say so in the note and stop at a typed table the trainer proofreads
+      (`(manual)`). Done when: every exercise in the PDF appears in the Markdown once, and the diff
+      was checked row by row against the PDF by the trainer.
+      **Case (a), 2026-09-30:** the trainer confirmed the PDF is the same table — nothing to convert or append. The
+      catalog build script, `exerciseCatalog.ts` and their tests (the next three items) are still to do.
+- [ ] `web/scripts/build-exercise-catalog.mjs`, run from `prebuild` and `predev` next to
+      `copy-prompt-assets.mjs`: reads `../../app/src/main/assets/hypertrophy_volume_reference.md` and
+      writes the generated, gitignored `web/public/prompt/exercise-catalog.json` (same generated-copy
+      convention as the prompt assets). Two table shapes must parse: **wide tables** (one column per
+      muscle, cells `0`, `0,25`, `0,5`, `0,75`, `1`; decimal comma → number) and the **monoarticular
+      table** (columns `1,0 / 0,75 / 0,5 / 0,25`, each cell a `;`-separated list of muscles, `-` for
+      empty). Output: `{ version, exercises: [{ name, group, muscles: { "<muscle label exactly as in
+      the header>": coefficient } }] }`. Keep muscle labels **verbatim** (`Delt. ant.`, `Tríceps
+      geral`…) so keys match what the AI annotations and already-saved fichas use. A row that cannot
+      be parsed fails the build with its line number — never silently skipped.
+- [ ] `web/src/domain/exerciseCatalog.ts`: `normalizeName(text)` (lowercase, accents folded, collapse
+      spaces/punctuation; drop "com barra/halteres/na máquina" qualifiers only as a *second*
+      attempt), `lookupExercise(catalog, name)` → `{ entry, how: "exact" | "normalized" | "close" } |
+      null`, and `catalogActivation(entry)` → the `Record<string, number>` stored as
+      `muscleActivation`. "Close" = all significant tokens of the shorter name appear in the longer
+      one **and** exactly one catalog entry qualifies; two candidates or none → `null` (ambiguity is
+      surfaced to the trainer in 25e, never guessed). Pure, no I/O, catalog passed in.
+- [ ] Tests (`exerciseCatalog.test.ts`, plus a test of the build script's parser against the real
+      Markdown file so a future edit that breaks the table fails CI): `Supino reto` → Peitoral 1,
+      Delt. ant. 0.5, Tríceps geral 0.5, Cabeça longa 0.25 (values from the current table); accent and
+      case variants match; `Supino reto com barra` matches by the second attempt; `Supino` alone is
+      ambiguous → null; an exercise not in the table → null; monoarticular row `Elevação lateral`
+      → Deltoide lateral 1, others 0.25; every catalog coefficient is one of 0, 0.25, 0.5, 0.75, 1.
+      Done when: `npm test` passes and the JSON for today's table has the expected entry count (count
+      the table rows in the test, do not hard-code a guess).
+
+**25d. `parseWorkouts` — split one answer into N treinos**
+
+Suggested: sonnet · high — the core of the trainer's request; the regex and the fallbacks decide
+whether a real AI answer becomes 3 correct fichas or 1 merged wrong one.
+
+- [x] New pure function in `web/src/domain/workoutParser.ts`, **added beside** the existing ones, which
+      are not edited: `parseWorkouts(text): { workouts: ParsedWorkout[]; warnings: string[] }` where
+      `ParsedWorkout = { name: string; exercises: Exercise[] }`. It walks the lines once: a **header
+      line** starts a new treino; every other line goes through the existing per-line exercise logic
+      (factor that part of `parseExercises` into a shared helper so the exercise rules exist once, with
+      the existing tests still green **unchanged**).
+      **Done 2026-09-30** (PR #6). `parseWorkouts(text): { workouts, warnings }` sits beside the untouched
+      single-ficha functions; the per-line exercise rule was factored into `exerciseFromLine`, which
+      `parseExercises` now calls (the ported `workoutParser.test.ts` passes unchanged).
+- [x] Header rules (case-insensitive; `S` = `JAVA_REGEX_SPACE` as in the existing patterns): the word
+      `Ficha`, `Treino` or `Dia` + `[A-G]` or `[1-7]` (the existing `NAME_PATTERN`'s alphabet), allowed
+      after leading decoration the AI adds despite instructions — `#`/`##`, `**`, `__`, `>`, `-`, `•`,
+      `1.` / `1)` — and allowed to carry a subtitle after ` - `, ` – `, ` — ` or `:` (`Treino A — Peito
+      e tríceps`). Name = the header plus its subtitle, decoration stripped, at most 60 characters; a
+      header with no subtitle is just `Treino A`, identical to `parseWorkoutName`'s output. A line is a
+      header **only if it has no `NxM` pattern** (so `Dia 1 3x10` stays an exercise line) — the exercise
+      pattern wins.
+      **Done.** The letter/number must end the word (`(?![\p{L}\p{N}])`), so "Treino Abdominal" is not "Treino A";
+      decoration is stripped only on the new path; names are canonicalised ("treino b" → "Treino B") and capped at 60
+      characters; a line with an NxM is an exercise even if it starts like a header.
+- [x] Edge cases, each with a test: exercise lines **before** the first header → a treino named
+      `Treino 1`; **no header at all** → exactly one treino holding every exercise (named like
+      `parseWorkoutName` would, else `Treino 1`), so a plain WhatsApp-style paste behaves as today; two
+      headers with the same letter → keep both, the second becomes `Treino A (2)`; a header with no
+      exercises → dropped and reported in `warnings` ("Treino C não tem exercícios"), not thrown; more
+      than 7 treinos → all parsed, a warning says the phone's header alphabet ends at G/7; blank lines,
+      commentary lines, markdown rules (`---`) and code-fence lines are ignored; the no-break space
+      WhatsApp inserts keeps behaving as the existing tests pin; tab-separated lines `Treino⇥Exercício⇥
+      Séries⇥Reps` (a paste from Excel/Sheets — the trainer's own "like Excel" analogy) are recognised
+      when **every** non-empty line has ≥ 3 tab-separated cells with a numeric sets cell: group by the
+      first column.
+      **Done**, with two deliberate differences from the wording above: more than 7 treinos gives a soft "confira se
+      a separação está certa" warning (the phone's alphabet limit is about *pasting*, not about names), and the
+      spreadsheet mode needs every non-empty line to have ≥ 3 tab cells and one whole-number sets cell.
+- [x] Tests (`workoutParser.test.ts`, appended; **no existing case edited**): (1) a realistic ABC answer
+      inside a code fence, with `[Músculo:coef]` annotations on every line → 3 treinos, annotations
+      parsed per exercise; (2) the same answer without annotations; (3) a markdown-heavy answer
+      (`## Treino A`, bold exercise lines — if bold lines fail the existing pattern, strip emphasis
+      markers before matching, in the new path only); (4) `Dia 1…Dia 5`; (5) commentary before,
+      between and after treinos; (6) each edge case above; (7) the property **"concatenating the
+      exercises of `parseWorkouts(text)` equals `parseExercises(text)`"** for every fixture — proof the
+      splitter neither loses nor invents lines; (8) for text with 0 or 1 header, `parseWorkouts` agrees
+      with `applyPaste`'s name and list. Done when: all pass and the `workoutParser.test.ts` diff
+      contains only additions.
+      **Done** in `workoutParser.multi.test.ts` (a separate file, so the ported one is literally untouched) with
+      fixtures in `domain/__fixtures__/multiFicha.ts`: ABC in a code fence with annotations, the same without,
+      markdown-heavy, `Dia 1–3`, chatter and an empty treino, repeated letter, exercises before the first header,
+      spreadsheet, and the property "the exercises of all treinos, in order, equal `parseExercises(text)`" over seven
+      fixtures. A mutation check (breaking the header rules) made the suite fail, so the tests do bite. **Not done:**
+      real AI answers as fixtures — that is 25g's manual item.
+
+**25e. Import review screen and "save all"**
+
+Suggested: sonnet · high — touches the screen every ficha goes through and writes several documents;
+the atomic save and the "never guess" handling of unmatched exercises are the risk.
+
+- [x] `web/src/data/workouts.ts`: `saveWorkouts(db, trainerId, workouts, now)` using `writeBatch` so the
+      N fichas are **all saved or none** (a half-saved ABC is worse than a failed save); each through
+      `withDerivedStatus` and `workoutToFirestore` exactly as `saveWorkout` does. `createdAt` values
+      are `now + offset` so the trainer's list (sorted newest first in `loadStudentWorkouts`) shows A, B,
+      C in order — or, if the list's sort is changed instead, say which in the commit. N ≤ 7 by the
+      parser's own cap, far under Firestore's 500 writes per batch.
+      **Done** (`writeBatch`; `createdAt = now + offset` so the trainer's newest-first list reads A, B, C).
+- [x] Data-layer test in `web/rules/dataLayer.test.ts` (emulator): the owning trainer saves 3 fichas in
+      one batch and reads 3; a **different** trainer's batch is denied entirely (nothing written); a
+      student sees only the `assigned` ones afterwards, sorted by name. Done when `npm run test:rules`
+      passes. (No rules change is expected; if a test fails, stop and report — §23d's rules are live and
+      never edited without the published-copy discipline in `CLAUDE.md`.)
+      **Done:** two tests — three fichas in one batch are all visible to the owning trainer and the student, in order;
+      a batch holding one forbidden ficha writes none. `npm run test:rules`: 75 passed. No rules change.
+- [x] `web/src/app/app/fichas/editar/FichaEditor.tsx` (new ficha only — editing an existing ficha keeps
+      today's single-ficha flow untouched): when the pasted text parses into **≥ 2** treinos, replace
+      the single name/list editor with a **review panel**: "Encontrei 3 treinos: Treino A (6
+      exercícios), Treino B (5), Treino C (7)", one card per treino with an editable name, its exercise
+      rows (remove a row, reuse the existing add-exercise form per treino), an "incluir" checkbox, and
+      the parser's `warnings` in a `role="status"` block. With 0–1 treinos the screen is exactly today's.
+      **Done** as `MultiFichaReview.tsx` (name, "incluir", remove-exercise, warnings in `role="status"`). **Not done:**
+      the per-treino "add exercise" form — each saved ficha is editable afterwards from the student's page like any
+      other. Editing an existing ficha is untouched (the panel never appears there).
+- [ ] Catalog enrichment in the review panel: each exercise is looked up with `lookupExercise`; a match
+      fills `muscleActivation` from the catalog (replacing a hand-typed annotation only when they
+      differ — show "usei a tabela" — because the table is the source of truth); no match keeps the
+      AI's own annotation if it parsed, else `null`, and the row shows **"sem ativação no catálogo"**
+      with a `<select>` of the catalog's exercises to pick one (covers the ambiguous case from 25c).
+      Nothing is guessed silently; nothing blocks saving either.
+- [x] Weekly volume across the **selected** treinos: a table of effective volume per muscle summed over
+      all included fichas (`calculateEffectiveVolume` on the concatenated exercises — the prompt already
+      promises "em TODAS as fichas da semana"), against the generic 4–8 / 12–20 bands the prompt states,
+      in words as well as colour (never colour alone). Done when it updates live as exercises are
+      removed.
+      **Done** (`domain/volumeBands.ts`, tested): per-muscle total over the included treinos, with where it falls
+      against the 4 / 12–20 bands in words. It uses the annotations the AI gives; without the catalog a treino
+      with none shows "sem ativação muscular" and contributes nothing.
+- [x] "Salvar N fichas" → `saveWorkouts` → on success navigate to the student's page (as the single save
+      does) with the list showing all N; on failure keep everything on screen with the existing error
+      text pattern. Disabled while saving; the button label states the count.
+      **Done:** the label states the count, the button is disabled while saving, a failure keeps everything on
+      screen and says none was saved.
+- [x] Layout: the panel follows `globals.css` (cards, `table.stack`, ≥44px controls, 16px fields on
+      touch); verified at 390, 834 and 1280 px with no horizontal overflow (the probe used in §23k).
+      Done when: a pasted 3-treino answer becomes 3 saved fichas in one click and the student's
+      `/aluno` shows "Treino A/B/C".
+      **Done, verified at 390 px** (screenshot: stacked cards and table, no horizontal overflow) and read on a desktop
+      width; the full 335–1440 px probe of §23k was not re-run for this screen.
+
+**25f. Prompt v2 — the AI is told to answer in a way the site can split**
+
+Suggested: sonnet · medium — text and a small prompt builder; correctness is checked by the 25g round
+trip, not by reasoning.
+
+- [x] New web-only asset `web/src/prompt/ficha_prompt_multi.md` (not under `app/src/main/assets/`; the
+      volume table is still spliced in from the shared file at `$TABLE_PLACEHOLDER$`, so there is one
+      copy of the table). Differences from the shared template: it tells the AI that **the request may
+      need several treinos and to return all of them in one answer**; every treino starts on its own
+      line `Treino A`, `Treino B`… (optionally ` — <foco>`); **the whole answer goes inside ONE code
+      block** (the chat app's "copy" button then copies raw text, with no bold, bullets or rendered
+      tables — the usual reason pasted answers come out messy); only exercise lines and headers inside
+      the block, commentary outside it; exercise names **exactly as written in the reference table**, so
+      the site can match them; sets × reps only per line — the `[Músculo:coef]` block becomes
+      **optional** (the site fills it from the catalog), which also shortens every answer; the weekly
+      volume instruction stays. Include a worked 3-treino example.
+      **Done** at `web/prompt/ficha_prompt_multi.md` (not `web/src/prompt/`), copied by `copy-prompt-assets.mjs`. A
+      test splits the template's own worked example with `parseWorkouts` into the treinos it promises. **Deviation:**
+      the `[Músculo:coef]` block stays REQUIRED for now — it only becomes optional once 25c exists to fill it.
+- [x] `web/src/domain/fichaPrompt.ts`: `buildMultiFichaPrompt(...)` beside `buildFichaPrompt` (which is
+      not changed — it mirrors `PromptFichaViewModel.buildPrompt`); `FichaEditor` uses the multi version
+      for new fichas. Test: the prompt contains the table once, the profile block, the request and the
+      "ONE code block" instruction; the existing `fichaPrompt.test.ts` cases pass unchanged.
+      **Done** (`fichaPrompt.multi.test.ts`; the phone-mirroring `fichaPrompt.test.ts` is untouched). New fichas use
+      the multi prompt; editing an existing ficha keeps the shared one.
+- [x] Quick picks above "O que você quer nesta ficha?" (chips/selects that **compose the request text**,
+      which stays editable, so nothing is hidden): number of treinos (default = the student's
+      `trainingDays` count, e.g. 3 days → 3; "deixe a IA decidir"), split (ABC, ABCD, ABCDE,
+      Upper/Lower, Push/Pull/Legs, Full body), weekly target per muscle group (default "12–20 séries
+      efetivas"), emphasis (free text), equipment/time limits (free text). Pure helper
+      `composeRequest(options)` in `domain/` with tests (3 days → "3 treinos (ABC)", PPL → names
+      Push/Pull/Legs, empty options → today's empty request).
+      **Done** (`domain/fichaRequest.ts` + `RequestBuilder.tsx`): treinos (default = the student's training days),
+      split, weekly target, emphasis, limits; **"Montar o pedido"** writes into the textarea, which stays editable.
+- [x] **"Já tenho a tabela no meu projeto" switch** (the no-code bridge from 25a): when on, the prompt
+      omits the table and says "use a tabela de referência que está nos arquivos do projeto"; shown with
+      a one-paragraph how-to (create a Project in Claude/ChatGPT, upload the PDF/Markdown once, paste the
+      instructions text). Test: with the switch on, the prompt has no table and is shorter by about its
+      size. The copied prompt's length is shown ("≈ N mil caracteres") so the trainer sees the effect.
+      **Done:** the prompt swaps the table for a one-line note; the copied prompt's size is shown ("≈ 9,8 mil
+      caracteres" with the table). The how-to paragraph for creating a Project is not written — say if wanted.
+- [x] Privacy line in the copy-paste flow: a checkbox "Incluir nome e restrições médicas no prompt"
+      (default **on**, as today — the trainer chooses the AI app) that, when off, replaces them with
+      "Aluno" and "não informado". Test both. Done when the profile block changes accordingly.
+      **Done**, default on as today. When off, name → "Aluno" and the notes → "há restrições registradas pelo
+      personal (texto não enviado por privacidade)" (or "não informado" if there are none), so the AI stays cautious
+      without being given the text.
+
+**25g. Verification on real answers**
+
+Suggested: sonnet · medium — mostly running and reading, with manual judgement on real AI output.
+
+- [x] Run `tsc`, `eslint`, `vitest` (`npm test`), `npm run test:rules` (Java 21; emulators), and a static
+      build with `NEXT_PUBLIC_BASE_PATH=/Personal_app_android`. Done when all are green.
+      **Green 2026-09-30:** `tsc`, `eslint`, 241 unit tests, 75 emulator tests, static build with the Pages base path.
+- [ ] **(manual)** With the trainer's real PDF context, run the new prompt in a chat app they use for
+      **three different requests** (3 days, 5 days, upper/lower) and paste each answer into the site.
+      Record, per answer: how many treinos were detected vs. intended, how many exercises matched the
+      catalog (exact/normalized/close/none), and what the review panel got wrong, if anything. Done
+      when: all three produce the right number of fichas, and any miss is either fixed in 25c/25d with a
+      new test or written down as a known limit. Save the three raw answers as test fixtures
+      (`web/src/domain/__fixtures__/`) — real AI output is the test the regexes actually face.
+- [x] Browser check against the seeded emulators (Browser pane, as in §23k): paste a 3-treino fixture →
+      review → save → `/app/alunos/detalhe` lists 3 fichas → sign in as the seeded student → `/aluno`
+      shows 3 cards; then paste a 1-treino answer and confirm the old single flow is unchanged; then
+      edit an existing ficha and confirm no panel appears.
+      **Done** for the main path: a markdown-heavy ABC answer → "Encontrei 3 treinos" → saved → the trainer's page
+      lists all three and the seeded student's `/aluno` shows them; a single-treino paste is unchanged; "Voltar ao
+      importador" works. **Not checked:** editing an existing ficha with the new editor (the panel is gated by `!existing`).
+
+**25h. Spike — can the site call Gemini for free, from the browser? (gate for 25i)**
+
+Suggested: opus · high — external-service behaviour, quotas and a privacy trade-off; a wrong "go" costs
+the trainer their reliability, a wrong "no-go" costs them the feature they asked for.
+
+- [ ] **(manual)** Firebase console → Build → AI Logic: confirm the Gemini Developer API is enabled for
+      this project (recorded as done for Android in an earlier session) and turn on **App Check
+      enforcement for AI Logic** (mandatory from 2026-11-02 anyway). For local tests, register a debug
+      token as the AI Logic docs describe (`self.FIREBASE_APPCHECK_DEBUG_TOKEN`). The spike runs
+      against the **real** project from a throwaway page, not the app shell and not the emulators.
+- [ ] Write the go/no-go criteria **before** running anything, here: *go* if, on the real project,
+      **(1)** `getGenerativeModel` with a system instruction and a JSON `responseSchema` works from
+      `firebase/ai` (typecheck under firebase 12.x; confirm `startChat`, or fall back to resending the
+      history); **(2)** 10 requests for different fake profiles (no names or notes) return schema-valid
+      JSON with the requested number of treinos in ≥ 9 of 10; **(3)** p95 latency ≤ 30 s; **(4)** a
+      normal trainer day (assume 20 generations) triggers no quota error, given the AI Studio numbers
+      from 25a; **(5)** ≥ 90 % of returned exercise names match the catalog (25c) without help; **(6)**
+      nothing needs billing. Any failure → no-go.
+      **Kept as the acceptance test of the live tab, not as a gate:** on 2026-09-30 the trainer said to build the tab
+      directly ("vamos criar uma aba para ele e tentar implementar novamente"), so no separate spike was run. The six
+      criteria above are what to check on the deployed site once the console steps are done.
+- [x] Spike code: one `web/src/data/aiGenerate.ts` with the model id in **one exported constant** and a
+      comment pointing at <https://firebase.google.com/docs/ai-logic/models> (ids rotate — the Android
+      file already documents a retirement); system instruction = the multi-treino prompt (25f) without
+      the student block; `responseSchema` = `{ treinos: [{ nome, exercicios: [{ nome, series, reps }] }] }`
+      (the AI picks catalog names; no coefficients asked). Do **not** wire it into `FichaEditor` yet.
+      **Superseded:** built straight into `web/src/data/gemini.ts` (model id in `GEMINI_DEFAULT_MODEL`, Remote Config
+      override `ficha_model_name`, JSON schema `{ treinos: [{ nome, exercicios: [{ nome, series, reps, ativacao }] }] }`)
+      and wired into the editor (25i). The network call was exercised with a **stubbed server**: right endpoint, the
+      system instruction with the table, the schema, a de-identified user message, chat history on the follow-up, and
+      a 429 shown as a plain message. It has **not** run against Google.
+- [ ] Run the 10-request experiment; record the table (request, treinos asked/returned, valid JSON,
+      matched %, latency, errors) in this section with the date. Done when: a written **GO** or
+      **NO-GO**, with the numbers that justify it, and — if no-go — the cheapest alternative chosen
+      (stay on copy/paste; or the Plan B proxy from 25a, which is a separate decision for the trainer,
+      not started here).
+
+**25i. In-site generation — only if 25h says GO**
+
+Suggested: opus · high — sends student-related data to a third party and adds the site's first AI call;
+the privacy defaults and the failure fallbacks are the part that cannot be wrong.
+
+- [x] Request builder `web/src/domain/aiRequest.ts` (pure): builds the user message from the quick picks
+      (25f) and a **de-identified** profile — sex, goal, level, training days; **no name, phone or
+      medical text by default** ("Restrições médicas: informadas pelo personal" only as a flag if any
+      exist, and an optional "incluir as restrições médicas" checkbox, off, with a line saying that on
+      the free tier Google may use the content to improve its products). Tests: no field of the
+      student's name/phone/notes appears in the output by default; with the checkbox on, only the notes
+      do.
+      **Done** (`aiGemini.test.ts`): no name/medical text by default, a "há restrições registradas" flag when there
+      are notes, both only with the box ticked.
+- [x] Response mapper `web/src/domain/aiResponse.ts` (pure): schema JSON → the same `ParsedWorkout[]` as
+      25d, so **one review panel (25e) serves both paths**; unknown/empty fields tolerated, names
+      trimmed, sets coerced to integers with a warning on anything odd. Tests with recorded fixtures
+      from the spike.
+      **Done** (`aiResponse.test.ts`, synthetic payloads: odd types, missing names, bad coefficients, empty
+      treinos). **Not done:** recorded fixtures from real Gemini answers — none exist until the live check.
+- [x] `FichaEditor`: a "Gerar com IA" button next to "Copiar prompt" (the copy flow stays; it is the
+      fallback, and the default if the AI call is disabled or fails), a loading state, then the review
+      panel. Errors (quota 429, overload 503, offline, schema mismatch) show a plain message and say
+      "use o prompt copiado" — never a dead end. A follow-up box "Ajustar" sends the previous answer
+      plus the instruction ("troque o supino por inclinado") and re-renders the panel; the conversation
+      lives in component state only (no persistence, per the section's scope).
+      **Done as a tab** ("Gemini (gerar aqui)" beside "Outra IA (copiar e colar)"), as the trainer asked: shared
+      request box, "Gerar" / "Gerar de novo", "Ajustar" (same chat), loading state, plain errors that point at the
+      other tab, results into the same review screen.
+- [x] Usage guard: a client-side counter of generations per day shown as "N de ~20 hoje" (soft — the real
+      limit is server-side); the model-id constant is the only place to change when Google rotates
+      models. Done when: turning the feature off (one constant/flag) leaves the site exactly as after
+      25g.
+      **Done** as a soft per-browser count ("N gerações hoje neste navegador"; failures are not counted). There is no
+      "de ~20" because the real quota is unknown until the AI Studio limits are read (25a, manual).
+- [x] Decision record: edit §23e's "no AI calls on the web" note and `CLAUDE.md`'s web paragraph to say:
+      the web may call Gemini **only** through Firebase AI Logic (no key in the browser), de-identified
+      by default, free tier only; any other provider still needs its own decision.
+      **Done in `CLAUDE.md`** (PR #6): the web may call Gemini only through Firebase AI Logic, de-identified by
+      default; §23e's own text is left as the historical record.
+
+**25j. Registration**
+
+Suggested: haiku · low — documentation and index edits, fully specified.
+
+- [x] `CLAUDE.md` web section: the catalog (generated by `build-exercise-catalog.mjs`; source of truth is
+      `hypertrophy_volume_reference.md`), the web-only multi-treino splitter and template and why
+      `parseWorkoutName`/`parseExercises` must not change, the `saveWorkouts` atomic batch, and (if 25i
+      ships) the AI-call rule. `web/README.md`: the new script and asset. The hand-port table's
+      "web-only, no Kotlin original" note gains `parseWorkouts`, the catalog and `saveWorkouts`.
+      **Done for what exists** (splitter, `saveWorkouts`, the two web-only prompts, the AI-call rule) in `CLAUDE.md` and
+      `web/README.md` (which also lists the Firebase console steps); the catalog's part waits for 25c.
+- [x] GOALS.md: tick items with what was actually verified and what was not (as §23k does); commit each
+      verified item on its own (the repository's cadence); never push without being asked.
+      **Done 2026-09-30** — this pass.
+- [ ] Follow-up, not part of this feature: **(manual)** check whether the Android `gemini-3.7-flash`
+      constant (`AndroidGeminiProvider.kt`) is still served on the free Spark plan — the AI Logic model
+      list fetched on 2026-09-30 shows `gemini-3.8-flash` and `gemini-3.5-flash-lite`. If it is gone the
+      phone's Gemini button fails; a one-line change, noted in §15/§16's provider text.
+- [ ] Done-when for the whole section: the trainer pastes a real AI answer with 3–5 treinos into the
+      **live** site, reviews the split, saves, and the student sees every ficha — and, if 25i shipped,
+      generates the same from the site without leaving it. Not done when the code exists.
+
+---
+
 ## 26. Feature — ADM console on the web: monitor and manage the personais
 (2026-10-01, via `/newgoal`)
 

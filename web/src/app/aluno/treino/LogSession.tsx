@@ -6,8 +6,9 @@ import { useState, type FormEvent } from "react";
 import { getFirebase } from "../../../data/firebase";
 import { logSession } from "../../../data/workoutLogs";
 import type { Exercise } from "../../../domain/exercise";
-import { initialRows, sessionEntries, type SetRow } from "../../../domain/sessionLog";
+import { canAddExtraRow, initialRows, isExtraRow, sessionEntries, type SetRow } from "../../../domain/sessionLog";
 import type { Workout } from "../../../domain/workouts";
+import { ConfirmDialog } from "../../_shared/ConfirmDialog";
 import { useSession } from "../../SessionProvider";
 import { useStudentData } from "../useStudentData";
 
@@ -37,7 +38,9 @@ function Loader({ uid, workoutId }: { uid: string; workoutId: string }) {
       </main>
     );
   }
-  return <SessionForm uid={uid} trainerId={data.profile.trainerId} workout={workout} />;
+  return (
+    <SessionForm uid={uid} trainerId={data.profile.trainerId} workout={workout} canAddSets={data.profile.canAddSets} />
+  );
 }
 
 /** The ficha's exercises, one per name — the phone keys a session's rows by name. */
@@ -50,8 +53,21 @@ function uniqueByName(exercises: readonly Exercise[]): Exercise[] {
   });
 }
 
-function SessionForm({ uid, trainerId, workout }: { uid: string; trainerId: string; workout: Workout }) {
+function SessionForm({
+  uid,
+  trainerId,
+  workout,
+  canAddSets,
+}: {
+  uid: string;
+  trainerId: string;
+  workout: Workout;
+  /** Granted by the trainer (users.canAddSets); off by default, so there is no "Adicionar série" at all. */
+  canAddSets: boolean;
+}) {
   const exercises = uniqueByName(workout.exercises);
+  // The exercise a "Deseja adicionar uma série extra?" question is open for, if any.
+  const [confirming, setConfirming] = useState<Exercise | null>(null);
   const [rows, setRows] = useState<Map<string, SetRow[]>>(
     () => new Map(exercises.map((exercise) => [exercise.name, initialRows(exercise.sets)])),
   );
@@ -70,8 +86,26 @@ function SessionForm({ uid, trainerId, workout }: { uid: string; trainerId: stri
     });
   }
 
-  function addRow(name: string) {
-    setRows((previous) => new Map(previous).set(name, [...(previous.get(name) ?? []), { weight: "", reps: "" }]));
+  function addRow(exercise: Exercise) {
+    setRows((previous) => {
+      const current = previous.get(exercise.name) ?? [];
+      // Defence in depth: the button is hidden without the permission, and this refuses too.
+      if (!canAddExtraRow(canAddSets, current.length, exercise.sets)) return previous;
+      return new Map(previous).set(exercise.name, [...current, { weight: "", reps: "" }]);
+    });
+  }
+
+  /** Removes a row the student added — and only that: a prescribed row is never removable. */
+  function removeExtraRow(exercise: Exercise, index: number) {
+    if (!isExtraRow(index, exercise.sets)) return;
+    setRows((previous) => {
+      const next = new Map(previous);
+      next.set(
+        exercise.name,
+        (previous.get(exercise.name) ?? []).filter((_, i) => i !== index),
+      );
+      return next;
+    });
   }
 
   async function save(event: FormEvent) {
@@ -117,8 +151,11 @@ function SessionForm({ uid, trainerId, workout }: { uid: string; trainerId: stri
               {exercise.weight ? ` · ${exercise.weight}` : ""}
             </p>
             {(rows.get(exercise.name) ?? []).map((row, index) => (
-              <p className="set-row" key={index}>
-                <span className="set-number">Série {index + 1}</span>
+              <p className={`set-row${isExtraRow(index, exercise.sets) ? " is-extra" : ""}`} key={index}>
+                <span className="set-number">
+                  Série {index + 1}
+                  {isExtraRow(index, exercise.sets) && <small> extra</small>}
+                </span>
                 <label>
                   Peso{" "}
                   <input
@@ -139,11 +176,26 @@ function SessionForm({ uid, trainerId, workout }: { uid: string; trainerId: stri
                     onChange={(e) => edit(exercise.name, index, { reps: e.target.value })}
                   />
                 </label>
+                {isExtraRow(index, exercise.sets) && (
+                  <button
+                    type="button"
+                    aria-label={`Remover a série extra ${index + 1} de ${exercise.name}`}
+                    onClick={() => removeExtraRow(exercise, index)}
+                  >
+                    Remover série extra
+                  </button>
+                )}
               </p>
             ))}
-            <button type="button" aria-label={`Adicionar série em ${exercise.name}`} onClick={() => addRow(exercise.name)}>
-              Adicionar série
-            </button>
+            {canAddExtraRow(canAddSets, (rows.get(exercise.name) ?? []).length, exercise.sets) && (
+              <button
+                type="button"
+                aria-label={`Adicionar série em ${exercise.name}`}
+                onClick={() => setConfirming(exercise)}
+              >
+                Adicionar série
+              </button>
+            )}
           </fieldset>
         ))}
         {error && <p role="alert">{error}</p>}
@@ -153,6 +205,20 @@ function SessionForm({ uid, trainerId, workout }: { uid: string; trainerId: stri
           </button>
         </div>
       </form>
+      <ConfirmDialog
+        open={confirming !== null}
+        title="Adicionar uma série extra?"
+        onNo={() => setConfirming(null)}
+        onYes={() => {
+          if (confirming !== null) addRow(confirming);
+          setConfirming(null);
+        }}
+      >
+        <p>
+          Deseja adicionar uma série extra em <strong>{confirming?.name}</strong>? As séries da ficha continuam como
+          estão; você poderá remover só a que acrescentar.
+        </p>
+      </ConfirmDialog>
     </main>
   );
 }

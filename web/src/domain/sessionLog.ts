@@ -36,7 +36,11 @@ export function performedSets(rows: readonly SetRow[]): PerformedSet[] {
   const sets: PerformedSet[] = [];
   rows.forEach((row, index) => {
     if (!isCompleteRow(row)) return;
-    sets.push({ setNumber: index + 1, weight: normalizeWeight(row.weight), reps: toIntOrNull(kotlinTrim(row.reps)) as number });
+    sets.push({
+      setNumber: index + 1,
+      weight: normalizeWeight(row.weight),
+      reps: toIntOrNull(kotlinTrim(row.reps)) as number,
+    });
   });
   return sets;
 }
@@ -55,8 +59,32 @@ export function sessionEntries(rowsByExercise: ReadonlyMap<string, readonly SetR
  * The rows a form starts with: the ficha's target set count (at least one, at most ten). The phone
  * starts every exercise with a single row and an "Adicionar série" button; starting at the target
  * saves taps on a phone and stores the same thing — empty rows are skipped.
+ *
+ * On the web a student cannot add sets unless the trainer allowed it (users.canAddSets), so every
+ * prescribed set must have its row: the cap is a sanity limit (30), not the old ten.
  */
+export const MAX_PLANNED_ROWS = 30;
+/** The most extra rows a student can add to one exercise, when allowed. */
+export const MAX_EXTRA_ROWS = 10;
+
+/** How many rows are the trainer's own — the prescribed sets — for an exercise. */
+export function plannedRowCount(targetSets: number): number {
+  return Math.min(Math.max(targetSets, 1), MAX_PLANNED_ROWS);
+}
+
 export function initialRows(targetSets: number): SetRow[] {
-  const count = Math.min(Math.max(targetSets, 1), 10);
-  return Array.from({ length: count }, () => ({ weight: "", reps: "" }));
+  return Array.from({ length: plannedRowCount(targetSets) }, () => ({ weight: "", reps: "" }));
+}
+
+/**
+ * Rows past the prescribed ones are the student's own additions. Only those can be removed and
+ * only those can be added past a limit; the prescribed rows are never removable.
+ */
+export function isExtraRow(index: number, targetSets: number): boolean {
+  return index >= plannedRowCount(targetSets);
+}
+
+/** Whether another extra row may be added: only when allowed, and under the sanity limit. */
+export function canAddExtraRow(allowed: boolean, rowCount: number, targetSets: number): boolean {
+  return allowed && rowCount - plannedRowCount(targetSets) < MAX_EXTRA_ROWS;
 }

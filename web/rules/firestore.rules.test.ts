@@ -240,6 +240,9 @@ describe("users: a student editing their own document", () => {
     ["trainerId", { trainerId: TRAINER_B }],
     ["canSelfAssess", { canSelfAssess: true }],
     ["canLogBiometrics", { canLogBiometrics: true }],
+    // The web-only permission to add extra sets when logging a session: trainer-granted, so a student
+    // must not be able to switch it on for themselves.
+    ["canAddSets", { canAddSets: true }],
     ["pendingAssessmentRequest (raising it)", { pendingAssessmentRequest: true }],
     ["inviteCode", { inviteCode: "OTHER" }],
     ["createdAt", { createdAt: 1 }],
@@ -320,6 +323,7 @@ describe("claiming an invite", () => {
 
   it("can't arrive with trainer-granted permissions already switched on", async () => {
     await assertFails(claim(NEW_STUDENT, claimDoc({ canSelfAssess: true, canLogBiometrics: true })));
+    await assertFails(claim(NEW_STUDENT, claimDoc({ canAddSets: true })));
   });
 
   it("can't attach to a trainer other than the invite's", async () => {
@@ -396,6 +400,9 @@ describe("existing rules the web relies on, unchanged by §23d", () => {
     await assertSucceeds(db.collection("users").where("trainerId", "==", TRAINER_A).where("role", "==", "STUDENT").get());
     await assertSucceeds(db.doc(`users/${STUDENT_A}`).update({ phone: "1133334444" }));
     await assertSucceeds(db.doc(`users/${STUDENT_A}`).update({ canSelfAssess: true, pendingAssessmentRequest: true }));
+    await assertSucceeds(db.doc(`users/${STUDENT_A}`).update({ canAddSets: true }));
+    await assertSucceeds(db.doc(`users/${STUDENT_A}`).update({ canAddSets: false }));
+    await assertFails(as(TRAINER_B).doc(`users/${STUDENT_A}`).update({ canAddSets: true }));
     await assertFails(db.doc(`users/${STUDENT_A}`).update({ trainerId: TRAINER_B }));
     await assertFails(as(TRAINER_B).doc(`users/${STUDENT_A}`).get());
   });

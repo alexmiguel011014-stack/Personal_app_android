@@ -165,6 +165,17 @@ prompt (`web/prompt/ficha_prompt_multi.md`) and the Gemini system instruction
 `ficha_prompt_template.md` asks for one ficha — and `scripts/copy-prompt-assets.mjs` copies them next
 to the shared assets.
 
+**A student adds extra sets only if the trainer allowed it** (2026-10-01): `users/{uid}.canAddSets`,
+a third trainer-granted flag beside `canSelfAssess`/`canLogBiometrics` — off by default and when the
+field is missing (every document the phone wrote), set only by the owning trainer from the student's
+page (`data/students.ts` `setCanAddSets`), and frozen against the student's own writes in
+`firestore.rules` (the rules must be republished for the flag to be writable — see the rules section).
+On the logging screen (`aluno/treino/LogSession.tsx`) every prescribed set has its row and there is no
+"Adicionar série" without the flag; with it, adding asks "Deseja adicionar uma série extra?" (Sim/Não,
+`_shared/ConfirmDialog.tsx`), and only rows past the prescribed count can be removed
+(`domain/sessionLog.ts` `isExtraRow`/`canAddExtraRow`). It is a screen rule, not a data rule: Firestore
+does not check how many sets a log holds, and the phone's own button is unchanged.
+
 **No AI provider key ever reaches the browser** (decided 2026-09-24, GOALS.md §23e): the web builds
 the §15 prompt for the trainer to paste into whichever AI app they use, and reads the reply back
 with Smart Paste. **One exception, added 2026-09-30 (GOALS.md §25i): the ficha editor's "Gemini"

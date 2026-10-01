@@ -33,6 +33,7 @@ function account(id: string, name: string, inviteCode: string | null): LinkedStu
     createdAt: 0,
     canSelfAssess: false,
     canLogBiometrics: false,
+    canAddSets: false,
     pendingAssessmentRequest: false,
   };
 }

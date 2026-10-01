@@ -49,6 +49,12 @@ export interface LinkedStudentDoc {
   createdAt: number;
   canSelfAssess: boolean;
   canLogBiometrics: boolean;
+  /**
+   * Web-only, same rule as the two above: the student may add extra sets when logging a session.
+   * Off unless the trainer turns it on; a document without the field (every one the phone writes)
+   * reads as off.
+   */
+  canAddSets: boolean;
   pendingAssessmentRequest: boolean;
 }
 

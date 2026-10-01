@@ -19,7 +19,9 @@ rules_version = '2';
 //
 //   users/{uid} also carries the GOALS.md §17 flags a trainer grants a linked student:
 //   canSelfAssess, canLogBiometrics (trainer-only), pendingAssessmentRequest (set by the trainer,
-//   cleared by the student's assessment batch), lastAssessmentId (that batch's link).
+//   cleared by the student's assessment batch), lastAssessmentId (that batch's link). Web-only
+//   flag, same rule: canAddSets — whether the student may add extra sets when logging a session
+//   (off unless the trainer turns it on; a missing field reads as off).
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -51,6 +53,7 @@ service cloud.firestore {
     function grantsNoPermissions(data) {
       return data.get('canSelfAssess', false) == false &&
         data.get('canLogBiometrics', false) == false &&
+        data.get('canAddSets', false) == false &&
         data.get('pendingAssessmentRequest', false) == false;
     }
 
@@ -99,7 +102,7 @@ service cloud.firestore {
         isOwningTrainer(field(resource.data, 'trainerId')) &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'name', 'gender', 'phone', 'goal', 'experienceLevel', 'medicalNotes', 'trainingDays',
-          'canSelfAssess', 'canLogBiometrics', 'pendingAssessmentRequest'
+          'canSelfAssess', 'canLogBiometrics', 'canAddSets', 'pendingAssessmentRequest'
         ])
       ) || (
         isSignedIn() && request.auth.uid == uid &&
@@ -109,6 +112,8 @@ service cloud.firestore {
             field(request.resource.data, 'trainerId') == field(resource.data, 'trainerId') &&
             field(request.resource.data, 'canSelfAssess') == field(resource.data, 'canSelfAssess') &&
             field(request.resource.data, 'canLogBiometrics') == field(resource.data, 'canLogBiometrics') &&
+            // Trainer-granted too: without this line a student could switch canAddSets on for themselves.
+            field(request.resource.data, 'canAddSets') == field(resource.data, 'canAddSets') &&
             // GOALS.md §23d: the trainer's web dashboard reads both — inviteCode to drop the draft a
             // claim superseded, createdAt to size the adherence and "gone quiet" windows. A student
             // editing either could hide from their trainer's numbers.

@@ -547,7 +547,7 @@ dialog.confirm::backdrop { background: #12352c8c; }
 .admin-card-link::after { position: absolute; inset: 0; content: ""; }
 .admin-card h2, .admin-card h3 { overflow-wrap: anywhere; }
 .admin-card p { overflow-wrap: anywhere; }
-.admin-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.admin-actions { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; }
 .admin-actions button, .admin-actions .button { min-height: 44px; }
 .admin-status { display: inline-block; padding: 3px 8px; border-radius: 999px; background: #e8efe2; color: #31532e; font-size: 12px; font-weight: 650; }
 .admin-status[data-state="suspended"] { background: var(--alert-bg); color: var(--alert); }

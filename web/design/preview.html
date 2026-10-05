@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="pt-BR" data-direction="studio">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Prévia visual · ALLU personal</title>
+  <style>
+    :root { font-family: Inter, "Segoe UI", Arial, sans-serif; font-synthesis: none; text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 320px; background: #f4f3ef; color: #17231f; }
+    button, input { font: inherit; }
+    button:focus-visible, input:focus-visible { outline: 3px solid var(--primary, #4f46e5); outline-offset: 3px; }
+    .page { max-width: 1440px; margin: 0 auto; padding: 26px 34px 44px; }
+    .topline { display: flex; align-items: center; justify-content: space-between; padding-bottom: 16px; border-bottom: 1px solid #dcded8; }
+    .brand { color: #153d33; font-size: 25px; font-weight: 900; letter-spacing: -.065em; text-decoration: none; }
+    .brand-dot { color: #c8df39; }
+    .brand small { margin-left: 5px; font-size: 12px; font-weight: 500; letter-spacing: 0; }
+    .offline-note { color: #56635d; font-size: 12px; }
+    h1 { max-width: 720px; margin: 28px 0 8px; color: #153d33; font-size: clamp(28px, 4vw, 39px); letter-spacing: -.045em; line-height: 1.08; }
+    .intro { max-width: 700px; margin: 0; color: #4a5751; font-size: 15px; line-height: 1.55; }
+    .direction-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 22px; }
+    .direction-choice { min-height: 112px; padding: 14px 16px; text-align: left; cursor: pointer; border: 1px solid #d8dbd5; border-radius: 9px; background: #fff; transition: border-color 140ms ease, box-shadow 140ms ease; }
+    .direction-choice:hover { border-color: #829289; }
+    .direction-choice[aria-pressed="true"] { border-color: #153d33; box-shadow: inset 0 0 0 1px #153d33; }
+    .choice-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .choice-title { font-size: 15px; font-weight: 750; letter-spacing: -.015em; }
+    .choice-letter { display: grid; place-items: center; width: 25px; height: 25px; border: 1px solid #daddd7; border-radius: 50%; color: #31443b; font-size: 11px; font-weight: 700; }
+    .choice-note { display: block; margin-top: 8px; color: #58645e; font-size: 12px; line-height: 1.45; }
+    .choice-meta { display: block; margin-top: 6px; color: #68756e; font-size: 11px; }
+    .suggestion { display: inline-flex; margin-left: 5px; padding: 3px 6px; border-radius: 3px; background: #eaf0e4; color: #365631; font-size: 9px; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; vertical-align: 2px; }
+    .selection-summary { display: flex; align-items: center; gap: 6px; min-height: 28px; margin-top: 7px; color: #526057; font-size: 11px; }
+    .selection-summary strong { color: #173b31; }
+    .screen-controls { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 16px 0 12px; }
+    .screen-controls h2 { margin: 0; color: #25342d; font-size: 15px; }
+    .screen-tabs { display: flex; flex-wrap: wrap; gap: 4px; }
+    .screen-tab { padding: 9px 11px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: #4d5a53; cursor: pointer; font-size: 12px; font-weight: 650; }
+    .screen-tab:hover { background: #e9ebe5; }
+    .screen-tab[aria-pressed="true"] { border-color: #d1d6ce; background: #fff; color: #173b31; }
+    .preview-label { display: flex; justify-content: space-between; gap: 12px; margin: 0 0 7px; color: #59655e; font-size: 10px; }
+    .app-preview {
+      --page: #f7f7f8; --surface: #ffffff; --ink: #111113; --muted: #f0f0f2; --muted-ink: #5c5c66;
+      --line: #e3e3e8; --input-line: #8a8a96; --primary: #4f46e5; --primary-ink: #ffffff; --accent: #eef0ff; --accent-ink: #312e81;
+      --sidebar: #fff; --sidebar-ink: #111113; --sidebar-muted: #5c5c66; --radius: 8px;
+      --success: #15803d; --success-bg: #dcfce7; --warning: #92400e; --warning-bg: #fef3c7; --danger: #991b1b; --danger-bg: #fee2e2;
+      overflow: hidden; border: 1px solid #d9dcd6; border-radius: 11px; background: var(--page); color: var(--ink);
+      font-family: Inter, "Segoe UI", Arial, sans-serif; box-shadow: 0 10px 36px rgba(27, 42, 35, .09);
+    }
+    html[data-direction="energy"] .app-preview {
+      --page: #faf9f7; --surface: #ffffff; --ink: #12161c; --muted: #f1eee9; --muted-ink: #575c66;
+      --line: #e6e3de; --input-line: #87837d; --primary: #c2410c; --primary-ink: #ffffff; --accent: #ffedd5; --accent-ink: #7c2d12;
+      --sidebar: #12161c; --sidebar-ink: #f8fafc; --sidebar-muted: #cbd0d6; --radius: 6px;
+    }
+    html[data-direction="energy"] .app-preview h2, html[data-direction="energy"] .app-preview h3, html[data-direction="energy"] .student-title { font-family: "Barlow Condensed", "Arial Narrow", Impact, sans-serif; letter-spacing: -.025em; }
+    html[data-direction="welcome"] .app-preview {
+      --page: #fbf8f3; --surface: #ffffff; --ink: #1f1b16; --muted: #f3eee6; --muted-ink: #645c52;
+      --line: #e9e1d5; --input-line: #89806f; --primary: #0f766e; --primary-ink: #ffffff; --accent: #d7f3ee; --accent-ink: #134e4a;
+      --sidebar: #f3eee6; --sidebar-ink: #1f1b16; --sidebar-muted: #645c52; --radius: 14px;
+      font-family: Figtree, "Segoe UI", Arial, sans-serif;
+    }
+    .app-shell { display: grid; grid-template-columns: 212px minmax(0, 1fr); min-height: 630px; }
+    .sidebar { display: flex; flex-direction: column; gap: 24px; padding: 24px 14px 16px; border-right: 1px solid var(--line); background: var(--sidebar); color: var(--sidebar-ink); }
+    .app-brand { display: flex; align-items: baseline; gap: 5px; padding: 2px 8px 4px; font-size: 23px; font-weight: 900; letter-spacing: -.07em; line-height: 1; }
+    .app-brand small { font-size: 11px; font-weight: 500; letter-spacing: 0; }
+    .nav-label { margin: 0 8px 7px; color: var(--sidebar-muted); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+    .nav-list { display: grid; gap: 4px; }
+    .nav-item { min-height: 39px; padding: 12px 10px; border-radius: calc(var(--radius) - 2px); color: var(--sidebar-muted); font-size: 12px; }
+    .nav-item.active { background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+    html[data-direction="energy"] .nav-item.active { background: var(--primary); color: #fff; }
+    .sidebar-spacer { flex: 1; }
+    .profile-mini { display: flex; align-items: center; gap: 9px; padding: 13px 7px 0; border-top: 1px solid var(--line); font-size: 11px; }
+    .profile-mini strong, .profile-mini span { display: block; }
+    .profile-mini span { margin-top: 3px; color: var(--sidebar-muted); }
+    .avatar { display: grid; place-items: center; flex: 0 0 auto; width: 34px; height: 34px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font-size: 11px; font-weight: 750; }
+    .main-content { min-width: 0; padding: 28px clamp(19px, 3vw, 40px) 30px; }
+    .page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
+    .page-header h2 { margin: 0; font-size: 28px; font-weight: 750; letter-spacing: -.045em; line-height: 1.08; }
+    .page-header p { margin: 7px 0 0; color: var(--muted-ink); font-size: 12px; line-height: 1.45; }
+    .button { display: inline-flex; align-items: center; justify-content: center; min-height: 42px; padding: 0 13px; border: 1px solid var(--input-line); border-radius: var(--radius); background: var(--surface); color: var(--ink); font-size: 11px; font-weight: 700; white-space: nowrap; }
+    .button.primary { border-color: var(--primary); background: var(--primary); color: var(--primary-ink); }
+    .metric-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0 0 20px; border-block: 1px solid var(--line); }
+    .metric { padding: 13px 15px; border-right: 1px solid var(--line); }
+    .metric:first-child { padding-left: 0; }
+    .metric:last-child { border-right: 0; }
+    .metric dt { color: var(--muted-ink); font-size: 10px; }
+    .metric dd { margin: 5px 0 0; font-size: 22px; font-weight: 750; letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
+    .metric small { color: var(--muted-ink); font-size: 10px; }
+    .dashboard-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(250px, .85fr); gap: 16px; }
+    .section-block { min-width: 0; padding: 17px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+    .section-block h3 { margin: 0; font-size: 15px; font-weight: 750; letter-spacing: -.02em; }
+    .section-sub { margin: 5px 0 14px; color: var(--muted-ink); font-size: 10px; line-height: 1.45; }
+    .student-row { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 9px; min-height: 55px; border-top: 1px solid var(--line); }
+    .student-row strong, .student-row small { display: block; }
+    .student-row strong { font-size: 11px; }
+    .student-row small { margin-top: 3px; color: var(--muted-ink); font-size: 9px; }
+    .badge { display: inline-flex; align-items: center; min-height: 23px; padding: 0 7px; border-radius: 999px; font-size: 9px; font-weight: 700; white-space: nowrap; }
+    .badge.success { color: var(--success); background: var(--success-bg); }
+    .badge.warning { color: var(--warning); background: var(--warning-bg); }
+    .badge.danger { color: var(--danger); background: var(--danger-bg); }
+    .chart-header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+    .chart-header strong { font-size: 11px; }
+    .chart-header span { color: var(--muted-ink); font-size: 9px; }
+    .chart-area { height: 166px; margin-top: 13px; border-bottom: 1px solid var(--line); background: repeating-linear-gradient(to bottom, transparent 0 40px, var(--line) 40px 41px); }
+    .chart-area svg { width: 100%; height: 100%; }
+    .chart-area polyline { fill: none; stroke: var(--primary); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+    .chart-area .chart-fill { fill: var(--accent); opacity: .7; }
+    .chart-area circle { fill: var(--surface); stroke: var(--primary); stroke-width: 2.5; }
+    .chart-labels { display: flex; justify-content: space-between; gap: 6px; padding-top: 8px; color: var(--muted-ink); font-size: 9px; }
+    .detail-top { display: flex; align-items: center; gap: 12px; margin: 4px 0 15px; }
+    .detail-top .avatar { width: 46px; height: 46px; font-size: 14px; }
+    .detail-name { flex: 1; min-width: 0; }
+    .student-title { margin: 0; font-size: 23px; font-weight: 750; letter-spacing: -.04em; }
+    .detail-name p { margin: 4px 0 0; color: var(--muted-ink); font-size: 10px; }
+    .tabs { display: flex; gap: 18px; margin: 12px 0 17px; overflow-x: auto; border-bottom: 1px solid var(--line); }
+    .tab { position: relative; flex: 0 0 auto; padding: 0 1px 10px; color: var(--muted-ink); font-size: 10px; font-weight: 650; }
+    .tab.current { color: var(--primary); }
+    .tab.current::after { position: absolute; content: ""; height: 2px; background: var(--primary); inset: auto 0 0; }
+    .detail-grid { display: grid; grid-template-columns: 1.15fr .85fr; gap: 16px; }
+    .mini-facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 13px; }
+    .fact { padding-top: 9px; border-top: 1px solid var(--line); }
+    .fact small, .fact strong { display: block; }
+    .fact small { color: var(--muted-ink); font-size: 9px; }
+    .fact strong { margin-top: 4px; font-size: 14px; font-variant-numeric: tabular-nums; }
+    .workout-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 11px 0; border-top: 1px solid var(--line); font-size: 10px; }
+    .workout-line strong, .workout-line small { display: block; }
+    .workout-line small { margin-top: 3px; color: var(--muted-ink); }
+    .synthetic-label { display: block; margin-top: 13px; color: var(--muted-ink); font-size: 9px; }
+    .phone-stage { display: flex; justify-content: center; padding: 24px 12px; border: 1px solid var(--line); border-radius: 11px; background: #e9e9e5; }
+    .phone-device { width: min(375px, 100%); height: 760px; overflow: hidden; border: 7px solid #202522; border-radius: 32px; background: var(--page); box-shadow: 0 14px 38px rgba(12, 20, 16, .18); }
+    .phone-viewport { height: 100%; overflow: auto; background: var(--page); }
+    .mobile-app { display: flex; min-height: 100%; flex-direction: column; padding: 17px 17px 0; background: var(--page); }
+    .mobile-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 20px; }
+    .mobile-brand { font-size: 19px; font-weight: 900; letter-spacing: -.07em; }
+    .mobile-brand small { margin-left: 5px; font-size: 10px; font-weight: 500; letter-spacing: 0; }
+    .mobile-app h2 { margin: 0; font-size: 24px; line-height: 1.12; letter-spacing: -.045em; }
+    .mobile-muted { margin: 6px 0 17px; color: var(--muted-ink); font-size: 11px; line-height: 1.45; }
+    .workout-card { padding: 15px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+    .workout-card h3 { margin: 12px 0 0; font-size: 16px; }
+    .workout-card p { margin: 5px 0 13px; color: var(--muted-ink); font-size: 10px; }
+    .workout-meta { display: flex; gap: 13px; color: var(--muted-ink); font-size: 9px; }
+    .mobile-action { width: 100%; min-height: 50px; margin-top: 13px; border: 0; border-radius: var(--radius); background: var(--primary); color: var(--primary-ink); font-size: 12px; font-weight: 750; cursor: pointer; }
+    .mobile-section-label { margin: 18px 0 8px; font-size: 12px; font-weight: 750; }
+    .week-summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 13px 0; border-bottom: 1px solid var(--line); }
+    .week-summary strong { font-size: 11px; }
+    .week-summary span { color: var(--muted-ink); font-size: 10px; }
+    .week-days { display: flex; gap: 8px; margin-top: 12px; }
+    .day-dot { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--muted); color: var(--muted-ink); font-size: 9px; }
+    .day-dot.done { background: var(--accent); color: var(--accent-ink); font-weight: 750; }
+    .bottom-tabs { position: sticky; bottom: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; margin: auto -17px 0; padding: 9px 6px max(9px, env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: var(--surface); }
+    .bottom-tab { color: var(--muted-ink); text-align: center; font-size: 9px; line-height: 1.4; }
+    .bottom-tab.active { color: var(--primary); font-weight: 750; }
+    .bottom-tab span { display: block; font-size: 10px; }
+    .back-label { margin: 0 0 9px; color: var(--muted-ink); font-size: 10px; }
+    .exercise-heading { margin-bottom: 15px; }
+    .exercise-heading h2 { font-size: 22px; }
+    .exercise-heading p { margin: 5px 0 0; color: var(--muted-ink); font-size: 10px; }
+    .exercise-summary, .rest-timer { display: flex; align-items: center; justify-content: space-between; gap: 9px; padding: 11px 0; border-block: 1px solid var(--line); color: var(--muted-ink); font-size: 9px; }
+    .set-head, .set-row { display: grid; grid-template-columns: 31px minmax(0, 1fr) minmax(0, 1fr) 38px; align-items: center; gap: 7px; }
+    .set-head { padding: 13px 0 7px; color: var(--muted-ink); font-size: 8px; }
+    .set-row { min-height: 54px; border-top: 1px solid var(--line); }
+    .set-number { color: var(--muted-ink); font-size: 10px; font-variant-numeric: tabular-nums; }
+    .set-input { width: 100%; min-width: 0; height: 42px; padding: 0 6px; border: 1px solid var(--input-line); border-radius: calc(var(--radius) - 2px); background: var(--surface); color: var(--ink); text-align: center; font-size: 12px; font-variant-numeric: tabular-nums; }
+    .set-check { width: 38px; height: 38px; border: 1px solid var(--input-line); border-radius: 50%; background: var(--surface); color: var(--muted-ink); font-weight: 700; cursor: pointer; }
+    .set-check[aria-pressed="true"] { border-color: var(--success); background: var(--success-bg); color: var(--success); }
+    .previous-value { margin: 12px 0; color: var(--muted-ink); font-size: 9px; }
+    .rest-timer { border-block: 0; border-top: 1px solid var(--line); color: var(--ink); font-size: 10px; }
+    .rest-timer strong { font-variant-numeric: tabular-nums; }
+    .mobile-footer-action { position: sticky; bottom: 0; margin: auto -17px 0; padding: 10px 17px 13px; background: var(--page); }
+    .mobile-footer-action .mobile-action { margin: 0; }
+    @media (max-width: 820px) {
+      .page { padding: 19px 18px 32px; }
+      .direction-grid { grid-template-columns: 1fr; gap: 7px; }
+      .direction-choice { min-height: 0; padding: 11px 13px; }
+      .choice-note { margin-top: 5px; }
+      .screen-controls { align-items: flex-start; flex-direction: column; }
+      .app-shell { grid-template-columns: 168px minmax(0, 1fr); }
+      .sidebar { padding-inline: 10px; }
+      .main-content { padding: 22px 17px; }
+      .dashboard-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 580px) {
+      .page { padding: 15px 12px 25px; }
+      .offline-note { max-width: 125px; text-align: right; line-height: 1.4; }
+      h1 { margin-top: 22px; }
+      .screen-tabs { gap: 2px; }
+      .screen-tab { padding: 8px; font-size: 10px; }
+      .app-shell { display: block; min-height: 0; }
+      .sidebar { display: none; }
+      .main-content { padding: 19px 14px; }
+      .page-header h2 { font-size: 23px; }
+      .metric-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .metric { padding: 10px 11px; border-bottom: 1px solid var(--line); }
+      .metric:first-child { padding-left: 11px; }
+      .metric:nth-child(2) { border-right: 0; }
+      .metric:nth-last-child(-n + 2) { border-bottom: 0; }
+      .detail-grid { grid-template-columns: 1fr; }
+      .phone-stage { padding: 10px 7px; }
+      .phone-device { width: 100%; height: 760px; border-width: 4px; border-radius: 25px; }
+    }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; } }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="topline">
+      <a class="brand" href="#" aria-label="ALLU personal">ALLU<span class="brand-dot">.</span><small>personal</small></a>
+      <span class="offline-note">Prévia local · funciona sem internet</span>
+    </header>
+    <main>
+      <h1>Qual direção combina com o ALLU?</h1>
+      <p class="intro">Compare a mesma rotina em três linguagens visuais. A área do personal prioriza leitura e acompanhamento; a do aluno prioriza ações rápidas no celular.</p>
+
+      <section class="direction-grid" aria-label="Direções visuais">
+        <button class="direction-choice" type="button" data-direction-choice="studio" aria-pressed="true">
+          <span class="choice-top"><span class="choice-title">A · Estúdio <span class="suggestion">sugestão do plano</span></span><span class="choice-letter">A</span></span>
+          <span class="choice-note">Profissional e compacto. Cinza frio, branco e índigo.</span>
+          <span class="choice-meta">Inter · cantos de 8 px · mais informação à vista</span>
+        </button>
+        <button class="direction-choice" type="button" data-direction-choice="energy" aria-pressed="false">
+          <span class="choice-top"><span class="choice-title">B · Energia</span><span class="choice-letter">B</span></span>
+          <span class="choice-note">Esportivo e direto. Branco quente, tinta escura e laranja queimado.</span>
+          <span class="choice-meta">Barlow Condensed + Inter · cantos de 6 px</span>
+        </button>
+        <button class="direction-choice" type="button" data-direction-choice="welcome" aria-pressed="false">
+          <span class="choice-top"><span class="choice-title">C · Acolhedor</span><span class="choice-letter">C</span></span>
+          <span class="choice-note">Calmo e próximo. Creme, painéis suaves e verde-petróleo.</span>
+          <span class="choice-meta">Figtree · cantos de 14 px · mais respiro</span>
+        </button>
+      </section>
+      <div class="selection-summary" aria-live="polite">Direção em prévia: <strong id="selected-direction">A · Estúdio</strong></div>
+
+      <section class="screen-controls" aria-label="Escolha uma tela para comparar">
+        <h2>Telas de exemplo</h2>
+        <nav class="screen-tabs" aria-label="Telas da prévia">
+          <button class="screen-tab" type="button" data-screen-choice="dashboard" aria-pressed="true">Painel do personal</button>
+          <button class="screen-tab" type="button" data-screen-choice="student-detail" aria-pressed="false">Perfil do aluno</button>
+          <button class="screen-tab" type="button" data-screen-choice="student-home" aria-pressed="false">Início do aluno</button>
+          <button class="screen-tab" type="button" data-screen-choice="log-session" aria-pressed="false">Registrar treino</button>
+        </nav>
+      </section>
+      <p class="preview-label"><span id="screen-caption">Personal · tela larga</span><span>Conteúdo demonstrativo</span></p>
+      <div id="preview-mount" aria-live="polite"></div>
+    </main>
+  </div>
+
+  <template id="screen-dashboard">
+    <div class="app-preview"><div class="app-shell">
+      <aside class="sidebar">
+        <div class="app-brand">ALLU<span class="brand-dot">.</span><small>personal</small></div>
+        <div><p class="nav-label">Área do personal</p><nav class="nav-list" aria-label="Navegação do personal"><div class="nav-item active">Visão geral</div><div class="nav-item">Alunos</div><div class="nav-item">Fichas</div><div class="nav-item">Agenda</div><div class="nav-item">Mensalidades</div></nav></div>
+        <div class="sidebar-spacer"></div>
+        <div class="profile-mini"><div class="avatar" aria-hidden="true">AM</div><div><strong>Alex Mendes</strong><span>Personal</span></div></div>
+      </aside>
+      <div class="main-content">
+        <div class="page-header"><div><h2>Visão geral</h2><p>Bom dia, Alex. Veja o que merece sua atenção hoje.</p></div><button class="button" type="button">Esta semana</button></div>
+        <dl class="metric-strip">
+          <div class="metric"><dt>Alunos ativos</dt><dd>24</dd><small>2 novos este mês</small></div>
+          <div class="metric"><dt>Treinos registrados</dt><dd>38</dd><small>nos últimos 7 dias</small></div>
+          <div class="metric"><dt>Aderência média</dt><dd>82<small>%</small></dd><small>nos últimos 28 dias</small></div>
+          <div class="metric"><dt>Precisam de atenção</dt><dd>3</dd><small>sem atividade recente</small></div>
+        </dl>
+        <div class="dashboard-grid">
+          <section class="section-block"><h3>Para acompanhar</h3><p class="section-sub">Alunos com uma ação pendente ou treino atrasado.</p>
+            <div class="student-row"><div class="avatar" aria-hidden="true">AL</div><div><strong>Ana Lima</strong><small>Treino de ontem não registrado</small></div><span class="badge warning">Acompanhar</span></div>
+            <div class="student-row"><div class="avatar" aria-hidden="true">BC</div><div><strong>Bruno Costa</strong><small>Avaliação aguardando resposta</small></div><span class="badge warning">Pendente</span></div>
+            <div class="student-row"><div class="avatar" aria-hidden="true">CS</div><div><strong>Carla Souza</strong><small>Último treino há 8 dias</small></div><span class="badge danger">Sem atividade</span></div>
+            <div class="student-row"><div class="avatar" aria-hidden="true">DM</div><div><strong>Diego Martins</strong><small>Ficha atualizada hoje</small></div><span class="badge success">Em dia</span></div>
+          </section>
+          <section class="section-block"><div class="chart-header"><strong>Atividade dos alunos</strong><span>últimas 6 semanas</span></div><p class="section-sub">Treinos registrados por semana</p>
+            <div class="chart-area" role="img" aria-label="Treinos por semana: 18, 24, 21, 29, 32 e 38"><svg viewBox="0 0 360 150" preserveAspectRatio="none" aria-hidden="true"><polygon class="chart-fill" points="0,124 60,101 120,111 180,72 240,59 300,31 360,28 360,150 0,150"></polygon><polyline points="0,124 60,101 120,111 180,72 240,59 300,31 360,28"></polyline><circle cx="0" cy="124" r="4"></circle><circle cx="60" cy="101" r="4"></circle><circle cx="120" cy="111" r="4"></circle><circle cx="180" cy="72" r="4"></circle><circle cx="240" cy="59" r="4"></circle><circle cx="300" cy="31" r="4"></circle><circle cx="360" cy="28" r="4"></circle></svg></div>
+            <div class="chart-labels"><span>há 6 sem.</span><span>há 4 sem.</span><span>há 2 sem.</span><span>esta semana</span></div>
+          </section>
+        </div><p class="synthetic-label">Dados fictícios para comparação visual.</p>
+      </div>
+    </div></div>
+  </template>
+
+  <template id="screen-student-detail">
+    <div class="app-preview"><div class="app-shell">
+      <aside class="sidebar"><div class="app-brand">ALLU<span class="brand-dot">.</span><small>personal</small></div><div><p class="nav-label">Área do personal</p><nav class="nav-list" aria-label="Navegação do personal"><div class="nav-item">Visão geral</div><div class="nav-item active">Alunos</div><div class="nav-item">Fichas</div><div class="nav-item">Agenda</div><div class="nav-item">Mensalidades</div></nav></div><div class="sidebar-spacer"></div><div class="profile-mini"><div class="avatar" aria-hidden="true">AM</div><div><strong>Alex Mendes</strong><span>Personal</span></div></div></aside>
+      <div class="main-content">
+        <div class="page-header"><div><h2>Ana Lima</h2><p>Alunos / Perfil · Objetivo: ganhar força</p></div><button class="button" type="button">Gerenciar ficha</button></div>
+        <div class="detail-top"><div class="avatar" aria-hidden="true">AL</div><div class="detail-name"><h3 class="student-title">Acompanhamento</h3><p>Última visita hoje, às 08:42</p></div><span class="badge success">Conectada</span></div>
+        <nav class="tabs" aria-label="Seções do perfil"><span class="tab current">Resumo</span><span class="tab">Fichas</span><span class="tab">Evolução</span><span class="tab">Histórico</span></nav>
+        <div class="detail-grid">
+          <section class="section-block"><div class="chart-header"><strong>Evolução do peso</strong><span>últimos 6 meses</span></div><div class="chart-area" role="img" aria-label="Peso corporal: 68, 67, 66,5, 66, 65,7 e 65 quilogramas"><svg viewBox="0 0 360 150" preserveAspectRatio="none" aria-hidden="true"><polygon class="chart-fill" points="0,32 72,48 144,66 216,77 288,90 360,108 360,150 0,150"></polygon><polyline points="0,32 72,48 144,66 216,77 288,90 360,108"></polyline><circle cx="0" cy="32" r="4"></circle><circle cx="72" cy="48" r="4"></circle><circle cx="144" cy="66" r="4"></circle><circle cx="216" cy="77" r="4"></circle><circle cx="288" cy="90" r="4"></circle><circle cx="360" cy="108" r="4"></circle></svg></div><div class="chart-labels"><span>abr</span><span>mai</span><span>jun</span><span>jul</span><span>ago</span><span>set</span></div><div class="mini-facts"><div class="fact"><small>Peso atual</small><strong>65,0 kg</strong></div><div class="fact"><small>Variação</small><strong>−3,0 kg</strong></div><div class="fact"><small>Treinos / 7 dias</small><strong>4</strong></div></div></section>
+          <section class="section-block"><h3>Ficha ativa</h3><p class="section-sub">Plano atual de treinamento</p><div class="workout-line"><div><strong>Ficha A · Inferiores</strong><small>Atualizada em 18 set</small></div><span class="badge success">Ativa</span></div><div class="workout-line"><div><strong>Ficha B · Superiores</strong><small>3 sessões por semana</small></div><span>›</span></div><button class="button primary" type="button" style="width:100%;margin-top:12px">Ver fichas</button></section>
+        </div><p class="synthetic-label">Dados fictícios para comparação visual.</p>
+      </div>
+    </div></div>
+  </template>
+
+  <template id="screen-student-home">
+    <div class="app-preview"><div class="phone-stage"><div class="phone-device"><div class="phone-viewport"><div class="mobile-app">
+      <div class="mobile-top"><div class="mobile-brand">ALLU<span class="brand-dot">.</span><small>personal</small></div><div class="avatar" aria-hidden="true">AL</div></div>
+      <h2>Bom dia, Ana.</h2><p class="mobile-muted">Seu próximo passo já está pronto.</p>
+      <section class="workout-card"><span class="badge success">Ficha ativa</span><h3>Treino A · Inferiores</h3><p>Preparado pelo Alex Mendes</p><div class="workout-meta"><span>6 exercícios</span><span>≈ 45 min</span></div><button class="mobile-action" type="button">Começar treino</button></section>
+      <h3 class="mobile-section-label">Esta semana</h3><div class="week-summary"><strong>Treinos feitos</strong><span>2 de 3</span></div><div class="week-days" aria-label="Dois treinos registrados nesta semana"><span class="day-dot done">S</span><span class="day-dot">T</span><span class="day-dot done">Q</span><span class="day-dot">Q</span><span class="day-dot">S</span><span class="day-dot">S</span><span class="day-dot">D</span></div>
+      <h3 class="mobile-section-label">Próxima sessão</h3><div class="week-summary"><strong>Quinta-feira</strong><span>18:30 · com Alex</span></div><p class="mobile-muted">Abra o treino quando estiver pronto para começar.</p>
+      <nav class="bottom-tabs" aria-label="Navegação do aluno"><div class="bottom-tab active"><span>Início</span>Resumo</div><div class="bottom-tab"><span>Fichas</span>Treinos</div><div class="bottom-tab"><span>Agenda</span>Horários</div><div class="bottom-tab"><span>Perfil</span>Conta</div></nav>
+    </div></div></div></div>
+  </template>
+
+  <template id="screen-log-session">
+    <div class="app-preview"><div class="phone-stage"><div class="phone-device"><div class="phone-viewport"><div class="mobile-app">
+      <div class="mobile-top"><div><p class="back-label">Voltar para a ficha</p><div class="mobile-brand">ALLU<span class="brand-dot">.</span><small>personal</small></div></div><span class="badge warning">Em andamento</span></div>
+      <div class="exercise-heading"><h2>Agachamento livre</h2><p>Treino A · Inferiores</p></div>
+      <div class="exercise-summary"><span>Exercício 1 de 6</span><span>Descanso 60 s</span></div>
+      <div class="set-head"><span>Série</span><span>kg</span><span>Repetições</span><span>Feito</span></div>
+      <div class="set-row"><span class="set-number">1</span><input class="set-input" aria-label="Peso da série 1 em quilogramas" inputmode="decimal" value="30"><input class="set-input" aria-label="Repetições da série 1" inputmode="numeric" value="10"><button class="set-check" type="button" aria-label="Marcar série 1 como feita" aria-pressed="false">✓</button></div>
+      <div class="set-row"><span class="set-number">2</span><input class="set-input" aria-label="Peso da série 2 em quilogramas" inputmode="decimal" value="30"><input class="set-input" aria-label="Repetições da série 2" inputmode="numeric" value="10"><button class="set-check" type="button" aria-label="Marcar série 2 como feita" aria-pressed="false">✓</button></div>
+      <div class="set-row"><span class="set-number">3</span><input class="set-input" aria-label="Peso da série 3 em quilogramas" inputmode="decimal" value="30"><input class="set-input" aria-label="Repetições da série 3" inputmode="numeric" value="10"><button class="set-check" type="button" aria-label="Marcar série 3 como feita" aria-pressed="false">✓</button></div>
+      <p class="previous-value">Anterior: 28 kg × 10 repetições</p><div class="rest-timer"><span>Descanso sugerido</span><strong>01:00</strong></div>
+      <div class="mobile-footer-action"><button class="mobile-action" type="button">Finalizar treino</button></div>
+    </div></div></div></div>
+  </template>
+
+  <script>
+    (function () {
+      var directions = { studio: "A · Estúdio", energy: "B · Energia", welcome: "C · Acolhedor" };
+      var captions = { dashboard: "Personal · tela larga", "student-detail": "Personal · perfil do aluno", "student-home": "Aluno · celular de 375 px", "log-session": "Aluno · celular de 375 px" };
+      var directionButtons = document.querySelectorAll("[data-direction-choice]");
+      var screenButtons = document.querySelectorAll("[data-screen-choice]");
+      var mount = document.getElementById("preview-mount");
+
+      directionButtons.forEach(function (button) {
+        button.addEventListener("click", function () {
+          var direction = button.getAttribute("data-direction-choice");
+          document.documentElement.setAttribute("data-direction", direction);
+          directionButtons.forEach(function (item) { item.setAttribute("aria-pressed", String(item === button)); });
+          document.getElementById("selected-direction").textContent = directions[direction];
+        });
+      });
+
+      function showScreen(name) {
+        var template = document.getElementById("screen-" + name);
+        mount.replaceChildren(template.content.cloneNode(true));
+        document.getElementById("screen-caption").textContent = captions[name];
+        mount.querySelectorAll(".set-check").forEach(function (button) {
+          button.addEventListener("click", function () {
+            button.setAttribute("aria-pressed", String(button.getAttribute("aria-pressed") !== "true"));
+          });
+        });
+      }
+
+      screenButtons.forEach(function (button) {
+        button.addEventListener("click", function () {
+          screenButtons.forEach(function (item) { item.setAttribute("aria-pressed", String(item === button)); });
+          showScreen(button.getAttribute("data-screen-choice"));
+        });
+      });
+      showScreen("dashboard");
+    }());
+  </script>
+</body>
+</html>

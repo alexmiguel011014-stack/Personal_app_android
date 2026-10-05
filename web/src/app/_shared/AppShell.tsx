@@ -9,7 +9,7 @@ import { Avatar } from "./Avatar";
 import { NavIcon, type IconName } from "./icons";
 import { Wordmark } from "./Wordmark";
 
-// The ALLU template's frame (DESIGN.md): a forest-green rail with the wordmark and the navigation
+// The ALLU template's frame (DESIGN.md): an ink-dark rail (direction B, §24) with the wordmark and the navigation
 // on a desktop; on a tablet or phone (<= 860px, see globals.css) the rail shrinks to a slim top bar
 // and the navigation moves to a tab bar at the bottom of the screen, where a thumb reaches it. One
 // component for both areas — `area` only changes the content width and the copy.

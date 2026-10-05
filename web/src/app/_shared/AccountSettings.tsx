@@ -47,7 +47,7 @@ export function AccountSettings() {
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [passwordNotice, setPasswordNotice] = useState<string | null>(null);
 
-  const syncEmail = useCallback(async (expectedEmail?: string) => {
+  const syncEmail = useCallback(async (expectedEmail?: string, changeRequested = true) => {
     if (!uid) return;
     const user = getFirebase().auth.currentUser;
     if (!user || user.uid !== uid) {
@@ -63,7 +63,9 @@ export function AccountSettings() {
       setEmailVerified(true);
       setPendingEmail(null);
       setEmailSyncAddress(null);
-      setEmailNotice("E-mail confirmado e perfil atualizado.");
+      // A change the user asked for is "confirmed"; a mirror that was merely behind (an account whose profile
+      // never carried the address, e.g. a student who claimed an invite) is just brought up to date.
+      setEmailNotice(changeRequested ? "E-mail confirmado e perfil atualizado." : "Perfil atualizado com o e-mail verificado da conta.");
       clearPendingAccountEmailChange(uid);
       await refresh();
     } catch (error) {
@@ -97,7 +99,7 @@ export function AccountSettings() {
         setEmailVerified(user.emailVerified);
         const verifiedEmailDiffers = user.emailVerified && !!user.email &&
           profile.email?.toLowerCase() !== user.email.toLowerCase();
-        if (returnedFromEmailAction || verifiedEmailDiffers) void syncEmail(pending ?? undefined);
+        if (returnedFromEmailAction || verifiedEmailDiffers) void syncEmail(pending ?? undefined, returnedFromEmailAction || !!pending);
       })
       .catch(() => { if (!cancelled) setPhoneError("Não foi possível carregar seu telefone. Verifique a conexão e tente novamente."); })
       .finally(() => { if (!cancelled) setLoading(false); });

@@ -91,9 +91,15 @@ trainer's validation (§23j, 2026-09-28). The visual pass (§23k) followed, from
 ALLU template. `web-ci.yml` checks it on every push and pull request; `web-deploy.yml` publishes
 it. Until §23 says otherwise:
 
-- **Styling is one stylesheet, `web/src/app/globals.css`** — the ALLU template's tokens, class
-  names and breakpoints (>1050, 861–1050, ≤860 tablet/phone with a bottom tab bar, ≤600, ≤430),
-  plus defaults for bare elements. No CSS framework, no component library, no CSS-in-JS. Extend
+- **Styling is one stylesheet, `web/src/app/globals.css`** — the ALLU template's class names and
+  breakpoints (>1050, 861–1050, ≤860 tablet/phone with a bottom tab bar, ≤600, ≤430), plus
+  defaults for bare elements, in the colours and type of **direction B "Energia"** (chosen from
+  `web/design/preview.html`, 2026-10-05): warm paper, ink-dark rail, burnt orange `#c2410c` for the
+  primary action and the current nav item, 6 px corners, Barlow Condensed headings over Inter
+  (self-hosted from `@fontsource/*`, imported in `layout.tsx`, so the CSP's `font-src 'self'`
+  holds). Colours are tokens in `:root` (the names `--forest`/`--leaf` survive from the first
+  green pass and now mean "dark ink" / "highlight on dark"); success/warning/danger keep green /
+  amber / red and always come with a word. No CSS framework, no component library, no CSS-in-JS. Extend
   the stylesheet (or the shared frames in `src/app/_shared/`: `AppShell`, `PublicShell`) rather
   than adding a stylesheet per screen; keep text ≥12px, controls ≥44px, form fields 16px on
   touch widths, and give every table that has more than three columns `className="stack"` with a
@@ -290,6 +296,13 @@ with their own login). **`firestore.rules` on `main` is the live copy** (the web
 GOALS.md §23d on `feature/kmp-web`): it carries the `payments`/`billingPlans` rules and closes the
 privilege hole an older §17 version had. Any older copy on another branch must not be published.
 Never publish a copy without diffing it against what's live.
+
+**Rules are versioned in ascending order.** The first line of `firestore.rules` is `// Rules version: N`,
+and each set that has been published to Firebase is archived byte for byte as
+`firestore-rules/versions/vN.rules` (v3 is what was live on 2026-10-05). Work on `main` that changes the
+rules bumps N by one for the whole unpublished set — **v4** carries the account/plan/billing rules (§29–§30)
+and the spent-invite read restriction (§31b) — and its archive file is added when the trainer publishes it,
+never before, so the archive always means "what was live". Published rules are never edited in place.
 
 Every rules change gets a test in `web/rules/firestore.rules.test.ts`, run against the local
 emulator with `npm run test:rules` from `web/` (Java 21; see `web/README.md`). `assertFails`

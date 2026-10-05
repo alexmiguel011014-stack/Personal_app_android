@@ -3494,6 +3494,18 @@ Passed 2026-09-28.
 ## 24. Feature — Visual pass: a design system for the trainer and student areas
 (2026-09-29, via `/newgoal`)
 
+> **Status 2026-10-05 — direction chosen and applied: B · Energia.** The trainer picked B from
+> `web/design/preview.html` (warm paper `#faf9f7`, ink-dark rail `#12161c`, burnt orange `#c2410c`, Barlow Condensed
+> headings over Inter, 6 px corners). It is applied by re-theming `web/src/app/globals.css` (colour and type tokens in
+> `:root`, status colours kept as green/amber/red with a word) — layout, class names, breakpoints and every
+> component are unchanged — and `layout.tsx` imports the two fonts from `@fontsource/*` (Latin subset, 7 files,
+> 159 KB, self-hosted). Checked in headless Chrome against the emulators at 1440 and 390 px on the landing, sign-in,
+> ADM, trainer and student screens; two pre-existing layout bugs surfaced and were fixed (the ADM figures strip
+> unboxed by `dl > div { display: contents }`, and the "attention" pills in the ADM overview rendered green).
+> **Not done:** contrast was reasoned from the tokens (orange on paper ≈ 4.9:1, white on orange ≈ 5.2:1), not
+> measured with a tool; the 3D figure is a separate piece and was not touched; the older open boxes in this
+> section (per-screen reviews against the template) were not re-ticked.
+
 **The request:** "faz um template de sugestão para o app personal. pense na área do aluno e
 personal" — the day after the trainer asked "existe algum site com templates pré-definidos que
 ajudam a escolher isso? se você já tiver sugestões me fale também". §23j passed on 2026-09-28, so
@@ -5758,6 +5770,16 @@ Suggested: sonnet · high — map the static browser bundle and each role's actu
 - [x] **Done when:** a concise risk register names each exposed asset/data class, who can read it, how it can be copied, severity, and the enforcing layer (UI, Firebase rule, App Check, or backend); no claim equates obfuscation or hosting privacy with data authorization. Owner-console drift remains pending above.
 
 ### 31b. Reduce unauthorized Firebase data access
+
+> **2026-10-05 — rules v4 narrows invite reads.** A spent invite (used, cancelled, revoked, expired) is now readable
+> only by its trainer, an ADM and the account that claimed it; a live invite is still readable by any signed-in user
+> who knows the code (the claim reads it before the account exists), and a missing code still answers "invalid".
+> Tests: `web/rules/firestore.rules.test.ts` "reading an invite (rules v4)" (6 of the 11 fail against v3, proving they
+> discriminate) and the two claim messages in `dataLayer.test.ts`. Cost on the phone: a spent code now ends in
+> PERMISSION_DENIED, so `AuthRepository.claimInvite` shows its "account already linked" text instead of "código já
+> utilizado" — an Android wording fix, not made. **Still open:** live invites remain readable to anyone holding the
+> code (32-bit random codes; stronger codes or a callable need the Android/iOS claim to change), and the ADM's whole-
+> document read of `users/{uid}`.
 
 Suggested: opus · xhigh — invite claims, ADM profile access, shared rules, and Gemini requests cross identity and sensitive-data boundaries.
 

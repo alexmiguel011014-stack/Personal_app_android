@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Wordmark } from "./Wordmark";
 
 // The frame of the pages a visitor sees before signing in — landing, sign-in, invite. The same
-// forest-green wordmark bar as the signed-in areas, without the navigation rail.
+// ink-dark wordmark bar as the signed-in areas, without the navigation rail.
 
 export function PublicShell({ action, children }: { action?: ReactNode; children: ReactNode }) {
   return (

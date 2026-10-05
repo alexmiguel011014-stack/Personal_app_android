@@ -216,7 +216,7 @@ export default function PlatformPlansPage() {
     </section>
 
     <section className="panel">
-      <div className="page-actions"><div><h2>Modelos de plano</h2><p>Valores em reais são armazenados como centavos inteiros. Cada edição cria uma nova versão do modelo.</p></div>
+      <div className="section-heading"><div><h2>Modelos de plano</h2><p>Valores em reais são armazenados como centavos inteiros. Cada edição cria uma nova versão do modelo.</p></div>
         <button type="button" onClick={beginNewTemplate} disabled={busy || loading}>Novo plano</button>
       </div>
 

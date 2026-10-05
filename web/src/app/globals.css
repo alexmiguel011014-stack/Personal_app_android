@@ -86,6 +86,7 @@ img, svg { max-width: 100%; }
 .main-content main { display: block; }
 .page-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; padding-bottom: 29px; }
 .page-header > div > :last-child { margin-bottom: 0; }
+.page-header .header-subtitle a { display: inline-flex; align-items: center; min-height: 44px; }
 .page-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .page-footer { display: flex; justify-content: space-between; gap: 15px; margin-top: 39px; padding-top: 15px; border-top: 1px solid var(--line); color: #536157; font-size: 12px; }
 .footer-dot { display: inline-block; width: 6px; height: 6px; margin: 0 7px; border-radius: 50%; background: #668d45; vertical-align: middle; }
@@ -441,7 +442,7 @@ dialog.confirm::backdrop { background: #12352c8c; }
 @media (max-width: 860px) {
   .app-shell { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
   .rail { position: sticky; top: 0; inset: auto; width: auto; height: auto; min-height: 56px; flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; padding: 0 max(18px, env(safe-area-inset-right)) 0 max(18px, env(safe-area-inset-left)); overflow: visible; }
-  .wordmark { font-size: 27px; }
+  .wordmark { font-size: 27px; padding-block: 8px; }
   .rail-caption, .rail-note, .profile-meta { display: none; }
   .account-mobile-label { display: inline; color: #e6eee6; font-size: 12px; }
   .profile-chip { min-height: 0; margin: 0; padding: 0; border: 0; }
@@ -518,7 +519,7 @@ dialog.confirm::backdrop { background: #12352c8c; }
 
 @media (max-width: 430px) {
   .nav-link { font-size: 12px; }
-  .wordmark { font-size: 25px; }
+  .wordmark { font-size: 25px; padding-block: 10px; }
   .rail { padding-left: 14px; padding-right: 14px; }
   .set-row { grid-template-columns: 52px minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
   .session-meta { font-size: 12px; }

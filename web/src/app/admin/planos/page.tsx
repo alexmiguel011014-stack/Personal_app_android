@@ -81,7 +81,7 @@ function templateDraft(template: PlatformBillingPlanTemplate): TemplateDraft {
 }
 
 function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : "Não foi possível concluir a operação. Tente novamente.";
+  return error instanceof Error ? error.message.replace(/\s*\[\d{3}\]$/, "") : "Não foi possível concluir a operação. Tente novamente.";
 }
 
 export default function PlatformPlansPage() {

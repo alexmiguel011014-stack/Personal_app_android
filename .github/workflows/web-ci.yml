@@ -57,4 +57,7 @@ jobs:
           java-version: '21'
 
       - name: Emulator tests (rules and data layer)
+        # The Functions emulator's default 10 s load timeout is too short on a cold runner.
+        env:
+          FUNCTIONS_DISCOVERY_TIMEOUT: '60'
         run: npm run test:rules

@@ -162,6 +162,10 @@ layer (`src/data/`) reading and writing *through* those rules as a signed-in use
 model (`src/domain/`), the rules and the converters all have to agree for a write to land. Files
 run one at a time (`--no-file-parallelism`): they share one emulator and each clears it.
 
+The suite also starts the Functions emulator (the platform-billing callable). On a cold machine its
+default 10 s load timeout can expire and fail the `platformFlows` callable tests with `not-found`;
+set `FUNCTIONS_DISCOVERY_TIMEOUT=60` (CI does) and run it again.
+
 ### Running the app on fake data
 
 Everything can be exercised without touching the real Firebase project:

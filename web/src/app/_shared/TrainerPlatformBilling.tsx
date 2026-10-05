@@ -38,7 +38,7 @@ export function TrainerPlatformBilling({ uid }: { uid: string }) {
       </dl>
       {invoices.length === 0 ? <p>Nenhuma fatura emitida.</p> : <ul className="admin-list">
         {invoices.map((invoice) => <li key={invoice.id}>
-          <span><strong>{invoice.period} · {formatCents(invoice.amountCents)}</strong><br /><small>{invoice.linkedStudentSeats} alunos · vencimento {formatDate(invoice.dueDate)}</small></span>
+          <span><strong>{invoice.period} · {formatCents(invoice.amountCents)}</strong><br /><small>{invoice.billableStudentSeats} vagas ({invoice.linkedStudentSeats} alunos + {invoice.reservedInviteSeats} convites) · vencimento {formatDate(invoice.dueDate)}</small></span>
           <small>{invoice.status === "paid" ? `Paga em ${new Date(invoice.paidAt ?? 0).toLocaleDateString("pt-BR")}` : "Em aberto"}</small>
         </li>)}
       </ul>}

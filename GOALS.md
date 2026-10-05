@@ -5577,6 +5577,18 @@ Suggested: opus · high — emulator rules and end-to-end role coverage are the 
 - [x] Run the project's web checks: TypeScript, ESLint, Vitest, Firestore rules tests, Storage rules tests, and static build with the configured base path. Fix failures in scope before marking items complete.
 - [ ] In a DOM-driven browser against emulators, sign in as ADM, trainer, and linked student. For each: open settings from the profile entry; save/clear phone; request e-mail change, prove old e-mail remains until confirmation, confirm and prove ADM's trainer listing refreshes; change password with fresh auth and exercise the stale-auth/error and reset-link states; upload/replace/remove an avatar where Storage is configured.
 - [ ] Check phone width and keyboard access: visible settings entry, labels and error/status announcements, focus after save/error, controls at least 44 px, no horizontal overflow. Confirm the account screen never displays another user's avatar or exposes student training/health data.
+  > **Checked 2026-10-05** (Browser pane, Auth/Firestore/Storage/Functions emulators, seeded data; DOM-driven):
+  > ADM sign-in lands on `/admin`, the profile entry opens `/admin/conta` and `Sair` is a separate control; phone
+  > saves/normalises, rejects `123`, accepts empty and survives a reload; password change refuses a mismatch and a wrong
+  > current password, succeeds, clears the fields; e-mail change keeps the old address active ("Aguardando confirmação…")
+  > until the emulator link is opened, then Auth and the `users` mirror both read the new address; avatar upload,
+  > replace, remove (back to initials), a `.txt` and a 2.5 MB file are refused. The personal's `/app/conta` shows the
+  > read-only plan and invoice; a student who claimed an invite (Lia) can open `/aluno/conta`, save a phone, and sees no
+  > training/health data. At 375 px: no horizontal overflow, labels present, form fields 16 px, controls ≥ 44 px (the
+  > wordmark and "Voltar" links were 25/19 px — fixed), the settings entry is visible in the tab bar and the profile chip.
+  > An ADM opening `/aluno/conta` is sent back to `/admin`. **Not exercised:** e-mail change, password change and avatar
+  > for the trainer and student roles (same shared component, only the ADM was driven), focus handling after save/error,
+  > and the ADM *trainer-directory* refresh after a trainer's e-mail change.
 - [x] Regression-check the existing cross-client Firestore rule cases. Do not edit Android/iOS files. Because `firestore.rules` is shared, do not publish it to Firebase until the owner reviews the exact combined diff and approves the live rules step.
 - [x] Update `CLAUDE.md` and `web/README.md` with account fields, Auth flows, Storage rules/emulator setup, and the manual Firebase/billing gate. Tick only behaviorally verified items here.
 - [ ] **Done when:** all three live web roles can use their own account settings on the deployed site; the e-mail and password flows follow Firebase's confirmation/reauthentication requirements; avatar access is private; and the owner has completed the Storage setup. If Storage billing is declined, keep avatar upload open/deferred and do not mark the whole feature complete.
@@ -5664,6 +5676,17 @@ flowchart TD
 
 - [x] Add unit tests for price arithmetic in integer cents, included/extra seat boundaries, trials, deadline extensions, and template snapshot behavior; Firestore Rules tests for direct tampering and trainer lock; and emulator tests for concurrent cooperating website reservations, claim/cancel, legacy `expiresAt` compatibility, capacity, billing, and ADM recovery creation. Include proof that the Website limit does not claim to cover mobile or direct writes outside its cooperative flow.
 - [ ] Drive the Web ADM and trainer flows end to end: edit defaults, assign and override plans, provision a trainer, use trial, fill seats, verify extra price, send/claim/cancel no-expiry invites, resolve a legacy no-expiry invite as ADM, and test time-based expiry only for a legacy record with `expiresAt`; create a recovery draft, mark an invoice paid, extend a due date, and confirm blocked access is restored only by payment when overdue. Verify both allowed and denied paths.
+  > **Checked 2026-10-05** (same setup): created a plan template (R$ 49,90 · 2 included · R$ 6,50 extra · 3 codes · trial
+  > 2/7 d → saved as v1); assigned it to the seeded personal as a paid plan (template values copied); billable seats
+  > = 4 linked + 1 reserved invite = 5 → R$ 69,40 (49,90 + 3 × 6,50) matches the estimate and the invoice; emitted the
+  > invoice, extended its due date by 5 days, registered payment (state "Paga"); the personal sees the same terms and
+  > invoice read-only on `/app/conta`. Invite cap: with 1 of 3 codes in use, two more were issued (with the extra-seat
+  > warning) and a fourth was refused with "Limite de códigos ativos atingido (3/3)"; a student claiming an invite
+  > moved linked 4 → 5 and active codes 3 → 2 and left a "Convite aceito" audit entry; the ADM resolved a legacy invite
+  > by code (reserved 2 → 1, audited); the ADM emergency "Cadastrar aluno" created a draft that reserves no seat.
+  > **Not exercised:** the trial path and trial cap, blocking by an overdue invoice (the due-date field has `min=today`,
+  > so an overdue invoice cannot be created from the UI — covered by `platformFlows.test.ts` instead), concurrent
+  > invite attempts, and the default-template assignment when the ADM provisions a new personal.
 - [ ] **Done when:** all configured prices and limits are owner-controlled, invoice and audit records match the calculation, concurrent attempts through the cooperating website flow cannot exceed its active-code cap, the displayed count updates after claim/cancel and legacy-expiry compatibility handling, trainer blocking is enforced by rules, and out-of-scope mobile/direct-write behavior remains explicitly outside the Web limit.
 
 ### 30h. Manual Firebase setup and rollout gate

@@ -21,11 +21,23 @@ GitHub Pages on GitHub Free requires a public source repository. Eligible paid G
 
 These are documented risks, not claims of a completed production security fix. Closing the invite and broad-ADM read risks needs an explicit compatibility decision and coordinated migration. No Android/iOS source was changed.
 
-## Transitive dependency audit (2026-10-02)
+## Dependency audit (2026-10-05, supersedes the 2026-10-02 note)
 
-`npm audit --omit=dev` in the Web worktree reports four high findings through `firebase@12.19.0` -> `@firebase/firestore@4.17.2` -> `@grpc/grpc-js@1.9.16`; they resolve to two gRPC advisories. The advisories concern specific gRPC server behaviors. A source scan found no gRPC server or `getAuthContext` use in `web/src` or `functions/`, and the Cloudflare target is a static export, so this review found no server-side exploit path in the site. The package manager still flags the transitive runtime dependency.
+- `web` (what ships): `npm audit --omit=dev` went from 4 high to **0**. The findings were `@grpc/grpc-js@1.9.16`
+  pulled in by `@firebase/firestore`; `package.json` now has `overrides: { "@grpc/grpc-js": "^1.14.5" }`. The browser
+  build never loads `grpc-js` (it is the Node transport), but the emulator suites do, and they pass on 1.14.5.
+- `web` dev tooling: overrides for `basic-ftp`, `uuid` and `@opentelemetry/core` (firebase-tools' transitive
+  dependencies) cleared those. **7 high remain**, all one chain — `braces` (stack-exhaustion DoS on deeply nested
+  patterns) via `micromatch`, `fast-glob`, `chokidar`, `firebase-tools` and `eslint-config-next`. `braces@3.0.3` is the
+  latest release and the advisory covers `<=3.0.3`, so there is no patched version to install; `npm audit fix --force`
+  only proposes downgrading `firebase-tools`/`eslint-config-next`, which is not a fix. These run on a developer machine
+  or CI against our own source files, are not part of `web/out`, and are not reachable from the site. Recheck after
+  the next `braces` release.
+- `functions`: `firebase-admin` 13 -> 14.5 and `firebase-functions` 6 -> 7.4 (the 14.x peer range needs 7.x), plus
+  `overrides: { "uuid": "^11.1.1" }` (the first patched line that still ships a CommonJS build, which the Cloud
+  Functions runtime loads). `npm audit`: 8 moderate -> **0**. The callable passes the emulator suite on the new
+  versions; it has not been deployed.
 
-The installed Firestore package declares `@grpc/grpc-js` as `~1.9.0`, while the advisories' patched ranges start at 1.13.6/1.14.5. `npm audit fix --force` proposes a breaking downgrade to Firebase 9.14.0. No forced override or downgrade was made; this needs a compatible upstream Firebase dependency update and a repeat audit/build/emulator run.
 ## Local header preparation
 
 public/_headers is copied into a static export and applies to Cloudflare Pages static responses. The file sets standard response headers plus an initial Content-Security-Policy-Report-Only policy. Report-only does not block requests; inspect browser console/network violations on an isolated preview, refine the allowed Firebase/Google hosts, then request owner review before enforcing any CSP. The header file does not protect Firebase data and does not apply to generated Pages Functions responses.

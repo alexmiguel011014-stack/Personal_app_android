@@ -168,6 +168,10 @@ set `FUNCTIONS_DISCOVERY_TIMEOUT=60` (CI does) and run it again.
 
 ### Running the app on fake data
 
+On Windows, `npm run dev:local` does all of the steps below in one go (emulators, seed, site) and
+stops the emulators on Ctrl+C — no publishing to GitHub or Firebase is needed to try the site, and
+nothing real is touched. The manual steps:
+
 Everything can be exercised without touching the real Firebase project:
 
 ```bash

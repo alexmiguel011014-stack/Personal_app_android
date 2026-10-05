@@ -472,6 +472,70 @@ describe("invite privacy and ADM resolution", () => {
   });
 });
 
+// Rules version 4: an invite carries the student's name, phone and medical notes, so once it is
+// spent (used, cancelled, revoked or expired) only its trainer, an ADM and the account that claimed
+// it may read it. A live invite stays readable by any signed-in user because the claim reads it
+// before the account exists.
+describe("reading an invite (rules v4)", () => {
+  const STRANGER = "strangerStudent";
+  const CLAIMANT = "claimantStudent";
+  const profile = { name: "Aluno", phone: "11999990000", medicalNotes: "joelho" };
+
+  async function invite(code: string, extra: Record<string, unknown>) {
+    await seed((db) => db.doc(`invites/${code}`).set({ trainerId: TRAINER_A, used: false, createdAt: 1, ...profile, ...extra }));
+  }
+
+  it("lets any signed-in user read a live invite, which is how the claim finds it", async () => {
+    await invite("LIVE0001", {});
+    await assertSucceeds(as(STRANGER).doc("invites/LIVE0001").get());
+    await invite("LIVE0002", { expiresAt: Date.now() + 3_600_000 });
+    await assertSucceeds(as(STRANGER).doc("invites/LIVE0002").get());
+  });
+
+  it("answers a mistyped code as missing instead of denying it", async () => {
+    await assertSucceeds(as(STRANGER).doc("invites/NOPE0000").get());
+  });
+
+  it("refuses an anonymous reader even for a live invite", async () => {
+    await invite("LIVE0003", {});
+    await assertFails(env.unauthenticatedContext().firestore().doc("invites/LIVE0003").get());
+  });
+
+  it.each([
+    ["used", { used: true }],
+    ["cancelled", { cancelledAt: 5 }],
+    ["revoked", { revokedAt: 5 }],
+    ["expired", { expiresAt: 1 }],
+  ])("hides a %s invite from a stranger", async (_label, extra) => {
+    await invite("SPENT001", extra);
+    await assertFails(as(STRANGER).doc("invites/SPENT001").get());
+    await assertFails(as(TRAINER_B).doc("invites/SPENT001").get());
+  });
+
+  it.each([
+    ["used", { used: true }],
+    ["cancelled", { cancelledAt: 5 }],
+  ])("still shows a %s invite to its trainer and to an ADM", async (_label, extra) => {
+    await invite("SPENT002", extra);
+    await assertSucceeds(as(TRAINER_A).doc("invites/SPENT002").get());
+    await assertSucceeds(as("adminA").doc("invites/SPENT002").get());
+  });
+
+  it("shows a used invite to the account that claimed it, and only to that account", async () => {
+    await invite("SPENT003", { used: true });
+    await seed((db) => db.doc(`users/${CLAIMANT}`).set({ role: "STUDENT", trainerId: TRAINER_A, inviteCode: "SPENT003" }));
+    await assertSucceeds(as(CLAIMANT).doc("invites/SPENT003").get());
+    await seed((db) => db.doc(`users/${STRANGER}`).set({ role: "STUDENT", trainerId: TRAINER_A, inviteCode: "OTHERCODE" }));
+    await assertFails(as(STRANGER).doc("invites/SPENT003").get());
+  });
+
+  it("does not let a spent invite be reached through a stranger's own claim attempt", async () => {
+    await invite("SPENT004", { used: true });
+    const stranger = as(STRANGER);
+    await assertFails(stranger.runTransaction(async (transaction) => { await transaction.get(stranger.doc("invites/SPENT004")); }));
+  });
+});
+
 describe("billing lock and ADM recovery", () => {
   it("blocks trainer-owned actions when billing is blocked", async () => {
     await seed((db) => db.doc(`users/${TRAINER_A}`).update({ platformBillingStatus: "blocked", platformBillingUntil: 1 }));

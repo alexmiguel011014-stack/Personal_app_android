@@ -296,12 +296,22 @@ describe("claimInvite and resolveProfile (GOALS.md §23f)", () => {
     });
   });
 
+  it("refuses an unknown code with the app's own message", async () => {
+    await seed({ "users/trainerA": { role: "TRAINER" } });
+    expect(await claimInvite(signedInAs("newStudent"), "newStudent", CODE, 5)).toEqual({ ok: false, message: "Código de convite inválido" });
+  });
+
+  // Rules v4: a spent invite is unreadable to anyone but its trainer, an ADM and the account that
+  // claimed it, so a stranger gets the "unavailable" explanation rather than "already used".
   it.each([
-    ["an unknown code", {}, "Código de convite inválido"],
-    ["a used invite", { [`invites/${CODE}`]: { ...invite, used: true } }, "Este código de convite já foi utilizado."],
-  ])("refuses %s with the app's own message", async (_label, documents, message) => {
-    await seed({ "users/trainerA": { role: "TRAINER" }, ...documents });
-    expect(await claimInvite(signedInAs("newStudent"), "newStudent", CODE, 5)).toEqual({ ok: false, message });
+    ["used", { used: true }],
+    ["cancelled", { cancelledAt: 3 }],
+  ])("explains a %s invite as unavailable, without reading it", async (_label, extra) => {
+    await seed({ "users/trainerA": { role: "TRAINER" }, [`invites/${CODE}`]: { ...invite, ...extra } });
+    expect(await claimInvite(signedInAs("newStudent"), "newStudent", CODE, 5)).toEqual({
+      ok: false,
+      message: "O convite não está disponível. Ele pode ter sido pausado, cancelado ou usado, ou sua conta já estar vinculada. Peça ao personal para conferir ou reativar o cadastro.",
+    });
   });
 
   it("explains, instead of showing Firebase's error, when the account already belongs to a trainer", async () => {

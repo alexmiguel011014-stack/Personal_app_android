@@ -1,4 +1,4 @@
-// Rules version: 3
+// Rules version: 4
 rules_version = '2';
 
 // Schema (see GOALS.md §4a, §7):
@@ -64,6 +64,20 @@ service cloud.firestore {
     }
 
     // Missing expiry remains valid for legacy invites; malformed values fail closed.
+    // An invite that can still be claimed, apart from the draft's pause (inviteCanBeClaimed adds that).
+    function inviteIsLive(invite) {
+      let expiresAt = field(invite, 'expiresAt');
+      return field(invite, 'used') == false &&
+        field(invite, 'cancelledAt') == null && field(invite, 'revokedAt') == null &&
+        (expiresAt == null || (expiresAt is int && expiresAt > request.time.toMillis()));
+    }
+
+    // The account that claimed this code (users/{uid}.inviteCode, written in the same transaction).
+    function isInviteClaimant(code) {
+      let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
+      return exists(userPath) && field(get(userPath).data, 'inviteCode') == code;
+    }
+
     function inviteCanBeClaimed(invite) {
       let expiresAt = field(invite, 'expiresAt');
       return field(invite, 'used') == false &&
@@ -308,7 +322,15 @@ service cloud.firestore {
           field(audit.data, 'inviteId') == code;
       }
 
-      allow get: if isSignedIn();
+      // v4: a spent invite (used, cancelled, revoked or expired) still holds the student's name,
+      // phone and medical notes, so only its trainer, an ADM and the account that claimed it may
+      // read it. A live invite stays readable to any signed-in user — the claim reads it before the
+      // account exists — and a missing document is readable too (resource == null), so a mistyped
+      // code still answers "invalid" instead of "permission denied".
+      allow get: if isSignedIn() && (
+        resource == null || inviteIsLive(resource.data) ||
+        isOwningTrainer(field(resource.data, 'trainerId')) || isAdmin() || isInviteClaimant(code)
+      );
       allow list: if isOwningTrainer(field(resource.data, 'trainerId'));
       allow create: if isOwningTrainer(request.resource.data.trainerId) && request.resource.data.used == false &&
         (field(request.resource.data, 'source') != 'web' || (

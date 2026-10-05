@@ -1,6 +1,6 @@
 import { addDays, datesBetween, localDate, weekdayOf, yearMonth } from "./dates";
 import { monthTotals, paymentStatus, type Payment } from "./payments";
-import type { Student } from "./students";
+import { filterStudentsByPause, type Student } from "./students";
 
 // GOALS.md §23c — the trainer dashboard's numbers, as pure functions over documents the caller has
 // already loaded. No Firestore here (that's §23e), and no clock: every "today" is an argument, so
@@ -51,8 +51,9 @@ export interface StudentCounts {
 }
 
 export function studentCounts(students: readonly Student[]): StudentCounts {
-  const linked = students.filter((student) => student.linked).length;
-  return { total: students.length, linked, pending: students.length - linked };
+  const active = filterStudentsByPause(students);
+  const linked = active.filter((student) => student.linked).length;
+  return { total: active.length, linked, pending: active.length - linked };
 }
 
 /** Sessions (student × trained day) between `from` and `to`, both inclusive. */
@@ -91,7 +92,7 @@ export function adherence(
   to: string,
   timeZone: string,
 ): Adherence | null {
-  if (!student.linked) return null;
+  if (!student.linked || student.paused) return null;
   const joined = localDate(student.createdAt, timeZone);
   const window = datesBetween(joined > from ? joined : from, to);
   // NFC so a decomposed "Terça" (c + combining cedilla) still matches.
@@ -146,7 +147,7 @@ export function quietStudents(
   const windowStart = addDays(today, -(days - 1));
   const quiet: QuietStudent[] = [];
   for (const student of students) {
-    if (!student.linked) continue;
+    if (!student.linked || student.paused) continue;
     if (localDate(student.createdAt, timeZone) > windowStart) continue;
     let lastTrained: string | null = null;
     for (const day of trained.get(student.id) ?? []) {
@@ -158,7 +159,7 @@ export function quietStudents(
 }
 
 export function pendingAssessments(students: readonly Student[]): Student[] {
-  return students.filter((student) => student.linked && student.pendingAssessmentRequest);
+  return students.filter((student) => student.linked && !student.paused && student.pendingAssessmentRequest);
 }
 
 export interface PaymentSummary {

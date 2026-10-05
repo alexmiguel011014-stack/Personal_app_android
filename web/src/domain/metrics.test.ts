@@ -44,6 +44,7 @@ function student(id: string, overrides: Partial<Student> = {}): Student {
     trainingDays: [],
     createdAt: Date.parse("2026-08-01T12:00:00-03:00"),
     pendingAssessmentRequest: false,
+    paused: false,
     ...overrides,
   };
 }
@@ -91,6 +92,7 @@ describe("studentCounts and pendingAssessments", () => {
       student("a"),
       student("b", { pendingAssessmentRequest: true }),
       student("c", { linked: false }),
+      student("paused", { paused: true, pendingAssessmentRequest: true }),
     ];
     expect(studentCounts(students)).toEqual({ total: 3, linked: 2, pending: 1 });
     expect(pendingAssessments(students).map((s) => s.id)).toEqual(["b"]);
@@ -169,6 +171,14 @@ describe("adherence", () => {
       SP,
     );
     expect(overallAdherence(students, trained, FOUR_WEEKS_AGO, TODAY, SP)).toBe(8 / 16);
+  });
+
+  it("omits paused students from adherence, quiet, and pending-assessment indicators", () => {
+    const paused = student("paused", { paused: true, trainingDays: ["Segunda"], pendingAssessmentRequest: true });
+    const trained = trainedDays(morningsOf("paused", ["2026-09-01"]), SP);
+    expect(adherence(paused, trained, FOUR_WEEKS_AGO, TODAY, SP)).toBeNull();
+    expect(quietStudents([paused], trained, TODAY, 7, SP)).toEqual([]);
+    expect(pendingAssessments([paused])).toEqual([]);
   });
 });
 

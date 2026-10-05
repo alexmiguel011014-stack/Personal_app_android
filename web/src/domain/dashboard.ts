@@ -13,7 +13,7 @@ import {
   type WorkoutLogDoc,
 } from "./metrics";
 import type { Payment } from "./payments";
-import type { Student } from "./students";
+import { filterStudentsByPause, type Student } from "./students";
 
 // GOALS.md §23g: the trainer's home screen, computed with the windows §23c settled on (and the
 // reasons are there): a rolling week for sessions, four weeks for adherence, a week of silence
@@ -40,13 +40,15 @@ export interface DashboardInput {
 }
 
 export function dashboardFigures(input: DashboardInput, today: string, timeZone: string): DashboardFigures {
-  const trained = trainedDays(input.logs, timeZone);
+  const activeStudents = filterStudentsByPause(input.students);
+  const pausedIds = new Set(input.students.filter((student) => student.paused).map((student) => student.id));
+  const trained = trainedDays(input.logs.filter((log) => !pausedIds.has(log.studentId)), timeZone);
   return {
-    students: studentCounts(input.students),
+    students: studentCounts(activeStudents),
     sessions: sessionsBetween(trained, addDays(today, -(SESSIONS_WINDOW_DAYS - 1)), today),
-    adherence: overallAdherence(input.students, trained, addDays(today, -(ADHERENCE_WINDOW_DAYS - 1)), today, timeZone),
-    quiet: quietStudents(input.students, trained, today, QUIET_AFTER_DAYS, timeZone),
-    pendingAssessments: pendingAssessments(input.students),
+    adherence: overallAdherence(activeStudents, trained, addDays(today, -(ADHERENCE_WINDOW_DAYS - 1)), today, timeZone),
+    quiet: quietStudents(activeStudents, trained, today, QUIET_AFTER_DAYS, timeZone),
+    pendingAssessments: pendingAssessments(activeStudents),
     payments: paymentSummary(input.payments, today, timeZone),
   };
 }

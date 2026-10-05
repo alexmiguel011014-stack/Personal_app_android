@@ -26,13 +26,6 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
-      # The Firestore emulator behind npm run test:rules needs Java 21.
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-
       - name: Install dependencies
         run: npm ci
 
@@ -44,6 +37,24 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      # The Functions lockfile targets Node 22; keep the Web checks on Node 24 above.
+      - name: Set up Node 22 for emulator tests
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+
+      - name: Install Functions dependencies
+        run: npm ci --prefix ../functions
+
+      # The Firestore emulator behind npm run test:rules needs Java 21.
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
 
       - name: Emulator tests (rules and data layer)
         run: npm run test:rules

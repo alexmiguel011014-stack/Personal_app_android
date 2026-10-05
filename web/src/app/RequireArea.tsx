@@ -1,8 +1,9 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useEffect, type ReactNode } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState, type ReactNode } from "react";
 import { destinationFor } from "../data/session";
+import { SignOutButton } from "./SignOutButton";
 import { useSession } from "./SessionProvider";
 
 // GOALS.md §23f: route-level gating — each area's layout guards itself, rather than one root
@@ -11,7 +12,16 @@ import { useSession } from "./SessionProvider";
 export function RequireArea({ area, children }: { area: "/app" | "/admin" | "/aluno"; children: ReactNode }) {
   const { session, error, refresh } = useSession();
   const router = useRouter();
+  const pathname = usePathname();
+  const [now, setNow] = useState(() => Date.now());
   const destination = session.status === "loading" ? null : destinationFor(session);
+  const billingUntil = session.status === "signedIn" ? session.profile.platformBillingUntil : null;
+
+  useEffect(() => {
+    if (area !== "/app" || billingUntil === null || billingUntil <= Date.now()) return;
+    const timer = window.setTimeout(() => setNow(Date.now()), billingUntil - Date.now() + 1);
+    return () => window.clearTimeout(timer);
+  }, [area, billingUntil]);
 
   useEffect(() => {
     if (destination !== null && destination !== area) router.replace(destination);
@@ -28,5 +38,23 @@ export function RequireArea({ area, children }: { area: "/app" | "/admin" | "/al
     );
   }
   if (destination !== area) return <p className="loading loading-screen">Carregando…</p>;
+  const billingBlocked = area === "/app" && session.status === "signedIn" && session.profile.role === "TRAINER" && (
+    session.profile.platformBillingStatus === "pending" ||
+    session.profile.platformBillingStatus === "blocked" ||
+    ((session.profile.platformBillingStatus === "trial" || session.profile.platformBillingStatus === "current") && billingUntil !== null && billingUntil <= now)
+  );
+  const trainerAccountRoute = pathname.replace(/\/+$/, "") === "/app/conta";
+  if (billingBlocked && !trainerAccountRoute) {
+    return <main className="public-main">
+      <p className="eyebrow">Acesso ao personal</p>
+      <h1>Conta temporariamente bloqueada</h1>
+      <p>{session.profile.platformBillingStatus === "pending"
+        ? "O administrador ainda precisa configurar o plano ou período de teste desta conta."
+        : "A cobrança da plataforma venceu ou o período de teste terminou. Peça ao administrador para regularizar o acesso."}</p>
+      {billingUntil !== null && <p>Prazo registrado: {new Date(billingUntil).toLocaleString("pt-BR")}.</p>}
+      <button type="button" onClick={() => void refresh()}>Verificar novamente</button>
+      <SignOutButton />
+    </main>;
+  }
   return <>{children}</>;
 }

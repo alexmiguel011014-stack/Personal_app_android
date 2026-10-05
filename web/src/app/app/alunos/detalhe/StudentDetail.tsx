@@ -2,16 +2,20 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { collection, onSnapshot, query, where } from "firebase/firestore";
+import { formatCents } from "../../../../domain/payments";
+import { countActiveInvitesFromOtherClients, countActivePlatformInvites, isPlatformInviteActive, type PlatformInviteRecord } from "../../../../domain/platformInvites";
 import { getFirebase } from "../../../../data/firebase";
 import {
-  generateInvite,
   requestAssessment,
   setCanAddSets,
   setStudentPermissions,
+  setStudentPaused,
   updateStudentProfile,
   type TrainerStudent,
 } from "../../../../data/students";
+import { cancelWebsiteInvite, createWebsiteInvite, loadWebsiteInviteUsage, WebsiteInviteLimitError, WebsiteInvitePriceConfirmation, type WebsiteInviteUsage, platformInviteFromDocument } from "../../../../data/platformInvites";
 import { trackActivity } from "../../../../data/activity";
 import type { StudentProfile } from "../../../../domain/studentProfile";
 import { useSession } from "../../../SessionProvider";
@@ -39,6 +43,8 @@ export function StudentDetail() {
 function Detail({ trainerId, studentId }: { trainerId: string; studentId: string }) {
   const { data, reload } = useTrainerData(trainerId, { ensureCharges: true });
   const [editing, setEditing] = useState(false);
+  const [pauseBusy, setPauseBusy] = useState(false);
+  const [pauseStatus, setPauseStatus] = useState<string | null>(null);
 
   if (data.status === "loading") return <p className="loading">Carregando…</p>;
   if (data.status === "error") {
@@ -92,11 +98,36 @@ function Detail({ trainerId, studentId }: { trainerId: string; studentId: string
           <h1>{profile.name}</h1>
           <p>
             <span className={`status-pill${student.kind === "linked" ? "" : " is-pending"}`}>
-              {student.kind === "linked" ? "Conectado" : "Aguardando conexão"}
+              {student.doc.paused ? "Pausado" : student.kind === "linked" ? "Conectado" : "Aguardando conexão"}
             </span>
           </p>
         </div>
       </div>
+      <p>
+        <button
+          type="button"
+          disabled={pauseBusy}
+          onClick={async () => {
+            setPauseBusy(true);
+            setPauseStatus(null);
+            try {
+              await setStudentPaused(getFirebase().db, student, !student.doc.paused);
+              setPauseStatus(student.doc.paused ? "Aluno reativado." : "Aluno pausado.");
+              reload();
+            } catch (error) {
+              setPauseStatus(error instanceof Error ? error.message : "Não foi possível alterar a situação do aluno.");
+            } finally {
+              setPauseBusy(false);
+            }
+          }}
+        >
+          {pauseBusy ? "Salvando…" : student.doc.paused ? "Reativar aluno" : "Pausar aluno"}
+        </button>
+      </p>
+      <p className="section-footnote">
+        A pausa afeta o diretório e os indicadores do painel; o aluno mantém acesso aos treinos e registros, e as cobranças continuam normalmente.
+      </p>
+      {pauseStatus && <p role="status">{pauseStatus}</p>}
 
       <section>
         <h2>Dados</h2>
@@ -187,19 +218,99 @@ function InviteSection({
 }) {
   const [link, setLink] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [usage, setUsage] = useState<WebsiteInviteUsage | null>(null);
+  const [invites, setInvites] = useState<PlatformInviteRecord[]>([]);
+  const [liveInviteCounts, setLiveInviteCounts] = useState<{ active: number; otherClients: number } | null>(null);
+  const [liveLinkedStudentSeats, setLiveLinkedStudentSeats] = useState<number | null>(null);
+  const [priceConfirmation, setPriceConfirmation] = useState<number | null>(null);
+  const [loadingUsage, setLoadingUsage] = useState(true);
 
-  async function create() {
+  useEffect(() => {
+    const db = getFirebase().db;
+    let cancelled = false;
+    void loadWebsiteInviteUsage(db, trainerId).then((current) => {
+      if (!cancelled) setUsage(current);
+    }).catch((error: unknown) => {
+      if (!cancelled) setStatus(error instanceof Error ? error.message : "Não foi possível carregar os limites de convite.");
+    }).finally(() => { if (!cancelled) setLoadingUsage(false); });
+    const stopInvites = onSnapshot(query(collection(db, "invites"), where("trainerId", "==", trainerId)), (snapshot) => {
+      const records = snapshot.docs.map((item) => platformInviteFromDocument(item.id, item.data())).filter((item): item is PlatformInviteRecord => item !== null);
+      const now = Date.now();
+      setInvites(records.filter((invite) => isPlatformInviteActive(invite, now)));
+      setLiveInviteCounts({
+        active: countActivePlatformInvites(records, trainerId, now),
+        otherClients: countActiveInvitesFromOtherClients(records, trainerId, now),
+      });
+    }, (error) => setStatus(error.message.includes("permission")
+      ? "As regras do Firestore ainda não liberam a consulta de convites deste personal."
+      : "Não foi possível acompanhar os convites ativos."));
+    const stopLinked = onSnapshot(query(collection(db, "users"), where("role", "==", "STUDENT"), where("trainerId", "==", trainerId)), (snapshot) => {
+      setLiveLinkedStudentSeats(snapshot.size);
+    });
+    return () => { cancelled = true; stopInvites(); stopLinked(); };
+  }, [trainerId]);
+
+  useEffect(() => {
+    if (!usage) return;
+    const nextExpiry = invites
+      .map((invite) => invite.expiresAt)
+      .filter((expiresAt): expiresAt is number => expiresAt != null && expiresAt > Date.now())
+      .sort((a, b) => a - b)[0];
+    if (nextExpiry === undefined) return;
+    const timer = window.setTimeout(() => {
+      const now = Date.now();
+      const active = countActivePlatformInvites(invites, trainerId, now);
+      const otherClients = countActiveInvitesFromOtherClients(invites, trainerId, now);
+      setInvites(invites.filter((invite) => isPlatformInviteActive(invite, now)));
+      setLiveInviteCounts({ active, otherClients });
+      setUsage((current) => current ? {
+        ...current,
+        activeInviteCodes: active,
+        pendingInviteReservations: active,
+        activeInvitesFromOtherClients: otherClients,
+      } : current);
+    }, Math.max(1, nextExpiry - Date.now() + 1));
+    return () => window.clearTimeout(timer);
+  }, [invites, trainerId, usage]);
+
+  const displayedUsage = usage && liveInviteCounts && liveLinkedStudentSeats !== null ? {
+    ...usage,
+    activeInviteCodes: liveInviteCounts.active,
+    pendingInviteReservations: liveInviteCounts.active,
+    activeInvitesFromOtherClients: liveInviteCounts.otherClients,
+    linkedStudentSeats: liveLinkedStudentSeats,
+    includedSeatsRemaining: Math.max(0, usage.subscription.terms.includedStudentSeats - liveLinkedStudentSeats),
+  } : usage;
+
+  async function create(acceptedExtraCents = 0) {
     setStatus(null);
+    setPriceConfirmation(null);
     try {
       const { db } = getFirebase();
       const now = Date.now();
-      const code = await generateInvite(db, trainerId, student.doc, now);
+      const result = await createWebsiteInvite(db, trainerId, student.doc, now, acceptedExtraCents);
+      const code = result.code;
+      const nextLink = `${window.location.origin}${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/convite/?c=${code}`;
+      setLink(nextLink);
       await trackActivity(db, trainerId, "inviteGenerated", now, timeZone);
-      // The basePath by hand (a full URL, not a Link), and the trailing slash trailingSlash implies.
-      setLink(`${window.location.origin}${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/convite/?c=${code}`);
-    } catch {
-      setStatus("Não foi possível gerar o convite. Tente de novo.");
+    } catch (error) {
+      if (error instanceof WebsiteInvitePriceConfirmation) {
+        setPriceConfirmation(error.extraMonthlyCents);
+        setStatus(`Se o aluno aceitar o convite, o custo mensal estimado aumenta em ${formatCents(error.extraMonthlyCents)}.`);
+      } else if (error instanceof WebsiteInviteLimitError || error instanceof Error) {
+        setStatus(error.message);
+      } else setStatus("Não foi possível gerar o convite. Tente de novo.");
     }
+  }
+
+  async function cancel(code: string) {
+    if (!window.confirm("Cancelar este código? O link deixará de funcionar.")) return;
+    setStatus(null);
+    try {
+      await cancelWebsiteInvite(getFirebase().db, trainerId, code);
+      setStatus("Convite cancelado; o código ativo foi liberado.");
+      setLink(null);
+    } catch (error) { setStatus(error instanceof Error ? error.message : "Não foi possível cancelar o convite."); }
   }
 
   async function copy(text: string) {
@@ -214,9 +325,16 @@ function InviteSection({
   return (
     <section>
       <h2>Convite</h2>
+      {student.doc.paused && <p role="status">Este cadastro está pausado. O convite só poderá ser aceito depois de reativar o aluno.</p>}
       <p>Envie o link ao aluno: ele cria a conta e fica conectado a você.</p>
+      {loadingUsage ? <p role="status">Carregando limites de convites…</p> : displayedUsage && <dl>
+        <div><dt>Códigos ativos</dt><dd>{displayedUsage.activeInviteCodes}/{displayedUsage.subscription.terms.maxActiveInviteCodes}</dd></div>
+        <div><dt>Alunos vinculados</dt><dd>{displayedUsage.linkedStudentSeats} · {displayedUsage.includedSeatsRemaining} vagas incluídas restantes</dd></div>
+        {displayedUsage.subscription.mode === "trial" && <div><dt>Vagas reservadas no teste</dt><dd>{displayedUsage.linkedStudentSeats + displayedUsage.pendingInviteReservations}/{displayedUsage.subscription.terms.trialMaxStudentSeats}</dd></div>}
+        {displayedUsage.activeInvitesFromOtherClients > 0 && <div><dt>Convites de outros clientes</dt><dd>{displayedUsage.activeInvitesFromOtherClients} (contados no limite)</dd></div>}
+      </dl>}
       {link === null ? (
-        <button type="button" onClick={() => void create()}>
+        <button type="button" onClick={() => void create()} disabled={student.doc.paused || loadingUsage || !displayedUsage}>
           Gerar link de convite
         </button>
       ) : (
@@ -227,6 +345,14 @@ function InviteSection({
           </button>
         </p>
       )}
+      {priceConfirmation !== null && <button type="button" onClick={() => void create(priceConfirmation)}>
+        Confirmar convite · adicional mensal {formatCents(priceConfirmation)} se o aluno aceitar
+      </button>}
+      {invites.filter((invite) => invite.draftId === student.doc.id).length > 0 && <ul aria-label={`Convites ativos de ${student.doc.name}`}>
+        {invites.filter((invite) => invite.draftId === student.doc.id).map((invite) => (
+          <li key={invite.id}>Código {invite.id}{invite.expiresAt === null || invite.expiresAt === undefined ? " · sem vencimento" : ` · vence ${new Date(invite.expiresAt).toLocaleString("pt-BR")}`} <button type="button" onClick={() => void cancel(invite.id)}>Cancelar</button></li>
+        ))}
+      </ul>}
       {status && <p role="status">{status}</p>}
     </section>
   );

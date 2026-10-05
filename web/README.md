@@ -76,7 +76,10 @@ mail comes from Firebase's own sender and can land in spam — the page tells th
 | `/admin/personais/detalhe?id=UID` | `src/app/admin/personais/detalhe/` | ADM — one trainer's aggregate stats, activity and audit history; status controls |
 | `/admin/personais/novo` | `src/app/admin/personais/novo/` | ADM — create a trainer account and send its password-reset link |
 | `/admin/solicitacoes` | `src/app/admin/solicitacoes/` | ADM — approve or reject trainer requests |
-| `/admin/conta` | `src/app/admin/conta/` | ADM — own account and password-reset link |
+| `/admin/planos` | `src/app/admin/planos/` | ADM — default platform plans and trial terms (§30) |
+| `/admin/conta` | `src/app/admin/conta/` | ADM — own profile, avatar, contact phone, e-mail and password (§29) |
+| `/app/conta` | `src/app/app/conta/` | Trainer — own profile and sign-in settings (§29) |
+| `/aluno/conta` | `src/app/aluno/conta/` | Student — own profile and sign-in settings (§29) |
 
 `src/app/app/` is not a typo: the outer `app/` is the App Router directory, the inner one is the
 `/app` URL segment. `/app` and `/aluno` have separate layouts on purpose — see §23's decisions —
@@ -103,6 +106,24 @@ does not disable Firebase Auth or remove linked students' access, and self-updat
 flag. Creating a trainer uses a secondary Auth app to preserve the ADM session; in emulator mode
 that secondary Auth instance connects to the Auth emulator. See `../GOALS.md` §26 and
 `../CLAUDE.md` for the data model and caveats.
+
+Account avatars use authenticated Storage reads at `account-avatars/{uid}/profile`, with JPEG, PNG
+or WebP up to 2 MiB and initials as fallback. Phone is optional, unverified contact information.
+E-mail changes require Firebase confirmation and password changes reauthenticate the current user.
+The Storage emulator is configured on port 9199. Production bucket/plan/App Check setup and
+publishing reviewed rules remain owner-run manual steps; the code does not enable billing or
+publish Firebase configuration.
+
+Platform billing is separate from trainers' own student payment records. `/admin/planos` stores
+ADM-managed defaults; the trainer detail manages that trainer's terms, trial, invoices/payments,
+extensions, and manual invite resolution by code. It intentionally does not list raw invite docs or
+show an exact active-code count in the ADM view because invite docs contain student contact and
+health fields. The trainer sees their own active-code count and limit. New Web invite codes have no
+expiry and trainers cancel them manually; unresolved legacy codes without `expiresAt` stay active,
+while legacy numeric expiry continues to work. The cooperative site flow counts active codes from
+other clients, but the limit does not constrain Android/iOS creation or direct Firestore writes
+outside that flow. A privacy-safe ADM count and any trusted backend enforcement remain open work;
+do not describe the current counter as global. See `../GOALS.md` §30.
 
 **This is a static export** (`output: "export"`): no server exists in production, so no Server
 Actions, route handlers, cookies, redirects or dynamic path segments — Next refuses them even in

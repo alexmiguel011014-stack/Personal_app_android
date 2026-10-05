@@ -33,8 +33,13 @@ describe("the documents a trainer writes", () => {
 
   it("writes a draft with FirestoreMappers' field set", () => {
     expect(Object.keys(draftToFirestore("t1", profile, 5)).sort()).toEqual(
-      ["createdAt", "experienceLevel", "gender", "goal", "medicalNotes", "name", "phone", "role", "trainerId", "trainingDays"],
+      ["createdAt", "experienceLevel", "gender", "goal", "medicalNotes", "name", "paused", "phone", "role", "trainerId", "trainingDays"],
     );
+  });
+
+  it("preserves a draft's pause flag when its profile is rewritten", () => {
+    expect(draftToFirestore("t1", profile, 5, true).paused).toBe(true);
+    expect(draftToFirestore("t1", profile, 5).paused).toBe(false);
   });
 
   it("touches only toLinkedStudentUpdateMap's fields on a connected account — what the rules allow", () => {

@@ -59,6 +59,12 @@ describe("WorkoutParserTest.kt, ported", () => {
     expect(parseExercises("Remada 3x10 [Costas:0.75]")[0].muscleActivation).toEqual({ Costas: 0.75 });
   });
 
+  it("rejects legacy activation coefficients outside 0..1, including an overflowing exponent", () => {
+    const exercise = parseExercises("Supino 3x10 [Negativo:-0.1, Alto:1.1, Overflow:1e999, Válido:0.75]")[0];
+    expect(exercise.muscleActivation).toEqual({ Válido: 0.75 });
+    expect(parseExercises("Supino 3x10 [Negativo:-0.1, Alto:1.1, Overflow:1e999]")[0].muscleActivation).toBeNull();
+  });
+
   it("parseExercises leaves muscleActivation null when no annotation is present", () => {
     expect(parseExercises("Supino 3x12")[0].muscleActivation).toBeNull();
   });

@@ -54,24 +54,39 @@ export async function completeTrainerProfile(
 ): Promise<void> {
   const userRef = doc(db, "users", trainerUid);
   // A deterministic audit id lets a retry recognize its own committed write without duplicating it.
-  const auditRef = doc(db, "adminAudit", `trainer_create_${trainerUid}`);
+  const primaryAuditRef = doc(db, "adminAudit", `trainer_create_${trainerUid}`);
+  const linkedAuditRef = doc(db, "adminAudit", `trainer_create_billing_${trainerUid}`);
   const at = Date.now();
 
   await runTransaction(db, async (transaction) => {
     const userSnapshot = await transaction.get(userRef);
-    const auditSnapshot = await transaction.get(auditRef);
+    const [primaryAuditSnapshot, linkedAuditSnapshot] = await Promise.all([
+      transaction.get(primaryAuditRef),
+      transaction.get(linkedAuditRef),
+    ]);
     const previousUser = userSnapshot.data();
     if (userSnapshot.exists() && (
       previousUser?.role !== "TRAINER" || previousUser.createdBy !== adminUid || previousUser.email !== profile.email
     )) {
       throw new Error("Já existe um perfil incompatível para esta conta.");
     }
+    if (primaryAuditSnapshot.exists()) {
+      const previous = primaryAuditSnapshot.data();
+      if (previous.adminUid !== adminUid || previous.targetUid !== trainerUid || previous.action !== "trainer.create") {
+        throw new Error("Já existe um registro de auditoria incompatível para esta conta.");
+      }
+    }
+    const primaryHasBillingLink = primaryAuditSnapshot.data()?.billingToStatus !== undefined;
+    const auditRef = !primaryAuditSnapshot.exists() || primaryHasBillingLink ? primaryAuditRef : linkedAuditRef;
+    const auditSnapshot = auditRef.id === primaryAuditRef.id ? primaryAuditSnapshot : linkedAuditSnapshot;
     if (auditSnapshot.exists()) {
       const previous = auditSnapshot.data();
       if (previous.adminUid !== adminUid || previous.targetUid !== trainerUid || previous.action !== "trainer.create") {
         throw new Error("Já existe um registro de auditoria incompatível para esta conta.");
       }
     }
+    const billingToStatus = typeof previousUser?.platformBillingStatus === "string" ? previousUser.platformBillingStatus : "pending";
+    const billingToUntil = typeof previousUser?.platformBillingUntil === "number" ? previousUser.platformBillingUntil : null;
 
     transaction.set(userRef, {
       role: "TRAINER",
@@ -81,6 +96,9 @@ export async function completeTrainerProfile(
       createdAt: typeof previousUser?.createdAt === "number" ? previousUser.createdAt : at,
       createdBy: adminUid,
       accessStatus: "active",
+      platformBillingStatus: billingToStatus,
+      platformBillingUntil: billingToUntil,
+      lastAuditId: auditRef.id,
     }, { merge: true });
     if (!auditSnapshot.exists()) {
       transaction.set(auditRef, {
@@ -89,6 +107,10 @@ export async function completeTrainerProfile(
         action: "trainer.create",
         targetUid: trainerUid,
         note: "Personal cadastrado",
+        billingFromStatus: previousUser?.platformBillingStatus ?? null,
+        billingFromUntil: previousUser?.platformBillingUntil ?? null,
+        billingToStatus,
+        billingToUntil,
       });
     }
   });

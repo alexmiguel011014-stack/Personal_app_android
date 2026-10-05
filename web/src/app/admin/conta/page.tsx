@@ -4,6 +4,7 @@ import { sendPasswordResetEmail } from "firebase/auth";
 import { useEffect, useState } from "react";
 import { countAdmins } from "../../../data/admin";
 import { getFirebase } from "../../../data/firebase";
+import { AccountSettings } from "../../_shared/AccountSettings";
 import { useSession } from "../../SessionProvider";
 import { PageHeading } from "../AdminPrimitives";
 
@@ -36,6 +37,7 @@ export default function AdminAccountPage() {
 
   return <main>
     <PageHeading title="Minha conta">Acesso administrativo e segurança da conta.</PageHeading>
+    <AccountSettings />
     <section className="panel"><h2>Conta conectada</h2><dl><div><dt>E-mail</dt><dd>{email ?? "Ainda sem dados"}</dd></div><div><dt>Administradores cadastrados</dt><dd>{loading ? "Carregando…" : admins ?? "Ainda sem dados"}</dd></div><div><dt>Autenticação em dois fatores</dt><dd>Não há informação de MFA disponível nesta versão.</dd></div></dl>
       {notice && <p role="status">{notice}</p>}{error && <p role="alert">{error}</p>}
       <button type="button" disabled={busy || !email} onClick={() => void sendReset()}>{busy ? "Enviando…" : "Enviar link para redefinir senha"}</button>

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { matchesSearch } from "../../../domain/students";
+import { filterStudentsByPause, matchesSearch, type StudentPauseFilter } from "../../../domain/students";
 import { Avatar } from "../../_shared/Avatar";
 import { useSession } from "../../SessionProvider";
 import { useTrainerData } from "../useTrainerData";
@@ -11,7 +11,7 @@ import { useTrainerData } from "../useTrainerData";
 // with what that list shows (name, goal, connection, a medical-notes flag), as the ALLU template's
 // directory of cards (§23k).
 
-type Filter = "todos" | "conectados" | "aguardando";
+type LinkFilter = "todos" | "conectados" | "aguardando";
 
 export default function StudentsPage() {
   const { session } = useSession();
@@ -22,7 +22,8 @@ export default function StudentsPage() {
 function Students({ trainerId }: { trainerId: string }) {
   const { data, reload } = useTrainerData(trainerId);
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<Filter>("todos");
+  const [pauseFilter, setPauseFilter] = useState<StudentPauseFilter>("active");
+  const [linkFilter, setLinkFilter] = useState<LinkFilter>("todos");
 
   if (data.status === "loading") return <p className="loading">Carregando…</p>;
   if (data.status === "error") {
@@ -36,8 +37,9 @@ function Students({ trainerId }: { trainerId: string }) {
     );
   }
 
-  const shown = data.snapshot.students
-    .filter((s) => filter === "todos" || (filter === "conectados") === s.linked)
+  const pauseFiltered = filterStudentsByPause(data.snapshot.students, pauseFilter);
+  const shown = pauseFiltered
+    .filter((s) => linkFilter === "todos" || (linkFilter === "conectados") === s.linked)
     .filter((s) => matchesSearch(s.name, search))
     .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 
@@ -60,8 +62,16 @@ function Students({ trainerId }: { trainerId: string }) {
           <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Nome do aluno" />
         </label>
         <label>
-          Mostrar
-          <select value={filter} onChange={(e) => setFilter(e.target.value as Filter)}>
+          Situação
+          <select value={pauseFilter} onChange={(e) => setPauseFilter(e.target.value as StudentPauseFilter)}>
+            <option value="active">Ativos</option>
+            <option value="paused">Pausados</option>
+            <option value="all">Todos</option>
+          </select>
+        </label>
+        <label>
+          Vínculo
+          <select value={linkFilter} onChange={(e) => setLinkFilter(e.target.value as LinkFilter)}>
             <option value="todos">Todos</option>
             <option value="conectados">Conectados</option>
             <option value="aguardando">Aguardando conexão</option>
@@ -73,7 +83,7 @@ function Students({ trainerId }: { trainerId: string }) {
       ) : (
         <>
           <p className="directory-count">
-            {shown.length} de {data.snapshot.students.length} alunos
+            {shown.length} de {pauseFiltered.length} alunos
           </p>
           <section className="student-directory" aria-label="Diretório de alunos">
             {shown.map((s) => (
@@ -87,7 +97,9 @@ function Students({ trainerId }: { trainerId: string }) {
                     Objetivo: {s.goal || "—"}
                     {s.trainingDays.length > 0 && ` · ${s.trainingDays.map((day) => day.slice(0, 3)).join(", ")}`}
                   </p>
-                  <p className="status-line">{s.linked ? "Conectado · conta vinculada" : "Cadastrado · aguardando conexão"}</p>
+                  <p className="status-line">
+                    {s.paused && "Pausado · "}{s.linked ? "Conectado · conta vinculada" : "Cadastrado · aguardando conexão"}
+                  </p>
                 </div>
                 {s.medicalNotes.trim() !== "" && <span className="attention">Restrição médica informada</span>}
               </article>

@@ -55,11 +55,153 @@ service cloud.firestore {
       return isSignedIn() && request.auth.token.get('email_verified', false) == true;
     }
 
+    function trainerBillingIsCurrent(user) {
+      let status = field(user, 'platformBillingStatus');
+      let until = field(user, 'platformBillingUntil');
+      return (status == null && until == null) ||
+        ((status == 'trial' || status == 'current') &&
+          (until == null || (until is int && until > request.time.toMillis())));
+    }
+
+    // Missing expiry remains valid for legacy invites; malformed values fail closed.
+    function inviteCanBeClaimed(invite) {
+      let expiresAt = field(invite, 'expiresAt');
+      return field(invite, 'used') == false &&
+        field(invite, 'cancelledAt') == null && field(invite, 'revokedAt') == null &&
+        (expiresAt == null || (expiresAt is int && expiresAt > request.time.toMillis())) &&
+        inviteDraftAllowsClaim(invite);
+    }
+
+    function draftAllowsInviteClaim(draft) {
+      let paused = field(draft, 'paused');
+      return paused == null || paused == false;
+    }
+
+    // Check eligibility inside Rules without granting the invitee read access to the full draft.
+    function inviteDraftAllowsClaim(invite) {
+      let draftId = field(invite, 'draftId');
+      let draftPath = /databases/$(database)/documents/students/$(draftId);
+      return !(draftId is string && exists(draftPath)) ||
+        draftAllowsInviteClaim(get(draftPath).data);
+    }
+
+    function hasValidPauseFlag(data) {
+      return !data.keys().hasAny(['paused']) || data.paused is bool;
+    }
+
+    function isNotSelfPaused(data) {
+      let paused = field(data, 'paused');
+      return paused == null || paused == false;
+    }
+
+    function validSelfProfileUpdate(uid) {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return changed.hasOnly([
+          'name', 'gender', 'phone', 'goal', 'experienceLevel', 'medicalNotes', 'trainingDays',
+          'email', 'avatarStoragePath', 'pendingAssessmentRequest', 'lastAssessmentId'
+        ]) &&
+        field(request.resource.data, 'role') == field(resource.data, 'role') &&
+        field(request.resource.data, 'trainerId') == field(resource.data, 'trainerId') &&
+        field(request.resource.data, 'paused') == field(resource.data, 'paused') &&
+        field(request.resource.data, 'canSelfAssess') == field(resource.data, 'canSelfAssess') &&
+        field(request.resource.data, 'canLogBiometrics') == field(resource.data, 'canLogBiometrics') &&
+        field(request.resource.data, 'canAddSets') == field(resource.data, 'canAddSets') &&
+        field(request.resource.data, 'accessStatus') == field(resource.data, 'accessStatus') &&
+        field(request.resource.data, 'suspendedAt') == field(resource.data, 'suspendedAt') &&
+        field(request.resource.data, 'suspendedReason') == field(resource.data, 'suspendedReason') &&
+        field(request.resource.data, 'createdBy') == field(resource.data, 'createdBy') &&
+        field(request.resource.data, 'plan') == field(resource.data, 'plan') &&
+        field(request.resource.data, 'platformBillingStatus') == field(resource.data, 'platformBillingStatus') &&
+        field(request.resource.data, 'platformBillingUntil') == field(resource.data, 'platformBillingUntil') &&
+        field(request.resource.data, 'inviteCode') == field(resource.data, 'inviteCode') &&
+        field(request.resource.data, 'createdAt') == field(resource.data, 'createdAt') &&
+        (field(request.resource.data, 'email') == field(resource.data, 'email') ||
+          (hasVerifiedEmail() && field(request.resource.data, 'email') == request.auth.token.get('email', null))) &&
+        (field(request.resource.data, 'avatarStoragePath') == field(resource.data, 'avatarStoragePath') ||
+          field(request.resource.data, 'avatarStoragePath') == null ||
+          field(request.resource.data, 'avatarStoragePath') == 'account-avatars/' + uid + '/profile') &&
+        (
+          field(request.resource.data, 'pendingAssessmentRequest') == field(resource.data, 'pendingAssessmentRequest') ||
+          (
+            field(resource.data, 'pendingAssessmentRequest') == true &&
+            field(request.resource.data, 'pendingAssessmentRequest') == false &&
+            !exists(/databases/$(database)/documents/assessments/$(request.resource.data.lastAssessmentId)) &&
+            existsAfter(/databases/$(database)/documents/assessments/$(request.resource.data.lastAssessmentId))
+          )
+        );
+    }
+
+    function validBillingAuditForUser(uid, fromStatus, fromUntil, userAfter) {
+      let auditId = field(userAfter, 'lastAuditId');
+      let auditPath = /databases/$(database)/documents/adminAudit/$(auditId);
+      let auditAfter = getAfter(auditPath);
+      return auditId is string && !exists(auditPath) && existsAfter(auditPath) &&
+        field(auditAfter.data, 'adminUid') == request.auth.uid &&
+        field(auditAfter.data, 'targetUid') == uid &&
+        field(auditAfter.data, 'action') in [
+          'trainer.create', 'trainer.promote', 'subscription.assign', 'trial.extend',
+          'invoice.issue', 'invoice.payment', 'invoice.extend'
+        ] &&
+        field(auditAfter.data, 'billingFromStatus') == fromStatus &&
+        field(auditAfter.data, 'billingFromUntil') == fromUntil &&
+        field(auditAfter.data, 'billingToStatus') == field(userAfter, 'platformBillingStatus') &&
+        field(auditAfter.data, 'billingToUntil') == field(userAfter, 'platformBillingUntil');
+    }
+
+    function validWebsiteInviteRevision(trainerId, code, action) {
+      let statePath = /databases/$(database)/documents/platformInviteState/$(trainerId);
+      let stateBefore = get(statePath);
+      let stateAfter = getAfter(statePath);
+      let oldRevision = exists(statePath) ? field(stateBefore.data, 'revision') : 0;
+      return existsAfter(statePath) &&
+        field(stateAfter.data, 'trainerId') == trainerId &&
+        field(stateAfter.data, 'revision') is int &&
+        ((!exists(statePath) && field(stateAfter.data, 'revision') == 1) ||
+          (exists(statePath) && oldRevision is int && field(stateAfter.data, 'revision') == oldRevision + 1)) &&
+        field(stateAfter.data, 'lastCode') == code &&
+        field(stateAfter.data, 'lastAction') == action &&
+        field(stateAfter.data, 'updatedAt') is int;
+    }
+
     // The caller is the TRAINER who owns this record.
     function isOwningTrainer(trainerId) {
       let user = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
       return isSignedIn() && request.auth.uid == trainerId &&
-        field(user, 'role') == 'TRAINER' && field(user, 'accessStatus') != 'suspended';
+        field(user, 'role') == 'TRAINER' && field(user, 'accessStatus') != 'suspended' &&
+        trainerBillingIsCurrent(user);
+    }
+
+    // Resolve a student's owner from the linked profile first. A draft is only authoritative
+    // before the profile exists; a wrong existing profile must never fall back to a matching draft.
+    function studentIsLinkedToTrainer(trainerId, studentId) {
+      return trainerId is string && studentId is string &&
+        ((exists(/databases/$(database)/documents/users/$(studentId)) &&
+            field(get(/databases/$(database)/documents/users/$(studentId)).data, 'role') == 'STUDENT' &&
+            field(get(/databases/$(database)/documents/users/$(studentId)).data, 'trainerId') == trainerId) ||
+          (!exists(/databases/$(database)/documents/users/$(studentId)) &&
+            exists(/databases/$(database)/documents/students/$(studentId)) &&
+            field(get(/databases/$(database)/documents/students/$(studentId)).data, 'trainerId') == trainerId));
+    }
+
+    function canReceiveRecoveryDraft(trainerUid) {
+      let trainerPath = /databases/$(database)/documents/users/$(trainerUid);
+      let subscriptionPath = /databases/$(database)/documents/platformSubscriptions/$(trainerUid);
+      return exists(trainerPath) && exists(subscriptionPath) &&
+        field(get(trainerPath).data, 'role') == 'TRAINER' &&
+        field(get(trainerPath).data, 'accessStatus') != 'suspended' &&
+        field(get(trainerPath).data, 'suspendedAt') == null &&
+        field(get(subscriptionPath).data, 'trainerUid') == trainerUid &&
+        field(get(subscriptionPath).data, 'mode') in ['paid', 'trial'] &&
+        field(get(trainerPath).data, 'platformBillingStatus') in ['current', 'trial'] &&
+        (field(get(trainerPath).data, 'platformBillingUntil') == null ||
+          (field(get(trainerPath).data, 'platformBillingUntil') is int &&
+            field(get(trainerPath).data, 'platformBillingUntil') > request.time.toMillis())) &&
+        ((field(get(subscriptionPath).data, 'mode') == 'paid' &&
+            field(get(trainerPath).data, 'platformBillingStatus') == 'current') ||
+          (field(get(subscriptionPath).data, 'mode') == 'trial' &&
+            field(get(trainerPath).data, 'platformBillingStatus') == 'trial' &&
+            field(get(subscriptionPath).data, 'trialEndsAt') is int &&
+            field(get(subscriptionPath).data, 'trialEndsAt') > request.time.toMillis()));
     }
 
     // GOALS.md §23d: a student's own write can never result in a §17 permission their trainer
@@ -75,6 +217,18 @@ service cloud.firestore {
     // users/{uid} — self-read, admin-managed writes. A user can edit their own
     // profile fields but can never change their own role or trainerId (no self-promotion).
     match /users/{uid} {
+      function validAdminBillingUpdate() {
+        let changed = request.resource.data.diff(resource.data).affectedKeys();
+        return isAdmin() && request.auth.uid != uid &&
+          (!changed.hasAny(['platformBillingStatus', 'platformBillingUntil', 'lastAuditId']) ||
+            validBillingAuditForUser(
+              uid,
+              field(resource.data, 'platformBillingStatus'),
+              field(resource.data, 'platformBillingUntil'),
+              request.resource.data
+            ));
+      }
+
       // The owning trainer may also list/read their own linked students' docs (GOALS.md §13d
       // follow-up: the §7 "unify" model's Meus Alunos listener needs this to ever return
       // linked-account results, not just self-read/admin).
@@ -84,19 +238,22 @@ service cloud.firestore {
       // A self-registered student has no users/{uid} doc yet, so claiming an invite is their
       // first-ever write here (create, not update) — allowed only by presenting a currently
       // valid, unused invite minted by the trainerId being claimed.
-      allow create: if isAdmin() || (
+      allow create: if (isAdmin() && (
+          !request.resource.data.keys().hasAny(['platformBillingStatus', 'platformBillingUntil', 'lastAuditId']) ||
+          validBillingAuditForUser(uid, null, null, request.resource.data)
+        )) || (
         isSignedIn() && request.auth.uid == uid &&
         hasVerifiedEmail() &&
         request.resource.data.role == 'STUDENT' &&
         request.resource.data.trainerId ==
           get(/databases/$(database)/documents/invites/$(request.resource.data.inviteCode)).data.trainerId &&
-        get(/databases/$(database)/documents/invites/$(request.resource.data.inviteCode)).data.used == false &&
+        inviteCanBeClaimed(get(/databases/$(database)/documents/invites/$(request.resource.data.inviteCode)).data) &&
         // GOALS.md §23d: single-use for real. Checking only that the invite was unused let a client
         // create this doc without marking the invite, and the same code then worked again; the
         // same batch must now leave the invite used (AuthRepository.claimInvite's transaction
         // already does both writes together).
         getAfter(/databases/$(database)/documents/invites/$(request.resource.data.inviteCode)).data.used == true &&
-        grantsNoPermissions(request.resource.data)
+        grantsNoPermissions(request.resource.data) && isNotSelfPaused(request.resource.data)
       );
       // Three writers:
       // 1. The owning trainer (GOALS.md §17c, and the fix for a pre-existing gap: before this,
@@ -114,99 +271,163 @@ service cloud.firestore {
       //    trainer for the first time via the same valid-unused-invite proof the create rule
       //    above requires. Any other existing role/trainerId (TRAINER, ADM, or already linked to
       //    a different trainer) stays blocked — that needs an explicit ADM decision.
-      allow update: if isAdmin() || (
+      allow update: if (isSignedIn() && request.auth.uid == uid && validSelfProfileUpdate(uid)) || validAdminBillingUpdate() || (
         isOwningTrainer(field(resource.data, 'trainerId')) &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'name', 'gender', 'phone', 'goal', 'experienceLevel', 'medicalNotes', 'trainingDays',
-          'canSelfAssess', 'canLogBiometrics', 'canAddSets', 'pendingAssessmentRequest'
-        ])
+          'canSelfAssess', 'canLogBiometrics', 'canAddSets', 'pendingAssessmentRequest', 'paused'
+        ]) && hasValidPauseFlag(request.resource.data)
       ) || (
+        field(resource.data, 'role') == 'STUDENT' &&
+        field(resource.data, 'trainerId') == null &&
         isSignedIn() && request.auth.uid == uid &&
-        (
-          (
-            field(request.resource.data, 'role') == field(resource.data, 'role') &&
-            field(request.resource.data, 'trainerId') == field(resource.data, 'trainerId') &&
-            field(request.resource.data, 'canSelfAssess') == field(resource.data, 'canSelfAssess') &&
-            field(request.resource.data, 'canLogBiometrics') == field(resource.data, 'canLogBiometrics') &&
-            // Trainer-granted too: without this line a student could switch canAddSets on for themselves.
-            field(request.resource.data, 'canAddSets') == field(resource.data, 'canAddSets') &&
-            field(request.resource.data, 'accessStatus') == field(resource.data, 'accessStatus') &&
-            field(request.resource.data, 'suspendedAt') == field(resource.data, 'suspendedAt') &&
-            field(request.resource.data, 'suspendedReason') == field(resource.data, 'suspendedReason') &&
-            field(request.resource.data, 'createdBy') == field(resource.data, 'createdBy') &&
-            field(request.resource.data, 'plan') == field(resource.data, 'plan') &&
-            // GOALS.md §23d: the trainer's web dashboard reads both — inviteCode to drop the draft a
-            // claim superseded, createdAt to size the adherence and "gone quiet" windows. A student
-            // editing either could hide from their trainer's numbers.
-            field(request.resource.data, 'inviteCode') == field(resource.data, 'inviteCode') &&
-            field(request.resource.data, 'createdAt') == field(resource.data, 'createdAt') &&
-            (
-              field(request.resource.data, 'pendingAssessmentRequest') == field(resource.data, 'pendingAssessmentRequest') ||
-              (
-                field(resource.data, 'pendingAssessmentRequest') == true &&
-                field(request.resource.data, 'pendingAssessmentRequest') == false &&
-                // Created by this very batch (§23d): existsAfter alone also accepted pointing
-                // lastAssessmentId at an older assessment, dismissing the request without
-                // submitting anything.
-                !exists(/databases/$(database)/documents/assessments/$(request.resource.data.lastAssessmentId)) &&
-                existsAfter(/databases/$(database)/documents/assessments/$(request.resource.data.lastAssessmentId))
-              )
-            )
-          ) ||
-          (
-            field(resource.data, 'role') == 'STUDENT' &&
-            field(resource.data, 'trainerId') == null &&
-            hasVerifiedEmail() &&
-            request.resource.data.role == 'STUDENT' &&
-            request.resource.data.trainerId ==
-              get(/databases/$(database)/documents/invites/$(request.resource.data.inviteCode)).data.trainerId &&
-            get(/databases/$(database)/documents/invites/$(request.resource.data.inviteCode)).data.used == false &&
-            // Same two §23d conditions as the create rule above.
-            getAfter(/databases/$(database)/documents/invites/$(request.resource.data.inviteCode)).data.used == true &&
-            grantsNoPermissions(request.resource.data)
-          )
-        )
+        hasVerifiedEmail() &&
+        request.resource.data.role == 'STUDENT' &&
+        request.resource.data.trainerId ==
+          get(/databases/$(database)/documents/invites/$(request.resource.data.inviteCode)).data.trainerId &&
+        inviteCanBeClaimed(get(/databases/$(database)/documents/invites/$(request.resource.data.inviteCode)).data) &&
+        // The invite and this re-claimed profile must be written together.
+        getAfter(/databases/$(database)/documents/invites/$(request.resource.data.inviteCode)).data.used == true &&
+        grantsNoPermissions(request.resource.data) &&
+        field(request.resource.data, 'paused') == field(resource.data, 'paused')
       );
       // The owning trainer may also remove a linked student's account (symmetric with every
       // other collection here); non-STUDENT docs have no trainerId field so this never matches them.
       allow delete: if isAdmin() || isOwningTrainer(field(resource.data, 'trainerId'));
     }
 
-    // invites/{code} — a short-lived, single-use claim token minted by a trainer so a student
-    // can self-serve role=STUDENT + trainerId without a server (see GOALS.md §7).
+    // invites/{code} — a single-use claim token minted by a trainer so a student can self-serve
+    // role=STUDENT + trainerId without a server (see GOALS.md §7). New website invites do not expire;
+    // trainers cancel them manually. Legacy expiry timestamps remain supported.
     match /invites/{code} {
+      function hasAdminResolutionAudit(trainerId) {
+        let auditPath = /databases/$(database)/documents/adminAudit/$(code);
+        let audit = getAfter(auditPath);
+        return existsAfter(auditPath) && field(audit.data, 'adminUid') == request.auth.uid &&
+          field(audit.data, 'action') == 'invite.resolve' && field(audit.data, 'targetUid') == trainerId &&
+          field(audit.data, 'inviteId') == code;
+      }
+
       allow get: if isSignedIn();
-      allow list: if false;
-      allow create: if isOwningTrainer(request.resource.data.trainerId) && request.resource.data.used == false;
+      allow list: if isOwningTrainer(field(resource.data, 'trainerId'));
+      allow create: if isOwningTrainer(request.resource.data.trainerId) && request.resource.data.used == false &&
+        (field(request.resource.data, 'source') != 'web' || (
+          request.resource.data.keys().hasAll([
+            'trainerId', 'used', 'createdAt', 'expiresAt', 'cancelledAt', 'revokedAt', 'source',
+            'draftId', 'name', 'phone', 'gender', 'goal', 'experienceLevel', 'medicalNotes', 'trainingDays'
+          ]) &&
+          request.resource.data.keys().hasOnly([
+            'trainerId', 'used', 'createdAt', 'expiresAt', 'cancelledAt', 'revokedAt', 'source',
+            'draftId', 'name', 'phone', 'gender', 'goal', 'experienceLevel', 'medicalNotes', 'trainingDays'
+          ]) &&
+          request.resource.data.source == 'web' && request.resource.data.createdAt is int &&
+          request.resource.data.expiresAt == null && request.resource.data.cancelledAt == null &&
+          request.resource.data.revokedAt == null && request.resource.data.draftId is string &&
+          request.resource.data.name is string && request.resource.data.phone is string &&
+          request.resource.data.gender is string && request.resource.data.goal is string &&
+          request.resource.data.experienceLevel is string && request.resource.data.medicalNotes is string &&
+          request.resource.data.trainingDays is list &&
+          validWebsiteInviteRevision(request.resource.data.trainerId, code, 'create')
+        ));
       // The claiming student (not the trainer) performs this write — only the used:false->true
       // transition is permitted, no other field (including trainerId) may change.
-      allow update: if isSignedIn() &&
-        resource.data.used == false &&
-        request.resource.data.used == true &&
-        request.resource.data.trainerId == resource.data.trainerId &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used']) &&
-        // GOALS.md §23d: only as part of a claim — after the batch, the caller's own users doc must
-        // name this invite. Otherwise anyone holding the link could burn it without using it, and
-        // a /convite/<code> URL gets seen by more eyes (chat previews, browser history) than a
-        // typed code did.
-        getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.inviteCode == code;
+      allow update: if (
+          isSignedIn() && inviteCanBeClaimed(resource.data) && request.resource.data.used == true &&
+          request.resource.data.trainerId == resource.data.trainerId &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used']) &&
+          // A claim still pairs the invite transition with the student's own profile.
+          getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.inviteCode == code
+        ) || (
+          isOwningTrainer(resource.data.trainerId) && resource.data.used == false &&
+          request.resource.data.used == false && request.resource.data.trainerId == resource.data.trainerId &&
+          resource.data.cancelledAt == null && resource.data.revokedAt == null &&
+          request.resource.data.cancelledAt is int && request.resource.data.revokedAt == resource.data.revokedAt &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cancelledAt']) &&
+          validWebsiteInviteRevision(resource.data.trainerId, code, 'cancel')
+        ) || (
+          isAdmin() && resource.data.used == false && request.resource.data.used == false &&
+          request.resource.data.trainerId == resource.data.trainerId &&
+          request.resource.data.cancelledAt is int &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cancelledAt']) &&
+          hasAdminResolutionAudit(resource.data.trainerId)
+        );
       allow delete: if isOwningTrainer(resource.data.trainerId);
+    }
+
+    // The site uses this revision to serialize cooperating invite creation/cancellation attempts.
+    // It is deliberately scoped to website invitations; native invite behavior is unchanged.
+    match /platformInviteState/{trainerId} {
+      function validState(d) {
+        return d.keys().hasAll(['trainerId', 'revision', 'lastCode', 'lastAction', 'updatedAt']) &&
+          d.keys().hasOnly(['trainerId', 'revision', 'lastCode', 'lastAction', 'updatedAt']) &&
+          d.trainerId == trainerId && d.revision is int && d.revision > 0 &&
+          d.lastCode is string && d.lastAction in ['create', 'cancel'] && d.updatedAt is int;
+      }
+
+      function pairedInvite(action) {
+        let invitePath = /databases/$(database)/documents/invites/$(request.resource.data.lastCode);
+        let invite = getAfter(invitePath);
+        return existsAfter(invitePath) && field(invite.data, 'trainerId') == trainerId &&
+          (action == 'create'
+            ? field(invite.data, 'source') == 'web' && field(invite.data, 'used') == false
+            : field(invite.data, 'cancelledAt') is int && field(invite.data, 'used') == false);
+      }
+
+      allow get: if isAdmin() || isOwningTrainer(trainerId);
+      allow list: if false;
+      allow create: if isOwningTrainer(trainerId) && validState(request.resource.data) &&
+        request.resource.data.revision == 1 && pairedInvite(request.resource.data.lastAction);
+      allow update: if isOwningTrainer(trainerId) && validState(request.resource.data) &&
+        request.resource.data.revision == resource.data.revision + 1 && pairedInvite(request.resource.data.lastAction);
+      allow delete: if false;
     }
 
     // students/{studentId} — owned by trainerId; the linked student can read their own doc.
     match /students/{studentId} {
+      function hasRecoveryAudit(trainerId) {
+        let auditPath = /databases/$(database)/documents/adminAudit/$(studentId);
+        let audit = getAfter(auditPath);
+        return existsAfter(auditPath) &&
+          field(audit.data, 'adminUid') == request.auth.uid &&
+          field(audit.data, 'action') == 'admin.student.create' &&
+          field(audit.data, 'targetUid') == trainerId &&
+          field(audit.data, 'studentId') == studentId;
+      }
+
       allow read: if isOwningTrainer(resource.data.trainerId) ||
         (isSignedIn() && request.auth.uid == studentId);
-      allow create: if isOwningTrainer(request.resource.data.trainerId);
-      allow update, delete: if isOwningTrainer(resource.data.trainerId);
+      allow create: if (isOwningTrainer(request.resource.data.trainerId) && hasValidPauseFlag(request.resource.data)) || (
+        isAdmin() && request.resource.data.trainerId is string &&
+        canReceiveRecoveryDraft(request.resource.data.trainerId) &&
+        request.resource.data.keys().hasAll([
+          'trainerId', 'name', 'role', 'gender', 'phone', 'goal', 'experienceLevel',
+          'medicalNotes', 'trainingDays', 'createdAt'
+        ]) &&
+        request.resource.data.keys().hasOnly([
+          'trainerId', 'name', 'role', 'gender', 'phone', 'goal', 'experienceLevel',
+          'medicalNotes', 'trainingDays', 'createdAt'
+        ]) &&
+        request.resource.data.role == 'student' && request.resource.data.name is string &&
+        request.resource.data.gender is string && request.resource.data.phone is string &&
+        request.resource.data.goal is string && request.resource.data.experienceLevel is string &&
+        request.resource.data.medicalNotes is string && request.resource.data.trainingDays is list &&
+        request.resource.data.createdAt is int && hasRecoveryAudit(request.resource.data.trainerId)
+      );
+      allow update: if isOwningTrainer(resource.data.trainerId) && hasValidPauseFlag(request.resource.data);
+      allow delete: if isOwningTrainer(resource.data.trainerId);
     }
 
     // workouts/{workoutId} — trainer manages; student reads only their own assigned fichas.
     match /workouts/{workoutId} {
       allow read: if isOwningTrainer(resource.data.trainerId) ||
         (isSignedIn() && resource.data.studentId == request.auth.uid && resource.data.status == 'assigned');
-      allow create: if isOwningTrainer(request.resource.data.trainerId);
-      allow update, delete: if isOwningTrainer(resource.data.trainerId);
+      allow create: if isOwningTrainer(request.resource.data.trainerId) &&
+        studentIsLinkedToTrainer(request.resource.data.trainerId, request.resource.data.studentId);
+      allow update: if isOwningTrainer(resource.data.trainerId) &&
+        request.resource.data.trainerId == resource.data.trainerId &&
+        request.resource.data.studentId == resource.data.studentId &&
+        studentIsLinkedToTrainer(request.resource.data.trainerId, request.resource.data.studentId);
+      allow delete: if isOwningTrainer(resource.data.trainerId);
     }
 
     // biometrics/{entryId} — trainer manages; student reads their own entries, and may create
@@ -215,22 +436,32 @@ service cloud.firestore {
     match /biometrics/{entryId} {
       allow read: if isOwningTrainer(resource.data.trainerId) ||
         (isSignedIn() && resource.data.studentId == request.auth.uid);
-      allow create: if isOwningTrainer(request.resource.data.trainerId) || (
+      allow create: if (isOwningTrainer(request.resource.data.trainerId) &&
+        studentIsLinkedToTrainer(request.resource.data.trainerId, request.resource.data.studentId)) || (
         isSignedIn() &&
         request.resource.data.studentId == request.auth.uid &&
         field(get(/databases/$(database)/documents/users/$(request.auth.uid)).data, 'canLogBiometrics') == true &&
         request.resource.data.trainerId ==
           field(get(/databases/$(database)/documents/users/$(request.auth.uid)).data, 'trainerId')
       );
-      allow update, delete: if isOwningTrainer(resource.data.trainerId);
+      allow update: if isOwningTrainer(resource.data.trainerId) &&
+        request.resource.data.trainerId == resource.data.trainerId &&
+        request.resource.data.studentId == resource.data.studentId &&
+        studentIsLinkedToTrainer(request.resource.data.trainerId, request.resource.data.studentId);
+      allow delete: if isOwningTrainer(resource.data.trainerId);
     }
 
     // schedules/{scheduleId} — trainer manages; student reads their own appointments.
     match /schedules/{scheduleId} {
       allow read: if isOwningTrainer(resource.data.trainerId) ||
         (isSignedIn() && resource.data.studentId == request.auth.uid);
-      allow create: if isOwningTrainer(request.resource.data.trainerId);
-      allow update, delete: if isOwningTrainer(resource.data.trainerId);
+      allow create: if isOwningTrainer(request.resource.data.trainerId) &&
+        studentIsLinkedToTrainer(request.resource.data.trainerId, request.resource.data.studentId);
+      allow update: if isOwningTrainer(resource.data.trainerId) &&
+        request.resource.data.trainerId == resource.data.trainerId &&
+        request.resource.data.studentId == resource.data.studentId &&
+        studentIsLinkedToTrainer(request.resource.data.trainerId, request.resource.data.studentId);
+      allow delete: if isOwningTrainer(resource.data.trainerId);
     }
 
     // workoutLogs/{logId} — the student logs their own performed sets; the owning
@@ -319,6 +550,7 @@ service cloud.firestore {
         : isOwningTrainer(resource.data.trainerId);
       allow create: if isOwningTrainer(request.resource.data.trainerId) &&
         isPayment(request.resource.data) &&
+        studentIsLinkedToTrainer(request.resource.data.trainerId, request.resource.data.studentId) &&
         paymentId == request.resource.data.studentId + '_' + yearMonthOf(request.resource.data.dueDate) &&
         // Clients only ever write manual charges. A level-2 payment gateway would write through
         // the Admin SDK, which bypasses these rules — no client needs to create a gateway charge.
@@ -330,6 +562,9 @@ service cloud.firestore {
       allow update: if isOwningTrainer(resource.data.trainerId) &&
         resource.data.source == 'manual' &&
         isPayment(request.resource.data) &&
+        request.resource.data.trainerId == resource.data.trainerId &&
+        request.resource.data.studentId == resource.data.studentId &&
+        studentIsLinkedToTrainer(request.resource.data.trainerId, request.resource.data.studentId) &&
         request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['amountCents', 'dueDate', 'paidAt', 'method', 'note']) &&
         yearMonthOf(request.resource.data.dueDate) == yearMonthOf(resource.data.dueDate);
@@ -355,9 +590,14 @@ service cloud.firestore {
       allow read, delete: if isOwningTrainer(resource.data.trainerId);
       allow create: if isOwningTrainer(request.resource.data.trainerId) &&
         isBillingPlan(request.resource.data) &&
-        request.resource.data.studentId == studentId;
+        request.resource.data.studentId == studentId &&
+        studentIsLinkedToTrainer(request.resource.data.trainerId, request.resource.data.studentId);
       allow update: if isOwningTrainer(resource.data.trainerId) &&
         isBillingPlan(request.resource.data) &&
+        request.resource.data.trainerId == resource.data.trainerId &&
+        request.resource.data.studentId == resource.data.studentId &&
+        request.resource.data.studentId == studentId &&
+        studentIsLinkedToTrainer(request.resource.data.trainerId, request.resource.data.studentId) &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['amountCents', 'dueDay', 'active']);
     }
 
@@ -459,17 +699,417 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    match /adminAudit/{auditId} {
-      function validAudit(d) {
-        let fields = ['at', 'adminUid', 'action', 'targetUid', 'note'];
-        return d.keys().hasAll(fields) && d.keys().hasOnly(fields) && d.at is int &&
-          d.adminUid == request.auth.uid && d.action in ['trainer.create', 'trainer.suspend', 'trainer.reactivate',
-          'trainer.promote', 'request.reject', 'trainer.resetEmail'] && d.targetUid is string &&
-          d.note is string && d.note.size() <= 200;
+    match /platformPlanTemplates/{templateId} {
+      function linkedTemplateAudit(d, action) {
+        let auditId = field(d, 'lastAuditId');
+        let auditPath = /databases/$(database)/documents/adminAudit/$(auditId);
+        let auditAfter = getAfter(auditPath);
+        return auditId is string && !exists(auditPath) && existsAfter(auditPath) &&
+          field(auditAfter.data, 'adminUid') == request.auth.uid &&
+          field(auditAfter.data, 'action') == action &&
+          field(auditAfter.data, 'targetUid') == templateId &&
+          field(auditAfter.data, 'templateId') == templateId &&
+          field(auditAfter.data, 'templateVersion') == d.version;
+      }
+
+      function validTemplate(d) {
+        let fields = ['name', 'monthlyBaseCents', 'includedStudentSeats', 'extraStudentMonthlyCents',
+                      'maxActiveInviteCodes', 'trialMaxStudentSeats', 'trialDurationDays', 'version'];
+        return d.keys().hasAll(fields) && d.keys().hasOnly(fields.concat(['lastAuditId'])) &&
+          d.name is string && d.name.size() > 0 && d.name.size() <= 80 &&
+          d.monthlyBaseCents is int && d.monthlyBaseCents >= 0 &&
+          d.includedStudentSeats is int && d.includedStudentSeats >= 0 &&
+          d.extraStudentMonthlyCents is int && d.extraStudentMonthlyCents >= 0 &&
+          d.maxActiveInviteCodes is int && d.maxActiveInviteCodes >= 0 &&
+          d.trialMaxStudentSeats is int && d.trialMaxStudentSeats >= 0 &&
+          d.trialDurationDays is int && d.trialDurationDays >= 0 &&
+          d.version is int && d.version > 0;
       }
 
       allow read: if isAdmin();
-      allow create: if isAdmin() && validAudit(request.resource.data);
+      allow create: if isAdmin() && validTemplate(request.resource.data) && request.resource.data.version == 1 &&
+        request.resource.data.lastAuditId is string && linkedTemplateAudit(request.resource.data, 'platform.plan.create');
+      allow update: if isAdmin() && validTemplate(request.resource.data) &&
+        request.resource.data.version == resource.data.version + 1 && request.resource.data.lastAuditId is string &&
+        linkedTemplateAudit(request.resource.data, 'platform.plan.update');
+      allow delete: if false;
+    }
+
+    match /platformBillingConfig/{configId} {
+      function linkedDefaultsAudit(d) {
+        let auditId = field(d, 'lastAuditId');
+        let auditPath = /databases/$(database)/documents/adminAudit/$(auditId);
+        let auditAfter = getAfter(auditPath);
+        return auditId is string && !exists(auditPath) && existsAfter(auditPath) &&
+          field(auditAfter.data, 'adminUid') == request.auth.uid &&
+          field(auditAfter.data, 'action') == 'platform.defaults.update' &&
+          field(auditAfter.data, 'targetUid') == 'platformBillingConfig/trialDefaults' &&
+          field(auditAfter.data, 'defaultsVersion') == d.version &&
+          field(auditAfter.data, 'defaultPlanTemplateId') == d.defaultPlanTemplateId;
+      }
+
+      function validTrialDefaults(d) {
+        let fields = ['trialMaxStudentSeats', 'trialDurationDays', 'defaultPlanTemplateId', 'version'];
+        return d.keys().hasAll(fields) && d.keys().hasOnly(fields.concat(['lastAuditId'])) &&
+          d.trialMaxStudentSeats is int && d.trialMaxStudentSeats >= 0 &&
+          d.trialDurationDays is int && d.trialDurationDays >= 0 &&
+          (d.defaultPlanTemplateId == null || d.defaultPlanTemplateId is string) &&
+          d.version is int && d.version > 0;
+      }
+
+      allow get: if isAdmin() && configId == 'trialDefaults';
+      allow list: if false;
+      allow create: if isAdmin() && configId == 'trialDefaults' &&
+        validTrialDefaults(request.resource.data) && request.resource.data.version == 1 &&
+        request.resource.data.lastAuditId is string && linkedDefaultsAudit(request.resource.data);
+      allow update: if isAdmin() && configId == 'trialDefaults' &&
+        validTrialDefaults(request.resource.data) && request.resource.data.version == resource.data.version + 1 &&
+        request.resource.data.lastAuditId is string && linkedDefaultsAudit(request.resource.data);
+      allow delete: if false;
+    }
+
+    match /platformSubscriptions/{trainerUid} {
+      function linkedSubscriptionAudit(d) {
+        let auditId = field(d, 'lastAuditId');
+        let auditPath = /databases/$(database)/documents/adminAudit/$(auditId);
+        let userPath = /databases/$(database)/documents/users/$(trainerUid);
+        let auditAfter = getAfter(auditPath);
+        let userBefore = get(userPath);
+        let userAfter = getAfter(userPath);
+        return auditId is string && !exists(auditPath) && existsAfter(auditPath) && exists(userPath) && existsAfter(userPath) &&
+          field(auditAfter.data, 'adminUid') == request.auth.uid &&
+          field(auditAfter.data, 'targetUid') == trainerUid &&
+          field(userAfter.data, 'lastAuditId') == auditId &&
+          validBillingAuditForUser(
+            trainerUid,
+            field(userBefore.data, 'platformBillingStatus'),
+            field(userBefore.data, 'platformBillingUntil'),
+            userAfter.data
+          ) &&
+          ((field(auditAfter.data, 'action') == 'subscription.assign' &&
+              field(auditAfter.data, 'subscriptionVersion') == field(field(d, 'terms'), 'snapshotVersion') &&
+              field(auditAfter.data, 'templateId') == field(field(d, 'terms'), 'templateId') &&
+              field(auditAfter.data, 'templateVersion') == field(field(d, 'terms'), 'templateVersion') &&
+              field(auditAfter.data, 'mode') == d.mode &&
+              field(auditAfter.data, 'effectiveAt') == d.effectiveAt) ||
+            (field(auditAfter.data, 'action') == 'trial.extend' &&
+              d.mode == 'trial' &&
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['trialEndsAt', 'updatedAt', 'lastAuditId']) &&
+              field(auditAfter.data, 'fromTrialEndsAt') == field(get(/databases/$(database)/documents/platformSubscriptions/$(trainerUid)).data, 'trialEndsAt') &&
+              field(auditAfter.data, 'toTrialEndsAt') == d.trialEndsAt &&
+              field(auditAfter.data, 'days') is int && field(auditAfter.data, 'days') > 0));
+      }
+
+      function validSubscription(d) {
+        return d.keys().hasAll([
+            'trainerUid', 'mode', 'terms', 'overrides', 'chargeDuringTrial', 'effectiveAt',
+            'trialStartedAt', 'trialEndsAt', 'currentInvoiceId', 'updatedAt'
+          ]) &&
+          d.keys().hasOnly([
+            'trainerUid', 'mode', 'terms', 'overrides', 'chargeDuringTrial', 'effectiveAt',
+            'trialStartedAt', 'trialEndsAt', 'currentInvoiceId', 'updatedAt', 'lastAuditId'
+          ]) &&
+          d.trainerUid == trainerUid && d.mode in ['trial', 'paid'] &&
+          d.terms is map && d.overrides is map && d.chargeDuringTrial is bool &&
+          d.effectiveAt is int && (d.trialStartedAt == null || d.trialStartedAt is int) &&
+          (d.trialEndsAt == null || d.trialEndsAt is int) &&
+          (d.currentInvoiceId == null || d.currentInvoiceId is string) && d.updatedAt is int;
+      }
+
+      allow read: if isAdmin() || (isSignedIn() && request.auth.uid == trainerUid && myRole() == 'TRAINER');
+      allow create, update: if isAdmin() && validSubscription(request.resource.data) &&
+        request.resource.data.lastAuditId is string && linkedSubscriptionAudit(request.resource.data);
+      allow delete: if false;
+    }
+
+    match /platformInvoices/{invoiceId} {
+      function linkedInvoiceAudit(d, action) {
+        let changed = request.resource.data.diff(resource.data).affectedKeys();
+        let auditId = field(d, 'lastAuditId');
+        let auditPath = /databases/$(database)/documents/adminAudit/$(auditId);
+        let userPath = /databases/$(database)/documents/users/$(d.trainerUid);
+        let auditAfter = getAfter(auditPath);
+        let userBefore = get(userPath);
+        let userAfter = getAfter(userPath);
+        return auditId is string && !exists(auditPath) && existsAfter(auditPath) && exists(userPath) && existsAfter(userPath) &&
+          field(auditAfter.data, 'adminUid') == request.auth.uid &&
+          field(auditAfter.data, 'targetUid') == d.trainerUid &&
+          field(auditAfter.data, 'action') == action &&
+          field(auditAfter.data, 'invoiceId') == invoiceId &&
+          field(userAfter.data, 'lastAuditId') == auditId &&
+          validBillingAuditForUser(
+            d.trainerUid,
+            field(userBefore.data, 'platformBillingStatus'),
+            field(userBefore.data, 'platformBillingUntil'),
+            userAfter.data
+          ) &&
+          (action == 'invoice.payment'
+            ? changed.hasOnly(['status', 'paidAt', 'paidBy', 'paymentReference', 'reservedInviteSeats', 'billableStudentSeats', 'lastAuditId']) &&
+              field(resource.data, 'status') == 'unpaid' && d.status == 'paid' &&
+              field(auditAfter.data, 'amountCents') == d.amountCents &&
+              field(auditAfter.data, 'paymentReference') == d.paymentReference && d.paidBy == request.auth.uid
+            : changed.hasOnly(['dueDate', 'reservedInviteSeats', 'billableStudentSeats', 'lastAuditId']) &&
+              field(resource.data, 'status') == 'unpaid' && d.status == 'unpaid' &&
+              d.dueDate > field(auditAfter.data, 'fromDueDate') &&
+              field(auditAfter.data, 'toDueDate') == d.dueDate &&
+              field(auditAfter.data, 'fromDueDate') == field(resource.data, 'dueDate') &&
+              field(auditAfter.data, 'days') is int && field(auditAfter.data, 'days') > 0);
+      }
+
+      function validInvoice(d) {
+        let fields = ['id', 'trainerUid', 'period', 'dueDate', 'linkedStudentSeats', 'includedStudentSeats',
+                      'extraStudentSeats', 'monthlyBaseCents', 'extraStudentMonthlyCents', 'extraAmountCents',
+                      'amountCents', 'status', 'paidAt', 'paidBy', 'paymentReference', 'createdAt',
+                      'createdBy', 'subscriptionVersion', 'templateId', 'templateVersion'];
+        let seatFields = ['reservedInviteSeats', 'billableStudentSeats'];
+        let hasSeatSnapshot = d.keys().hasAll(seatFields);
+        return d.keys().hasAll(fields) && d.keys().hasOnly(fields.concat(seatFields).concat(['lastAuditId'])) &&
+          d.id == invoiceId && d.trainerUid is string &&
+          d.period is string && d.period.matches('[0-9]{4}-(0[1-9]|1[0-2])') &&
+          d.dueDate is string && d.dueDate.matches('[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])') &&
+          d.linkedStudentSeats is int && d.linkedStudentSeats >= 0 &&
+          d.includedStudentSeats is int && d.includedStudentSeats >= 0 &&
+          d.extraStudentSeats is int && d.extraStudentSeats >= 0 &&
+          d.monthlyBaseCents is int && d.monthlyBaseCents >= 0 &&
+          d.extraStudentMonthlyCents is int && d.extraStudentMonthlyCents >= 0 &&
+          d.extraAmountCents is int && d.extraAmountCents >= 0 &&
+          (hasSeatSnapshot
+            ? d.reservedInviteSeats is int && d.reservedInviteSeats >= 0 &&
+              d.billableStudentSeats is int && d.billableStudentSeats == d.linkedStudentSeats + d.reservedInviteSeats
+            : !d.keys().hasAny(seatFields)) &&
+          d.amountCents is int && d.amountCents >= 0 && d.status in ['unpaid', 'paid'] &&
+          (d.paidAt == null || d.paidAt is int) && (d.paidBy == null || d.paidBy is string) &&
+          (d.paymentReference == null || (d.paymentReference is string && d.paymentReference.size() <= 120)) &&
+          d.createdAt is int && d.createdBy is string && d.subscriptionVersion is int &&
+          d.templateId is string && d.templateVersion is int &&
+          (d.status == 'unpaid' ? d.paidAt == null && d.paidBy == null : d.paidAt is int && d.paidBy is string);
+      }
+
+      allow read: if isAdmin() || (isSignedIn() && request.auth.uid == resource.data.trainerUid && myRole() == 'TRAINER');
+      // Invoice creation is only through the Admin SDK callable so clients cannot bypass its
+      // serializable, privacy-safe student and invite reservation count.
+      allow create: if false;
+      allow update: if isAdmin() && validInvoice(request.resource.data) &&
+        request.resource.data.lastAuditId is string &&
+        request.resource.data.keys().hasAll(['reservedInviteSeats', 'billableStudentSeats']) &&
+        request.resource.data.trainerUid == resource.data.trainerUid &&
+        request.resource.data.period == resource.data.period &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'dueDate', 'status', 'paidAt', 'paidBy', 'paymentReference', 'reservedInviteSeats', 'billableStudentSeats', 'lastAuditId'
+        ]) &&
+        (resource.data.keys().hasAll(['reservedInviteSeats', 'billableStudentSeats'])
+          ? !request.resource.data.diff(resource.data).affectedKeys().hasAny(['reservedInviteSeats', 'billableStudentSeats'])
+          : request.resource.data.reservedInviteSeats == 0 &&
+            request.resource.data.billableStudentSeats == request.resource.data.linkedStudentSeats) &&
+        (request.resource.data.dueDate != resource.data.dueDate
+          ? linkedInvoiceAudit(request.resource.data, 'invoice.extend')
+          : linkedInvoiceAudit(request.resource.data, 'invoice.payment'));
+      allow delete: if false;
+    }
+
+    match /adminAudit/{auditId} {
+      function validBillingUserAfter(d) {
+        let auditPath = /databases/$(database)/documents/adminAudit/$(auditId);
+        let userPath = /databases/$(database)/documents/users/$(d.targetUid);
+        let userAfter = getAfter(userPath);
+        return !exists(auditPath) && existsAfter(userPath) &&
+          field(userAfter.data, 'lastAuditId') == auditId &&
+          field(userAfter.data, 'platformBillingStatus') == field(d, 'billingToStatus') &&
+          field(userAfter.data, 'platformBillingUntil') == field(d, 'billingToUntil');
+      }
+
+      function validTrainerBillingAuditAfter(d) {
+        let userPath = /databases/$(database)/documents/users/$(d.targetUid);
+        let userAfter = getAfter(userPath);
+        return validBillingUserAfter(d) && field(userAfter.data, 'role') == 'TRAINER';
+      }
+
+      function invoiceIsPaid(invoiceId) {
+        let invoicePath = /databases/$(database)/documents/platformInvoices/$(invoiceId);
+        return exists(invoicePath) && field(get(invoicePath).data, 'status') == 'paid';
+      }
+
+      function assignmentHasNoUnpaidInvoice(subscriptionPath, subscriptionBefore) {
+        return !exists(subscriptionPath) ||
+          field(subscriptionBefore.data, 'currentInvoiceId') == null ||
+          invoiceIsPaid(field(subscriptionBefore.data, 'currentInvoiceId'));
+      }
+
+      function keepsExpiredBillingBlocked(userBefore, d) {
+        let status = field(userBefore, 'platformBillingStatus');
+        let until = field(userBefore, 'platformBillingUntil');
+        let expired = until != null && (!(until is int) || until <= request.time.toMillis());
+        return (!(status == 'blocked' || expired) || field(d, 'billingToStatus') == 'blocked');
+      }
+
+      function validSubscriptionAuditAfter(d) {
+        let auditPath = /databases/$(database)/documents/adminAudit/$(auditId);
+        let subscriptionPath = /databases/$(database)/documents/platformSubscriptions/$(d.targetUid);
+        let subscriptionAfter = getAfter(subscriptionPath);
+        let subscriptionBefore = get(subscriptionPath);
+        let userBefore = get(/databases/$(database)/documents/users/$(d.targetUid));
+        return !exists(auditPath) && existsAfter(subscriptionPath) && validBillingUserAfter(d) &&
+          field(subscriptionAfter.data, 'trainerUid') == d.targetUid &&
+          field(subscriptionAfter.data, 'lastAuditId') == auditId &&
+          ((d.action == 'subscription.assign' &&
+              assignmentHasNoUnpaidInvoice(subscriptionPath, subscriptionBefore) &&
+              field(field(subscriptionAfter.data, 'terms'), 'snapshotVersion') == d.subscriptionVersion &&
+              field(field(subscriptionAfter.data, 'terms'), 'templateId') == d.templateId &&
+              field(field(subscriptionAfter.data, 'terms'), 'templateVersion') == d.templateVersion &&
+              field(subscriptionAfter.data, 'mode') == d.mode &&
+              field(subscriptionAfter.data, 'effectiveAt') == d.effectiveAt) ||
+            (d.action == 'trial.extend' && exists(subscriptionPath) &&
+              keepsExpiredBillingBlocked(userBefore.data, d) &&
+              field(subscriptionBefore.data, 'trialEndsAt') == d.fromTrialEndsAt &&
+              field(subscriptionAfter.data, 'mode') == 'trial' &&
+              field(subscriptionAfter.data, 'trialEndsAt') == d.toTrialEndsAt &&
+              d.toTrialEndsAt > d.fromTrialEndsAt && d.days > 0));
+      }
+
+      function validInvoiceChangeAuditAfter(d) {
+        let auditPath = /databases/$(database)/documents/adminAudit/$(auditId);
+        let invoicePath = /databases/$(database)/documents/platformInvoices/$(d.invoiceId);
+        let invoiceAfter = getAfter(invoicePath);
+        let invoiceBefore = get(invoicePath);
+        let userBefore = get(/databases/$(database)/documents/users/$(d.targetUid));
+        return !exists(auditPath) && existsAfter(invoicePath) && validBillingUserAfter(d) &&
+          field(invoiceAfter.data, 'lastAuditId') == auditId &&
+          field(invoiceAfter.data, 'trainerUid') == d.targetUid &&
+          ((d.action == 'invoice.payment' && exists(invoicePath) &&
+              field(invoiceBefore.data, 'status') == 'unpaid' &&
+              field(invoiceAfter.data, 'status') == 'paid' &&
+              field(invoiceAfter.data, 'paidBy') == d.adminUid &&
+              field(invoiceAfter.data, 'amountCents') == d.amountCents &&
+              field(invoiceAfter.data, 'paymentReference') == d.paymentReference) ||
+            (d.action == 'invoice.extend' && exists(invoicePath) &&
+              keepsExpiredBillingBlocked(userBefore.data, d) &&
+              field(invoiceBefore.data, 'status') == 'unpaid' &&
+              field(invoiceAfter.data, 'status') == 'unpaid' &&
+              field(invoiceBefore.data, 'dueDate') == d.fromDueDate &&
+              field(invoiceAfter.data, 'dueDate') == d.toDueDate &&
+              d.toDueDate > d.fromDueDate && d.days > 0));
+      }
+
+      function validInvoiceIssueAuditAfter(d) {
+        let auditPath = /databases/$(database)/documents/adminAudit/$(auditId);
+        let invoicePath = /databases/$(database)/documents/platformInvoices/$(d.invoiceId);
+        let invoiceAfter = getAfter(invoicePath);
+        let subscriptionPath = /databases/$(database)/documents/platformSubscriptions/$(d.targetUid);
+        let subscriptionAfter = getAfter(subscriptionPath);
+        return !exists(auditPath) && existsAfter(invoicePath) && existsAfter(subscriptionPath) && validBillingUserAfter(d) &&
+          field(invoiceAfter.data, 'lastAuditId') == auditId &&
+          field(invoiceAfter.data, 'trainerUid') == d.targetUid &&
+          field(invoiceAfter.data, 'id') == d.invoiceId &&
+          field(invoiceAfter.data, 'period') == d.period &&
+          field(invoiceAfter.data, 'linkedStudentSeats') == d.linkedStudentSeats &&
+          field(invoiceAfter.data, 'amountCents') == d.amountCents &&
+          field(subscriptionAfter.data, 'lastAuditId') == auditId &&
+          field(subscriptionAfter.data, 'currentInvoiceId') == d.invoiceId;
+      }
+
+      function validPlanTemplateAuditAfter(d) {
+        let auditPath = /databases/$(database)/documents/adminAudit/$(auditId);
+        let templatePath = /databases/$(database)/documents/platformPlanTemplates/$(d.templateId);
+        let templateAfter = getAfter(templatePath);
+        return !exists(auditPath) && existsAfter(templatePath) &&
+          field(templateAfter.data, 'lastAuditId') == auditId &&
+          field(templateAfter.data, 'version') == d.templateVersion &&
+          d.targetUid == d.templateId;
+      }
+
+      function validDefaultsAuditAfter(d) {
+        let auditPath = /databases/$(database)/documents/adminAudit/$(auditId);
+        let defaultsPath = /databases/$(database)/documents/platformBillingConfig/trialDefaults;
+        let defaultsAfter = getAfter(defaultsPath);
+        return !exists(auditPath) && existsAfter(defaultsPath) &&
+          field(defaultsAfter.data, 'lastAuditId') == auditId &&
+          field(defaultsAfter.data, 'version') == d.defaultsVersion &&
+          field(defaultsAfter.data, 'defaultPlanTemplateId') == d.defaultPlanTemplateId &&
+          d.targetUid == 'platformBillingConfig/trialDefaults';
+      }
+
+      function validAudit(d) {
+        let base = ['at', 'adminUid', 'action', 'targetUid', 'note'];
+        let billing = ['billingFromStatus', 'billingFromUntil', 'billingToStatus', 'billingToUntil'];
+        return d.keys().hasAll(base) && d.at is int && d.adminUid == request.auth.uid &&
+          d.targetUid is string && d.note is string && d.note.size() <= 200 && (
+            (d.action in ['trainer.suspend', 'trainer.reactivate', 'request.reject', 'trainer.resetEmail'] && d.keys().hasOnly(base)) ||
+            (d.action in ['trainer.create', 'trainer.promote'] &&
+              d.keys().hasAll(base.concat(billing)) && d.keys().hasOnly(base.concat(billing)) &&
+              validTrainerBillingAuditAfter(d)) ||
+            (d.action == 'invite.resolve' &&
+              d.keys().hasAll(base.concat(['inviteId'])) && d.keys().hasOnly(base.concat(['inviteId'])) &&
+              d.inviteId is string &&
+              getAfter(/databases/$(database)/documents/invites/$(d.inviteId)).data.trainerId == d.targetUid &&
+              getAfter(/databases/$(database)/documents/invites/$(d.inviteId)).data.cancelledAt is int) ||
+            (d.action in ['platform.plan.create', 'platform.plan.update'] &&
+              d.keys().hasAll(base.concat(['templateId', 'templateVersion'])) &&
+              d.keys().hasOnly(base.concat(['templateId', 'templateVersion'])) &&
+              d.templateId is string && d.targetUid == d.templateId && d.templateVersion is int && d.templateVersion > 0 &&
+              validPlanTemplateAuditAfter(d)) ||
+            (d.action == 'platform.defaults.update' &&
+              d.keys().hasAll(base.concat(['defaultsVersion', 'defaultPlanTemplateId'])) &&
+              d.keys().hasOnly(base.concat(['defaultsVersion', 'defaultPlanTemplateId'])) &&
+              d.defaultsVersion is int && d.defaultsVersion > 0 &&
+              (d.defaultPlanTemplateId == null || d.defaultPlanTemplateId is string) &&
+              validDefaultsAuditAfter(d)) ||
+            (d.action == 'subscription.assign' &&
+              d.keys().hasAll(base.concat(['subscriptionVersion', 'templateId', 'templateVersion', 'mode', 'overrideKeys', 'effectiveAt']).concat(billing)) &&
+              d.keys().hasOnly(base.concat(['subscriptionVersion', 'templateId', 'templateVersion', 'mode', 'overrideKeys', 'effectiveAt']).concat(billing)) &&
+              d.subscriptionVersion is int && d.subscriptionVersion > 0 && d.templateId is string &&
+              d.templateVersion is int && d.mode in ['trial', 'paid'] && d.overrideKeys is list && d.effectiveAt is int &&
+              validSubscriptionAuditAfter(d)) ||
+            (d.action == 'invoice.issue' &&
+              d.keys().hasAll(base.concat(['invoiceId', 'period', 'linkedStudentSeats', 'amountCents']).concat(billing)) &&
+              d.keys().hasOnly(base.concat(['invoiceId', 'period', 'linkedStudentSeats', 'amountCents']).concat(billing)) &&
+              d.invoiceId is string && d.period is string && d.linkedStudentSeats is int &&
+              d.linkedStudentSeats >= 0 && d.amountCents is int && d.amountCents >= 0 &&
+              validInvoiceIssueAuditAfter(d)) ||
+            (d.action == 'invoice.payment' &&
+              d.keys().hasAll(base.concat(['invoiceId', 'amountCents', 'paymentReference']).concat(billing)) &&
+              d.keys().hasOnly(base.concat(['invoiceId', 'amountCents', 'paymentReference']).concat(billing)) &&
+              d.invoiceId is string && d.amountCents is int && d.amountCents >= 0 &&
+              (d.paymentReference == null || (d.paymentReference is string && d.paymentReference.size() <= 120)) &&
+              validInvoiceChangeAuditAfter(d)) ||
+            (d.action == 'invoice.extend' &&
+              d.keys().hasAll(base.concat(['invoiceId', 'days', 'fromDueDate', 'toDueDate']).concat(billing)) &&
+              d.keys().hasOnly(base.concat(['invoiceId', 'days', 'fromDueDate', 'toDueDate']).concat(billing)) &&
+              d.invoiceId is string && d.days is int && d.days > 0 &&
+              d.fromDueDate is string && d.toDueDate is string &&
+              validInvoiceChangeAuditAfter(d)) ||
+            (d.action == 'trial.extend' &&
+              d.keys().hasAll(base.concat(['days', 'fromTrialEndsAt', 'toTrialEndsAt']).concat(billing)) &&
+              d.keys().hasOnly(base.concat(['days', 'fromTrialEndsAt', 'toTrialEndsAt']).concat(billing)) &&
+              d.days is int && d.days > 0 && d.fromTrialEndsAt is int && d.toTrialEndsAt is int &&
+              validSubscriptionAuditAfter(d)) ||
+            (d.action == 'admin.student.create' &&
+              d.keys().hasAll(base.concat(['studentId'])) && d.keys().hasOnly(base.concat(['studentId'])) &&
+              d.studentId is string)
+          );
+      }
+
+      allow read: if isAdmin();
+      function validInviteAudit(d) {
+        let fields = ['at', 'actorUid', 'actorRole', 'action', 'targetUid', 'note', 'inviteId'];
+        let invitePath = /databases/$(database)/documents/invites/$(d.inviteId);
+        let inviteAfter = getAfter(invitePath);
+        return d.keys().hasAll(fields) && d.keys().hasOnly(fields) && d.at is int &&
+          d.actorUid == request.auth.uid && d.actorRole in ['TRAINER', 'STUDENT'] &&
+          d.action in ['invite.create', 'invite.claim', 'invite.cancel'] && d.targetUid is string &&
+          d.note is string && d.note.size() <= 200 && d.inviteId is string && existsAfter(invitePath) &&
+          ((d.actorRole == 'TRAINER' && d.action in ['invite.create', 'invite.cancel'] &&
+            d.targetUid == d.actorUid && isOwningTrainer(d.targetUid) &&
+            field(inviteAfter.data, 'trainerId') == d.targetUid &&
+            (d.action == 'invite.create'
+              ? field(inviteAfter.data, 'source') == 'web' && field(inviteAfter.data, 'used') == false
+              : field(inviteAfter.data, 'cancelledAt') is int && field(inviteAfter.data, 'used') == false)) ||
+          (d.actorRole == 'STUDENT' && d.action == 'invite.claim' && hasVerifiedEmail() &&
+            field(inviteAfter.data, 'used') == true &&
+            field(getAfter(/databases/$(database)/documents/users/$(d.actorUid)).data, 'trainerId') == d.targetUid &&
+            field(getAfter(/databases/$(database)/documents/users/$(d.actorUid)).data, 'inviteCode') == d.inviteId));
+      }
+
+      allow create: if (isAdmin() && validAudit(request.resource.data)) || validInviteAudit(request.resource.data);
     }
 
     // Everything else: denied by default (no catch-all match).

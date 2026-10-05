@@ -8,7 +8,8 @@ import type { ParsedWorkout, ParsedWorkouts } from "./workoutParser";
 // half-usable answer should still reach the trainer, with a note, rather than fail whole.
 //
 // The shape (see data/gemini.ts for the matching response schema):
-//   { treinos: [{ nome, exercicios: [{ nome, series, reps, ativacao?: [{ musculo, coeficiente }] }] }] }
+//   { treinos: [{ nome, exercicios: [{ nome, series, reps }] }] }
+// `ativacao` is tolerated below only for older/stubbed replies; the current schema leaves it to the catalog.
 
 type Json = Record<string, unknown>;
 
@@ -32,7 +33,7 @@ function activation(value: unknown): Record<string, number> | null {
     if (!isObject(item)) continue;
     const muscle = text(item.musculo);
     const coefficient = typeof item.coeficiente === "number" ? item.coeficiente : Number.NaN;
-    if (muscle === "" || !Number.isFinite(coefficient)) continue;
+    if (muscle === "" || !Number.isFinite(coefficient) || coefficient < 0 || coefficient > 1) continue;
     pairs.set(muscle, coefficient);
   }
   // fromEntries, not bracket assignment: a muscle named "__proto__" must stay a plain key.

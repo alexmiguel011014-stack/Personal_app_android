@@ -69,11 +69,15 @@ img, svg { max-width: 100%; }
 .rail-note p { max-width: 150px; margin: 0 0 18px; color: #f2f3e9; font-family: Georgia, serif; font-size: 17px; line-height: 1.35; }
 .note-byline { color: #a9bdb0; font-size: 12px; font-weight: 600; }
 .profile-chip { display: flex; min-height: 62px; align-items: center; gap: 10px; margin-top: 18px; padding-top: 14px; border-top: 1px solid #ffffff25; }
+.profile-account { display: flex; min-width: 0; min-height: 44px; flex: 1; align-items: center; gap: 10px; color: inherit; text-decoration: none; }
+.profile-account:hover .profile-meta strong { text-decoration: underline; text-underline-offset: 3px; }
+.profile-account[aria-current] .profile-meta strong { color: var(--leaf); }
 .profile-meta { min-width: 0; flex: 1; }
 .profile-meta strong, .profile-meta small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .profile-meta strong { font-size: 12px; font-weight: 600; }
 .profile-meta small { margin-top: 4px; color: #b9cbbd; font-size: 12px; }
-.signout { min-height: 36px; padding: 0 12px; border-color: #ffffff40; background: transparent; color: #e6eee6; font-size: 12px; }
+.account-mobile-label { display: none; }
+.signout { min-height: 44px; padding: 0 12px; border-color: #ffffff40; background: transparent; color: #e6eee6; font-size: 12px; }
 .signout:hover { background: #ffffff17; }
 
 .main-content { margin-left: var(--rail-w); padding: 43px clamp(28px, 5vw, 76px) 20px; }
@@ -193,6 +197,10 @@ td form label { flex: 1 1 150px; }
 .avatar-sand { background: #efe5d4; color: #6d563c; }
 .avatar-rose { background: #f0e0d9; color: #795746; }
 .avatar-mist { background: #dfe8e7; color: #45625e; }
+.account-avatar-settings .account-avatar-row { display: flex; align-items: center; gap: 18px; }
+.account-avatar-settings .avatar { width: 64px; height: 64px; flex-basis: 64px; font-size: 18px; }
+.account-avatar-settings input[type="file"] { min-height: 44px; padding: 8px 0; }
+.account-muted { color: var(--muted); font-size: 13px; }
 
 /* ---------- Today: week strip, agenda of the day, roster ---------- */
 
@@ -435,8 +443,9 @@ dialog.confirm::backdrop { background: #12352c8c; }
   .rail { position: sticky; top: 0; inset: auto; width: auto; height: auto; min-height: 56px; flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; padding: 0 max(18px, env(safe-area-inset-right)) 0 max(18px, env(safe-area-inset-left)); overflow: visible; }
   .wordmark { font-size: 27px; }
   .rail-caption, .rail-note, .profile-meta { display: none; }
+  .account-mobile-label { display: inline; color: #e6eee6; font-size: 12px; }
   .profile-chip { min-height: 0; margin: 0; padding: 0; border: 0; }
-  .signout { min-height: 40px; }
+  .signout { min-height: 44px; }
   .primary-nav { position: fixed; inset: auto 0 0 0; z-index: 3; display: flex; gap: 0; padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); border-top: 1px solid #ffffff25; background: var(--forest-deep); }
   .nav-link { min-width: 0; min-height: 64px; flex: 1 1 auto; flex-direction: column; justify-content: center; gap: 5px; padding: 6px 4px; border-radius: 0; font-size: 12px; text-align: center; }
   .nav-link[aria-current] { box-shadow: inset 0 3px var(--leaf); }

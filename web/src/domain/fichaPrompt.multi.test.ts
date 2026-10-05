@@ -27,6 +27,7 @@ describe("the multi-treino template", () => {
     expect(template).toContain("UM ÚNICO bloco de código");
     expect(template).toContain("Treino A");
     expect(template).toContain("exatamente como está na tabela de referência");
+    expect(template).toContain("Não inclua músculos nem coeficientes");
   });
 
   it("its own worked example splits into the treinos it promises", () => {
@@ -34,7 +35,7 @@ describe("the multi-treino template", () => {
     const example = template.slice(template.indexOf("Exemplo de saída válida")).split("```")[1];
     const { workouts, warnings } = parseWorkouts(example);
     expect(workouts.map((w) => w.name)).toEqual(["Treino A — Peito e tríceps", "Treino B — Costas e bíceps", "Treino C — Pernas"]);
-    expect(workouts.every((w) => w.exercises.every((e) => e.muscleActivation !== null))).toBe(true);
+    expect(workouts.every((w) => w.exercises.every((e) => e.muscleActivation === null))).toBe(true);
     expect(warnings).toEqual([]);
   });
 });

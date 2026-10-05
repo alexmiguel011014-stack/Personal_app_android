@@ -36,6 +36,7 @@ describe("toDraftStudent / toLinkedStudent — FirestoreMappers' defaults and le
       medicalNotes: "",
       trainingDays: [],
       createdAt: 0,
+      paused: false,
     });
   });
 
@@ -56,10 +57,13 @@ describe("toDraftStudent / toLinkedStudent — FirestoreMappers' defaults and le
       canLogBiometrics: false,
       canAddSets: false, // web-only; a document the phone wrote has no such field
       pendingAssessmentRequest: false,
+      paused: false,
     });
     expect(toLinkedStudent("u1", { role: "STUDENT", name: "Maria", canAddSets: true })?.canAddSets).toBe(true);
     // Anything but a real boolean reads as off — a permission is never granted by a stray value.
     expect(toLinkedStudent("u1", { role: "STUDENT", name: "Maria", canAddSets: "true" })?.canAddSets).toBe(false);
+    expect(toLinkedStudent("u1", { role: "STUDENT", name: "Maria", paused: "true" })?.paused).toBe(false);
+    expect(toDraftStudent("d1", { name: "Maria", paused: true })?.paused).toBe(true);
     expect(toLinkedStudent("u1", { role: "STUDENT", name: "Maria" })?.inviteCode).toBeNull();
   });
 });

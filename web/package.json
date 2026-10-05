@@ -6,15 +6,15 @@
     "node": ">=24"
   },
   "scripts": {
-    "predev": "node scripts/copy-prompt-assets.mjs",
+    "predev": "node scripts/copy-prompt-assets.mjs && node scripts/build-exercise-catalog.mjs",
     "dev": "next dev",
-    "prebuild": "node scripts/copy-prompt-assets.mjs",
+    "prebuild": "node scripts/copy-prompt-assets.mjs && node scripts/build-exercise-catalog.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run --dir src",
     "seed:emulators": "node scripts/seed-emulators.mjs",
-    "test:rules": "firebase emulators:exec --config ../firebase.json --project demo-personal-tracker --only firestore \"vitest run --dir rules --testTimeout=30000 --no-file-parallelism\""
+    "test:rules": "npm --prefix ../functions run build && firebase emulators:exec --config ../firebase.json --project demo-personal-tracker --only auth,firestore,functions,storage \"vitest run --dir rules --testTimeout=30000 --no-file-parallelism\""
   },
   "dependencies": {
     "firebase": "^12.19.0",

@@ -5,10 +5,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { getFirebase } from "../../../../data/firebase";
 import { trackActivity } from "../../../../data/activity";
+import { loadExerciseCatalog } from "../../../../data/exerciseCatalog";
 import { loadPromptAssets, type PromptAssets } from "../../../../data/promptAssets";
 import type { TrainerStudent } from "../../../../data/students";
 import { loadStudentWorkouts, newWorkout, replaceFicha, saveWorkout, saveWorkouts } from "../../../../data/workouts";
 import type { Exercise } from "../../../../domain/exercise";
+import { applyCatalogActivations, type ExerciseCatalog } from "../../../../domain/exerciseCatalog";
 import { currentFicha, historyFicha } from "../../../../domain/fichaHistory";
 import { buildFichaPrompt, buildMultiFichaPrompt } from "../../../../domain/fichaPrompt";
 import { isKotlinBlank, kotlinTrim } from "../../../../domain/kotlin";
@@ -117,6 +119,7 @@ function FichaForm({
 }) {
   const router = useRouter();
   const [assets, setAssets] = useState<PromptAssets | "error" | null>(null);
+  const [catalog, setCatalog] = useState<ExerciseCatalog | "error" | "loading">("loading");
   const [request, setRequest] = useState("");
   const [prompt, setPrompt] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
@@ -146,6 +149,10 @@ function FichaForm({
     loadPromptAssets().then(
       (loaded) => !cancelled && setAssets(loaded),
       () => !cancelled && setAssets("error"),
+    );
+    loadExerciseCatalog().then(
+      (loaded) => !cancelled && setCatalog(loaded),
+      () => !cancelled && setCatalog("error"),
     );
     return () => {
       cancelled = true;
@@ -267,6 +274,10 @@ function FichaForm({
   }
 
   async function save(now: number) {
+    if (!existing && catalog === "loading") {
+      setErrors(["Aguarde o carregamento da tabela de exercícios antes de salvar."]);
+      return;
+    }
     const found = workoutErrors(name, exercises);
     setErrors(found);
     if (found.length > 0) return;
@@ -280,7 +291,8 @@ function FichaForm({
         router.push(back);
         return;
       }
-      const workout = newWorkout(trainerId, student.doc.id, kotlinTrim(name), exercises, now);
+      const newExercises = catalog !== "loading" && catalog !== "error" ? applyCatalogActivations(exercises, catalog) : exercises;
+      const workout = newWorkout(trainerId, student.doc.id, kotlinTrim(name), newExercises, now);
       if (await askBeforeSaving([workout], now, false)) return;
       const { db } = getFirebase();
       await saveWorkout(db, trainerId, workout, now);
@@ -294,6 +306,10 @@ function FichaForm({
 
   async function saveAll(now: number) {
     if (review === null) return;
+    if (catalog === "loading") {
+      setReviewErrors(["Aguarde o carregamento da tabela de exercícios antes de salvar."]);
+      return;
+    }
     const chosen = review.filter((item) => item.include);
     const found = chosen.flatMap((item) =>
       [...workoutErrors(item.name, item.exercises), ...exerciseErrors(item.exercises)].map(
@@ -310,7 +326,7 @@ function FichaForm({
           trainerId,
           student.doc.id,
           kotlinTrim(item.name),
-          tidied(item.exercises),
+          tidied(catalog !== "error" ? applyCatalogActivations(item.exercises, catalog) : item.exercises),
           now + (chosen.length - 1 - index),
         ),
       );
@@ -329,7 +345,8 @@ function FichaForm({
     await Promise.all(Array.from({ length: count }, () => trackActivity(db, trainerId, "fichaSaved", now, timeZone)));
   }
 
-  const volume = Object.entries(calculateEffectiveVolume(exercises)).sort(([, a], [, b]) => b - a);
+  const volumeExercises = catalog !== "loading" && catalog !== "error" ? applyCatalogActivations(exercises, catalog) : exercises;
+  const volume = Object.entries(calculateEffectiveVolume(volumeExercises)).sort(([, a], [, b]) => b - a);
 
   return (
     <main>
@@ -445,6 +462,7 @@ function FichaForm({
       {review !== null ? (
         <MultiFichaReview
           items={review}
+          catalog={catalog}
           warnings={reviewWarnings}
           errors={reviewErrors}
           busy={busy}
@@ -542,8 +560,8 @@ function FichaForm({
               ))}
             </ul>
           )}
-          <button type="button" className="button-primary" disabled={busy} onClick={() => void save(Date.now())}>
-            {busy ? "Salvando…" : "Salvar ficha"}
+          <button type="button" className="button-primary" disabled={busy || (!existing && catalog === "loading")} onClick={() => void save(Date.now())}>
+            {busy ? "Salvando…" : !existing && catalog === "loading" ? "Carregando tabela…" : "Salvar ficha"}
           </button>
         </>
       )}

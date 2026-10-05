@@ -141,6 +141,38 @@ deletes it so the ADM session stays active. When emulators are enabled, the seco
 must connect to the Auth emulator too; the primary Firestore client continues to handle the profile
 and audit write. See `web/src/data/adminCreate.ts` and GOALS.md §26 for the manual App Check caveat.
 
+**Account settings (§29).** Each role has a guarded account route: `/admin/conta`, `/app/conta`,
+and `/aluno/conta`; the profile/avatar chip links there while sign-out stays separate. `users/{uid}`
+stores the optional contact `phone` and `avatarStoragePath`. Phone is unverified contact info, not
+Firebase phone authentication. Auth remains authoritative for e-mail/password: e-mail changes use
+`verifyBeforeUpdateEmail`, then reload/refresh the ID token and sync the verified address into the
+user profile; password changes require current-password reauthentication. Reset-email actions remain
+the recovery path. Avatar objects use `account-avatars/{uid}/profile`, are read as bytes through the
+authenticated client (no bearer download URL), and are limited by UI and `storage.rules` to JPEG,
+PNG or WebP up to 2 MiB. Keep initials as fallback. `firebase.json` configures the Storage emulator
+on port 9199. Production bucket/plan/App Check setup and deployment of reviewed rules are owner-run
+manual gates; never enable Blaze or publish rules automatically.
+
+**Platform subscriptions and website invite capacity (§30).** Platform terms, invoices and payment
+records are separate from `billingPlans`/`payments`, which are what a trainer charges their own
+students. ADM plan templates/defaults live at `/admin/planos`; trainer terms, trial, invoice/payment,
+extensions, and manual invite resolution by code are in the trainer's admin detail. That ADM screen
+does not list invitation documents or show their exact count because those documents contain
+student contact and health fields; the ADM asks the trainer for a code and records a reason to
+resolve it. A privacy-safe exact ADM count still needs an aggregate/backend design. Trainer student
+detail shows the trainer's own live website invite count and limit. The ADM recovery action creates
+only a draft for the selected trainer, without creating an Auth account or bypassing the student's
+verified-email invite claim. New Web invites have `expiresAt: null` and do not expire automatically;
+the trainer cancels them manually. Legacy invitations with no `expiresAt` remain active until ADM
+resolution; numeric legacy `expiresAt` values retain time-based handling for compatibility.
+
+The invitation cap applies to the cooperative Web creation flow only. Its reservation/revision
+transaction serializes cooperating site requests, and the trainer's count includes active invites
+created by other clients. Android/mobile creation and direct Firestore writes outside that flow are
+not globally constrained by this website counter. Never document or describe it as a global limit.
+Production Firestore rules publication, any owner decision to enable Blaze/deploy a callable, and
+controlled live-account checks remain manual gates until completed and evidenced.
+
 Before writing route code in `web/`, read `web/AGENTS.md`: this Next differs from what models
 remember (global `PageProps`/`LayoutProps` helpers, `params` as a Promise).
 

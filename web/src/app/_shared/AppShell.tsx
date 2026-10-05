@@ -48,6 +48,7 @@ export function AppShell({
   const pathname = usePathname();
   const { session } = useSession();
   const who = session.status === "signedIn" ? (session.email ?? "Minha conta") : "";
+  const accountHref = `${home.replace(/\/$/, "")}/conta`;
 
   return (
     <>
@@ -76,11 +77,20 @@ export function AppShell({
             <span className="note-byline">Caderno ALLU</span>
           </div>
           <div className="profile-chip">
-            <Avatar name={who || "ALLU"} tone="dark" />
-            <span className="profile-meta">
-              <strong title={who}>{who}</strong>
-              <small>{roleLabel}</small>
-            </span>
+            <Link
+              className="profile-account"
+              href={accountHref}
+              title="Abrir configurações da minha conta"
+              aria-label="Abrir configurações da minha conta"
+              aria-current={pathname.replace(/\/+$/, "") === accountHref ? "page" : undefined}
+            >
+              <Avatar name={who || "ALLU"} tone="dark" uid={session.status === "signedIn" ? session.uid : undefined} />
+              <span className="profile-meta">
+                <strong title={who}>{who}</strong>
+                <small>{roleLabel} · Minha conta</small>
+              </span>
+              <span className="account-mobile-label" aria-hidden="true">Conta</span>
+            </Link>
             <SignOutButton className="signout" />
           </div>
         </aside>

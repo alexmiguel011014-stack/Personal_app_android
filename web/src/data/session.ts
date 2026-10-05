@@ -13,6 +13,9 @@ export interface Profile {
   trainerId: string | null;
   /** Missing or unknown values are active; the rules enforce suspension for trainer writes. */
   accessStatus: "active" | "suspended";
+  /** Missing stays null for existing trainers, which are not retroactively assigned terms. */
+  platformBillingStatus: "pending" | "trial" | "current" | "blocked" | null;
+  platformBillingUntil: number | null;
 }
 
 export type Session =
@@ -42,7 +45,13 @@ export function profileFrom(data: Record<string, unknown> | undefined): Profile 
   const role = ROLES.includes(raw as UserRole) ? (raw as UserRole) : "STUDENT";
   const trainerId = typeof data?.trainerId === "string" ? data.trainerId : null;
   const accessStatus = data?.accessStatus === "suspended" ? "suspended" : "active";
-  return { role, trainerId, accessStatus };
+  const billingStatus = data?.platformBillingStatus;
+  const platformBillingStatus = billingStatus === "pending" || billingStatus === "trial" || billingStatus === "current" || billingStatus === "blocked"
+    ? billingStatus
+    : null;
+  const rawUntil = data?.platformBillingUntil;
+  const platformBillingUntil = Number.isSafeInteger(rawUntil) && typeof rawUntil === "number" ? rawUntil : null;
+  return { role, trainerId, accessStatus, platformBillingStatus, platformBillingUntil };
 }
 
 /** A connected student's own profile — StudentRepository.getMyProfile, read once. */

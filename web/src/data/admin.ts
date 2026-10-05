@@ -13,6 +13,7 @@ import {
   type WriteBatch,
 } from "firebase/firestore";
 import { toAuditEntry, toTrainerActivity, toTrainerStats, toTrainerUser, type AuditAction, type AuditEntry, type TrainerActivity, type TrainerStats, type TrainerUser } from "./converters";
+import { applyPlatformDefaultsToNewTrainer } from "./platformSubscriptions";
 
 export interface TrainerRequest {
   id: string;
@@ -77,9 +78,10 @@ export async function loadTrainerAudit(db: Firestore, trainerUid: string): Promi
   return mapped(snapshot, toAuditEntry).sort((a, b) => b.at - a.at).slice(0, 50);
 }
 
-function audit(db: Firestore, batch: WriteBatch, adminUid: string, action: AuditAction, targetUid: string, note: string, at: number): void {
+function audit(db: Firestore, batch: WriteBatch, adminUid: string, action: AuditAction, targetUid: string, note: string, at: number, extra: Record<string, unknown> = {}) {
   const ref = doc(collection(db, "adminAudit"));
-  batch.set(ref, { at, adminUid, action, targetUid, note: note.slice(0, 200) });
+  batch.set(ref, { at, adminUid, action, targetUid, note: note.slice(0, 200), ...extra });
+  return ref;
 }
 
 export async function recordAudit(db: Firestore, entry: Omit<AuditEntry, "id">): Promise<void> {
@@ -109,14 +111,21 @@ export async function setAccessStatus(
   await batch.commit();
 }
 
-export async function promoteToTrainer(db: Firestore, adminUid: string, uid: string, name: string): Promise<void> {
+export async function promoteToTrainer(db: Firestore, adminUid: string, uid: string, name: string): Promise<boolean> {
   if (adminUid === uid) throw new Error("Não é possível promover a própria conta.");
   const target = await getDoc(doc(db, "users", uid));
   if (!target.exists() || target.data().role === "ADM") throw new Error("Esta conta não pode ser promovida por este fluxo.");
   const batch = writeBatch(db);
-  batch.set(doc(db, "users", uid), { role: "TRAINER", name, createdBy: adminUid }, { merge: true });
-  audit(db, batch, adminUid, "trainer.promote", uid, "Promovido para personal", Date.now());
+  const at = Date.now();
+  const auditRef = audit(db, batch, adminUid, "trainer.promote", uid, "Promovido para personal", at, {
+    billingFromStatus: target.data().platformBillingStatus ?? null,
+    billingFromUntil: target.data().platformBillingUntil ?? null,
+    billingToStatus: "pending",
+    billingToUntil: null,
+  });
+  batch.set(doc(db, "users", uid), { role: "TRAINER", name, createdBy: adminUid, platformBillingStatus: "pending", platformBillingUntil: null, lastAuditId: auditRef.id }, { merge: true });
   await batch.commit();
+  return applyPlatformDefaultsToNewTrainer(db, adminUid, uid);
 }
 
 export async function rejectRequest(db: Firestore, adminUid: string, uid: string): Promise<void> {
@@ -126,11 +135,18 @@ export async function rejectRequest(db: Firestore, adminUid: string, uid: string
   await batch.commit();
 }
 
-export async function approveRequest(db: Firestore, adminUid: string, uid: string, email: string, name: string): Promise<void> {
+export async function approveRequest(db: Firestore, adminUid: string, uid: string, email: string, name: string): Promise<boolean> {
   if (adminUid === uid) throw new Error("Não é possível promover a própria conta.");
   const target = await getDoc(doc(db, "users", uid));
   if (target.exists() && target.data().role === "ADM") throw new Error("Uma conta ADM não pode ser promovida por este fluxo.");
   const batch = writeBatch(db);
+  const at = Date.now();
+  const auditRef = audit(db, batch, adminUid, "trainer.promote", uid, "Solicitação aprovada", at, {
+    billingFromStatus: target.data()?.platformBillingStatus ?? null,
+    billingFromUntil: target.data()?.platformBillingUntil ?? null,
+    billingToStatus: "pending",
+    billingToUntil: null,
+  });
   batch.set(doc(db, "users", uid), {
     role: "TRAINER",
     name: name.trim(),
@@ -138,8 +154,11 @@ export async function approveRequest(db: Firestore, adminUid: string, uid: strin
     createdAt: Date.now(),
     createdBy: adminUid,
     accessStatus: "active",
+    platformBillingStatus: "pending",
+    platformBillingUntil: null,
+    lastAuditId: auditRef.id,
   }, { merge: true });
   batch.delete(doc(db, "trainerRequests", uid));
-  audit(db, batch, adminUid, "trainer.promote", uid, "Solicitação aprovada", Date.now());
   await batch.commit();
+  return applyPlatformDefaultsToNewTrainer(db, adminUid, uid);
 }

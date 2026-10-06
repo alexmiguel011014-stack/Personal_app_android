@@ -298,11 +298,12 @@ privilege hole an older §17 version had. Any older copy on another branch must 
 Never publish a copy without diffing it against what's live.
 
 **Rules are versioned in ascending order.** The first line of `firestore.rules` is `// Rules version: N`,
-and each set that has been published to Firebase is archived byte for byte as
-`firestore-rules/versions/vN.rules` (v3 is what was live on 2026-10-05). Work on `main` that changes the
-rules bumps N by one for the whole unpublished set — **v4** carries the account/plan/billing rules (§29–§30)
-and the spent-invite read restriction (§31b) — and its archive file is added when the trainer publishes it,
-never before, so the archive always means "what was live". Published rules are never edited in place.
+and every set is kept byte for byte as `firestore-rules/versions/vN.rules` (v3 is what was live on 2026-10-05).
+Work that changes the rules bumps N by one for the whole unpublished set — **v4** carries the
+account/plan/billing rules (§29–§30) and the spent-invite read restriction (§31b) — and adds `vN.rules`
+in the same PR, identical to `firestore.rules`. Until the trainer publishes it, a candidate may still change:
+edit both files together (`cp firestore.rules firestore-rules/versions/vN.rules`) and keep them identical.
+Once a version is published its file is frozen: later changes start the next number.
 
 Every rules change gets a test in `web/rules/firestore.rules.test.ts`, run against the local
 emulator with `npm run test:rules` from `web/` (Java 21; see `web/README.md`). `assertFails`

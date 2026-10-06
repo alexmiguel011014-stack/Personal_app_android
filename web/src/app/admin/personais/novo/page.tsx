@@ -9,6 +9,7 @@ import { applyPlatformDefaultsToNewTrainer } from "../../../../data/platformSubs
 import { emailSuggestionToConfirm } from "../../../../domain/adminEmailSuggestion";
 import { validateEmail } from "../../../../domain/emailPolicy";
 import { useSession } from "../../../SessionProvider";
+import { FocusNotice } from "../../../_shared/FocusNotice";
 
 interface PendingTrainer {
   uid: string;
@@ -76,6 +77,7 @@ export default function NewTrainerPage() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (busy) return;
     setError(null);
     setNotice(null);
     setSuggestion(null);
@@ -112,6 +114,7 @@ export default function NewTrainerPage() {
   }
 
   async function retryProfile() {
+    if (busy) return;
     if (pending && !profileSaved) await saveProfile(pending);
   }
 
@@ -129,8 +132,8 @@ export default function NewTrainerPage() {
       <h1>Cadastrar personal</h1>
       <p className="header-subtitle">Crie o acesso. O personal receberá um link por e-mail para definir a própria senha.</p>
 
-      {error && <p role="alert">{error}</p>}
-      {notice && <p role="status">{notice}</p>}
+      {error && <FocusNotice role="alert">{error}</FocusNotice>}
+      {notice && <FocusNotice>{notice}</FocusNotice>}
 
       {!pending ? (
         <form onSubmit={submit}>
@@ -146,7 +149,7 @@ export default function NewTrainerPage() {
             </div>
           )}
           <p><label>Telefone <span className="quiet-count">opcional</span><input autoComplete="tel" type="tel" maxLength={30} value={phone} onChange={(event) => setPhone(event.target.value)} /></label></p>
-          <p><button type="submit" disabled={busy}>{busy ? "Criando acesso…" : "Criar personal"}</button></p>
+          <p><button type="submit" aria-disabled={busy}>{busy ? "Criando acesso…" : "Criar personal"}</button></p>
         </form>
       ) : (
         <section aria-labelledby="created-heading">
@@ -154,9 +157,9 @@ export default function NewTrainerPage() {
           <p><strong>{pending.name}</strong> · {pending.email}</p>
           {!profileSaved && <p>UID da conta: <code>{pending.uid}</code></p>}
           {!profileSaved ? (
-            <button type="button" disabled={busy} onClick={retryProfile}>{busy ? "Salvando…" : "Concluir cadastro"}</button>
+            <button type="button" aria-disabled={busy} onClick={retryProfile}>{busy ? "Salvando…" : "Concluir cadastro"}</button>
           ) : (
-            <button type="button" disabled={busy} onClick={resendReset}>{busy ? "Enviando…" : "Reenviar link para definir senha"}</button>
+            <button type="button" aria-disabled={busy} onClick={resendReset}>{busy ? "Enviando…" : "Reenviar link para definir senha"}</button>
           )}
         </section>
       )}

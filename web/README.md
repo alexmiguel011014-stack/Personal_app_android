@@ -177,6 +177,7 @@ default location); each run re-seeds the emulators first. No dependencies: a sma
 ```bash
 npm run e2e:account -- trainer          # or: student;  add "mobile" for 390 px   (GOALS.md §29)
 npm run e2e:billing                     # trial cap, overdue lock, extension, payment   (GOALS.md §30)
+npm run e2e:admin-focus                 # keyboard focus after every ADM action button  (GOALS.md §29e)
 ```
 
 Local-only artefact worth knowing: the emulators speak HTTP/1.1, so a single Chrome profile that

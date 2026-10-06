@@ -18,6 +18,7 @@
     "dev:local": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-local.ps1",
     "e2e:account": "node e2e/account.mjs",
     "e2e:billing": "node e2e/billing.mjs",
+    "e2e:admin-focus": "node e2e/admin-focus.mjs",
     "test:rules": "npm --prefix ../functions run build && firebase emulators:exec --config ../firebase.json --project demo-personal-tracker --only auth,firestore,functions,storage \"vitest run --dir rules --testTimeout=30000 --no-file-parallelism\""
   },
   "dependencies": {

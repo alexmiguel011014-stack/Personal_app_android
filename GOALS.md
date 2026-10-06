@@ -5612,9 +5612,16 @@ Suggested: opus · high — emulator rules and end-to-end role coverage are the 
   > field, every stop has a name and a focus ring; 390 px has no overflow, controls ≥ 44 px, fields 16 px.
   > **Found and fixed:** the fields and buttons were `disabled` while saving, which drops keyboard focus to `<body>` —
   > they are now `readOnly` / `aria-disabled` with a double-submit guard (`AccountSettings.tsx`, `AccountAvatarSettings.tsx`),
-  > and the phone error is tied to its field (`aria-invalid`, `aria-describedby`). **Still not covered:** the same
-  > `disabled={busy}` pattern remains on the ADM screens (`/admin/planos`, the trainer detail panel); the screen-reader
-  > experience itself (only the DOM contract was checked); and the live site with real Firebase (emulators only).
+  > and the phone error is tied to its field (`aria-invalid`, `aria-describedby`).
+  > **The ADM screens had the same defect and were fixed the same day** (`web/e2e/admin-focus.mjs`, 13/13; 1/13 before the
+  > fix): every button that starts an action (`/admin/conta`, `/admin/planos`, the trainer detail panel — terms, trial
+  > extension, invoice, due date, payment, invite resolution —, `/admin/personais/novo`, `/admin/solicitacoes`) is now
+  > `aria-disabled` with a guard in its handler, so pressing Enter leaves focus on it; where the button legitimately goes
+  > away after success (a closed editor, a paid invoice, a created trainer) the new `_shared/FocusNotice.tsx` takes focus
+  > only if it would otherwise fall to `<body>`, so the next Tab continues from the result message.
+  > **Still not covered:** the screen-reader experience itself (only the DOM contract was checked), the buttons that
+  > merely open a form or dialog (they stay `disabled={busy}`; focus is not on them when busy starts), and the live site with
+  > real Firebase (emulators only).
 - [x] Regression-check the existing cross-client Firestore rule cases. Do not edit Android/iOS files. Because `firestore.rules` is shared, do not publish it to Firebase until the owner reviews the exact combined diff and approves the live rules step.
 - [x] Update `CLAUDE.md` and `web/README.md` with account fields, Auth flows, Storage rules/emulator setup, and the manual Firebase/billing gate. Tick only behaviorally verified items here.
 - [ ] **Done when:** all three live web roles can use their own account settings on the deployed site; the e-mail and password flows follow Firebase's confirmation/reauthentication requirements; avatar access is private; and the owner has completed the Storage setup. If Storage billing is declined, keep avatar upload open/deferred and do not mark the whole feature complete.

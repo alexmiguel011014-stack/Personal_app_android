@@ -21,6 +21,7 @@ import { formatDate, localDate } from "../../../../domain/dates";
 import { formatCents, parseAmountCents } from "../../../../domain/payments";
 import { resolvePlatformInviteAsAdmin } from "../../../../data/platformInvites";
 import { DateTime, Empty, Money } from "../../AdminPrimitives";
+import { FocusNotice } from "../../../_shared/FocusNotice";
 
 type TermsDraft = {
   monthlyBase: string;
@@ -182,6 +183,7 @@ export function PlatformSubscriptionPanel({
 
   async function saveAssignment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (busy || loading) return;
     if (!templateId) { setError("Escolha um modelo antes de atribuir os termos."); return; }
     setBusy(true); setError(null); setNotice(null);
     try {
@@ -203,6 +205,7 @@ export function PlatformSubscriptionPanel({
 
   async function createInvoice(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (busy || !mayInvoice || !subscription) return;
     setBusy(true); setError(null); setNotice(null);
     try {
       const saved = await issuePlatformInvoice(getFirebase().functions, trainerUid, invoiceDueDate, invoiceReason);
@@ -215,7 +218,7 @@ export function PlatformSubscriptionPanel({
   }
 
   async function markPaid() {
-    if (!invoice) return;
+    if (!invoice || busy) return;
     setBusy(true); setError(null); setNotice(null);
     try {
       const saved = await recordPlatformInvoicePayment(getFirebase().db, adminUid, trainerUid, invoice.id, paymentReference);
@@ -228,7 +231,7 @@ export function PlatformSubscriptionPanel({
 
   async function extendDueDate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!invoice) return;
+    if (!invoice || busy) return;
     setBusy(true); setError(null); setNotice(null);
     try {
       const days = integerValue(extensionDays, "Dias para prorrogar");
@@ -242,7 +245,7 @@ export function PlatformSubscriptionPanel({
 
   async function extendTrial(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!subscription) return;
+    if (!subscription || busy) return;
     setBusy(true); setError(null); setNotice(null);
     try {
       const days = integerValue(trialExtensionDays, "Dias para prorrogar o teste");
@@ -256,6 +259,7 @@ export function PlatformSubscriptionPanel({
 
   async function resolveInvite(code: string) {
     const normalizedCode = code.trim().toUpperCase();
+    if (busy || !normalizedCode || !inviteResolutionReason.trim()) return;
     if (!window.confirm(`Resolver o convite ${normalizedCode}? O código deixará de funcionar e a ação ficará registrada.`)) return;
     setBusy(true); setError(null); setNotice(null);
     try {
@@ -272,8 +276,8 @@ export function PlatformSubscriptionPanel({
 
   return <section className="panel">
     <h2>Assinatura e cobrança da plataforma</h2>
-    {error && <p role="alert">{error}</p>}
-    {notice && <p role="status">{notice}</p>}
+    {error && <FocusNotice role="alert">{error}</FocusNotice>}
+    {notice && <FocusNotice>{notice}</FocusNotice>}
     {loading ? <p className="loading" role="status">Carregando termos e fatura…</p> : <>
       <div className="admin-grid">
         <dl className="admin-figure"><dt>Vagas faturáveis agora</dt><dd>{billingUsage?.billableStudentSeats ?? "Ainda sem dados"}</dd></dl>
@@ -301,7 +305,7 @@ export function PlatformSubscriptionPanel({
             <label>Código de 8 caracteres<input required minLength={8} maxLength={8} pattern="[A-Fa-f0-9]{8}" value={inviteCode} onChange={(event) => setInviteCode(event.target.value.toUpperCase())} /></label>
             <label>Motivo para resolver<input required maxLength={200} value={inviteResolutionReason} onChange={(event) => setInviteResolutionReason(event.target.value)} /></label>
           </p>
-          <button type="submit" disabled={busy || !inviteCode.trim() || !inviteResolutionReason.trim()}>{busy ? "Resolvendo…" : "Resolver código"}</button>
+          <button type="submit" aria-disabled={busy || !inviteCode.trim() || !inviteResolutionReason.trim()}>{busy ? "Resolvendo…" : "Resolver código"}</button>
         </form>
       </section>}
       <p className="admin-muted">A cobrança de plataforma é independente das mensalidades dos alunos. A regra de cobrança pode bloquear o personal; suspensão manual continua separada.{billingUntil !== null && <> Acesso por cobrança até <DateTime at={billingUntil} />.</>}</p>
@@ -322,7 +326,7 @@ export function PlatformSubscriptionPanel({
             <label>Adicionar dias<input type="number" min="1" step="1" required value={trialExtensionDays} onChange={(event) => setTrialExtensionDays(event.target.value)} /></label>
             <label>Motivo<input required maxLength={200} value={trialExtensionReason} onChange={(event) => setTrialExtensionReason(event.target.value)} /></label>
           </p>
-          <button type="submit" disabled={busy}>{busy ? "Salvando…" : "Prorrogar teste"}</button>
+          <button type="submit" aria-disabled={busy}>{busy ? "Salvando…" : "Prorrogar teste"}</button>
         </form>}
       </section>}
 
@@ -340,7 +344,7 @@ export function PlatformSubscriptionPanel({
         {canManage && invoice.status === "unpaid" && <>
           <div className="admin-toolbar">
             <label>Referência não sensível do pagamento (opcional)<input maxLength={120} value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} /></label>
-            <button type="button" disabled={busy} onClick={() => void markPaid()}>{busy ? "Salvando…" : "Registrar pagamento"}</button>
+            <button type="button" aria-disabled={busy} onClick={() => void markPaid()}>{busy ? "Salvando…" : "Registrar pagamento"}</button>
           </div>
           <form onSubmit={(event) => void extendDueDate(event)}>
             <h4>Prorrogar vencimento</h4>
@@ -348,7 +352,7 @@ export function PlatformSubscriptionPanel({
               <label>Adicionar dias<input type="number" min="1" step="1" required value={extensionDays} onChange={(event) => setExtensionDays(event.target.value)} /></label>
               <label>Motivo da prorrogação<input required maxLength={200} value={extensionReason} onChange={(event) => setExtensionReason(event.target.value)} /></label>
             </p>
-            <button type="submit" disabled={busy}>{busy ? "Salvando…" : "Prorrogar vencimento"}</button>
+            <button type="submit" aria-disabled={busy}>{busy ? "Salvando…" : "Prorrogar vencimento"}</button>
           </form>
         </>}
       </section> : <section><h3>Fatura atual</h3><Empty>Nenhuma fatura foi emitida para este personal.</Empty></section>}
@@ -382,7 +386,7 @@ export function PlatformSubscriptionPanel({
             </p>
             {mode === "trial" && <label><input type="checkbox" checked={chargeDuringTrial} onChange={(event) => setChargeDuringTrial(event.target.checked)} /> Cobrar a mensalidade durante o teste grátis</label>}
             <p><label>Motivo da atribuição ou ajuste<input required maxLength={200} value={assignmentReason} onChange={(event) => setAssignmentReason(event.target.value)} /></label></p>
-            <button type="submit" disabled={busy || loading || !templateId}>{busy ? "Salvando…" : "Salvar termos e registrar auditoria"}</button>
+            <button type="submit" aria-disabled={busy || loading || !templateId}>{busy ? "Salvando…" : "Salvar termos e registrar auditoria"}</button>
           </>}
         </form>
 
@@ -394,7 +398,7 @@ export function PlatformSubscriptionPanel({
             <label>Vencimento<input type="date" required min={today || undefined} value={invoiceDueDate} onChange={(event) => setInvoiceDueDate(event.target.value)} /></label>
             <label>Motivo / observação da emissão<input required maxLength={200} value={invoiceReason} onChange={(event) => setInvoiceReason(event.target.value)} /></label>
           </p>
-          <button type="submit" disabled={busy || !mayInvoice || !subscription}>{busy ? "Emitindo…" : "Emitir fatura"}</button>
+          <button type="submit" aria-disabled={busy || !mayInvoice || !subscription}>{busy ? "Emitindo…" : "Emitir fatura"}</button>
         </form>
       </>}
     </>}

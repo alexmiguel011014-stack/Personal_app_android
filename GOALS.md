@@ -5205,7 +5205,7 @@ Suggested: sonnet · medium — small Kotlin change, but on a different branch a
 
 Suggested: haiku · low — a short click list, fully specified.
 
-- [ ] **(manual)** Firebase console → Authentication → **Templates** → *Email address verification*: language
+- [ ] **(superseded by §32c, 2026-10-05 — do that instead)** **(manual)** Firebase console → Authentication → **Templates** → *Email address verification*: language
       **Português (Brasil)**, sender name **ALLU personal**, a short subject and body that says what the link is
       for. Do this *before* the live test, or the first mails go out in English.
 - [ ] **(manual)** Authentication → Settings → **Authorized domains**: confirm `alexmiguel011014-stack.github.io`
@@ -5868,6 +5868,322 @@ Suggested: sonnet · medium — domain and account changes are external operatio
 - [ ] Present the risk register, Cloudflare plan/build evidence, required Firebase console changes, GitHub App scope, estimated hosting limits/costs, and rollback steps for owner approval. Do not change DNS, connect a repository, publish Firebase rules, or disable GitHub Pages as part of local implementation.
 - [ ] After explicit owner approval, deploy to Cloudflare, verify the production custom domain and `pages.dev` exposure policy, Firebase Auth/App Check, role flows, response headers, and error logs. Keep the previous Pages deployment recoverable until acceptance.
 - [ ] **Done when:** the owner has accepted the observed public-site behavior and role data boundaries, the chosen host/domain is live, and documented rollback has been tested without modifying Android/iOS source.
+
+## 32. Feature — Branded Firebase e-mails: the verification, password and e-mail-change mails, and the page their link opens
+(2026-10-05, via `/newgoal`)
+
+**The request:** "vamos personalizar esse email para ter uma cara mais atrativa para meu programa" — with a
+screenshot of the verification mail §27 sends to a new student.
+
+**Goal type: Feature** — an additive polish of three flows that already work (§27 verification, §7/§26h
+password reset, §29 e-mail change). Nothing is broken; nothing in `firestore.rules`, Android or iOS changes.
+Research is done (2026-10-05) and recorded in 32a. This plan **extends §27h's one-line "template" item**
+(which only asked for a sender name and a short body) — do 32c instead of that item, not both.
+
+**What the screenshot shows (baseline, read from the image 2026-10-05):**
+- **Subject** `Verifique seu e-mail do app project-681428046020` and **signature** `Equipe do app
+  project-681428046020`: `%APP_NAME%` is Firebase's *public-facing name*, which is still the auto-generated
+  `project-<project number>` (the number is `messagingSenderId` in `web/src/data/firebaseConfig.ts`). This is the
+  ugliest thing in the mail and a **30-second console fix** (32c) — no code.
+- **Sender** `noreply@personalapp-88129.firebaseapp.com` — Firebase's default sender; no brand, default avatar.
+- **Body** is Firebase's stock pt-BR text: a bare "Olá," (accounts here have no Auth display name — the name
+  lives in Firestore `users/{uid}.name`), the action link printed as a raw ~700-character URL, no colours, no
+  button, no wordmark.
+- **The link** opens `https://personalapp-88129.firebaseapp.com/__/auth/action?mode=verifyEmail&…&continueUrl=<the
+  invite page>&lang=pt-BR` — Firebase's default, unbranded handler page on a `firebaseapp.com` address; only its
+  "Continuar" brings the person to the site. (`lang=pt-BR` is `auth.languageCode`, set in `web/src/data/firebase.ts`.)
+- Do **not** copy that link or its one-time code into the repo or any doc.
+
+**What is and is not within reach on the free Spark plan** (the project stays on Spark — §3, §23e):
+
+| Part of the e-mail | Controlled by | Reachable now? | Where |
+|---|---|---|---|
+| Name in subject/signature (`%APP_NAME%`) | Console → Project settings → *Public-facing name* | Yes | 32c |
+| Sender name, reply-to, subject, body (HTML if the editor keeps it) — per template, per language | Console → Authentication → Templates | Yes | 32c–32d |
+| The page the link opens (branded, one-click "Continuar") | Console *Customize action URL* + **our own page** | Yes — a static page, no server | 32e, 32g |
+| Sender address / domain, deliverability (spam folder) | Custom domain (DNS) or custom SMTP | Needs a domain the owner does not have yet | deferred, 32h |
+| Full layout freedom, logo image, web fonts | Own sending backend (Admin SDK link + a mail provider) | Needs Blaze (§3 refused it) | deferred, 32h |
+
+**What the research changed (five lines):**
+1. **Two of the three biggest wins cost no code**: the public-facing name and the template text/sender name are
+   console settings. They are done by hand (32c) and the repo keeps the exact text it pastes (32d) because the
+   console has no versioning.
+2. **The branded page is the real code work.** A custom action URL makes Firebase send the person to a page *we*
+   host, with `mode`, `oobCode`, `apiKey`, `continueUrl` and `lang` appended; the page finishes the job with
+   `applyActionCode` / `checkActionCode` / `verifyPasswordResetCode` + `confirmPasswordReset`. The site is a static
+   export, so this is an ordinary client route (`/acao/`), the same family as `/convite/` — no server.
+3. **`continueUrl` arrives in the query string, so it is attacker-controlled.** The handler must only send the
+   person on to the site's own origin and base path, never to an arbitrary address (open redirect / phishing).
+   This is the one security-relevant piece and gets a test.
+4. **The action URL is set per template and applies to every client** (web, Android's `sendPasswordResetEmail`,
+   iOS): after the switch an Android reset link lands on the web page, which is a browser page today as well
+   (Firebase's hosted one) — no regression, but it means the handler must fully work **before** the console is
+   switched, and a broken handler would break password recovery for everyone. Hence 32g's order and rollback.
+5. **No image, no web font in v1.** The site's wordmark is typographic ("no approved logo file" —
+   `web/src/app/_shared/Wordmark.tsx`), many mail clients block remote images by default, and one old report says
+   `<img>` shows in the console preview but not in the delivered mail. A table-based HTML wordmark ("ALLU" + orange
+   full stop + "personal") on the ink-dark band works everywhere and matches the site (direction B "Energia").
+
+**Not touched by this section (explicit, to stop scope creep):** Android/iOS source; `firestore.rules` (no rules
+change, so `firestore-rules/versions/` and `check:rules-version` are not involved); the in-page waiting room
+`convite/VerifyEmailPanel.tsx` copy (it already tells people to check spam); e-mail-link (passwordless) sign-in and
+SMS (§27 "not touched"); multi-factor mails; any language other than pt-BR; sending any e-mail from code other than
+the three Firebase already sends; Cloud Functions / Blaze; a custom sender domain or SMTP (decision only, 32h).
+
+**Where this executes:** `web/` on a branch from `main` → PR (CI gates lint, tests, build); the Firebase-console
+steps are the owner's, by hand. Commit each verified item on its own; do not push without being asked.
+**The rollout order is the whole risk** (32g): merge and deploy the page → prove it live → only then switch the
+console's action URLs, **verification first, password reset last**.
+
+```mermaid
+flowchart TD
+    A[32a. Research — done] --> B[32b. Decisions]
+    B --> C[32c. Console quick wins + editor probe — manual]
+    B --> E[32e. Action page /acao/]
+    C --> D[32d. Template sources in web/email]
+    D --> F[32f. Verification]
+    E --> F
+    F --> G[32g. Rollout — manual, ordered]
+    B --> H[32h. Deferred options — decision only]
+    G --> I[32i. Registration]
+```
+
+Suggested: sonnet · high — ordinary web work, except the action page (one-time auth codes, an open-redirect guard,
+the password-reset path every role depends on) and the console switch that points every client at it.
+
+**32a. Research — what the platform allows (checked 2026-10-05)**
+
+Suggested: sonnet · medium — already done; kept so none of it is looked up twice.
+
+- [x] **Verified in Firebase's own docs/help:** the console's *Templates* tab edits, per email type, the sender
+      name, the sender address, the reply-to, the subject and the message; placeholders are `%LINK%`, `%APP_NAME%`,
+      `%EMAIL%`, `%DISPLAY_NAME%` and, for the change mail, `%NEW_EMAIL%`; `%APP_NAME%` is the *Public-facing
+      name* on the Settings page; a template can set its own **action URL** and Firebase appends `mode` and
+      `oobCode` (the custom-handler guide lists `apiKey`, `continueUrl`, `lang` too)
+      (<https://support.google.com/firebase/answer/7000714>,
+      <https://firebase.google.com/docs/auth/custom-email-handler>).
+- [x] **Handler recipe (same guide):** `verifyEmail`/`recoverEmail`/`verifyAndChangeEmail` →
+      `applyActionCode(auth, oobCode)` (`checkActionCode` first when the old address must be shown);
+      `resetPassword` → `verifyPasswordResetCode(auth, oobCode)` then `confirmPasswordReset(auth, oobCode,
+      newPassword)`; the handler may live "on Firebase Hosting or another platform" — i.e. on our Pages site.
+- [x] **HTML is an intended capability:** the Identity Platform config's `EmailTemplate` carries `bodyFormat:
+      PLAIN_TEXT | HTML`, and `notification.sendEmail.method` is `DEFAULT | CUSTOM_SMTP`
+      (<https://docs.cloud.google.com/identity-platform/docs/reference/rest/v2/Config>).
+- [x] **Custom domain** for the From and the link domain = DNS TXT + CNAME records, up to 24 h to verify, one SPF
+      record per domain (<https://firebase.google.com/docs/auth/email-custom-domain>); needs a domain.
+- [x] **Quotas** (<https://firebase.google.com/docs/auth/limits>): Spark — verification mails 1,000/day, e-mail
+      change mails 1,000/day, password-reset mails 150/day. Plenty; no plan restriction on templates is stated.
+- [x] **Own sending** exists — Admin SDK `generateEmailVerificationLink` / `generatePasswordResetLink` /
+      `generateVerifyAndChangeEmailLink` return the link and "the developer emails it with a custom SMTP"
+      (<https://firebase.google.com/docs/auth/admin/email-action-links>) — but it runs server-side (Blaze).
+- [x] **NOT verified (docs summaries disagree, or silent) — resolved by hand in 32c, not assumed here:**
+      (1) whether the console editor really keeps HTML, inline styles and tables, or shows plain text only (the
+      Help article lists the message as editable for some types only; the custom-handler guide says HTML is
+      supported); (2) whether `<img>` survives in the *delivered* mail (a 2017 firebase-js-sdk report says the image
+      proxy breaks it — not confirmed or refuted since); (3) whether template editing needs anything beyond Spark (a
+      third-party blog claims Blaze; Firebase's limits page names no such rule); (4) which console template
+      `verifyBeforeUpdateEmail` (§29) uses and whether its link's `mode` is `verifyAndChangeEmail`; (5) that
+      `%NEW_EMAIL%` is filled in that mail; (6) the real expiry of each link (do not put a number in the copy until
+      read from the docs/console); (7) whether *SMTP settings* needs the Identity Platform switch or billing (32h).
+
+**32b. Decisions (owner — recommended defaults are written in; change them here, not mid-build)**
+
+Suggested: haiku · low — a short list the owner confirms or edits.
+
+- [x] **Scope** (default taken as written, 2026-10-05): console copy + own action page now (tiers 1–2 of the table above); custom domain / SMTP / own
+      sending stay deferred (32h). *Default: yes.*
+- [x] **Brand string** (default taken as written, 2026-10-05): **`ALLU personal`** for the public-facing name and the sender name — what the site's tab
+      title, header and landing already say (`web/src/app/layout.tsx`, `Wordmark.tsx`). The Android app's name
+      "Personal Tracker" is not used in mails. If the §23m rename lands, only the public-facing name (and the
+      wordmark in the three template files) change, because bodies/subjects use `%APP_NAME%`. *Default: yes.*
+- [x] **Header** (default taken as written, 2026-10-05): typographic wordmark, no image (see "What the research changed" 5). Revisit when an approved
+      logo file exists. *Default: yes.*
+- [x] **Action page route** (default taken as written, 2026-10-05): `/acao/` (ASCII, Portuguese, like `/entrar/` and `/convite/`), one page for every mode
+      and every client. *Default: yes.*
+- [ ] **Reply-to:** an address the owner actually reads, chosen by the owner in the console; **never committed**
+      (the source repo may be public — §31). *Default: owner picks.*
+- [x] **Greeting** (default taken as written, 2026-10-05): no `%DISPLAY_NAME%` (it renders empty here). *Default: yes.*
+
+**32c. Console quick wins + editor probe (manual)**
+
+Suggested: haiku · low — a click list, plus writing down what the editor actually does.
+
+- [ ] **(manual) Public-facing name** → Firebase console → Project settings → General → *Public-facing name* =
+      `ALLU personal`. Done when the next verification/reset mail says "ALLU personal" in subject and signature.
+- [ ] **(manual) Probe the editor** on *Authentication → Templates → Password reset* (the safest template to test:
+      the sender triggers it on their own account; 150/day): choose language **Português (Brasil)**; note whether the
+      message box accepts HTML, a `<table>`, inline `style=""`, a `<a href="%LINK%">` button, an `<img>`; whether an
+      HTML-comment/unsupported tag is stripped on save; any size limit. Send the real mail to your own address
+      (`Entrar → Esqueci minha senha`, or the ADM's reset button) and read it in **Gmail web and Gmail on the phone,
+      light and dark**. Record the findings under this item (dated). Done when the findings answer 32a(1)–(2).
+- [ ] **(manual) Map the templates:** trigger an **e-mail change** from `/app/conta` (§29) on a test account and note
+      which template renders, the `mode=` in the link, and whether `%NEW_EMAIL%` is filled (32a(4)–(5)). Done when the
+      mapping is written here and 32d knows how many template files it needs.
+- [ ] **(manual) Template language:** make sure the **pt-BR** variant is the one customised, **and** that the
+      default/English variant is not left stock — Android's reset mail does not set `languageCode`. Done when a mail
+      requested with and without `languageCode` both arrive branded.
+- [ ] **(manual) Read the link expiries** the console/docs state for verification, reset and change links (32a(6));
+      write them here only if the mail copy will mention them (default: it does not).
+
+**32d. Template sources in the repo**
+
+Suggested: sonnet · medium — fiddly HTML for mail clients, low risk; the lint test is what keeps it honest.
+
+- [x] (done 2026-10-05) `web/email/verify-email.html`, `web/email/reset-password.html`, `web/email/change-email.html` (+
+      `recover-email.html` only if 32c shows a template that needs it), each the **exact text pasted into the
+      console**, plus `web/email/README.md` with: the subject and sender name per file, the paste steps, the
+      placeholders used, and "the console has no versioning — this folder is the record". Done when each file is
+      one self-contained HTML fragment using only Firebase placeholders.
+- [x] **Design (direction B "Energia", mail-safe)** — done 2026-10-05: `<table role="presentation">` layout, `max-width:560px`,
+      inline styles only, `font-family: Arial, Helvetica, sans-serif`; page background `#faf9f7`; white card with
+      `1px solid #e6e3de` and 6 px corners; **header band `#12161c`** with "ALLU" in white heavy type, the full stop
+      in `#fb923c`, and "personal" small in `#e6e3de`; heading 22 px `#12161c`; body 16 px / 1.5; **button**
+      `background:#c2410c;color:#ffffff;font-weight:700;padding:14px 28px;border-radius:6px` (tap target ≥44 px,
+      white-on-orange ≈5.2:1) with `bgcolor` on the cell for Outlook; muted footer 12 px `#575c66`; every cell sets
+      its own background so a client's dark-mode inversion cannot make text vanish; **no `<img>`, no `<style>`, no
+      `<script>`, no remote font**.
+- [x] **Copy (pt-BR, same tone as the site)** — done 2026-10-05; `change-email.html` leaves `%NEW_EMAIL%` out until 32c shows it fills (it says "este é o novo endereço" instead): *verify* — subject `Confirme seu e-mail no %APP_NAME%`, heading
+      "Confirme seu e-mail", "Falta um passo para usar o %APP_NAME%: confirme que %EMAIL% é o seu endereço.",
+      button "Confirmar meu e-mail"; *reset* — subject `Redefina sua senha do %APP_NAME%`, heading "Crie ou
+      redefina sua senha", "Recebemos um pedido para criar ou redefinir a senha de %EMAIL% no %APP_NAME%." (it
+      also serves the trainer the ADM creates in §26h, who sets a first password), button "Definir minha senha";
+      *change* — subject `Confirme seu novo e-mail no %APP_NAME%`, heading "Confirme o novo e-mail", button
+      "Confirmar novo e-mail" (use `%NEW_EMAIL%` only if 32c proved it fills). Every file ends with a plain
+      fallback — "Se o botão não abrir, copie e cole este endereço no navegador: %LINK%" — and "Se não foi você,
+      ignore este e-mail: nada muda na sua conta." Sender name `ALLU personal`.
+- [ ] **Only if 32c shows the editor is plain-text only:** add a short `*.txt` sibling per template (heading line,
+      one sentence, `%LINK%`, the ignore line) and paste that instead. Skip otherwise.
+- [x] **Test** (done 2026-10-05: 16 tests; the pure linter is `src/domain/authEmailTemplates.ts` and "fails a template with an <img> added" is the proof it can fail) `web/src/domain/authEmailTemplates.test.ts` (reads `web/email/*.html` with `node:fs`): each file has
+      `%LINK%` in an `href` **and** as visible fallback text; uses `%APP_NAME%`; no `%DISPLAY_NAME%`; has no
+      `<script`, `<style`, `<link`, `<img`, `javascript:`, or `http(s)://` literal; every `#hex` used is a colour
+      token in `web/src/app/globals.css`'s `:root`; file size ≤ 6 KB; the change file uses `%NEW_EMAIL%` only when
+      the README says 32c confirmed it; the copy states no expiry number. Done when it passes and fails on a file
+      with an `<img>` added.
+
+**32e. The branded action page `/acao/`**
+
+Suggested: sonnet · high — one-time auth codes, an open-redirect guard and the password-reset path; the pure parts
+carry the tests.
+
+- [x] (done 2026-10-05) **First read** `web/AGENTS.md` and the relevant guide under `web/node_modules/next/dist/docs/` (this Next is
+      not the one models remember: `useSearchParams` and static export, `params` as a Promise); follow `/convite`
+      (`web/src/app/convite/page.tsx`, `InviteClaim.tsx`) for the Suspense + client-component shape.
+- [x] (done 2026-10-05; 15 tests) **Pure rules** `web/src/domain/authAction.ts` (+ `.test.ts`, no Firebase, no clock):
+      `parseActionLink(search)` → `{ mode, oobCode, continueUrl, lang }` with `mode` narrowed to
+      `verifyEmail | resetPassword | recoverEmail | verifyAndChangeEmail | null`; `safeContinueUrl(raw, origin,
+      basePath)` → the URL **only if** its origin equals `origin` and its path starts with `basePath`, otherwise
+      `null` (the page then offers `/entrar/`); keeps the full query (§29's `accountEmailChange=confirmed` must
+      survive); `actionErrorMessage(code, mode)` for `auth/expired-action-code`, `auth/invalid-action-code`,
+      `auth/user-disabled`, `auth/user-not-found`, `auth/weak-password`, network. Tests: a `continueUrl` on another
+      host, `javascript:`, `//evil.example`, a different port, a base-path escape (`/Personal_app_android/../x`) and
+      userinfo (`https://site@evil`) are all rejected; the invite URL from `verificationContinueUrl` passes.
+- [x] (done 2026-10-05; 8 tests) **Data** `web/src/data/authAction.ts` (+ `.test.ts` with the same mock style as `account.test.ts`): thin
+      wrappers — `inspectAction` (`checkActionCode`), `applyVerification` (`applyActionCode`), `previewReset`
+      (`verifyPasswordResetCode`), `submitNewPassword` (`confirmPasswordReset`); after a successful *verify* in a
+      browser where the same account is signed in, call `confirmVerified` (§27, `data/emailVerification.ts`) so the
+      invite page it returns to is already verified and the rules see the fresh token — best effort, errors
+      swallowed. Done when each wrapper's call order and the swallow are asserted.
+- [x] (done 2026-10-05; the title is the page's own `metadata`, as `/convite` does, not a `layout.tsx`) **Page** `web/src/app/acao/page.tsx` + `ActionClient.tsx` + a `layout.tsx` title (like `/entrar`), inside
+      `PublicShell` and the existing `auth-card` styling; extend `globals.css` only (no new stylesheet; text ≥12 px,
+      controls ≥44 px, fields 16 px). States, all in pt-BR with a heading that takes focus:
+      *loading* → *success* / *error* per mode — **verifyEmail / verifyAndChangeEmail**: applied on load, "E-mail
+      confirmado" + **Continuar** (to `safeContinueUrl`, else `/entrar/`); **resetPassword**: show the address, new
+      password + confirmation (same minimum as the rest of the site), "Senha atualizada" + **Entrar**, never signs in
+      by itself; **recoverEmail**: explicit confirm button, never applied on load; **unknown/missing mode or code**:
+      "Link inválido" + `/entrar/`; **expired/used**: say so and say what to do ("volte à página do convite e
+      toque em Reenviar" / "peça outro link em Entrar → Esqueci minha senha"). The `oobCode` stays in memory; the
+      page makes no request until `mode` and `oobCode` are both present.
+- [x] **Fits the CSP** (checked by inspection 2026-10-05: the page's only network calls are the Firebase Auth SDK's, same as `/convite`; the header is Report-Only and is served only by a Cloudflare host, not by GitHub Pages or the dev server, so it could not be loaded under it here) (`web/public/_headers`): no new origin is needed — `identitytoolkit.googleapis.com` is in
+      `connect-src`. Done when the page loads under that header with no new violation in the console.
+- [x] (done 2026-10-05; run against the emulator for verify, reset and change — it issues no recovery code for `verifyBeforeUpdateEmail`) **Local helper** `web/scripts/action-link.mjs <email> [verify|reset]`, mirroring `scripts/verify-email.mjs`:
+      reads the Auth emulator's `oobCodes`, takes the newest code of that type for the address and prints
+      `http://localhost:3000/acao/?mode=…&oobCode=…&continueUrl=…` (the emulator's own `oobLink` points at its own
+      page, not ours). Emulator-only, like its sibling.
+
+**32f. Verification**
+
+Suggested: sonnet · medium — mostly re-running the project's own gates, then driving the page end to end.
+
+- [x] (done 2026-10-05) From `web/`: `npm test`, `npm run lint`, `npx tsc --noEmit` (`npx next typegen` first on a fresh checkout),
+      `npm run build`, and the static build with `NEXT_PUBLIC_BASE_PATH=/Personal_app_android` (the page must work
+      under the sub-path and end its route in `/`). `npm run test:rules` is not needed (no rules change) — say so.
+- [x] (done 2026-10-05, record below) **Drive it on the emulators** with the Browser pane (`npm run dev:local`; DOM/text and console, not desktop
+      screenshots): sign up on `/convite` → get the handler URL with `action-link.mjs` → the page confirms and
+      **Continuar** returns to the invite → opening the same URL again shows the expired/used state; request a reset
+      → handler URL → set a password → sign in with it; a `continueUrl=https://evil.example/` falls back to
+      `/entrar/`; no `mode` shows "Link inválido"; check the layout at 375 px and desktop width.
+- [ ] **Visual check of the real mails is the owner's:** ask for a screenshot of each mail (Gmail web and phone,
+      light and dark) and say which state it should show — do not capture the desktop.
+- [x] Done when all gates are green and the end-to-end run above is recorded here with its date.
+      **Record (2026-10-05):** `npm test` 462/462 (45 files), `npm run lint` and `npx tsc --noEmit` clean, static build
+      green at the root and with `NEXT_PUBLIC_BASE_PATH=/Personal_app_android` (`/acao` among the 27 routes).
+      Driven in the Browser pane against the **shared** Auth emulator (another session's — so no re-seed; fresh
+      `acao-*@teste.dev` accounts made through the Auth REST API instead of `/convite`, which needs a seeded
+      invite): verify link → "E-mail confirmado", `Continuar` = the invite URL, account `emailVerified` true, no
+      console errors; the same link again → the spent-code message; `continueUrl=https://evil.example/…` → only
+      "Ir para Entrar" (`/entrar/`), no external link rendered; reset link → mismatch error, then "Senha
+      atualizada", the new password signs in and the old one is refused; change link → "Novo e-mail confirmado"
+      with `?accountEmailChange=confirmed` kept on `Continuar`; no or unknown `mode` → "Link inválido"; the 375 px
+      layout read correctly. **Not driven:** `recoverEmail` (the emulator issues no recovery code for
+      `verifyBeforeUpdateEmail`; its branch is covered by the data tests) and the §27 round trip through
+      `/convite`'s "Já confirmei" (`confirmVerified` is unit-tested). The other session reset the shared emulator
+      mid-run; the reset check was repeated on a fresh account right after.
+
+**32g. Rollout (manual, in this order — wrong order breaks links)**
+
+Suggested: sonnet · high — an ordered owner checklist; the step that points every client at the new page is the
+risky one, which is why it is last and per template.
+
+- [ ] **Merge and deploy:** PR → CI green → merge → `web-deploy.yml` publishes to Pages. Then open
+      `https://alexmiguel011014-stack.github.io/Personal_app_android/acao/` live: it must load (200) and show
+      "Link inválido" with no parameters. **Do not touch the console before this passes.**
+- [ ] **(manual) Authorized domains:** Authentication → Settings → Authorized domains lists
+      `alexmiguel011014-stack.github.io` (§27h already asks for this; a custom action URL needs it too).
+- [ ] **(manual) Paste the templates** from `web/email/` (sender name, subject, body, reply-to) for *Email address
+      verification*, *Password reset* and the change template (32c's mapping), in the pt-BR language variant. The
+      action URL is still Firebase's default at this point, so nothing can break yet. Send a real mail per template
+      to your own address and read it (Gmail web + phone). Done when each looks as designed, or 32d is adjusted.
+- [ ] **(manual) Switch the action URL, one template at a time**, to
+      `https://alexmiguel011014-stack.github.io/Personal_app_android/acao/`: **verification first** (a real
+      `+alias` sign-up through `/convite` — the link must confirm, return to the invite, and "Já confirmei" must
+      pass), then the **change** template (an e-mail change from `/app/conta`), then **password reset last** (reset
+      the owner's own ADM account and sign in with the new password, **before** telling anyone). Done when each
+      template has been proven end to end after its own switch.
+- [ ] **Rollback, written down before the first switch:** in the console, clear the custom action URL (or reset the
+      template to default) — links already sent keep working because the one-time code is the same under either
+      handler; nothing in the data changes. Keep a second ADM account (§26) signed in while testing the reset.
+- [ ] **Done when:** all three templates are branded, their links open `/acao/` and complete, the rollback was read
+      (not necessarily used), and the dated results are recorded here.
+
+**32h. Deferred options (decision only — none are built by this section)**
+
+Suggested: haiku · low — recording a decision, not doing work.
+
+- [ ] **Custom sender domain** — fixes "comes from `firebaseapp.com`" and helps the spam folder; needs a domain the
+      owner owns, DNS TXT + CNAME records and up to 24 h (32a). Worth doing when the project has a domain (it would
+      also serve the §31 Cloudflare move). Record the owner's decision.
+- [ ] **Custom SMTP** (console *Templates → SMTP settings*, API `CUSTOM_SMTP`) — Firebase's own templates sent
+      through the owner's mail provider; improves the sender and deliverability, **not** the layout. Whether it needs
+      the Identity Platform switch (§26k/§27h already weigh that switch) or billing is **unverified** — read the
+      console before deciding. Record the decision.
+- [ ] **Own sending** (Admin SDK link + a mail provider, full HTML, logo, fonts) — needs a server, i.e. Blaze (§3,
+      §30). Revisit only if the console templates prove too limited (32c) *and* Blaze is accepted for other reasons.
+- [ ] **Trigger to revisit:** students report the mail in spam, or the owner wants a logo/web-font layout.
+
+**32i. Registration**
+
+Suggested: haiku · low — documentation so the new thing is findable, last because it describes what exists.
+
+- [x] (done 2026-10-05) `CLAUDE.md` → "Web front": a short paragraph — the e-mails are Firebase's, branded through the console
+      from `web/email/` (no versioning there); links open `/acao/` once the console's action URLs are switched;
+      `safeContinueUrl` is the only thing that may redirect from it; no image/web font in mails; rollout order.
+- [x] (done 2026-10-05) `web/README.md`: replace the §27 "Templates" console step with a pointer to a new *Branded Firebase e-mails
+      (GOALS.md §32) — console steps* section (32g's checklist), add the `/acao` row to the Routes table, and
+      document `scripts/action-link.mjs` next to `verify-email.mjs`.
+- [x] (done 2026-10-05) GOALS.md: mark §27h's template item "superseded by §32c" and tick this section's items with dates as they are
+      verified; record 32b's decisions and 32c's findings in place.
+- [x] **Done when** (2026-10-05): a reader who has never seen this plan can find, from `CLAUDE.md` or `web/README.md`, where the
+      templates live, how to change them, and how the link page works.
 
 ## Suggested build order (what blocks what) — revised 2026-08-18
 

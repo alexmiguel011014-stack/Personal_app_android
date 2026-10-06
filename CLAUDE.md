@@ -147,6 +147,18 @@ deletes it so the ADM session stays active. When emulators are enabled, the seco
 must connect to the Auth emulator too; the primary Firestore client continues to handle the profile
 and audit write. See `web/src/data/adminCreate.ts` and GOALS.md §26 for the manual App Check caveat.
 
+**Branded Firebase e-mails (§32).** The verification, password-reset and e-mail-change mails are Firebase's,
+sent from its own sender; the repo keeps only what the console is told to say — `web/email/*.html` (the exact
+bodies pasted into Authentication → Templates, which has no versioning; `src/domain/authEmailTemplates.ts`
+lints them: inline styles and Firebase placeholders only, palette from `globals.css`, no image/web font/
+`%DISPLAY_NAME%`) — and the page the links open once each template's console *action URL* points at it:
+`/acao/` (`app/acao/`, `domain/authAction.ts`, `data/authAction.ts`). `safeContinueUrl` is the only thing that
+may send a visitor on from `/acao/` (`continueUrl` is attacker-controlled; same origin + base path only), and
+`oobCode` is spent once (the effect guards against React's dev double-run). The action URL applies to every
+client (web, Android's reset, iOS), so the page must be live before the console is switched, per template,
+verification first and password reset last; clearing the URL is the rollback. Console steps and the order are
+in `web/README.md`; sender domain / SMTP / own sending are deferred decisions (GOALS.md §32h).
+
 **Account settings (§29).** Each role has a guarded account route: `/admin/conta`, `/app/conta`,
 and `/aluno/conta`; the profile/avatar chip links there while sign-out stays separate. `users/{uid}`
 stores the optional contact `phone` and `avatarStoragePath`. Phone is unverified contact info, not

@@ -132,9 +132,10 @@ button, .button { display: inline-flex; min-height: 44px; align-items: center; j
 button:hover, .button:hover { background: var(--tint); }
 button[type="submit"], .button-primary { border-color: var(--primary); background: var(--primary); color: #fff; }
 button[type="submit"]:hover, .button-primary:hover { border-color: var(--primary-hover); background: var(--primary-hover); }
-button:disabled { opacity: .5; cursor: not-allowed; }
-button:disabled:hover { background: var(--white); }
-button[type="submit"]:disabled:hover { border-color: var(--primary); background: var(--primary); }
+button:disabled, button[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+button:disabled:hover, button[aria-disabled="true"]:hover { background: var(--white); }
+button[type="submit"]:disabled:hover, button[type="submit"][aria-disabled="true"]:hover { border-color: var(--primary); background: var(--primary); }
+input[readonly]:not([type="checkbox"]):not([type="radio"]) { background: var(--tint); }
 .button-on-dark { border-color: #ffffff59; background: transparent; color: #ffffff; }
 .button-on-dark:hover { background: #ffffff17; }
 .button-leaf { border-color: var(--leaf); background: var(--leaf); color: var(--forest-deep); }

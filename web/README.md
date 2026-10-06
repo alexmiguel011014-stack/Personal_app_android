@@ -166,6 +166,24 @@ The suite also starts the Functions emulator (the platform-billing callable). On
 default 10 s load timeout can expire and fail the `platformFlows` callable tests with `not-found`;
 set `FUNCTIONS_DISCOVERY_TIMEOUT=60` (CI does) and run it again.
 
+### Browser tests (`e2e/`)
+
+Scripted passes over the real screens, in headless Chrome, against the emulators — what the unit and
+rules tests cannot see (focus, labels, 390 px, a link opened from an e-mail, the lock screen). They
+need `npm run dev:local` running (emulators + site, Windows) and Chrome (`CHROME_PATH` overrides the
+default location); each run re-seeds the emulators first. No dependencies: a small CDP client in
+`e2e/lib.mjs`, with the emulators' REST endpoints used to check what the page claims (Auth, Firestore, Storage).
+
+```bash
+npm run e2e:account -- trainer          # or: student;  add "mobile" for 390 px   (GOALS.md §29)
+npm run e2e:billing                     # trial cap, overdue lock, extension, payment   (GOALS.md §30)
+```
+
+Local-only artefact worth knowing: the emulators speak HTTP/1.1, so a single Chrome profile that
+reloads many pages in a row can wait tens of seconds for Firestore's first answer (open connections
+from earlier pages exhaust the six-per-origin limit). The scripts therefore use a fresh browser where
+it matters; production talks HTTP/2 and the site navigates without reloading, so this is not a site defect.
+
 ### Running the app on fake data
 
 On Windows, `npm run dev:local` does all of the steps below in one go (emulators, seed, site) and

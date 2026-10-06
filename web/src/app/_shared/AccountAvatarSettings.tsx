@@ -14,6 +14,7 @@ export function AccountAvatarSettings({ uid, name }: { uid: string; name: string
   async function choose(event: ChangeEvent<HTMLInputElement>) {
     const file = event.currentTarget.files?.[0];
     event.currentTarget.value = "";
+    if (busy) return;
     if (!file) return;
     setError(null);
     setNotice(null);
@@ -31,6 +32,7 @@ export function AccountAvatarSettings({ uid, name }: { uid: string; name: string
   }
 
   async function remove() {
+    if (busy) return;
     setBusy(true); setError(null); setNotice(null);
     try {
       const { db, storage } = getFirebase();
@@ -49,10 +51,10 @@ export function AccountAvatarSettings({ uid, name }: { uid: string; name: string
       <div>
         <label>
           <span>{busy ? "Salvando imagem…" : "Cadastrar ou trocar imagem"}</span>
-          <input ref={input} type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void choose(event)} disabled={busy} />
+          <input ref={input} type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void choose(event)} aria-disabled={busy} />
         </label>
         <p className="account-muted">JPG, PNG ou WebP · até 2 MB. A imagem fica privada na sua conta.</p>
-        <button type="button" onClick={() => void remove()} disabled={busy}>Remover imagem</button>
+        <button type="button" onClick={() => void remove()} aria-disabled={busy}>Remover imagem</button>
       </div>
     </div>
     {error && <p role="alert">{error}</p>}

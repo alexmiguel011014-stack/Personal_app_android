@@ -6185,6 +6185,353 @@ Suggested: haiku · low — documentation so the new thing is findable, last bec
 - [x] **Done when** (2026-10-05): a reader who has never seen this plan can find, from `CLAUDE.md` or `web/README.md`, where the
       templates live, how to change them, and how the link page works.
 
+## 33. Feature — Hide the trainer's exercise-reference table: out of the prompts, the screen, the public files and the bundle
+(2026-10-06, via `/newgoal`)
+
+**The request:** for "gerar ficha com meia ajuda da IA" (the copy-and-paste prompt, §25f) the prompt shows the
+reference table — the ruler paragraph followed by every table — which comes from the trainer's own PDF (§5, the
+2026-08-17 note; §25c). The owner does **not** want that, nor "any information that points to the PDF", visible: they
+want all of it hidden "com o máximo de rigor possível" on the site, **while the AI-assisted ficha flow keeps working**.
+
+**Goal type: Feature** — a bounded change to a flow that works (nothing is broken; the owner's requirement changed).
+It borrows from Fix (a leak inventory first) and Process (a repo-exposure decision list, 33i) as minorities; the
+Feature module governs. Research is done (2026-10-06) and recorded in 33a so nothing is looked up twice.
+
+**The short answer to the owner — what the research found (verified by reading the code and by fetching the live site):**
+1. **It is worse than "the prompt shows it".** `web/scripts/copy-prompt-assets.mjs` and `build-exercise-catalog.mjs`
+   publish the table as two ordinary files under `/prompt/` of the static site, and **anyone on the internet — no
+   login — can download both** (checked live 2026-10-06: HTTP 200 on the Markdown table and on the JSON catalog).
+   The same table also goes to Google inside the Gemini tab's system instruction, visible in every trainer's
+   network panel. Hiding only the prompt would leave the front door open.
+2. **The repository is PUBLIC** (`gh repo view` → `PUBLIC`): the Android asset
+   `app/src/main/assets/hypertrophy_volume_reference.md` is readable at github.com / raw.githubusercontent.com
+   (HTTP 200 anonymously), it is in the git history, and this very file (§5, the 2026-08-17 note) pastes a condensed
+   copy and names the PDF. Android is off-limits for this work, so that part is a **decision for the owner (33i)**,
+   not something this section can finish — and it is the biggest residual exposure.
+3. **A static site cannot hide data from the browser that computes with it.** Anything the page uses is, in the end,
+   in that browser's memory and network panel. What *can* be done on the free Spark plan, and what this plan does:
+   (a) the AI prompts carry **no table at all** (so nothing to see on screen, nothing in the clipboard, nothing sent
+   to Google); (b) the table moves out of every public file and out of the JS bundle into **one Firestore document
+   that only an approved, active trainer (and the ADM) can read** (rules v6); (c) the UI stops naming the table or
+   listing its rows; (d) **tests and a build scan make a re-leak fail CI**. The only *complete* concealment is
+   computing on a server (Cloud Function → Blaze) — recorded as decision D4 (33i), **not** enabled here.
+4. **Without the table the AI no longer does the exact volume arithmetic.** It is told only to produce exercise names
+   plus sets × reps; the **site** (which still has the table, behind the gate) fills in each exercise's muscles and
+   the per-muscle volume it already shows on the review screen. To keep the loop useful, 33e adds a "ask the AI to
+   adjust the volume" helper that sends back **aggregated** totals only — never a coefficient. Trade-off, stated plainly:
+   the first draft may sit further from the weekly target than today's; the review screen and the helper close the gap.
+
+**Who can see the reference, before → after this section:**
+
+| Who / where | Today | After 33 |
+|---|---|---|
+| Anyone on the internet (no login) | downloads the Markdown table and the JSON catalog from `/prompt/` | nothing — the files are gone from the site (and a scan keeps them gone) |
+| Signed-in student, or a trainer who is suspended / billing-locked | the same public files | nothing — rules v6 deny the document |
+| Approved, active trainer | the whole table on screen (the prompt textarea, the clipboard), a full "Catálogo" dropdown, "tabela" wording | **no table on screen, in prompts or in the clipboard**; still reachable by **DevTools** (the document is in their browser's memory/network), plus the per-muscle totals and ≤3 "did you mean" names the review screen computes — the residual of any client-side design (D3, D4) |
+| Google (Gemini tab) | receives the full table in every chat | receives no table |
+| Anyone reading the repository | Android asset, `GOALS.md` paste, PDF file name, git history | unchanged by this section except the `GOALS.md` paste/name (33j); the Android asset and history are **D1** |
+
+**Not touched by this section (explicit, to stop scope creep):** Android and iOS — source, assets, `WorkoutParser.kt`,
+`GenerativeAiService`, the phone's own prompt and its copy of the table (the phone is authoritative for what it
+stores and keeps working as is); the "boneco 3D" / muscle-map figure (a separate plan — note its working label was
+also "§32", now taken by the branded e-mails, so it needs the next free number when it lands); the document shape of
+`workouts` (`exercises[].muscleActivation` stays, 33a-S6); billing, accounts, e-mails; enabling Blaze or deploying a
+Cloud Function; rewriting git history; changing the repository's visibility (33i is decisions only).
+
+**Where this executes:** `web/` plus `firestore.rules` (rules **v6**) on a new branch from `main` → PR (CI gates
+lint, tests, build, the new leak scan). **Never publish the rules, never run the publish script against production,
+never merge or push** without the owner asking — those are 33h's manual, ordered steps. Commit each verified item on
+its own. Numbering: §33 because §32 is the branded e-mails on `main`.
+
+```mermaid
+flowchart TD
+    A[33a. Findings — done] --> B[33b. Decisions]
+    B --> C[33c. Prompts without the table]
+    B --> D[33d. Hidden delivery - Firestore document + rules v6]
+    C --> E[33e. Review screen, editor copy, volume helper]
+    D --> E
+    E --> F[33f. Guards - leak tests, build scan, CI]
+    F --> G[33g. Browser verification]
+    G --> H[33h. Rollout — manual, ordered]
+    B --> I[33i. Repo exposure — decisions only]
+    H --> J[33j. Docs and registration]
+    I --> J
+```
+
+Suggested: opus · high — a security-motivated change across prompts, the data layer, UI and rules; the rules, the
+gated delivery and the rollout order (33d, 33h) are the part that cannot be retried casually.
+
+**33a. Findings — where the reference reaches a reader today (verified 2026-10-06)**
+
+Suggested: haiku · low — already done; kept so none of it is rediscovered.
+
+- [x] **S1 — the copyable prompt.** `FichaEditor.tsx` builds it with `buildMultiFichaPrompt` (new fichas) or
+      `buildFichaPrompt` (existing ficha), splices the whole table in at `$TABLE_PLACEHOLDER$`, shows it in a
+      `<textarea aria-label="Prompt">` and writes it to the clipboard. Templates: `web/prompt/ficha_prompt_multi.md`
+      (web-only), `app/src/main/assets/ficha_prompt_template.md` (Android's, used for an existing ficha).
+- [x] **S2 — the Gemini tab.** `GeminiPanel.tsx` splices the table into `web/prompt/ficha_system_gemini.md` and
+      `data/gemini.ts` sends it as the system instruction from the browser (network panel; Google receives it).
+- [x] **S3 — public static files.** `scripts/copy-prompt-assets.mjs` copies the Android table and template into
+      `web/public/prompt/`; `scripts/build-exercise-catalog.mjs` writes `public/prompt/exercise-catalog.json` (every
+      exercise with its muscles and coefficients); `data/promptAssets.ts` and `data/exerciseCatalog.ts` `fetch` them.
+      Gitignored, but **deployed**: both return HTTP 200 anonymously on the live site.
+- [x] **S4 — the review screen** (`MultiFichaReview.tsx`): a dropdown listing **every** catalog exercise with its group
+      ("Escolher exercício no catálogo…"), the labels "Usei a tabela" / "Ativação do catálogo", and the per-muscle
+      effective-volume table (numbers). The numbers are an **oracle**: typing one exercise shows its row of the table.
+- [x] **S5 — UI wording** that names the table: `FichaEditor.tsx` ("Aguarde o carregamento da tabela de exercícios…",
+      the "Já tenho a tabela de exercícios no meu projeto de IA" switch, "Carregando tabela…"), `GeminiPanel.tsx`
+      ("já conhecendo a tabela de exercícios e ativações musculares", "carregar a tabela de referência"),
+      `MultiFichaReview.tsx` ("Não foi possível carregar a tabela…", "Carregando tabela…"); `SHORT_TABLE_NOTE` in
+      `domain/fichaPrompt.ts` ("…está nos arquivos do meu projeto…") is itself a pointer.
+- [x] **S6 — stored data (accepted, not changeable here).** `workouts/{id}.exercises[].muscleActivation` holds the
+      coefficients of the exercises actually prescribed; the phone writes and reads the same field, and no student
+      screen displays it (grep: only the editor, the review and `domain/`). Readable under the existing rules only by
+      the owning trainer and the linked student. This **cannot** reconstruct the table, only the rows used.
+- [x] **S7 — repository and history.** Public repository; the Android asset; this file's pasted table and PDF file
+      name (§5, around lines 225–430); one fixture label in `web/src/domain/exerciseCatalog.test.ts`; git history.
+- [x] **S8 — copies already out.** Whatever was fetched or cached before the next deploy (browser caches, GitHub
+      Pages' short cache, search/archive crawlers). Hiding is forward-looking; the table is already disclosed to
+      anyone who looked (D2).
+- [x] **S9 — what does NOT need hiding** (kept on purpose): the web-only templates' format rules, the generic weekly
+      bands ("4–8 / 12–20 séries por grupo", public science, already on the review screen), the muscle labels (plain
+      anatomy), the Android parsing format `Nome SxR [Músculo:coef]` that `workoutParser.ts` still reads (phone parity).
+
+**33b. Decisions (owner — the recommended default is already written in; change it here, not mid-build)**
+
+Suggested: haiku · low — recording choices; nothing is built here.
+
+- [ ] **(manual) Delivery of the table to the editor.** Default: **one Firestore document, `appData/exerciseCatalog`,
+      readable only by an approved active trainer and the ADM, writable only by the ADM** (rules v6, 33d). Rejected:
+      keeping a static file or a bundled constant (public), obfuscation/encoding (not security), Remote Config
+      (fetchable without sign-in), Storage (needs Blaze). Alternative: a callable Function (D4, Blaze).
+- [ ] **(manual) Unrecognised exercise names on the review screen.** Default: **no full list**; show "sem ativação
+      calculada" and up to **3** closest names as "Quis dizer…?" (`domain/exerciseCatalog.ts` already finds one close
+      match). Alternative: no suggestions at all (stricter, more manual fixing).
+- [ ] **(manual) Numbers on the review screen.** Default: keep the per-muscle effective-volume **numbers** (the §25e
+      feature the trainer asked for) and accept the oracle (33a-S4) as a residual. Alternative: show only the band
+      words ("abaixo do mínimo / na faixa ideal / acima") — fewer clues, less useful.
+- [ ] **(manual) The "I already have the table in my AI project" switch.** Default: **remove it** (its note is a pointer
+      and there is no table left to keep). Alternative: an ADM-only private short prompt — not recommended.
+- [ ] **(manual) The "adjust volume" helper (33e).** Default: **yes** — a button that sends back aggregated totals
+      ("Peitoral 8 séries efetivas — abaixo da faixa 12–20") so the AI can rebalance without ever seeing a coefficient.
+- [ ] **(manual) Source of the table for the publish script.** Default: the Android asset (it is what exists);
+      `CATALOG_SOURCE=<path>` overrides it, so the owner can later keep a private copy outside the repository (D1).
+- [ ] **Done when:** each default above is either confirmed or replaced here with a dated note.
+
+**33c. Prompts without the table**
+
+Suggested: sonnet · high — prompt wording drives what the AI returns and what the parser accepts; small mistakes
+silently break the paste flow, so every change gets a test against the real parser.
+
+- [ ] **A web-only single-treino template, `web/prompt/ficha_prompt_single.md`**, for *editing an existing ficha*: the
+      phone's template (Android asset, not to be changed) asks for `[Músculo:coeficiente]` blocks that only make sense
+      with the table. The new one asks for one treino title + `Nome SÉRIESxREPS` lines, no brackets, one code block,
+      same rules as the multi template. Done when: `FichaEditor.tsx` uses it for an existing ficha and a pasted
+      reply of that shape parses through `applyPaste` to the same exercises.
+- [ ] **Rewrite `web/prompt/ficha_prompt_multi.md` and `web/prompt/ficha_system_gemini.md`**: remove the table section
+      and its placeholder, "exatamente como está na tabela de referência", every mention of coefficients, the scale
+      and the RIR adjustments "da tabela"; replace with "use nomes comuns de exercícios em português, sem marca de
+      equipamento" and a **generic** volume paragraph (distribute the weekly target across the returned treinos; direct
+      work counts fully, merely assisting work counts less — **no numbers other than the public bands 4–8 / 12–20**).
+      Example exercises in the templates must be generic names that are **not** rows of the catalog (a test in 33f
+      proves it). Keep the output-format rules (one code block, `Treino A — foco`, `Nome SxR`, JSON schema for
+      Gemini) byte-compatible with what `parseWorkouts` / `treinosFromAi` read. Done when: neither file contains
+      `$TABLE_PLACEHOLDER$`, "tabela", "coeficiente", "régua" or "PDF", and the parser tests still pass.
+- [ ] **`domain/fichaPrompt.ts`**: delete `SHORT_TABLE_NOTE` and the `shortPrompt` option; the web builders drop the
+      `volumeReference` parameter (add `buildWebFichaPrompt(template, student, request, { deidentify })` = template +
+      profile block + request). `buildFichaPrompt` and `TABLE_PLACEHOLDER` **stay** for Kotlin parity (its test reads the
+      phone's template and table from the repository, never at runtime). Done when: nothing under `web/src/app` or
+      `web/src/data` references `TABLE_PLACEHOLDER`, `volumeReference` or `SHORT_TABLE_NOTE`.
+- [ ] **`data/promptAssets.ts` + `scripts/copy-prompt-assets.mjs`**: `PromptAssets` loses `volumeReference` and the
+      Android template; gains `singleTemplate`; the script copies **only** the three web-only templates and **deletes
+      stale generated files** (`hypertrophy_volume_reference.md`, `ficha_prompt_template.md`, `exercise-catalog.json`)
+      from `public/prompt/` so an old local build can never ship them. Done when: after `npm run build`,
+      `out/prompt/` holds only the three web-only templates.
+- [ ] **`GeminiPanel.tsx`**: the system instruction is `assets.geminiSystem` as is (no splice); the intro and error
+      lines stop naming a table. Done when: the instruction string passed to `startFichaChat` is asserted table-free.
+
+**33d. Hidden delivery — one gated document, rules v6, no public file**
+
+Suggested: opus · xhigh — Firestore rules, an ADM write path, a manual production seeding step and a deploy that
+removes public files; a wrong order makes the editor lose its catalog for real users.
+
+- [ ] **Rules v6** (`firestore.rules`, header `// Rules version: 6`, archive `firestore-rules/versions/v6.rules`
+      identical, `npm run check:rules-version` green): `match /appData/{docId}` — `allow get` only for `docId ==
+      'exerciseCatalog'` and `isSignedIn() && (isAdmin() || isOwningTrainer(request.auth.uid))` (reuses the existing
+      helpers: role `TRAINER`, not suspended, billing current); `allow list: if false`; `allow create, update` only
+      `isAdmin()` and a shape check (`keys().hasOnly(['version','exercises','updatedAt'])`, `version` string ≤ 64,
+      `exercises` a list of 1–300, `updatedAt` int); no delete; students and everyone else denied. Add the collection
+      to the schema comment at the top of the file. Done when: the file and `v6.rules` are identical and the CI guard passes.
+- [ ] **Rules tests** in `web/rules/firestore.rules.test.ts` ("the exercise catalog document (rules v6)"): anonymous,
+      student, suspended trainer and billing-locked trainer **cannot get it**; active trainer and ADM **can**; nobody can
+      list or query the collection; trainer and student cannot write; ADM can write a valid document and cannot write
+      extra keys, a non-list `exercises`, an empty or oversized list, or delete. Per this repo's rule, run them once
+      against v5 (`RULES_FILE=firestore-rules/versions/v5.rules npm run test:rules`) and record how many fail —
+      `assertFails` on its own proves nothing. Done when: green on v6 and visibly red on v5.
+- [ ] **Data layer** — `data/exerciseCatalog.ts`: `loadExerciseCatalog(db)` reads `appData/exerciseCatalog` with
+      `getDoc`, parses it with the existing `parseCatalog`, keeps the result **in module memory only** (never
+      `localStorage`/IndexedDB; the SDK is on its default memory cache — verified), and **clears it on sign-out**
+      (hook where the session signs out, `data/session.ts`); `permission-denied` becomes a plain "sem acesso ao
+      catálogo" state; no `console.*` ever prints the document. Test through the emulator in `web/rules/` (a
+      data-layer test beside `dataLayer.test.ts`): trainer gets it, student gets "sem acesso".
+- [ ] **Builder becomes a library:** `scripts/build-exercise-catalog.mjs` keeps `parseExerciseCatalog` and `--stdout`
+      but **no longer writes under `public/`**; `predev`/`prebuild` in `package.json` stop calling it; its tests
+      (`domain/exerciseCatalog.test.ts`) change accordingly and use a small **synthetic** catalog, not real rows.
+- [ ] **Publish script (owner-run), `scripts/publish-exercise-catalog.mjs` + `npm run catalog:publish`**: reads the
+      source (`CATALOG_SOURCE` or the Android asset), builds the catalog, signs in as the ADM (e-mail from env or
+      prompt, password from env or a hidden prompt — **never stored, never logged, never in the repository**), writes
+      `appData/exerciseCatalog` with `{ version, exercises, updatedAt }`, prints only the version and the count.
+      Emulator mode via the existing `NEXT_PUBLIC_FIREBASE_EMULATORS`. Done when: against the emulators with the
+      seeded `admin@teste.dev` it creates the document and the editor reads it; a second run with an unchanged
+      source reports "already up to date".
+- [ ] **Seed:** `scripts/seed-emulators.mjs` also writes the catalog document (same builder), so `dev:local`, the e2e
+      scripts and the rules tests have it; update the header comment. Done when: after `npm run seed:emulators` the
+      document exists and `dev:local` shows recognised exercises on the review screen.
+- [ ] **Done when:** no file the build copies or generates under `web/public/` contains any exercise row, the ruler
+      or the table's headings (33f proves it), and the editor loads the catalog only through Firestore.
+
+**33e. Review screen, editor copy and the volume helper**
+
+Suggested: sonnet · medium — UI wording and one small pure function with tests; behaviour of saving is unchanged.
+
+- [ ] **Remove the full catalog dropdown** from `MultiFichaReview.tsx` (the "Catálogo" `<optgroup>` and its group
+      suffixes); keep only up to **3** "Quis dizer…?" suggestions from a new pure `suggestExercises(catalog, name,
+      limit = 3)` in `domain/exerciseCatalog.ts` (token-overlap ranking, deterministic, tested on a synthetic catalog).
+      Done when: no screen lists more than 3 catalog names, and an unrecognised name says "sem ativação calculada —
+      o volume não conta este exercício" with the suggestions (if any).
+- [ ] **Neutral wording everywhere** (33a-S5): "Usei a tabela" / "Ativação do catálogo" → a neutral "Músculos reconhecidos"
+      / "Ajustado à mão"; "Carregando tabela…" / "…carregamento da tabela de exercícios…" / "…carregar a tabela de
+      referência…" → "Carregando dados dos exercícios…" / "Não foi possível carregar os dados dos exercícios; os
+      músculos não serão calculados automaticamente."; remove the short-prompt switch and its state from
+      `FichaEditor.tsx`; the Gemini intro says the AI "monta os treinos" and the site "calcula os músculos". Done
+      when: `grep -ri "tabela" web/src/app` finds no user-visible string about the reference.
+- [ ] **Volume numbers per 33b.** If the default holds, keep them. If the owner chose bands-only, `MultiFichaReview.tsx`
+      shows `volumeBand(sets).label` only and the numeric column goes. Either way the screen never shows a single
+      exercise's row (only totals across the included treinos).
+- [ ] **The volume helper** (`domain/volumeFeedback.ts`, pure, tested): `buildVolumeAdjustMessage(volume)` turns the
+      review's per-muscle totals into one pt-BR paragraph — muscles below 12, above 20, and the numbers — and **nothing
+      else** (no exercise names, no coefficients). Gemini tab: an "Ajustar volume" button sends it through the
+      existing follow-up path (`buildAdjustMessage` style) and the answer reopens the review; copy tab: a "Copiar
+      pedido de ajuste de volume" button copies it. Done when: tests prove the message contains only muscle labels,
+      totals and band words, and that an all-ideal plan produces "nada a ajustar" instead of a request.
+- [ ] **Unit tests for the prompt flow** (`fichaPrompt*.test.ts`, `aiGemini.test.ts`, `fichaRequest.test.ts` as needed):
+      update the ones that expected a table; add: the multi and single prompts for a sample student contain the
+      profile, the request and the format rules and **no** placeholder.
+
+**33f. Guards — a re-leak must fail the build**
+
+Suggested: sonnet · high — the guard is only as good as its sentinels; a vacuous pass is the failure mode to design out.
+
+- [ ] **Sentinel set, `web/scripts/lib/referenceSentinels.mjs`**, derived at run time from the source
+      (`CATALOG_SOURCE` or the Android asset, via `parseExerciseCatalog`): the document title line, the ruler
+      paragraph's first sentence, the section headings, the PDF's file name and the words "hypertrophy_volume_reference"
+      and "exercise-catalog", plus **every exercise name**. **If the source cannot be read, or yields no sentinels,
+      the guard FAILS** (never passes vacuously); `LEAK_SENTINELS_FILE` can supply a list when the source has moved.
+- [ ] **Leak unit test** (`domain/referenceLeak.test.ts`): every text the product can put in front of a user or send to
+      an AI — the three web templates, `buildWebFichaPrompt` for both flows, the Gemini system instruction,
+      `buildAiUserMessage`, `buildAdjustMessage`, `buildVolumeAdjustMessage`, and the user-visible strings of the editor,
+      review and Gemini components (exported constants, not scraped JSX) — contains **no sentinel**, no
+      "tabela de referência", "coeficiente", "régua", "PDF", and, from the exercise names, **no match at all in the
+      templates' examples** and **fewer than 3 distinct names** anywhere else (a lone generic word like "Stiff" in an
+      example is not a leak; a pasted list is). Done when: it fails if a row of the real table is pasted into any template.
+- [ ] **Build scan, `web/scripts/check-no-reference-leak.mjs` (`npm run check:leak`)** over `web/out/`: fails when any
+      file (HTML, JS, JSON, CSS, `.md`, `.map`) contains a title/ruler/heading/file-name sentinel, or **3+ distinct
+      exercise names**, or when `out/prompt/` holds anything but the web-only templates, or when any source map exists.
+      Prints file + sentinel kind, never the matched table text. Done when: seeding `web/public/prompt/` with a copy
+      of the old table makes it fail (prove it once, then undo), and a clean build passes.
+- [ ] **CI wiring:** a "No reference table in the build" step after `npm run build` in `.github/workflows/web-ci.yml`
+      **and** in `.github/workflows/web-deploy.yml` (before "Upload Pages artifact", so a leaking site is never
+      published). Done when: both workflows run it and fail the job on a hit.
+- [ ] **Convention for future tests:** tests and fixtures from now on use **synthetic** exercises, never real rows
+      (the one real label left in `exerciseCatalog.test.ts` is replaced). Written in `web/README.md` (33j).
+
+**33g. Browser verification**
+
+Suggested: sonnet · medium — the same headless-Chrome + emulator pattern as `e2e/account.mjs`.
+
+- [ ] **`web/e2e/ficha-privacy.mjs` (`npm run e2e:ficha-privacy`)**, signed in as the seeded trainer: opens a student's
+      new-ficha screen; clicks "Copiar prompt"; reads the textarea and `navigator.clipboard` text and asserts no sentinel;
+      reads the whole DOM text and every loaded script/response body for sentinels; asserts
+      `GET /prompt/hypertrophy_volume_reference.md` and `/prompt/exercise-catalog.json` are **404** (dev server) and the
+      three web-only templates are 200; pastes a synthetic AI answer, checks recognised exercises show their muscles
+      and the per-muscle volume appears, an unrecognised one shows the "sem ativação" line with ≤3 suggestions and **no**
+      dropdown of the full list; opens the Gemini tab and asserts its visible text names no table.
+- [ ] **Access checks** in the same script: signed in as the seeded **student** (`ana@teste.dev`) and as the suspended
+      trainer (`suspended@teste.dev`), a direct Firestore REST read of `appData/exerciseCatalog` with their ID token is
+      denied; as the trainer it succeeds; with no token it is denied.
+- [ ] **Done when:** the script is green on desktop and 390 px, red against the pre-change code (prove once, then
+      restore), and its recipe is added to `web/README.md` "Browser tests".
+
+**33h. Rollout (manual, ordered — this is where real users could be hurt)**
+
+Suggested: opus · xhigh — publishing rules, seeding production and a deploy that deletes public files; do it in this
+order and stop at the first surprise. `/execgoals` prepares the PR and the exact checklist; **the owner runs these.**
+
+- [ ] **(manual) 1. PR open, CI green** — including the new leak step. State in the PR, at the top, the order below.
+- [ ] **(manual) 2. Publish rules v6** (console copy-paste or `firebase deploy --only firestore:rules` with the owner's
+      login) **after diffing it against what is live**: the diff `versions/v5.rules` → `v6.rules` must show only the
+      `appData` block and the schema comment. Never publish the Android branch's rules copy (its header numbers collide).
+- [ ] **(manual) 3. Seed production once**: `npm run catalog:publish` signed in as the owner's ADM account; confirm in
+      the console that `appData/exerciseCatalog` exists (version + exercise count). Do this **before** the merge: a
+      deploy without the document leaves the editor with no muscles ("catálogo indisponível").
+- [ ] **(manual) 4. Merge → the deploy publishes the site** (the artifact replaces the old one, so the two public files
+      disappear). Wait out Pages' short cache (about ten minutes).
+- [ ] **(manual) 5. Verify live:** `curl -I` the two old `/prompt/` URLs → **404**; the three web-only templates → 200;
+      sign in as a real trainer → copy a prompt → the text has no table; paste a sample answer → muscles and volume
+      appear; the Gemini tab runs; a student account cannot read the document (REST call → 403).
+- [ ] **(manual) 6. Residual copies:** browsers that visited before keep the old files until their cache expires; web
+      archives or search caches may hold them — the owner may request removal; nothing in this repository can undo it.
+- [ ] **Rollback, written before step 2:** rules v6 are additive (leaving them published harms nothing). If the editor
+      misbehaves after the deploy, revert the web PR **only** if the document is unreadable for trainers — and know that
+      reverting re-publishes the public files, so prefer fixing forward (re-seed, or check the trainer's account status).
+- [ ] **Done when:** steps 1–5 are done and dated here, with what step 5 returned.
+
+**33i. Repository and server-side exposure — decisions only (none executed; Android/iOS stay untouched)**
+
+Suggested: haiku · low — recording owner decisions with the facts needed to take them.
+
+- [ ] **(manual) D1 — the public repository.** Facts: public; the Android asset, history, forks and clones hold the
+      table; `GOALS.md` pastes a copy (33j trims it, history keeps it). Options: (a) accept; (b) make the repository
+      private — GitHub Pages from a private repository needs a paid plan, so pair it with moving hosting to Cloudflare
+      Pages (§31 already assesses readiness); (c) remove the asset and rewrite history — needs an Android change
+      (the phone loads that asset) and does not recall existing copies. **Recommended: (b), together with the §31
+      cutover.** Until decided this is the largest residual exposure.
+- [ ] **(manual) D2 — already disclosed.** The table has been downloadable from the live site since the web launch
+      and from the repository since August; treat it as seen by anyone who looked, and judge accordingly.
+- [ ] **(manual) D3 — the numbers oracle** (33a-S4). Default accepts it; the stricter option is bands-only (33b).
+- [ ] **(manual) D4 — the only complete fix: compute on a server.** A callable Function would receive exercise names
+      and return muscles/volume (and could even call Gemini itself), so the table never leaves the server. It needs
+      Blaze (§3, §30 — the owner has not enabled it, and this plan does not). Revisit if D1(a)/(b) is not acceptable or
+      if an approved trainer is judged a threat. The client already reads the catalog through one seam
+      (`data/exerciseCatalog.ts`), so swapping Firestore for a callable later does not touch the screens.
+- [ ] **(manual) D5 — App Check enforcement on Firestore** (console) makes scripted scraping of the document with a
+      stolen trainer token harder; check the console state and record it.
+- [ ] **(manual) D6 — alias coverage.** After 33h, have a trainer generate three fichas with the AI app they use and
+      count the exercises that needed a manual fix. If more than about a quarter, add synonyms **to the private source**
+      that `catalog:publish` reads (never to a tracked file — a synonym list would reveal the catalog's names).
+- [ ] **Done when:** each of D1–D6 has a dated decision here.
+
+**33j. Docs and registration**
+
+Suggested: haiku · low — documentation so the new rule is findable and the old exposure is trimmed; last because it
+describes what exists.
+
+- [ ] **`CLAUDE.md` → "Web front":** one paragraph — the reference table is never shipped, prompted, bundled or named
+      on screen; it lives only in the gated `appData/exerciseCatalog` document, seeded by `catalog:publish`; prompts
+      carry names + sets × reps only and the site fills the muscles; the leak test/scan are the guard; **do not** reproduce
+      rows, the ruler or the source's file name in any tracked file. Update the `domain/fichaPrompt.ts` row of the
+      hand-port table (the phone's template/table are no longer copied to the web).
+- [ ] **`web/README.md`:** replace lines 24–29 (the "copied to `public/prompt/`; the reference table stays
+      single-sourced" paragraph); add `catalog:publish`, `check:leak`, `e2e:ficha-privacy`, the `CATALOG_SOURCE` and
+      `LEAK_SENTINELS_FILE` variables, the synthetic-fixtures convention, and the 33h order; document the rules v6 block.
+- [ ] **`GOALS.md`:** mark §25a/§25c/§25f/§25i wording about the table in the prompt, the public catalog and the
+      "já tenho a tabela" switch as **superseded by §33**; in §5's 2026-08-17 note **delete the pasted table block and
+      replace the PDF's file name with "the trainer's reference PDF"** (history keeps them — D1); tick this section's
+      items with dates as they are verified and record 33b's decisions and 33h's live results in place.
+- [ ] **Done when:** a reader who has never seen this plan can find, from `CLAUDE.md` or `web/README.md`, where the table
+      lives, how to update it, which tests guard it, and what must never be committed; and a search of tracked
+      documentation for the ruler, the headings or the PDF's file name finds nothing outside git history.
+
 ## Suggested build order (what blocks what) — revised 2026-08-18
 
 **Done** (§0, §1 CLAUDE.md, §2 git, §4a Firestore migration, §5d UI debt + AI button wiring, §7

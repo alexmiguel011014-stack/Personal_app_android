@@ -54,18 +54,41 @@ Two things only the project owner can do, in the Firebase console:
 
 1. **Publish `firestore.rules`** (diff it against what is live first). Until then nothing is enforced —
    the page already asks for the confirmation, but the rules don't check it.
-2. **Authentication → Templates → Email address verification**: sender name **ALLU personal**, and look at
-   the text. The site asks for Portuguese on every mail (`auth.languageCode = "pt-BR"`); the template's
-   language setting is the fallback.
+2. **Authentication → Templates → Email address verification**: the branded text, sender name and the
+   action URL are set as described in *Branded Firebase e-mails (GOALS.md §32)* below. The site asks for
+   Portuguese on every mail (`auth.languageCode = "pt-BR"`); the template's language setting is the fallback.
 
 Check once that **Authentication → Settings → Authorized domains** lists
 `alexmiguel011014-stack.github.io` (the link's "Continuar" goes back there; sign-in already needs it). The
 mail comes from Firebase's own sender and can land in spam — the page tells the student to look there.
 
+## Branded Firebase e-mails (GOALS.md §32) — console steps
+
+Firebase sends the verification, password-reset and e-mail-change mails itself; the repo carries the text it
+should say (`email/`, with its own README: files, subjects, rules) and the page their link opens (`/acao/`).
+The console has no versioning, so everything below is the owner's, **in this order** — the action URL must
+not point at `/acao/` before the page is live, because it is the only way back in for a trainer who forgot the
+password:
+
+1. Merge and deploy; open `<site>/acao/` live — it must load and say "Link inválido".
+2. Project settings → General → **Public-facing name** = `ALLU personal` (it is `%APP_NAME%` in every mail).
+3. Authentication → Templates → each template, language **Português (Brasil)** (and the default variant, for
+   clients that send no `languageCode`, such as Android's reset): sender name, reply-to (an address you read —
+   not committed here), subject and the HTML from `email/`. Send yourself one of each and read it in Gmail.
+4. Set each template's **action URL** to `<site>/acao/` (on Pages: `https://alexmiguel011014-stack.github.io/Personal_app_android/acao/`),
+   **one template at a time — verification, then e-mail change, then password reset last** — proving each with
+   a real mail before the next. Authentication → Settings → Authorized domains must list the site's host.
+5. Rollback: clear the custom action URL (or reset the template) in the console. Links already sent keep
+   working — the one-time code is the same under either handler.
+
+What the free plan cannot do: a sender address on your own domain (needs a domain and DNS records), a logo
+image or web font in the mail, a layout beyond what the template editor keeps (GOALS.md §32h).
+
 ## Routes
 
 | URL | Directory | Who |
 |---|---|---|
+| `/acao?mode=…&oobCode=…` | `src/app/acao/` | Anyone with a Firebase e-mail link: confirms the e-mail, sets a password, confirms an e-mail change (§32); `continueUrl` is followed only inside the site |
 | `/` | `src/app/page.tsx` | Public landing (§23i) |
 | `/entrar` | `src/app/entrar/` | Login, for anyone with an account (§23f) |
 | `/convite?c=CODE` | `src/app/convite/` | A student's first visit: create an account, confirm the e-mail (GOALS.md §27), claim the invite (§23f) |
@@ -191,6 +214,14 @@ node scripts/verify-email.mjs maria@gmail.com    # then "Já confirmei" on the i
 
 The seeded students were created without confirming, on purpose: they are the accounts that existed
 before §27 and must keep working.
+
+The page the e-mail links open (`/acao/`, GOALS.md §32) can be exercised the same way: this prints its
+address for the newest code the emulator holds for an address (`verify` is the default; `reset`,
+`change` and `recover` are the others; `SITE=http://localhost:3001` if the dev server is not on 3000):
+
+```bash
+node scripts/action-link.mjs maria@gmail.com reset
+```
 
 Needs **Java 21** (Firebase CLI 15 dropped older Javas for the emulators). If `java -version`
 says something older, point `JAVA_HOME` and `PATH` at a JDK 21 for that command — on the main

@@ -10,7 +10,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { doc, getDoc, updateDoc, type Firestore } from "firebase/firestore";
 import { getBytes, ref, type FirebaseStorage } from "firebase/storage";
 import { accountAvatarPath, loadAccountAvatarObjectUrl, removeAccountAvatar, saveAccountAvatarPath, uploadAccountAvatar } from "../src/data/accountAvatar";
-import { loadPersonalAccount, savePersonalPhone } from "../src/data/account";
+import { loadPersonalAccount, savePersonalName, savePersonalPhone } from "../src/data/account";
 
 const PROJECT_ID = "demo-personal-tracker";
 const USERS = {
@@ -69,6 +69,8 @@ describe("account phone data flows", () => {
     await expect(assertSucceeds(loadPersonalAccount(db, uid))).resolves.toEqual({
       phone: initialPhone,
       email: USERS[uid as keyof typeof USERS].email,
+      name: "",
+      nameChangedAt: null,
     });
     await expect(assertSucceeds(savePersonalPhone(db, uid, PHONE_TO_SAVE))).resolves.toBe(FORMATTED_PHONE);
 
@@ -92,7 +94,7 @@ describe("account phone data flows", () => {
 
   it("does not expose or mutate role and trainer ownership through the account functions", async () => {
     const { db } = signedIn("studentA");
-    expect(await assertSucceeds(loadPersonalAccount(db, "studentA"))).toEqual({ phone: "", email: "student@example.test" });
+    expect(await assertSucceeds(loadPersonalAccount(db, "studentA"))).toEqual({ phone: "", email: "student@example.test", name: "", nameChangedAt: null });
     await assertSucceeds(savePersonalPhone(db, "studentA", PHONE_TO_SAVE));
 
     const profileRef = doc(db, "users", "studentA");
@@ -154,5 +156,48 @@ describe("account avatar data flows", () => {
     await assertFails(getBytes(ref(other.storage, path)));
     await assertFails(uploadAccountAvatar(other.storage, "trainerA", png(replacementBytes)));
     await assertFails(removeAccountAvatar(other.storage, "trainerA"));
+  });
+});
+
+// GOALS.md §29g, rules v5: a user may correct their own name once every 60 days, stamped with the server's clock.
+describe("account name data flow", () => {
+  const DAY = 86_400_000;
+
+  it("renames once, shows the stamp, and holds a second rename for 60 days", async () => {
+    const { db } = signedIn("studentA");
+    const before = Date.now();
+    const first = await savePersonalName(db, "studentA", "  Ana   Maria Costa ");
+    expect(first.name).toBe("Ana Maria Costa");
+    expect(first.nameChangedAt).not.toBeNull();
+    expect(Math.abs((first.nameChangedAt ?? 0) - before)).toBeLessThan(60_000);
+
+    const account = await loadPersonalAccount(db, "studentA");
+    expect(account.name).toBe("Ana Maria Costa");
+    expect(account.nameChangedAt).toBe(first.nameChangedAt);
+
+    await assertFails(savePersonalName(db, "studentA", "Outro Nome"));
+    expect((await loadPersonalAccount(db, "studentA")).name).toBe("Ana Maria Costa");
+  });
+
+  it("allows the next rename once 60 days have passed", async () => {
+    const { db } = signedIn("trainerA");
+    await savePersonalName(db, "trainerA", "Primeiro Nome");
+    await env.withSecurityRulesDisabled(async (context) => {
+      await context.firestore().doc("users/trainerA").update({ nameChangedAt: new Date(Date.now() - 61 * DAY) });
+    });
+    const second = await savePersonalName(db, "trainerA", "Segundo Nome");
+    expect(second.name).toBe("Segundo Nome");
+    expect((second.nameChangedAt ?? 0) - Date.now()).toBeGreaterThan(-60_000);
+  });
+
+  it("works for the ADM too, and refuses an unacceptable name before writing anything", async () => {
+    const { db } = signedIn("adminA");
+    await expect(savePersonalName(db, "adminA", " A ")).rejects.toThrow(/pelo menos 2/);
+    expect((await loadPersonalAccount(db, "adminA")).nameChangedAt).toBeNull();
+    await expect(savePersonalName(db, "adminA", "Administrador Geral")).resolves.toMatchObject({ name: "Administrador Geral" });
+  });
+
+  it("does not let another account change the name", async () => {
+    await assertFails(savePersonalName(signedIn("trainerB").db, "studentA", "Intruso"));
   });
 });

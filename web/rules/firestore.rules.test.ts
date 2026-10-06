@@ -7,6 +7,8 @@ import {
   type RulesTestEnvironment,
 } from "@firebase/rules-unit-testing";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import firebase from "firebase/compat/app";
+import "firebase/compat/firestore";
 
 // GOALS.md §23d: the repo-root firestore.rules — the exact file that gets published — exercised
 // against the local Firestore emulator. Run with `npm run test:rules` (needs Java 21, see
@@ -533,6 +535,78 @@ describe("reading an invite (rules v4)", () => {
     await invite("SPENT004", { used: true });
     const stranger = as(STRANGER);
     await assertFails(stranger.runTransaction(async (transaction) => { await transaction.get(stranger.doc("invites/SPENT004")); }));
+  });
+});
+
+// Rules version 5: a user may correct their own name once every 60 days. The change must carry nameChangedAt equal to the
+// request's own time (the server's clock — a device clock decides nothing), and the previous stamp must be missing or at
+// least 60 days old. The owning trainer's edit of a student's name is another rule and is unaffected.
+describe("own name, once every 60 days (rules v5)", () => {
+  const DAY = 86_400_000;
+  const stamp = () => firebase.firestore.FieldValue.serverTimestamp();
+  const at = (ms: number) => firebase.firestore.Timestamp.fromMillis(ms);
+  const roles: Array<[string, string]> = [["an ADM", "adminA"], ["a trainer", TRAINER_A], ["a student", STUDENT_A]];
+
+  it.each(roles)("%s can rename themselves the first time", async (_label, uid) => {
+    await assertSucceeds(as(uid).doc(`users/${uid}`).update({ name: "Nome Corrigido", nameChangedAt: stamp() }));
+  });
+
+  it("refuses a rename without the stamp, which would be the way around the wait", async () => {
+    await assertFails(as(STUDENT_A).doc(`users/${STUDENT_A}`).update({ name: "Sem Carimbo" }));
+  });
+
+  it("refuses a stamp taken from the device's clock instead of the server's", async () => {
+    await assertFails(as(STUDENT_A).doc(`users/${STUDENT_A}`).update({ name: "Relogio Errado", nameChangedAt: at(Date.now()) }));
+    await assertFails(as(STUDENT_A).doc(`users/${STUDENT_A}`).update({ name: "Relogio Errado", nameChangedAt: at(Date.now() - 100 * DAY) }));
+    await assertFails(as(STUDENT_A).doc(`users/${STUDENT_A}`).update({ name: "Relogio Errado", nameChangedAt: Date.now() }));
+  });
+
+  it("does not let the stamp move without a rename", async () => {
+    await assertFails(as(STUDENT_A).doc(`users/${STUDENT_A}`).update({ nameChangedAt: stamp() }));
+    await assertFails(as(STUDENT_A).doc(`users/${STUDENT_A}`).update({ name: "Aluno", nameChangedAt: stamp() }));
+  });
+
+  it("blocks a second rename inside 60 days, and allows it after", async () => {
+    await seed((db) => db.doc(`users/${STUDENT_A}`).update({ name: "Primeiro Nome", nameChangedAt: at(Date.now() - 59 * DAY) }));
+    await assertFails(as(STUDENT_A).doc(`users/${STUDENT_A}`).update({ name: "Segundo Nome", nameChangedAt: stamp() }));
+    await seed((db) => db.doc(`users/${STUDENT_A}`).update({ nameChangedAt: at(Date.now() - 61 * DAY) }));
+    await assertSucceeds(as(STUDENT_A).doc(`users/${STUDENT_A}`).update({ name: "Segundo Nome", nameChangedAt: stamp() }));
+    // ...and that rename restarts the wait
+    await assertFails(as(STUDENT_A).doc(`users/${STUDENT_A}`).update({ name: "Terceiro Nome", nameChangedAt: stamp() }));
+  });
+
+  it.each([
+    ["empty", ""],
+    ["one character", "A"],
+    ["81 characters", "x".repeat(81)],
+    ["padded with spaces", " Com Espacos "],
+    ["a control character", "Ana\u0007Costa"],
+    ["a newline", "Ana\nCosta"],
+    ["not a string", 12345],
+  ])("refuses a name that is %s", async (_label, name) => {
+    await assertFails(as(STUDENT_A).doc(`users/${STUDENT_A}`).update({ name, nameChangedAt: stamp() }));
+  });
+
+  it("accepts the limits of a valid name", async () => {
+    await assertSucceeds(as(STUDENT_A).doc(`users/${STUDENT_A}`).update({ name: "Al", nameChangedAt: stamp() }));
+    await assertSucceeds(as(TRAINER_A).doc(`users/${TRAINER_A}`).update({ name: "x".repeat(80), nameChangedAt: stamp() }));
+  });
+
+  it("lets no one rename someone else through this path", async () => {
+    await assertFails(as(STUDENT_A).doc(`users/${STUDENT_A2}`).update({ name: "Outra Pessoa", nameChangedAt: stamp() }));
+    await assertFails(as(TRAINER_B).doc(`users/${STUDENT_A}`).update({ name: "Intruso", nameChangedAt: stamp() }));
+  });
+
+  it("does not let a rename carry another change with it", async () => {
+    await assertFails(as(STUDENT_A).doc(`users/${STUDENT_A}`).update({ name: "Com Role", nameChangedAt: stamp(), role: "ADM" }));
+    await assertFails(as(STUDENT_A).doc(`users/${STUDENT_A}`).update({ name: "Com Trainer", nameChangedAt: stamp(), trainerId: TRAINER_B }));
+  });
+
+  it("leaves the other self edits, and the trainer's correction of a student's name, as they were", async () => {
+    await assertSucceeds(as(STUDENT_A).doc(`users/${STUDENT_A}`).update({ phone: "+5511987654321" }));
+    await assertSucceeds(as(TRAINER_A).doc(`users/${STUDENT_A}`).update({ name: "Corrigido Pelo Personal" }));
+    // that correction neither needs nor resets the student's own 60-day clock
+    await assertSucceeds(as(STUDENT_A).doc(`users/${STUDENT_A}`).update({ name: "Eu Mesmo", nameChangedAt: stamp() }));
   });
 });
 

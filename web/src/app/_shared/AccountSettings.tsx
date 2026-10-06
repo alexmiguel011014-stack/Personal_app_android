@@ -19,6 +19,7 @@ import {
 import { getFirebase } from "../../data/firebase";
 import { useSession } from "../SessionProvider";
 import { AccountAvatarSettings } from "./AccountAvatarSettings";
+import { AccountNameSettings } from "./AccountNameSettings";
 import { TrainerPlatformBilling } from "./TrainerPlatformBilling";
 
 export function AccountSettings() {
@@ -183,6 +184,7 @@ export function AccountSettings() {
   return (
     <>
       {session.status === "signedIn" && <AccountAvatarSettings uid={session.uid} name={accountEmail || "Minha conta"} />}
+      {session.status === "signedIn" && <AccountNameSettings uid={session.uid} />}
       {session.status === "signedIn" && session.profile.role === "TRAINER" && <TrainerPlatformBilling uid={session.uid} />}
       <section className="panel" aria-labelledby="account-email-title">
         <h2 id="account-email-title">E-mail de acesso</h2>

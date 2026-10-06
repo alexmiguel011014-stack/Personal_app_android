@@ -96,6 +96,37 @@ export function lookupExercise(
   return null;
 }
 
+/** The most names ever offered for a name nobody could match (GOALS.md §33): never the whole list. */
+export const MAX_SUGGESTIONS = 3;
+
+function significantTokens(name: string): string[] {
+  return withoutEquipmentQualifiers(normalizeName(name))
+    .split(" ")
+    .filter((token) => token !== "" && !INSIGNIFICANT_TOKENS.has(token));
+}
+
+/**
+ * Up to MAX_SUGGESTIONS catalog entries closest to a name that did not match, for a "Quis dizer…?" choice —
+ * in place of showing the trainer the whole list (§33: the list is the reference, and it stays out of view).
+ * Ranked by the share of meaningful words in common; ties keep the catalog's own order, so the answer is
+ * deterministic. An entry that shares no word is never offered.
+ */
+export function suggestExercises(catalog: ExerciseCatalog, name: string, limit: number = MAX_SUGGESTIONS): ExerciseCatalogEntry[] {
+  const tokens = significantTokens(name);
+  if (tokens.length === 0) return [];
+  const wanted = new Set(tokens);
+  return catalog.exercises
+    .map((entry, index) => {
+      const candidate = new Set(significantTokens(entry.name));
+      const common = [...wanted].filter((token) => candidate.has(token)).length;
+      return { entry, index, score: common === 0 ? 0 : common / (wanted.size + candidate.size - common) };
+    })
+    .filter((scored) => scored.score > 0)
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .slice(0, Math.max(0, Math.min(limit, MAX_SUGGESTIONS)))
+    .map((scored) => scored.entry);
+}
+
 /** Only non-zero muscles contribute volume and need to travel with a stored exercise. */
 export function catalogActivation(entry: ExerciseCatalogEntry): Record<string, number> {
   return Object.fromEntries(Object.entries(entry.muscles).filter(([, coefficient]) => coefficient !== 0));

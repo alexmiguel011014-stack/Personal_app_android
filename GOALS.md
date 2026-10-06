@@ -6359,35 +6359,40 @@ silently break the paste flow, so every change gets a test against the real pars
 Suggested: opus · xhigh — Firestore rules, an ADM write path, a manual production seeding step and a deploy that
 removes public files; a wrong order makes the editor lose its catalog for real users.
 
-- [ ] **Rules v6** (`firestore.rules`, header `// Rules version: 6`, archive `firestore-rules/versions/v6.rules`
+- [x] **Rules v6** (`firestore.rules`, header `// Rules version: 6`, archive `firestore-rules/versions/v6.rules`
       identical, `npm run check:rules-version` green): `match /appData/{docId}` — `allow get` only for `docId ==
       'exerciseCatalog'` and `isSignedIn() && (isAdmin() || isOwningTrainer(request.auth.uid))` (reuses the existing
       helpers: role `TRAINER`, not suspended, billing current); `allow list: if false`; `allow create, update` only
       `isAdmin()` and a shape check (`keys().hasOnly(['version','exercises','updatedAt'])`, `version` string ≤ 64,
       `exercises` a list of 1–300, `updatedAt` int); no delete; students and everyone else denied. Add the collection
       to the schema comment at the top of the file. Done when: the file and `v6.rules` are identical and the CI guard passes.
-- [ ] **Rules tests** in `web/rules/firestore.rules.test.ts` ("the exercise catalog document (rules v6)"): anonymous,
+      **Done (2026-10-06):** v6 written (`appData/{docId}`: `get` only for `exerciseCatalog`, ADM or `isOwningTrainer(request.auth.uid)`; no list; ADM-only create/update with a shape check; no delete), archived as `firestore-rules/versions/v6.rules`, `check:rules-version` green. NOT published — that is 33h, the owner's.
+- [x] **Rules tests** in `web/rules/firestore.rules.test.ts` ("the exercise catalog document (rules v6)"): anonymous,
       student, suspended trainer and billing-locked trainer **cannot get it**; active trainer and ADM **can**; nobody can
       list or query the collection; trainer and student cannot write; ADM can write a valid document and cannot write
       extra keys, a non-list `exercises`, an empty or oversized list, or delete. Per this repo's rule, run them once
       against v5 (`RULES_FILE=firestore-rules/versions/v5.rules npm run test:rules`) and record how many fail —
       `assertFails` on its own proves nothing. Done when: green on v6 and visibly red on v5.
-- [ ] **Data layer** — `data/exerciseCatalog.ts`: `loadExerciseCatalog(db)` reads `appData/exerciseCatalog` with
+      **Done (2026-10-06):** 15 tests. Full emulator suite 204/204 on v6. Against v5 only the 2 positive tests fail (v5 denies everything by default, so the negatives cannot show anything there); the negatives were proved with five mutated v6 copies (open-all, no shape check, no docId check, role-only, list open) — each mutant failed exactly the test that guards it.
+- [x] **Data layer** — `data/exerciseCatalog.ts`: `loadExerciseCatalog(db)` reads `appData/exerciseCatalog` with
       `getDoc`, parses it with the existing `parseCatalog`, keeps the result **in module memory only** (never
       `localStorage`/IndexedDB; the SDK is on its default memory cache — verified), and **clears it on sign-out**
       (hook where the session signs out, `data/session.ts`); `permission-denied` becomes a plain "sem acesso ao
       catálogo" state; no `console.*` ever prints the document. Test through the emulator in `web/rules/` (a
       data-layer test beside `dataLayer.test.ts`): trainer gets it, student gets "sem acesso".
-- [ ] **Builder becomes a library:** `scripts/build-exercise-catalog.mjs` keeps `parseExerciseCatalog` and `--stdout`
+      **Done (2026-10-06):** `loadExerciseCatalog(db, uid)` reads `appData/exerciseCatalog`, memory-only cache per uid, cleared by `SessionProvider` whenever nobody is signed in, `CatalogAccessError` for permission-denied, no logging. Tested in `web/rules/exerciseCatalog.test.ts` (trainer gets it; student, suspended and billing-locked get the access error; cache/clear; unpublished and malformed documents).
+- [x] **Builder becomes a library:** `scripts/build-exercise-catalog.mjs` keeps `parseExerciseCatalog` and `--stdout`
       but **no longer writes under `public/`**; `predev`/`prebuild` in `package.json` stop calling it; its tests
       (`domain/exerciseCatalog.test.ts`) change accordingly and use a small **synthetic** catalog, not real rows.
-- [ ] **Publish script (owner-run), `scripts/publish-exercise-catalog.mjs` + `npm run catalog:publish`**: reads the
+      **Done (2026-10-06):** `build-exercise-catalog.mjs` is parse-only; the source and the CLI moved to `scripts/lib/catalogSource.mjs` (`CATALOG_SOURCE` override); `predev`/`prebuild` only copy the web templates; `exerciseCatalog.test.ts` now uses a synthetic catalog (the real source is checked for structure only).
+- [x] **Publish script (owner-run), `scripts/publish-exercise-catalog.mjs` + `npm run catalog:publish`**: reads the
       source (`CATALOG_SOURCE` or the Android asset), builds the catalog, signs in as the ADM (e-mail from env or
       prompt, password from env or a hidden prompt — **never stored, never logged, never in the repository**), writes
       `appData/exerciseCatalog` with `{ version, exercises, updatedAt }`, prints only the version and the count.
       Emulator mode via the existing `NEXT_PUBLIC_FIREBASE_EMULATORS`. Done when: against the emulators with the
       seeded `admin@teste.dev` it creates the document and the editor reads it; a second run with an unchanged
       source reports "already up to date".
+      **Done (2026-10-06):** Written and exercised against the emulators by `rules/exerciseCatalog.test.ts`: creates the document as an ADM, prints only version and count (the test checks the password and content are not printed), a second run says "Already up to date", a non-ADM or wrong password writes nothing. Deviation from the plan: it defaults to the EMULATORS and needs `--production` (plus typing the project id) for the real project, instead of reading `NEXT_PUBLIC_FIREBASE_EMULATORS`.
 - [ ] **Seed:** `scripts/seed-emulators.mjs` also writes the catalog document (same builder), so `dev:local`, the e2e
       scripts and the rules tests have it; update the header comment. Done when: after `npm run seed:emulators` the
       document exists and `dev:local` shows recognised exercises on the review screen.

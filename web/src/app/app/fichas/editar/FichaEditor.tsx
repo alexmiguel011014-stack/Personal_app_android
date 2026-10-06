@@ -149,14 +149,14 @@ function FichaForm({
       (loaded) => !cancelled && setAssets(loaded),
       () => !cancelled && setAssets("error"),
     );
-    loadExerciseCatalog().then(
+    loadExerciseCatalog(getFirebase().db, trainerId).then(
       (loaded) => !cancelled && setCatalog(loaded),
       () => !cancelled && setCatalog("error"),
     );
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [trainerId]);
 
   async function copyPrompt(loaded: PromptAssets) {
     // New fichas ask for several treinos at once; an existing ficha is one treino. Both templates are

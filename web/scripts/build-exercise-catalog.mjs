@@ -1,10 +1,11 @@
-import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+// GOALS.md §25c/§33 — turns the trainer's reference table (Markdown) into the catalog `{ version, exercises }`.
+// A LIBRARY now: it never writes under public/ (a file there is downloadable by anyone — §33). Its callers are
+// the seed (scripts/seed-emulators.mjs), the owner's publish script (scripts/publish-exercise-catalog.mjs) and
+// the leak guard (scripts/lib/referenceSentinels.mjs), all through scripts/lib/catalogSource.mjs, which decides
+// where the source lives (`node scripts/lib/catalogSource.mjs` prints the catalog JSON to stdout).
 
-const sourcePath = new URL("../../app/src/main/assets/hypertrophy_volume_reference.md", import.meta.url);
-const outputPath = new URL("../public/prompt/exercise-catalog.json", import.meta.url);
+import { createHash } from "node:crypto";
+
 const ALLOWED_COEFFICIENTS = new Set([0, 0.25, 0.5, 0.75, 1]);
 const MONO_HEADERS = [1, 0.75, 0.5, 0.25];
 
@@ -118,22 +119,4 @@ export function parseExerciseCatalog(markdown) {
 
   if (tableRows === 0) throw new Error("Nenhuma tabela de exercícios reconhecida.");
   return { version: createHash("sha256").update(markdown).digest("hex").slice(0, 16), exercises };
-}
-
-if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
-  try {
-    const markdown = readFileSync(sourcePath, "utf8");
-    const catalog = parseExerciseCatalog(markdown);
-    const json = `${JSON.stringify(catalog, null, 2)}\n`;
-    if (process.argv.includes("--stdout")) {
-      process.stdout.write(json);
-    } else {
-      mkdirSync(new URL("../public/prompt/", import.meta.url), { recursive: true });
-      writeFileSync(outputPath, json, "utf8");
-      process.stdout.write(`Catálogo gerado: ${catalog.exercises.length} exercícios.\n`);
-    }
-  } catch (error) {
-    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-    process.exitCode = 1;
-  }
 }

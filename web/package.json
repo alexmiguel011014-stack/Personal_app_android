@@ -6,14 +6,15 @@
     "node": ">=24"
   },
   "scripts": {
-    "predev": "node scripts/copy-prompt-assets.mjs && node scripts/build-exercise-catalog.mjs",
+    "predev": "node scripts/copy-prompt-assets.mjs",
     "dev": "next dev",
-    "prebuild": "node scripts/copy-prompt-assets.mjs && node scripts/build-exercise-catalog.mjs",
+    "prebuild": "node scripts/copy-prompt-assets.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run --dir src",
     "seed:emulators": "node scripts/seed-emulators.mjs",
+    "catalog:publish": "node scripts/publish-exercise-catalog.mjs",
     "check:rules-version": "node scripts/check-rules-version.mjs",
     "dev:local": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-local.ps1",
     "e2e:account": "node e2e/account.mjs",

@@ -6,6 +6,9 @@
 //   2. seed them:            npm run seed:emulators
 //   3. run the app on them:  NEXT_PUBLIC_FIREBASE_EMULATORS=true npm run dev
 //
+// It also writes the exercise reference to its one gated home, appData/exerciseCatalog (GOALS.md §33), from the
+// same source the owner's publish script reads — the editor, the e2e scripts and the rules tests need it.
+//
 // Re-running it wipes both emulators first, so it always ends in the same state. Every date is
 // relative to "now", so the dashboard reads the same whichever day it runs. Each student is there to
 // make one of the dashboard's numbers checkable by eye:
@@ -30,6 +33,7 @@
 //          (no stats document); suspended@teste.dev has recent usage but suspended access.
 
 import { initializeTestEnvironment } from "@firebase/rules-unit-testing";
+import { buildCatalog } from "./lib/catalogSource.mjs";
 
 const PROJECT_ID = "demo-personal-tracker";
 const AUTH = "http://127.0.0.1:9099";
@@ -347,9 +351,17 @@ try {
     ...session(diego, 2),
   ]);
 
+  // GOALS.md §33: the exercise reference lives in one gated document; without it the editor reads "no muscles".
+  let reference = {};
+  try {
+    reference = { "appData/exerciseCatalog": { ...buildCatalog(), updatedAt: Date.now() } };
+  } catch (error) {
+    console.warn(`WARNING: exercise reference not seeded — ${error instanceof Error ? error.message : error}`);
+  }
+
   await env.withSecurityRulesDisabled(async (context) => {
     const db = context.firestore();
-    await Promise.all(Object.entries({ ...documents, ...logs }).map(([path, data]) => db.doc(path).set(data)));
+    await Promise.all(Object.entries({ ...documents, ...logs, ...reference }).map(([path, data]) => db.doc(path).set(data)));
   });
 
   console.log("Emulators seeded.");

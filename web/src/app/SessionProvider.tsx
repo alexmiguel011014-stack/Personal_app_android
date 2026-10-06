@@ -3,6 +3,7 @@
 import { onAuthStateChanged, signOut as firebaseSignOut, type User } from "firebase/auth";
 import { doc, onSnapshot, type Unsubscribe } from "firebase/firestore";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { clearExerciseCatalogCache } from "../data/exerciseCatalog";
 import { getFirebase } from "../data/firebase";
 import { profileFrom, type Session } from "../data/session";
 
@@ -34,6 +35,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     profileSubscription.current?.();
     profileSubscription.current = null;
     if (!user) {
+      // GOALS.md §33: the exercise reference is kept in memory only, and only while someone is signed in.
+      clearExerciseCatalogCache();
       setError(null);
       setSession({ status: "signedOut" });
       return;

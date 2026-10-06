@@ -6,9 +6,9 @@ import { destinationFor, profileFrom, type Profile } from "./session";
 
 describe("profileFrom — AuthRepository.resolveRole", () => {
   it("reads the role uppercased, and a missing document as an unclaimed STUDENT", () => {
-    expect(profileFrom({ role: "trainer" })).toEqual({ role: "TRAINER", trainerId: null, accessStatus: "active" });
-    expect(profileFrom({ role: "STUDENT", trainerId: "t1" })).toEqual({ role: "STUDENT", trainerId: "t1", accessStatus: "active" });
-    expect(profileFrom(undefined)).toEqual({ role: "STUDENT", trainerId: null, accessStatus: "active" });
+    expect(profileFrom({ role: "trainer" })).toEqual({ role: "TRAINER", trainerId: null, accessStatus: "active", platformBillingStatus: null, platformBillingUntil: null });
+    expect(profileFrom({ role: "STUDENT", trainerId: "t1" })).toEqual({ role: "STUDENT", trainerId: "t1", accessStatus: "active", platformBillingStatus: null, platformBillingUntil: null });
+    expect(profileFrom(undefined)).toEqual({ role: "STUDENT", trainerId: null, accessStatus: "active", platformBillingStatus: null, platformBillingUntil: null });
   });
 
   it("reads an unknown role as STUDENT, and keeps NONE (Kotlin's enum has it)", () => {
@@ -16,6 +16,8 @@ describe("profileFrom — AuthRepository.resolveRole", () => {
     expect(profileFrom({ role: "none" }).role).toBe("NONE");
     expect(profileFrom({ role: "TRAINER", accessStatus: "suspended" }).accessStatus).toBe("suspended");
     expect(profileFrom({ role: "TRAINER", accessStatus: "unknown" }).accessStatus).toBe("active");
+    expect(profileFrom({ role: "TRAINER", platformBillingStatus: "pending", platformBillingUntil: 1 }).platformBillingStatus).toBe("pending");
+    expect(profileFrom({ role: "TRAINER", platformBillingStatus: "current", platformBillingUntil: "later" }).platformBillingUntil).toBeNull();
   });
 });
 
@@ -30,12 +32,12 @@ describe("destinationFor — RoleRouter", () => {
 
   it("sends each kind of account to its own area", () => {
     expect(destinationFor({ status: "signedOut" })).toBe("/entrar");
-    expect(destinationFor(signedIn({ role: "TRAINER", trainerId: null, accessStatus: "active" }))).toBe("/app");
-    expect(destinationFor(signedIn({ role: "ADM", trainerId: null, accessStatus: "active" }))).toBe("/admin");
-    expect(destinationFor(signedIn({ role: "TRAINER", trainerId: null, accessStatus: "suspended" }))).toBe("/entrar");
-    expect(destinationFor(signedIn({ role: "STUDENT", trainerId: "t1", accessStatus: "active" }))).toBe("/aluno");
-    expect(destinationFor(signedIn({ role: "STUDENT", trainerId: null, accessStatus: "active" }))).toBe("/convite");
-    expect(destinationFor(signedIn({ role: "NONE", trainerId: null, accessStatus: "active" }))).toBe("/entrar");
+    expect(destinationFor(signedIn(profileFrom({ role: "TRAINER" })))).toBe("/app");
+    expect(destinationFor(signedIn(profileFrom({ role: "ADM" })))).toBe("/admin");
+    expect(destinationFor(signedIn(profileFrom({ role: "TRAINER", accessStatus: "suspended" })))).toBe("/entrar");
+    expect(destinationFor(signedIn(profileFrom({ role: "STUDENT", trainerId: "t1" })))).toBe("/aluno");
+    expect(destinationFor(signedIn(profileFrom({ role: "STUDENT", trainerId: null })))).toBe("/convite");
+    expect(destinationFor(signedIn(profileFrom({ role: "NONE" })))).toBe("/entrar");
   });
 
   it("routes an already signed-in trainer to the suspension screen when the live profile changes", () => {

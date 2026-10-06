@@ -15,17 +15,14 @@ automática desse formato e separa cada treino sozinho.
   `Treino A — Peito e tríceps`. Sempre comece o título com a palavra "Treino" e a letra ou o número.
 - Depois do título, uma linha por exercício, no formato:
 
-`Nome do exercício SÉRIESxREPS [Músculo:coeficiente, Músculo:coeficiente, ...]`
+`Nome do exercício SÉRIESxREPS`
 
 - Escreva o nome do exercício **exatamente como está na tabela de referência** quando ele existir
   nela (o site usa o nome para reconhecer o exercício).
 - SÉRIES é sempre o número de séries daquele exercício neste treino (não confundir com reps).
 - REPS pode ser um número único (ex: 10) ou uma faixa (ex: 10-12).
-- O bloco `[...]` no final é OBRIGATÓRIO em toda linha de exercício: liste cada músculo
-  relevante que o exercício ativa (segundo a tabela abaixo) e o coeficiente exato daquela linha
-  da tabela para aquele exercício/músculo, com **ponto** como separador decimal (0.5, não 0,5). Não
-  invente coeficientes fora da tabela — se um exercício não estiver na tabela, escolha o mais
-  parecido/equivalente e use os coeficientes dele.
+- Não inclua músculos nem coeficientes na linha. O site consulta a tabela e preenche a ativação
+  muscular; se não reconhecer o nome, ele pedirá uma escolha antes de salvar.
 - Não escreva nada mais na linha do exercício: sem observações, sem markdown, sem numeração, sem
   marcadores no começo da linha.
 - Quantos treinos fazer: o que estiver no meu pedido. Se eu não disser, use o número de dias de
@@ -35,16 +32,16 @@ Exemplo de saída válida:
 
 ```
 Treino A — Peito e tríceps
-Supino reto 4x10 [Peitoral:1.0, Delt. ant.:0.5, Tríceps geral:0.5]
-Tríceps pushdown 3x12 [Tríceps geral:1.0]
+Supino reto 4x10
+Tríceps pushdown 3x12
 
 Treino B — Costas e bíceps
-Puxada/barra fixa pronada 4x10 [Latíssimo/redondo maior:1.0, Bíceps:0.5]
-Elevação lateral 3x15 [Deltoide lateral:1.0]
+Puxada/barra fixa pronada 4x10
+Elevação lateral 3x15
 
 Treino C — Pernas
-Agachamento profundo 4x8 [Vastos/quadríceps:1.0, Glúteo máx.:1.0]
-Stiff 3x10 [Isquios:1.0, Glúteo máx.:0.75]
+Agachamento profundo 4x8
+Stiff 3x10
 ```
 
 ## Como calcular e respeitar o volume por músculo

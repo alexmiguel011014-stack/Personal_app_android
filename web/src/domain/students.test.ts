@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { claimedDrafts, mergeStudents, type DraftStudentDoc, type LinkedStudentDoc } from "./students";
+import { claimedDrafts, filterStudentsByPause, mergeStudents, type DraftStudentDoc, type LinkedStudentDoc } from "./students";
 
 function draft(id: string, name: string): DraftStudentDoc {
   return {
@@ -14,6 +14,7 @@ function draft(id: string, name: string): DraftStudentDoc {
     medicalNotes: "",
     trainingDays: [],
     createdAt: 0,
+    paused: false,
   };
 }
 
@@ -35,6 +36,7 @@ function account(id: string, name: string, inviteCode: string | null): LinkedStu
     canLogBiometrics: false,
     canAddSets: false,
     pendingAssessmentRequest: false,
+    paused: false,
   };
 }
 
@@ -72,5 +74,27 @@ describe("mergeStudents", () => {
     expect(
       mergeStudents(drafts, [account("u1", "Maria", "GONE")], new Map()).map((s) => s.id),
     ).toEqual(["d1", "u1"]);
+  });
+
+  it("keeps pause state on linked and draft rows", () => {
+    const merged = mergeStudents(
+      [{ ...draft("d1", "Rita"), paused: true }],
+      [{ ...account("u1", "Ana", null), paused: true }],
+      new Map(),
+    );
+    expect(merged.map((student) => student.paused)).toEqual([true, true]);
+  });
+});
+
+describe("filterStudentsByPause", () => {
+  const students = [
+    { id: "active", name: "Ativo", linked: true, goal: "", medicalNotes: "", trainingDays: [], createdAt: 0, pendingAssessmentRequest: false, paused: false },
+    { id: "paused", name: "Pausado", linked: false, goal: "", medicalNotes: "", trainingDays: [], createdAt: 0, pendingAssessmentRequest: false, paused: true },
+  ];
+
+  it("defaults to active students and supports paused or all", () => {
+    expect(filterStudentsByPause(students).map((student) => student.id)).toEqual(["active"]);
+    expect(filterStudentsByPause(students, "paused").map((student) => student.id)).toEqual(["paused"]);
+    expect(filterStudentsByPause(students, "all").map((student) => student.id)).toEqual(["active", "paused"]);
   });
 });

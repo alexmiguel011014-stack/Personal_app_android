@@ -38,14 +38,16 @@ export default function RequestsPage() {
       const { kind, request } = decision;
       if (kind === "approve") {
         const name = (names[request.id] ?? request.email.split("@")[0]).trim();
-        await approveRequest(getFirebase().db, adminUid, request.id, request.email, name);
-        setNotice(`${request.email} foi promovido a personal.`);
+        const defaultsApplied = await approveRequest(getFirebase().db, adminUid, request.id, request.email, name);
+        setNotice(defaultsApplied
+          ? `${request.email} foi promovido e recebeu os padrões atuais de teste.`
+          : `${request.email} foi promovido, mas continua bloqueado até o ADM atribuir um plano ou teste.`);
       } else {
         await rejectRequest(getFirebase().db, adminUid, request.id);
         setNotice(`Solicitação de ${request.email} recusada.`);
       }
       setDecision(null); setLoading(true); setVersion((value) => value + 1);
-    } catch { setNotice("Não foi possível concluir a decisão. A solicitação continua na fila."); }
+    } catch { setNotice("Não foi possível confirmar a decisão. Confira a fila e o perfil do personal antes de repetir."); }
     finally { setBusy(false); }
   }
 
@@ -54,8 +56,11 @@ export default function RequestsPage() {
     if (!adminUid || !promotionUid.trim()) return;
     setBusy(true); setNotice(null);
     try {
-      await promoteToTrainer(getFirebase().db, adminUid, promotionUid.trim(), promotionName.trim() || "Personal");
-      setNotice(`Conta ${promotionUid.trim()} promovida a personal.`); setPromotionUid(""); setPromotionName("");
+      const defaultsApplied = await promoteToTrainer(getFirebase().db, adminUid, promotionUid.trim(), promotionName.trim() || "Personal");
+      setNotice(defaultsApplied
+        ? `Conta ${promotionUid.trim()} promovida e configurada com os padrões atuais de teste.`
+        : `Conta ${promotionUid.trim()} promovida, mas continua bloqueada até o ADM atribuir um plano ou teste.`);
+      setPromotionUid(""); setPromotionName("");
     } catch { setNotice("Não foi possível promover este UID. Confirme se a conta já existe e tente novamente."); }
     finally { setBusy(false); }
   }

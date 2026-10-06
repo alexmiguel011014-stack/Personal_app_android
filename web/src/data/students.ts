@@ -18,6 +18,7 @@ export function draftToFirestore(
   trainerId: string,
   profile: StudentProfile,
   createdAt: number,
+  paused = false,
 ): Record<string, unknown> {
   return {
     trainerId,
@@ -30,6 +31,7 @@ export function draftToFirestore(
     medicalNotes: profile.medicalNotes,
     trainingDays: profile.trainingDays,
     createdAt,
+    paused,
   };
 }
 
@@ -66,10 +68,16 @@ export async function updateStudentProfile(
   profile: StudentProfile,
 ): Promise<void> {
   if (student.kind === "draft") {
-    await setDoc(doc(db, "students", student.doc.id), draftToFirestore(trainerId, profile, student.doc.createdAt));
+    await setDoc(doc(db, "students", student.doc.id), draftToFirestore(trainerId, profile, student.doc.createdAt, student.doc.paused));
   } else {
     await setDoc(doc(db, "users", student.doc.id), linkedProfileUpdate(profile), { merge: true });
   }
+}
+
+/** Pause only changes this field; it doesn't alter the student's profile or training history. */
+export async function setStudentPaused(db: Firestore, student: TrainerStudent, paused: boolean): Promise<void> {
+  const collectionName = student.kind === "draft" ? "students" : "users";
+  await updateDoc(doc(db, collectionName, student.doc.id), { paused });
 }
 
 /** GOALS.md §17's trainer-granted permissions, on a connected student's own document. */

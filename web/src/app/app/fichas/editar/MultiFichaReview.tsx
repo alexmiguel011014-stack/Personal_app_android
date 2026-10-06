@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import type { Exercise } from "../../../../domain/exercise";
 import { parseSetsText, renamedExercise } from "../../../../domain/reviewEdit";
+import { applyCatalogActivations, catalogActivation, lookupExercise, type ExerciseCatalog } from "../../../../domain/exerciseCatalog";
 import { volumeBand } from "../../../../domain/volumeBands";
 import { calculateEffectiveVolume } from "../../../../domain/workoutParser";
 import { manualExercise } from "../../../../domain/workouts";
@@ -30,13 +31,17 @@ function ExerciseRow({
   exercise,
   index,
   treino,
+  catalog,
   onChange,
+  onSelectCatalog,
   onRemove,
 }: {
   exercise: Exercise;
   index: number;
   treino: string;
+  catalog: ExerciseCatalog | "loading" | "error";
   onChange: (exercise: Exercise) => void;
+  onSelectCatalog: (name: string) => void;
   onRemove: () => void;
 }) {
   // The sets field shows what is being typed while focused (so "" or "1" on the way to "12" is
@@ -44,6 +49,9 @@ function ExerciseRow({
   const [setsDraft, setSetsDraft] = useState<string | null>(null);
   const setsText = setsDraft ?? String(exercise.sets);
   const where = `${treino || "treino"}, exercício ${index + 1}`;
+  const match = typeof catalog === "object" ? lookupExercise(catalog, exercise.name) : null;
+  const tableActivation = match ? catalogActivation(match.entry) : null;
+  const usesDifferentActivation = match !== null && !sameActivation(exercise.muscleActivation, tableActivation);
 
   return (
     <li className="review-exercise">
@@ -56,7 +64,44 @@ function ExerciseRow({
           value={exercise.name}
           onChange={(e) => onChange(renamedExercise(exercise, e.target.value))}
         />
-        {exercise.muscleActivation === null && <small>sem ativação muscular</small>}
+        {catalog === "loading" ? (
+          <small>Carregando catálogo de exercícios…</small>
+        ) : catalog === "error" ? (
+          <small>Catálogo indisponível; revise a ativação manualmente.</small>
+        ) : match?.how === "close" ? (
+          <small>Correspondência aproximada com “{match.entry.name}” — confira.</small>
+        ) : match ? (
+          <small>{usesDifferentActivation ? "Usei a tabela" : "Ativação do catálogo"}</small>
+        ) : (
+          <small>
+            sem ativação no catálogo{exercise.muscleActivation ? " — mantive a ativação recebida" : ""}
+          </small>
+        )}
+        {typeof catalog === "object" && (!match || match.how === "close") && (
+          <select
+            aria-label={`Escolher exercício do catálogo (${where})`}
+            value=""
+            onChange={(event) => {
+              if (event.target.value) onSelectCatalog(event.target.value);
+            }}
+          >
+            <option value="">Escolher exercício no catálogo…</option>
+            {match?.how === "close" && (
+              <optgroup label="Sugestão aproximada — escolha para usar">
+                <option value={match.entry.name}>{match.entry.name} — {match.entry.group}</option>
+              </optgroup>
+            )}
+            <optgroup label="Catálogo">
+              {catalog.exercises
+                .filter((entry) => match?.how !== "close" || entry.name !== match.entry.name)
+                .map((entry) => (
+                  <option key={entry.name} value={entry.name}>
+                    {entry.name} — {entry.group}
+                  </option>
+                ))}
+            </optgroup>
+          </select>
+        )}
       </div>
       <input
         className="review-sets"
@@ -131,6 +176,7 @@ function AddExercise({ treino, onAdd }: { treino: string; onAdd: (exercise: Exer
 
 export function MultiFichaReview({
   items,
+  catalog,
   warnings,
   errors,
   busy,
@@ -139,6 +185,7 @@ export function MultiFichaReview({
   onCancel,
 }: {
   items: readonly ReviewItem[];
+  catalog: ExerciseCatalog | "loading" | "error";
   warnings: readonly string[];
   errors: readonly string[];
   busy: boolean;
@@ -147,7 +194,10 @@ export function MultiFichaReview({
   onCancel: () => void;
 }) {
   const included = items.filter((item) => item.include);
-  const volume = Object.entries(calculateEffectiveVolume(included.flatMap((item) => item.exercises))).sort(
+  const volumeExercises = included.flatMap((item) =>
+    typeof catalog === "object" ? applyCatalogActivations(item.exercises, catalog) : item.exercises,
+  );
+  const volume = Object.entries(calculateEffectiveVolume(volumeExercises)).sort(
     ([, a], [, b]) => b - a,
   );
   const update = (key: string, change: Partial<ReviewItem>) =>
@@ -168,6 +218,9 @@ export function MultiFichaReview({
             <li key={warning}>{warning}</li>
           ))}
         </ul>
+      )}
+      {catalog === "error" && (
+        <p role="status">Não foi possível carregar a tabela. As correspondências não serão aplicadas automaticamente.</p>
       )}
 
       {items.map((item) => (
@@ -202,7 +255,9 @@ export function MultiFichaReview({
                     exercise={exercise}
                     index={index}
                     treino={item.name}
+                    catalog={catalog}
                     onChange={(next) => updateExercise(item, index, next)}
+                    onSelectCatalog={(name) => updateExercise(item, index, { ...exercise, name })}
                     onRemove={() => update(item.key, { exercises: item.exercises.filter((_, i) => i !== index) })}
                   />
                 ))}
@@ -248,8 +303,17 @@ export function MultiFichaReview({
         </ul>
       )}
       <div className="review-actions">
-        <button type="button" className="button-primary" disabled={busy || included.length === 0} onClick={onSave}>
-          {busy ? "Salvando…" : `Salvar ${included.length} ${included.length === 1 ? "ficha" : "fichas"}`}
+        <button
+          type="button"
+          className="button-primary"
+          disabled={busy || included.length === 0 || catalog === "loading"}
+          onClick={onSave}
+        >
+          {busy
+            ? "Salvando…"
+            : catalog === "loading"
+              ? "Carregando tabela…"
+              : `Salvar ${included.length} ${included.length === 1 ? "ficha" : "fichas"}`}
         </button>
         <button type="button" disabled={busy} onClick={onCancel}>
           Voltar ao importador
@@ -257,4 +321,14 @@ export function MultiFichaReview({
       </div>
     </section>
   );
+}
+
+function sameActivation(left: Record<string, number> | null, right: Record<string, number> | null): boolean {
+  if (left === null || right === null) return left === right;
+  const leftEntries = Object.entries(left).sort(([a], [b]) => a.localeCompare(b));
+  const rightEntries = Object.entries(right).sort(([a], [b]) => a.localeCompare(b));
+  return leftEntries.length === rightEntries.length && leftEntries.every(([key, value], i) => {
+    const other = rightEntries[i];
+    return other?.[0] === key && other[1] === value;
+  });
 }

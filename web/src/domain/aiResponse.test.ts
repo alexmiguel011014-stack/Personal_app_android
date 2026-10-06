@@ -75,4 +75,10 @@ describe("treinosFromAi", () => {
     });
     expect(workouts[0].exercises[0].muscleActivation).toEqual({ Peitoral: 1 });
   });
+
+  it("rejects model activation coefficients outside 0..1, including an overflowing JSON exponent", () => {
+    const raw = `{"treinos":[{"nome":"A","exercicios":[{"nome":"Supino","series":3,"reps":"10","ativacao":[{"musculo":"Válido","coeficiente":0.75},{"musculo":"Negativo","coeficiente":-0.1},{"musculo":"Alto","coeficiente":1.1},{"musculo":"Overflow","coeficiente":1e999}]}]}]}`;
+    const { workouts } = treinosFromAi(raw);
+    expect(workouts[0].exercises[0].muscleActivation).toEqual({ Válido: 0.75 });
+  });
 });

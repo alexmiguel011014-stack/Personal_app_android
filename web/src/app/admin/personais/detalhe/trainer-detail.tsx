@@ -14,8 +14,27 @@ import { addDays, localDate, yearMonth } from "../../../../domain/dates";
 import { PageHeading, LoadingOrError, Money, DateTime, Empty } from "../../AdminPrimitives";
 import { browserTimeZone } from "../../../_shared/browserTimeZone";
 import { ACTIVITY_KINDS, type ActivityKind } from "../../../../domain/activity";
+import { PlatformSubscriptionPanel } from "./PlatformSubscriptionPanel";
+import { AdminCreateStudentRecovery } from "./AdminCreateStudentRecovery";
 
-const auditNames: Record<string, string> = { "trainer.create": "Cadastro", "trainer.suspend": "Suspensão", "trainer.reactivate": "Reativação", "trainer.promote": "Promoção", "request.reject": "Solicitação recusada", "trainer.resetEmail": "Redefinição de senha" };
+const auditNames: Record<string, string> = {
+  "trainer.create": "Cadastro",
+  "trainer.suspend": "Suspensão",
+  "trainer.reactivate": "Reativação",
+  "trainer.promote": "Promoção",
+  "request.reject": "Solicitação recusada",
+  "trainer.resetEmail": "Redefinição de senha",
+  "admin.student.create": "Cadastro de aluno de segurança",
+  "invite.create": "Convite criado no site",
+  "invite.claim": "Convite aceito no site",
+  "invite.cancel": "Convite cancelado",
+  "invite.resolve": "Convite resolvido pelo ADM",
+  "subscription.assign": "Plano ou teste atribuído",
+  "invoice.issue": "Fatura emitida",
+  "invoice.payment": "Pagamento registrado",
+  "invoice.extend": "Vencimento prorrogado",
+  "trial.extend": "Teste prorrogado",
+};
 const activityLabels: Record<ActivityKind, string> = {
   login: "Entradas",
   studentCreated: "Alunos criados",
@@ -102,6 +121,8 @@ export default function TrainerDetail({ trainerId }: { trainerId: string }) {
       try {
         await recordAudit(getFirebase().db, {
           adminUid,
+          actorUid: adminUid,
+          actorRole: "ADM",
           action: "trainer.resetEmail",
           targetUid: trainer.id,
           at: Date.now(),
@@ -129,6 +150,8 @@ export default function TrainerDetail({ trainerId }: { trainerId: string }) {
         {auditWarning && <p role="alert">{auditWarning}</p>}
       </section>
       <section className="panel"><h2>Alunos vinculados</h2><p><strong>{linked ?? "Ainda sem dados"}</strong> ativos vinculados agora · {stats?.students.linked ?? "Ainda sem dados"} informado no último resumo.</p></section>
+      <PlatformSubscriptionPanel trainerUid={trainer.id} adminUid={adminUid} linkedStudentSeats={linked} accessStatus={trainer.accessStatus} billingStatus={trainer.platformBillingStatus ?? null} billingUntil={trainer.platformBillingUntil ?? null} canManage={canManage} />
+      <AdminCreateStudentRecovery trainerUid={trainer.id} trainerName={trainer.name || trainer.email || trainer.id} canManage={canManage} />
       <section className="panel"><h2>Atividade recente</h2>
         {activities.length === 0 ? <Empty>Ainda sem dados de atividade.</Empty> : <>
           <p>Últimos 30 dias; as marcas indicam dias com atividade registrada.</p>
@@ -140,7 +163,7 @@ export default function TrainerDetail({ trainerId }: { trainerId: string }) {
       <section className="panel"><h2>Mensalidades · {stats?.billing.month ?? "Ainda sem dados"}</h2>
         {!stats ? <Empty>Ainda sem dados de cobrança para este personal.</Empty> : <dl><div><dt>Planos ativos</dt><dd>{stats.billing.activePlans}</dd></div><div><dt>Ticket médio</dt><dd><Money cents={stats.billing.activePlans ? Math.round(stats.billing.planCents / stats.billing.activePlans) : null} /></dd></div><div><dt>Previsto</dt><dd><Money cents={stats.billing.expectedCents} /></dd></div><div><dt>Recebido</dt><dd><Money cents={stats.billing.receivedCents} /></dd></div><div><dt>Em atraso</dt><dd><Money cents={stats.billing.overdueCents} /></dd></div><div><dt>Taxa de recebimento</dt><dd>{stats.billing.expectedCents ? `${Math.round(100 * stats.billing.receivedCents / stats.billing.expectedCents)}%` : "Ainda sem dados"}</dd></div><div><dt>Atualização</dt><dd><DateTime at={stats.updatedAt} />{asOf - stats.updatedAt > 14 * 86_400_000 && <span className="attention"> Resumo desatualizado há mais de 14 dias</span>}</dd></div></dl>}
       </section>
-      <section className="panel"><h2>Auditoria deste personal</h2>{audit.length === 0 ? <Empty>Ainda sem registros de auditoria.</Empty> : <ul className="admin-list">{audit.map((entry) => <li key={entry.id}><span><strong>{auditNames[entry.action] ?? entry.action}</strong><br /><small>{entry.note}</small></span><small><DateTime at={entry.at} /> · ADM {entry.adminUid}</small></li>)}</ul>}</section>
+    <section className="panel"><h2>Auditoria deste personal</h2>{audit.length === 0 ? <Empty>Ainda sem registros de auditoria.</Empty> : <ul className="admin-list">{audit.map((entry) => <li key={entry.id}><span><strong>{auditNames[entry.action] ?? entry.action}</strong><br /><small>{entry.note}</small></span><small><DateTime at={entry.at} /> · {entry.actorRole} {entry.actorUid}</small></li>)}</ul>}</section>
     </>}
     <ConfirmDialog open={dialog} title={trainer?.accessStatus === "suspended" ? "Reativar acesso deste personal?" : "Suspender acesso deste personal?"} yesLabel={busy ? "Salvando…" : "Confirmar"} onYes={() => void updateStatus()} onNo={() => setDialog(false)}>
       {trainer?.accessStatus === "suspended" ? <p>O personal poderá voltar a acessar a plataforma.</p> : <><p>A conta perderá acesso à área de personal até ser reativada.</p><label>Motivo (até 200 caracteres)<textarea required maxLength={200} value={reason} onChange={(event) => { setReason(event.target.value); setActionError(null); }} /></label><p className="admin-muted">{reason.length}/200</p>{actionError && <p role="alert">{actionError}</p>}</>}

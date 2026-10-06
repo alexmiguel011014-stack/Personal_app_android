@@ -111,6 +111,8 @@ describe("ensureMonthlyCharges", () => {
   it("creates a month's charges once, and re-running never wipes a recorded payment", async () => {
     await seed({
       "users/trainerA": { role: "TRAINER" },
+      "users/studentA": { role: "STUDENT", trainerId: "trainerA" },
+      "users/studentB": { role: "STUDENT", trainerId: "trainerA" },
       "billingPlans/studentA": plan("studentA"),
       "billingPlans/studentB": plan("studentB", { active: false }),
     });
@@ -131,6 +133,7 @@ describe("ensureMonthlyCharges", () => {
     await seed({
       "users/trainerA": { role: "TRAINER" },
       "users/trainerB": { role: "TRAINER" },
+      "users/studentA": { role: "STUDENT", trainerId: "trainerA" },
       "billingPlans/studentA": plan("studentA"),
     });
     const stolenPlan = {
@@ -222,7 +225,11 @@ describe("a trainer's writes to students (GOALS.md §23g)", () => {
 
 describe("loadTrainerView (GOALS.md §23g)", () => {
   it("shows this month's charge even when another load created it — two tabs at once", async () => {
-    await seed({ "users/trainerA": { role: "TRAINER" }, "billingPlans/studentA": plan("studentA") });
+    await seed({
+      "users/trainerA": { role: "TRAINER" },
+      "users/studentA": { role: "STUDENT", trainerId: "trainerA" },
+      "billingPlans/studentA": plan("studentA"),
+    });
     // Both read before either writes: one creates the charge, the other finds it already there.
     // Found in the browser — React's dev double-mount did exactly this — and the second one used
     // to show a snapshot without the charge.
@@ -237,7 +244,11 @@ describe("loadTrainerView (GOALS.md §23g)", () => {
   });
 
   it("writes nothing when every active plan already has its charge", async () => {
-    await seed({ "users/trainerA": { role: "TRAINER" }, "billingPlans/studentA": plan("studentA") });
+    await seed({
+      "users/trainerA": { role: "TRAINER" },
+      "users/studentA": { role: "STUDENT", trainerId: "trainerA" },
+      "billingPlans/studentA": plan("studentA"),
+    });
     await loadTrainerView(signedInAs("trainerA"), "trainerA", "2026-09", 1, ZONE);
     const again = await loadTrainerView(signedInAs("trainerA"), "trainerA", "2026-09", 2, ZONE);
     expect(again.chargesCreated).toBe(0);
@@ -280,15 +291,27 @@ describe("claimInvite and resolveProfile (GOALS.md §23f)", () => {
       createdAt: 5,
     });
     expect((await read(`invites/${CODE}`))?.used).toBe(true);
-    expect(await resolveProfile(signedInAs("newStudent"), "newStudent")).toEqual({ role: "STUDENT", trainerId: "trainerA", accessStatus: "active" });
+    expect(await resolveProfile(signedInAs("newStudent"), "newStudent")).toEqual({
+      role: "STUDENT", trainerId: "trainerA", accessStatus: "active", platformBillingStatus: null, platformBillingUntil: null,
+    });
   });
 
+  it("refuses an unknown code with the app's own message", async () => {
+    await seed({ "users/trainerA": { role: "TRAINER" } });
+    expect(await claimInvite(signedInAs("newStudent"), "newStudent", CODE, 5)).toEqual({ ok: false, message: "Código de convite inválido" });
+  });
+
+  // Rules v4: a spent invite is unreadable to anyone but its trainer, an ADM and the account that
+  // claimed it, so a stranger gets the "unavailable" explanation rather than "already used".
   it.each([
-    ["an unknown code", {}, "Código de convite inválido"],
-    ["a used invite", { [`invites/${CODE}`]: { ...invite, used: true } }, "Código de convite já utilizado"],
-  ])("refuses %s with the app's own message", async (_label, documents, message) => {
-    await seed({ "users/trainerA": { role: "TRAINER" }, ...documents });
-    expect(await claimInvite(signedInAs("newStudent"), "newStudent", CODE, 5)).toEqual({ ok: false, message });
+    ["used", { used: true }],
+    ["cancelled", { cancelledAt: 3 }],
+  ])("explains a %s invite as unavailable, without reading it", async (_label, extra) => {
+    await seed({ "users/trainerA": { role: "TRAINER" }, [`invites/${CODE}`]: { ...invite, ...extra } });
+    expect(await claimInvite(signedInAs("newStudent"), "newStudent", CODE, 5)).toEqual({
+      ok: false,
+      message: "O convite não está disponível. Ele pode ter sido pausado, cancelado ou usado, ou sua conta já estar vinculada. Peça ao personal para conferir ou reativar o cadastro.",
+    });
   });
 
   it("explains, instead of showing Firebase's error, when the account already belongs to a trainer", async () => {
@@ -299,16 +322,20 @@ describe("claimInvite and resolveProfile (GOALS.md §23f)", () => {
     });
     expect(await claimInvite(signedInAs("taken"), "taken", CODE, 5)).toEqual({
       ok: false,
-      message: "Esta conta já está vinculada a um perfil existente — fale com o administrador.",
+      message: "O convite não está disponível. Ele pode ter sido pausado, cancelado ou usado, ou sua conta já estar vinculada. Peça ao personal para conferir ou reativar o cadastro.",
     });
     expect((await read(`invites/${CODE}`))?.used).toBe(false);
   });
 
   it("resolves a trainer, and an account with no document yet as an unclaimed student", async () => {
     await seed({ "users/trainerA": { role: "TRAINER" } });
-    expect(await resolveProfile(signedInAs("trainerA"), "trainerA")).toEqual({ role: "TRAINER", trainerId: null, accessStatus: "active" });
+    expect(await resolveProfile(signedInAs("trainerA"), "trainerA")).toEqual({
+      role: "TRAINER", trainerId: null, accessStatus: "active", platformBillingStatus: null, platformBillingUntil: null,
+    });
     // Reading one's own users/{uid} before it exists must be allowed, or a new account can't load.
-    expect(await resolveProfile(signedInAs("brandNew"), "brandNew")).toEqual({ role: "STUDENT", trainerId: null, accessStatus: "active" });
+    expect(await resolveProfile(signedInAs("brandNew"), "brandNew")).toEqual({
+      role: "STUDENT", trainerId: null, accessStatus: "active", platformBillingStatus: null, platformBillingUntil: null,
+    });
   });
 });
 
@@ -669,7 +696,10 @@ describe("the agenda (GOALS.md §23g)", () => {
 
 describe("managing mensalidades (GOALS.md §23g)", () => {
   it("registers, edits and pauses a plan; a second registration can't overwrite it", async () => {
-    await seed({ "users/trainerA": { role: "TRAINER" } });
+    await seed({
+      "users/trainerA": { role: "TRAINER" },
+      "users/s1": { role: "STUDENT", trainerId: "trainerA" },
+    });
     const db = signedInAs("trainerA");
     await createPlan(db, "trainerA", "s1", 15000, 10, 1_000);
     await assertFails(createPlan(db, "trainerA", "s1", 9900, 5, 2_000));
@@ -683,7 +713,12 @@ describe("managing mensalidades (GOALS.md §23g)", () => {
   });
 
   it("settles a charge, undoes it, adjusts it within its month — and nothing across months", async () => {
-    await seed({ "users/trainerA": { role: "TRAINER" }, "users/trainerB": { role: "TRAINER" }, "billingPlans/s1": plan("s1") });
+    await seed({
+      "users/trainerA": { role: "TRAINER" },
+      "users/trainerB": { role: "TRAINER" },
+      "users/s1": { role: "STUDENT", trainerId: "trainerA" },
+      "billingPlans/s1": plan("s1"),
+    });
     const db = signedInAs("trainerA");
     const { plans } = await loadTrainerSnapshot(db, "trainerA");
     await ensureMonthlyCharges(db, plans, "2026-09", 1_700_000_100_000);

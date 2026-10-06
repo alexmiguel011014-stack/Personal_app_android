@@ -19,6 +19,7 @@ function student(id: string, overrides: Partial<Student> = {}): Student {
     trainingDays: [],
     createdAt: LONG_AGO,
     pendingAssessmentRequest: false,
+    paused: false,
     ...overrides,
   };
 }
@@ -87,6 +88,30 @@ describe("dashboardFigures", () => {
     expect(figures.payments.receivedCents).toBe(15000);
     expect(figures.payments.overdue.map((p) => p.dueDate)).toEqual(["2026-08-05", "2026-09-05"]);
     expect(figures.payments.overdueCents).toBe(24000);
+  });
+
+  it("excludes paused students from dashboard activity but keeps their billing intact", () => {
+    const figures = dashboardFigures(
+      {
+        students: [
+          student("active", { trainingDays: ["Segunda"] }),
+          student("paused", { paused: true, trainingDays: ["Segunda"], pendingAssessmentRequest: true }),
+        ],
+        logs: [
+          ...trainedOn("active", ["2026-08-31", "2026-09-07", "2026-09-14", "2026-09-21"]),
+          ...trainedOn("paused", ["2026-09-21"]),
+        ],
+        payments: [charge("paused", "2026-09-10", 15000, null)],
+      },
+      TODAY,
+      SP,
+    );
+    expect(figures.students).toEqual({ total: 1, linked: 1, pending: 0 });
+    expect(figures.sessions).toBe(1);
+    expect(figures.adherence).toBe(1);
+    expect(figures.pendingAssessments).toEqual([]);
+    expect(figures.payments.expectedCents).toBe(15000);
+    expect(figures.payments.overdueCents).toBe(15000);
   });
 });
 

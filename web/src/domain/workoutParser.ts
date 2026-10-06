@@ -226,7 +226,7 @@ function parseMuscleActivation(line: string): Record<string, number> | null {
     if (keyValue.length !== 2) continue;
     const muscle = kotlinTrim(keyValue[0]);
     const coefficient = toDoubleOrNull(kotlinTrim(keyValue[1]));
-    if (coefficient === null || muscle === "") continue;
+    if (coefficient === null || !Number.isFinite(coefficient) || coefficient < 0 || coefficient > 1 || muscle === "") continue;
     pairs.set(muscle, coefficient);
   }
   // fromEntries, not bracket assignment: a muscle named "__proto__" must stay a plain key.

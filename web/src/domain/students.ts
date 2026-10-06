@@ -28,6 +28,8 @@ export interface DraftStudentDoc {
   medicalNotes: string;
   trainingDays: string[];
   createdAt: number;
+  /** Optional in Firestore for legacy documents; converters normalize absence to false. */
+  paused: boolean;
 }
 
 /** Firestore `users/{uid}` for a linked student (role "STUDENT"). */
@@ -56,6 +58,8 @@ export interface LinkedStudentDoc {
    */
   canAddSets: boolean;
   pendingAssessmentRequest: boolean;
+  /** Optional in Firestore for legacy documents; converters normalize absence to false. */
+  paused: boolean;
 }
 
 /** One row of the trainer's student list, whichever collection it came from. */
@@ -70,6 +74,13 @@ export interface Student {
   /** Linked: when the invite was claimed. Draft: when the trainer registered them. */
   createdAt: number;
   pendingAssessmentRequest: boolean;
+  paused: boolean;
+}
+
+export type StudentPauseFilter = "active" | "paused" | "all";
+
+export function filterStudentsByPause(students: readonly Student[], filter: StudentPauseFilter = "active"): Student[] {
+  return filter === "all" ? [...students] : students.filter((student) => student.paused === (filter === "paused"));
 }
 
 /**
@@ -113,6 +124,7 @@ export function mergeStudents(
       trainingDays: draft.trainingDays,
       createdAt: draft.createdAt,
       pendingAssessmentRequest: false,
+      paused: draft.paused,
     }));
   const accounts: Student[] = linked.map((account) => ({
     id: account.id,
@@ -123,6 +135,7 @@ export function mergeStudents(
     trainingDays: account.trainingDays,
     createdAt: account.createdAt,
     pendingAssessmentRequest: account.pendingAssessmentRequest,
+    paused: account.paused,
   }));
   return [...unclaimedDrafts, ...accounts];
 }

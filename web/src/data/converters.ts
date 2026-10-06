@@ -29,6 +29,9 @@ export interface TrainerUser {
   accessStatus: "active" | "suspended";
   suspendedAt: number | null;
   suspendedReason: string | null;
+  platformBillingStatus?: "pending" | "trial" | "current" | "blocked";
+  platformBillingUntil?: number | null;
+  lastAuditId?: string | null;
 }
 
 export interface TrainerStats {
@@ -51,12 +54,17 @@ export interface TrainerActivity {
   activeDays: string[];
 }
 
-export type AuditAction = "trainer.create" | "trainer.suspend" | "trainer.reactivate" | "trainer.promote" | "request.reject" | "trainer.resetEmail";
+export type AuditAction = "trainer.create" | "trainer.suspend" | "trainer.reactivate" | "trainer.promote" | "request.reject" | "trainer.resetEmail" |
+  "platform.plan.create" | "platform.plan.update" | "platform.defaults.update" | "subscription.assign" |
+  "invoice.issue" | "invoice.payment" | "invoice.extend" | "trial.extend" | "admin.student.create" |
+  "invite.create" | "invite.claim" | "invite.cancel" | "invite.resolve";
 
 export interface AuditEntry {
   id: string;
   at: number;
   adminUid: string;
+  actorUid: string;
+  actorRole: "ADM" | "TRAINER" | "STUDENT";
   action: AuditAction;
   targetUid: string;
   note: string;
@@ -101,7 +109,12 @@ function object(data: Data, key: string): Data | null {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Data : null;
 }
 
-const AUDIT_ACTIONS: readonly AuditAction[] = ["trainer.create", "trainer.suspend", "trainer.reactivate", "trainer.promote", "request.reject", "trainer.resetEmail"];
+const AUDIT_ACTIONS: readonly AuditAction[] = [
+  "trainer.create", "trainer.suspend", "trainer.reactivate", "trainer.promote", "request.reject", "trainer.resetEmail",
+  "platform.plan.create", "platform.plan.update", "platform.defaults.update", "subscription.assign",
+  "invoice.issue", "invoice.payment", "invoice.extend", "trial.extend", "admin.student.create",
+  "invite.create", "invite.claim", "invite.cancel", "invite.resolve",
+];
 
 export function toTrainerUser(id: string, data: Data): TrainerUser | null {
   if (str(data, "role") !== "TRAINER") return null;
@@ -115,6 +128,9 @@ export function toTrainerUser(id: string, data: Data): TrainerUser | null {
     accessStatus: data.accessStatus === "suspended" ? "suspended" : "active",
     suspendedAt: int(data, "suspendedAt"),
     suspendedReason: str(data, "suspendedReason"),
+    platformBillingStatus: oneOf(data, "platformBillingStatus", ["pending", "trial", "current", "blocked"] as const) ?? undefined,
+    platformBillingUntil: int(data, "platformBillingUntil"),
+    lastAuditId: str(data, "lastAuditId"),
   };
 }
 
@@ -154,12 +170,13 @@ export function toTrainerActivity(_id: string, data: Data): TrainerActivity | nu
 }
 
 export function toAuditEntry(id: string, data: Data): AuditEntry | null {
-  const adminUid = str(data, "adminUid");
+  const actorUid = str(data, "actorUid") ?? str(data, "adminUid");
+  const actorRole = oneOf(data, "actorRole", ["ADM", "TRAINER", "STUDENT"] as const) ?? (str(data, "adminUid") ? "ADM" : null);
   const action = oneOf(data, "action", AUDIT_ACTIONS);
   const targetUid = str(data, "targetUid");
   const at = int(data, "at");
-  if (adminUid === null || action === null || targetUid === null || at === null) return null;
-  return { id, at, adminUid, action, targetUid, note: str(data, "note") ?? "" };
+  if (actorUid === null || actorRole === null || action === null || targetUid === null || at === null) return null;
+  return { id, at, adminUid: str(data, "adminUid") ?? actorUid, actorUid, actorRole, action, targetUid, note: str(data, "note") ?? "" };
 }
 
 /** `students/{id}` — FirestoreMappers.toUserEntity. */
@@ -178,6 +195,7 @@ export function toDraftStudent(id: string, data: Data): DraftStudentDoc | null {
     medicalNotes: str(data, "medicalNotes") ?? "",
     trainingDays: stringList(data, "trainingDays") ?? [],
     createdAt: int(data, "createdAt") ?? 0,
+    paused: bool(data, "paused") ?? false,
   };
 }
 
@@ -203,6 +221,7 @@ export function toLinkedStudent(id: string, data: Data): LinkedStudentDoc | null
     canLogBiometrics: bool(data, "canLogBiometrics") ?? false,
     canAddSets: bool(data, "canAddSets") ?? false,
     pendingAssessmentRequest: bool(data, "pendingAssessmentRequest") ?? false,
+    paused: bool(data, "paused") ?? false,
   };
 }
 

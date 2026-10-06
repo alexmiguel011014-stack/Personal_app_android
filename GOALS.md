@@ -2665,7 +2665,7 @@ mechanical CRUD screens once the data layer exists.
       **Promise** (`const { slug } = await props.params`). The scaffold's own `web/AGENTS.md` warns
       that this Next differs from model training data and points at
       `web/node_modules/next/dist/docs/` — **read those before writing route code.**
-- [ ] Decide the component library **for phase 2 only**, and write the decision down now so phase
+- [x] Decide the component library **for phase 2 only**, and write the decision down now so phase
       1 does not accidentally pick one: **shadcn/ui** is the recommendation (components are copied
       into the repo and owned outright, Tailwind, no inherited look). **MUI is explicitly ruled
       out** — it is Material Design, the exact visual language this section exists to escape;
@@ -2682,6 +2682,7 @@ mechanical CRUD screens once the data layer exists.
       Its CSS is plain and small, so `web/` still depends on
       `next`/`react`/`react-dom` only — no Tailwind, no shadcn/ui, no icon package (the navigation
       icons are inline SVG, as in the template). Nothing here is built on Material.
+**Phase 2 decision 2026-10-02 (§24):** use Tailwind v4 + shadcn/ui, with A · Estúdio as the implementation default, light theme, and the ALLU personal brand. This starts a deliberate visual phase and does not change the phase 1 no-library decision above.
 
 **23b. Scaffold, and what happens to the Kotlin/JS build**
 - [x] Next.js project at `web/` in this repo. Same repo, not a separate one — the Firestore schema
@@ -3275,12 +3276,15 @@ by the SDK. 103 unit + 58 emulator tests, eslint and tsc clean.
       and "Segunda (2)", the emulator holding `{dayOfWeek: "Segunda", hour: "08h"}`; "Remover" →
       free again. Emulator test: the booked student can read their slot, another trainer can't
       remove it. 150 unit + 66 emulator tests.
-- [ ] Archive/pause a student (one boolean, per §12's cheap-wins list).
-      **Needs a decision before it's built:** a linked student's boolean would live on `users/{uid}`,
-      where the trainer's update rule allows only a fixed field list — so it needs a rules change
-      (another publish), and the Android app, which doesn't know the field, would keep listing
-      archived students. Worth batching with the next rules change rather than shipping alone.
-- [ ] **No CSS.** Not "minimal styling" — none. A stylesheet in phase 1 is how phase 1 becomes
+- [x] Archive/pause a student (one boolean, per §12's cheap-wins list).
+      **Done 2026-10-02 (Web only):** an optional `paused` flag defaults to false on drafts and linked
+      students; the roster opens on Activos and offers Pausados/Todos, with pause/reactivate on the
+      detail page. Paused students leave active dashboard counts, agenda and recent activity, while
+      history, account login, assigned content, session logging, and billing remain available. A
+      paused unclaimed draft cannot be claimed; Rules deny it without exposing the draft to the
+      invitee. Android/iOS remain unchanged and continue listing paused students as this section
+      warned. Verified by 415 Web unit tests and 144 emulator tests; the combined Rules still need
+      owner review/publication.- [ ] **No CSS.** Not "minimal styling" — none. A stylesheet in phase 1 is how phase 1 becomes
       phase 2 by accident.
       **Holding so far:** every page under `web/src` is bare HTML — no stylesheet, `className` or
       `style` anywhere.
@@ -3489,6 +3493,18 @@ Passed 2026-09-28.
 
 ## 24. Feature — Visual pass: a design system for the trainer and student areas
 (2026-09-29, via `/newgoal`)
+
+> **Status 2026-10-05 — direction chosen and applied: B · Energia.** The trainer picked B from
+> `web/design/preview.html` (warm paper `#faf9f7`, ink-dark rail `#12161c`, burnt orange `#c2410c`, Barlow Condensed
+> headings over Inter, 6 px corners). It is applied by re-theming `web/src/app/globals.css` (colour and type tokens in
+> `:root`, status colours kept as green/amber/red with a word) — layout, class names, breakpoints and every
+> component are unchanged — and `layout.tsx` imports the two fonts from `@fontsource/*` (Latin subset, 7 files,
+> 159 KB, self-hosted). Checked in headless Chrome against the emulators at 1440 and 390 px on the landing, sign-in,
+> ADM, trainer and student screens; two pre-existing layout bugs surfaced and were fixed (the ADM figures strip
+> unboxed by `dl > div { display: contents }`, and the "attention" pills in the ADM overview rendered green).
+> **Not done:** contrast was reasoned from the tokens (orange on paper ≈ 4.9:1, white on orange ≈ 5.2:1), not
+> measured with a tool; the 3D figure is a separate piece and was not touched; the older open boxes in this
+> section (per-screen reviews against the template) were not re-ticked.
 
 **The request:** "faz um template de sugestão para o app personal. pense na área do aluno e
 personal" — the day after the trainer asked "existe algum site com templates pré-definidos que
@@ -4144,7 +4160,7 @@ feeds a matcher whose mistakes change a student's recorded volume.
       was checked row by row against the PDF by the trainer.
       **Case (a), 2026-09-30:** the trainer confirmed the PDF is the same table — nothing to convert or append. The
       catalog build script, `exerciseCatalog.ts` and their tests (the next three items) are still to do.
-- [ ] `web/scripts/build-exercise-catalog.mjs`, run from `prebuild` and `predev` next to
+- [x] `web/scripts/build-exercise-catalog.mjs`, run from `prebuild` and `predev` next to
       `copy-prompt-assets.mjs`: reads `../../app/src/main/assets/hypertrophy_volume_reference.md` and
       writes the generated, gitignored `web/public/prompt/exercise-catalog.json` (same generated-copy
       convention as the prompt assets). Two table shapes must parse: **wide tables** (one column per
@@ -4154,14 +4170,14 @@ feeds a matcher whose mistakes change a student's recorded volume.
       the header>": coefficient } }] }`. Keep muscle labels **verbatim** (`Delt. ant.`, `Tríceps
       geral`…) so keys match what the AI annotations and already-saved fichas use. A row that cannot
       be parsed fails the build with its line number — never silently skipped.
-- [ ] `web/src/domain/exerciseCatalog.ts`: `normalizeName(text)` (lowercase, accents folded, collapse
+- [x] `web/src/domain/exerciseCatalog.ts`: `normalizeName(text)` (lowercase, accents folded, collapse
       spaces/punctuation; drop "com barra/halteres/na máquina" qualifiers only as a *second*
       attempt), `lookupExercise(catalog, name)` → `{ entry, how: "exact" | "normalized" | "close" } |
       null`, and `catalogActivation(entry)` → the `Record<string, number>` stored as
       `muscleActivation`. "Close" = all significant tokens of the shorter name appear in the longer
       one **and** exactly one catalog entry qualifies; two candidates or none → `null` (ambiguity is
       surfaced to the trainer in 25e, never guessed). Pure, no I/O, catalog passed in.
-- [ ] Tests (`exerciseCatalog.test.ts`, plus a test of the build script's parser against the real
+- [x] Tests (`exerciseCatalog.test.ts`, plus a test of the build script's parser against the real
       Markdown file so a future edit that breaks the table fails CI): `Supino reto` → Peitoral 1,
       Delt. ant. 0.5, Tríceps geral 0.5, Cabeça longa 0.25 (values from the current table); accent and
       case variants match; `Supino reto com barra` matches by the second attempt; `Supino` alone is
@@ -4254,12 +4270,12 @@ the atomic save and the "never guess" handling of unmatched exercises are the ri
       **Done** as `MultiFichaReview.tsx` (name, "incluir", remove-exercise, warnings in `role="status"`). **Not done:**
       the per-treino "add exercise" form — each saved ficha is editable afterwards from the student's page like any
       other. Editing an existing ficha is untouched (the panel never appears there).
-- [ ] Catalog enrichment in the review panel: each exercise is looked up with `lookupExercise`; a match
+- [x] Catalog enrichment in the review panel: each exercise is looked up with `lookupExercise`; a match
       fills `muscleActivation` from the catalog (replacing a hand-typed annotation only when they
       differ — show "usei a tabela" — because the table is the source of truth); no match keeps the
       AI's own annotation if it parsed, else `null`, and the row shows **"sem ativação no catálogo"**
       with a `<select>` of the catalog's exercises to pick one (covers the ambiguous case from 25c).
-      Nothing is guessed silently; nothing blocks saving either.
+      Nothing is guessed silently; nothing blocks saving either.      **Verified 2026-10-02 after review:** exact/normalized catalog matches may fill automatically; a `close` suggestion stays unselected until the trainer explicitly chooses it, and only then can its canonical name/coefficient affect preview or save. Legacy/imported activation rejects non-finite values and values outside 0–1. The generated catalog contains 50 exercises; all 415 Web unit tests, lint, TypeScript, and both root/Pages static builds pass. The live Gemini experiment remains open.
 - [x] Weekly volume across the **selected** treinos: a table of effective volume per muscle summed over
       all included fichas (`calculateEffectiveVolume` on the concatenated exercises — the prompt already
       promises "em TODAS as fichas da semana"), against the generic 4–8 / 12–20 bands the prompt states,
@@ -4360,7 +4376,7 @@ the trainer their reliability, a wrong "no-go" costs them the feature they asked
       enforcement for AI Logic** (mandatory from 2026-11-02 anyway). For local tests, register a debug
       token as the AI Logic docs describe (`self.FIREBASE_APPCHECK_DEBUG_TOKEN`). The spike runs
       against the **real** project from a throwaway page, not the app shell and not the emulators.
-- [ ] Write the go/no-go criteria **before** running anything, here: *go* if, on the real project,
+- [x] Write the go/no-go criteria **before** running anything, here: *go* if, on the real project,
       **(1)** `getGenerativeModel` with a system instruction and a JSON `responseSchema` works from
       `firebase/ai` (typecheck under firebase 12.x; confirm `startChat`, or fall back to resending the
       history); **(2)** 10 requests for different fake profiles (no names or notes) return schema-valid
@@ -5490,6 +5506,324 @@ Suggested: haiku · low — documentation and ticks, fully specified.
       chart or number on the dashboard changed. Not done when the code exists.
 
 ---
+
+## 29. Feature — Account settings for ADM, trainer, and student (web)
+(2026-10-01, via `/newgoal`)
+
+**The request:** create account settings entered from the profile area shown in the reference image, for ADM, trainer, and student: upload an account image, change password, add a personal phone number for future use, change e-mail, and include the other basic account controls that fit this screen.
+
+**Goal type: Feature** — extend the existing authenticated web areas with one shared account-settings experience and role-specific routes. This section plans web code only; no Android or iOS source changes.
+
+**Baseline before this goal (checked against `origin/main`):**
+- `web/src/app/_shared/AppShell.tsx` renders the profile chip in the reference: initials-only `Avatar`, current Auth e-mail, role label, and a separate sign-out button. The same shell serves all three areas.
+- ADM already has `/admin/conta` in `web/src/app/admin/conta/page.tsx`. It shows the signed-in e-mail, ADM count, an MFA placeholder, and a password-reset-email action; extend it and preserve those existing account/admin details.
+- Trainer and student areas use `/app` and `/aluno`; their layouts are `web/src/app/app/layout.tsx` and `web/src/app/aluno/layout.tsx`. `RequireArea` already enforces the authenticated role.
+- `SessionProvider` exposes Auth e-mail and `emailVerified`. The ADM trainer directory also reads the mirrored `users/{uid}.email`, so a confirmed Auth e-mail change must refresh that document field.
+- `users/{uid}` already carries a `phone` field. Firestore rules protect role and trainer ownership; any new profile writes must keep role, trainerId, and ADM-controlled permission fields protected.
+- `Avatar.tsx` displayed initials. Firebase Storage was not configured in `firebase.json`, had no Storage rules, and was not connected by `data/firebase.ts`.
+
+**Decisions for this feature:**
+- Use shared settings sections for profile and sign-in/security, with `/admin/conta`, `/app/conta`, and `/aluno/conta` routes. The profile chip is an account link, with sign-out remaining a distinct action. Keep account access discoverable at phone width even if the desktop rail is hidden.
+- A profile image belongs to the signed-in user. Store a UID-scoped Storage path, read it through authenticated Firebase Storage access, and keep initials as the fallback. Do not store a long-lived download token as though it were private.
+- The phone is optional contact information in Firestore, separate from Firebase Auth phone sign-in or SMS verification. Show it as unverified; do not send SMS.
+- Firebase Auth remains the source of truth for e-mail and password. After a new e-mail is confirmed, refresh Auth state and synchronize the ADM-facing `users/{uid}.email` mirror to the verified Auth token. Show a retry state if that mirror write fails after Auth has changed.
+- Do not add name editing in this pass: the linked student's `users/{uid}.name` is also trainer-managed profile data. Keep the existing ADM MFA placeholder separate; MFA implementation is out of scope.
+- Do not change Android/iOS source. `firestore.rules` and Firebase project configuration are shared infrastructure; test existing client permissions and treat any live rules publication or billing-related console action as a separate manual gate.
+
+**Research (checked 2026-10-01):** Firebase documents `verifyBeforeUpdateEmail` as sending a confirmation link and applying the new e-mail only after verification; password and primary e-mail changes require recent authentication. Private Storage rules can scope file access to the authenticated UID. Cloud Storage for Firebase requires the Firebase project to use the Blaze plan; there may be no-cost usage, but enabling billing is still an owner decision. See [Firebase Auth user management](https://firebase.google.com/docs/auth/web/manage-users), [Firebase Auth JS reference](https://firebase.google.com/docs/reference/js/auth.User), [Storage rule conditions](https://firebase.google.com/docs/storage/security/rules-conditions), and [Storage billing requirements](https://firebase.google.com/docs/storage/faqs-storage-changes-announced-sept-2024).
+
+```mermaid
+flowchart TD
+    A[29a. Shared routes and entry point] --> B[29b. Account profile fields and Firestore rules]
+    A --> C[29c. Email and password actions]
+    B --> D[29d. Private avatar Storage]
+    B --> E[29e. Emulator and browser verification]
+    C --> E
+    D --> E
+    E --> F[29f. Manual Firebase setup and live check]
+```
+
+Suggested: gpt-6-astra · xhigh — e-mail changes, private avatar storage, and shared Firestore rules cross identity and ownership boundaries; an error could expose an image, leave the admin directory stale, or weaken account permissions.
+
+### 29a. Shared settings routes and profile entry
+
+Suggested: sonnet · medium — shared-shell routing and one account page extended across three roles.
+
+- [x] Extend the existing ADM account page and add `/app/conta` and `/aluno/conta`, backed by shared account-settings components rather than three divergent forms. Keep each route behind its existing `RequireArea`; a trainer or student cannot enter another role's area.
+- [x] Make the profile identity/avatar in `AppShell` link to that role's account route; keep `SignOutButton` separate. Provide an equally visible entry at narrow widths. Display current role and e-mail verification state.
+- [x] Preserve the existing ADM count, MFA placeholder, and reset-password action unless each is moved to an equally visible security section. No ADM MFA implementation is part of this section.
+- [ ] **Done when:** the profile entry opens the right account route for all three roles at desktop and phone widths, while sign-out remains a separate control and role guards still reject cross-area routes.
+
+### 29b. Contact phone and account-owned profile fields
+
+Suggested: sonnet · high — profile writes need a narrow owner boundary without changing role or trainer permissions.
+
+- [x] Add an optional personal-phone field to the shared settings form. Format for display, validate plausible Brazilian/international input, and persist the normalized contact value to the signed-in user's own `users/{uid}.phone`; leave empty as a supported state. Do not reuse this as Auth's verified phone number.
+- [x] In `firestore.rules`, permit only the intended self-owned account fields needed by this feature. Keep `role`, `trainerId`, suspension/access status, trainer permissions, and another user's document out of the self-edit set. Constrain the e-mail mirror to the signed-in, verified Auth e-mail.
+- [x] Add rule tests for ADM, trainer, and student: own phone/profile-field update succeeds; another UID, role/trainerId changes, privilege fields, and unverified or mismatched e-mail mirror writes fail. Retain the existing assessment and trainer-owned-student permission behaviors.
+- [x] **Done when:** phone changes survive reload for all three roles, empty is valid, and rule tests prove self-only edits cannot grant roles, alter trainer ownership, change access permissions, or impersonate another e-mail.
+
+### 29c. Change e-mail and password
+
+Suggested: opus · high — Auth confirmation, recent-login handling, and the ADM directory mirror form one multi-step account state change.
+
+- [x] E-mail: use `verifyBeforeUpdateEmail`, never `updateEmail`. Keep the current e-mail active until the new address is confirmed; show pending, sent, expired/error, and success states; support returning to the correct account page (including the site's configured base path). After confirmation, reload the Firebase user, refresh its ID token, update the Firestore e-mail mirror, and refresh the session. If mirror synchronization fails, retain a clear retry action and show which address Auth currently owns.
+- [x] Password: offer a current-password reauthentication flow followed by `updatePassword`; handle `requires-recent-login` with a retry prompt. Keep the existing password-reset-email route as recovery fallback for users who cannot remember their current password.
+- [x] Clear password inputs after success, require matching new-password confirmation, provide actionable error text, and never write or log credentials to Firestore or diagnostics.
+- [ ] **Done when:** an unconfirmed new address never replaces the current Auth e-mail; a confirmed change updates Auth, the trainer directory, and the visible session; stale-login and mirror-write failures recover without a misleading success state; password changes require successful reauthentication and reset e-mail still works.
+
+### 29d. Private account image
+
+Suggested: opus · high — a new Storage bucket and rules surface must prove owner-only reads and writes.
+
+- [x] Add the Firebase Storage web client and emulator connection. Upload one avatar to a stable UID-scoped path, validate image MIME type and size in the UI and again in Storage rules, support replace/remove, and fall back to initials on missing image or load failure. Limit visibility to the user's own account surfaces in this feature.
+- [x] Add `storage.rules` that allow only the matching signed-in UID to read, replace, or delete their avatar, with an image content-type allowlist and a small maximum size. Apply App Check consistently with the existing web Firebase setup. Store the Storage path, not a bearer download token, in the profile.
+- [x] Add Storage Emulator configuration and tests for owner success, cross-UID denial, unauthenticated denial, invalid MIME/oversized file denial, replacement, and removal. The account UI must remain usable when upload is unavailable.
+- [ ] **Manual Firebase precondition:** before enabling production uploads, the owner checks the project's plan, bucket, App Check and expected billing; do not enable Blaze or create a production bucket automatically. If billing is not approved, keep upload unavailable with a clear message and initials fallback.
+- [ ] **Done when:** emulator tests prove the path and file constraints, all three roles can manage only their own image, removal returns to initials, and the live upload is enabled only after the owner completes the Firebase setup.
+
+### 29e. Verification, compatibility, and registration
+
+Suggested: opus · high — emulator rules and end-to-end role coverage are the evidence for the security boundary.
+
+- [x] Run the project's web checks: TypeScript, ESLint, Vitest, Firestore rules tests, Storage rules tests, and static build with the configured base path. Fix failures in scope before marking items complete.
+- [ ] In a DOM-driven browser against emulators, sign in as ADM, trainer, and linked student. For each: open settings from the profile entry; save/clear phone; request e-mail change, prove old e-mail remains until confirmation, confirm and prove ADM's trainer listing refreshes; change password with fresh auth and exercise the stale-auth/error and reset-link states; upload/replace/remove an avatar where Storage is configured.
+- [ ] Check phone width and keyboard access: visible settings entry, labels and error/status announcements, focus after save/error, controls at least 44 px, no horizontal overflow. Confirm the account screen never displays another user's avatar or exposes student training/health data.
+  > **Checked 2026-10-05** (Browser pane, Auth/Firestore/Storage/Functions emulators, seeded data; DOM-driven):
+  > ADM sign-in lands on `/admin`, the profile entry opens `/admin/conta` and `Sair` is a separate control; phone
+  > saves/normalises, rejects `123`, accepts empty and survives a reload; password change refuses a mismatch and a wrong
+  > current password, succeeds, clears the fields; e-mail change keeps the old address active ("Aguardando confirmação…")
+  > until the emulator link is opened, then Auth and the `users` mirror both read the new address; avatar upload,
+  > replace, remove (back to initials), a `.txt` and a 2.5 MB file are refused. The personal's `/app/conta` shows the
+  > read-only plan and invoice; a student who claimed an invite (Lia) can open `/aluno/conta`, save a phone, and sees no
+  > training/health data. At 375 px: no horizontal overflow, labels present, form fields 16 px, controls ≥ 44 px (the
+  > wordmark and "Voltar" links were 25/19 px — fixed), the settings entry is visible in the tab bar and the profile chip.
+  > An ADM opening `/aluno/conta` is sent back to `/admin`. **Not exercised:** e-mail change, password change and avatar
+  > for the trainer and student roles (same shared component, only the ADM was driven), focus handling after save/error,
+  > and the ADM *trainer-directory* refresh after a trainer's e-mail change.
+- [x] Regression-check the existing cross-client Firestore rule cases. Do not edit Android/iOS files. Because `firestore.rules` is shared, do not publish it to Firebase until the owner reviews the exact combined diff and approves the live rules step.
+- [x] Update `CLAUDE.md` and `web/README.md` with account fields, Auth flows, Storage rules/emulator setup, and the manual Firebase/billing gate. Tick only behaviorally verified items here.
+- [ ] **Done when:** all three live web roles can use their own account settings on the deployed site; the e-mail and password flows follow Firebase's confirmation/reauthentication requirements; avatar access is private; and the owner has completed the Storage setup. If Storage billing is declined, keep avatar upload open/deferred and do not mark the whole feature complete.
+
+---
+
+### 29f. Manual Firebase setup and live check
+
+Suggested: haiku · low — console work and a controlled-account check, both owner-operated.
+
+- [ ] **Manual, only after the owner approves billing:** create/configure the Storage bucket, deploy the reviewed `storage.rules`, and verify Storage App Check. Do not enable Blaze or provision production resources automatically; if the owner declines, leave avatar upload deferred and 29d open.
+- [ ] **Manual, only after the owner reviews the exact combined diff:** publish `firestore.rules` to Firebase. Confirm the existing client permissions and ADM-managed fields remain intact; no Android/iOS source change is included in this goal.
+- [ ] After the site deployment and Firebase setup, use controlled ADM, trainer, and student accounts to verify profile image upload/replace/remove, phone save, confirmed e-mail change and trainer-directory update, password change/reset, and access denial between roles. Do not use student health data for this check.
+- [ ] **Done when:** the owner-approved Firebase configuration is live, the three controlled accounts pass the stated checks on the deployed site, and the avatar is readable only under its authorized UID path.
+
+**Implementation status in the current worktree:** shared account settings exist at `/admin/conta`, `/app/conta`, and `/aluno/conta`; profile navigation, optional phone, verified e-mail synchronization, reauthenticated password change, and the UID-scoped avatar path are implemented in Web code. `storage.rules` and the Storage Emulator are configured. Local verification on 2026-10-02 passed: 397 Web unit tests, ESLint, TypeScript, 139 Firestore/Storage/Functions Emulator tests, and static builds at root and `/Personal_app_android/`. Synthetic DOM checks opened account settings for ADM, trainer, and student; the 390px ADM page had no horizontal overflow and the profile/sign-out controls measured 44px. Full in-browser e-mail confirmation, password recovery, avatar lifecycle, keyboard QA, production Storage setup, publishing reviewed rules, and controlled live checks remain open.
+
+---
+
+## 30. Feature — ADM plan defaults, trainer billing, capacity, and student recovery (web)
+
+**Type:** Feature · **Priority:** High · **Scope:** Web ADM and trainer flows only. Do not edit Android or iOS source or alter their invite behavior under this goal. This active-code cap applies to invitations generated through the website; mobile invite creation is out of scope.
+
+The platform subscription introduced here is distinct from `trainerStats.billing`, `payments`, and `billingPlans`, which describe what a trainer charges their own students (Goal 26). Start with ADM-recorded invoices and payments; do not add a payment gateway, automatic PIX/card collection, or automatic Firebase billing-plan changes. Do not invent prices or seat counts: all numeric values are configured by the owner.
+
+The web app is static and currently writes invites directly to Firestore. The site must show a live active/limit count and stop new website-generated codes through its cooperative atomic Web flow at the per-trainer cap. This is a website-flow limit, not a global cap: mobile invite creation and direct writes outside that flow are not globally limited and can exceed it. Read current invite state, including codes from other clients, and block additional Web-flow codes while the actual count is at or above the configured limit. A callable Cloud Function is an option for a trusted server boundary and requires Blaze; enabling billing/deploying it remains a manual owner decision. [Firestore query security](https://firebase.google.com/docs/firestore/security/rules-query) · [Cloud Functions pricing requirements](https://firebase.google.com/docs/functions/quotas-pricing).
+
+**Invite-expiry decision (2026-10-01):** new Web-created invite codes do not expire automatically (`expiresAt: null`); the trainer cancels them manually, and the ADM can resolve an unused legacy invite. A legacy invite with no `expiresAt` remains active until the ADM resolves it. For compatibility, records that already have a numeric `expiresAt` retain their time-based active/expired behavior, including domain tests; this does not add expiry to new invites. Do not describe the Web-created codes as expiring.
+
+Suggested: gpt-6-astra · xhigh — plan selection affects financial records, access rules, and concurrent website invitation quotas.
+
+```mermaid
+flowchart TD
+  A[ADM configures plan templates and trial defaults] --> B[ADM assigns a versioned plan snapshot to a trainer]
+  B --> C{Trainer access and billing current?}
+  C -- no --> D[Trainer stays blocked; ADM records payment or changes deadline]
+  C -- yes --> E[Trainer requests an invite]
+  E --> F{Seat and active-code limits allow it?}
+  F -- no --> G[Explain limit; ADM can adjust this trainer's terms]
+  F -- yes --> H[Reserve one seat and create no-expiry invite atomically in the Web flow]
+  H --> I[Student claims invite; reservation becomes linked seat]
+  I --> J[ADM detail shows usage and calculated platform charge]
+```
+
+### 30a. ADM defaults and versioned plan templates
+
+- [x] Add an ADM-only `Planos`/`Padrões` page, e.g. `/admin/planos`, with editable named templates. Each template includes monthly base price in integer cents, included linked students, recurring price per active student above the included amount, maximum number of simultaneously active invitation codes. Do not hard-code the user's example values X/Y/W/Z/H/J.
+- [x] Include configurable trial defaults: maximum linked students, duration, and any invite limits; store the effective start/end and limits on the individual trainer assignment. Trial has no platform charge unless the owner explicitly configures otherwise.
+- [x] Applying a template copies its values and template version into that trainer's subscription record. Editing a template changes only future assignments; it never silently changes an existing trainer's amount, quota, or deadline.
+- [x] Apply the current configured default when the ADM provisions a new trainer. If defaults have not been configured, leave that trainer pending until the ADM assigns terms. Do not retroactively assign or suspend existing trainers; require an explicit per-trainer assignment.
+
+### 30b. Per-trainer terms in the ADM detail
+
+- [x] Extend `/admin/personais/detalhe?id=UID` with an ADM-only subscription panel to choose a template, override every price/quota/trial field, and set an effective date. Show the source template/version and the final values so overrides are visible.
+- [x] Show linked seats, reserved seats for active pending invitations, remaining included seats, active invitation codes (current/maximum) and remaining code slots, the monthly amount at current usage, billing period, due date, payment state, and access state. Draft `students/{id}` records without an invite do not consume a seat; accepted extra students count once and incur the configured recurring extra-seat amount.
+- [x] Keep platform subscription data separate from trainer-to-student payments and plans. A trainer can read their own effective terms and invoices but cannot write pricing, quotas, trial dates, payment state, or access state.
+
+### 30c. Trial, invoice, payment, extension, and blocking
+
+- [x] Record each platform billing period as a manual invoice with trainer UID, plan snapshot, linked-seat count, base and extra-seat calculation, amount in cents, period, due date, status, ADM actor, and timestamps. The ADM can record an out-of-band payment and an optional nonsensitive reference; no card/bank credentials or student health data.
+- [x] **Privacy-safe invoice aggregation verified:** the ADM callable counts linked students and active invite reservations server-side, calculates the invoice from that total, and returns only aggregate counts and prices; Emulator tests confirm it does not return invite documents or health/contact fields.
+- [x] Allow the ADM to extend an individual due date by any positive day count and to extend a trial explicitly. Record the old/new deadline, day count, actor, timestamp, and reason in the append-only `adminAudit` log.
+- [x] A trainer whose trial expires without an assigned paid plan, or whose unpaid invoice passes its due date, is blocked from trainer-only actions until the ADM records payment (or assigns valid trial/paid terms). An extension changes the deadline; if an account is already blocked, extending alone does not restore access. Recording payment restores billing access only; it does not clear a separate manual `accessStatus: suspended` decision.
+- [x] Enforce the billing gate in Firestore Rules as well as the web UI, using an ADM-managed billing summary on `users/{uid}` if that preserves the existing owner check's read cost. Compare the stored deadline to `request.time`; no scheduled job is needed for the expiry gate. Preserve admin recovery access. Keep linked students' own account state unchanged by a trainer billing lock unless a separate product decision changes that behavior.
+
+### 30d. Website limit for simultaneously active invitation codes
+
+- [x] Track two independent limits: billable seats are linked student accounts for this trainer plus active, unused invite reservations; active-code count is unclaimed, uncancelled, unrevoked invitation documents for this trainer. New Web invites have no expiry and are cancelled manually. A legacy invite without `expiresAt` remains active until ADM resolution; a legacy record with numeric `expiresAt` keeps its existing time-based behavior for compatibility. Enforce the seat limit and the maximum simultaneous active codes separately. Show the trainer's active / limit count in the invite form and stop new codes through the cooperative website flow at the cap. The ADM detail does not list raw invite documents; it shows the exact active-code/reservation count through the privacy-safe callable aggregate, which returns counts and prices only. Resolving a code still requires the trainer to provide it. Claiming converts the reserved seat to a linked seat and frees the code slot; manual cancellation or ADM resolution also frees it.
+- [x] Reconcile the trainer's displayed counts against current linked students and invites. Treat every unused, unresolved legacy invitation without `expiresAt` as active until the ADM explicitly resolves it; never silently free or double-reserve its seat. Keep the unresolved ADM count separate until a privacy-safe aggregate/backend is available.
+- [x] Serialize cooperating website code creation with the per-trainer reservation/revision transaction. This prevents concurrent attempts through that Web flow from exceeding its cap; it does not globally constrain mobile invite creation or direct Firestore writes outside the flow. Count active codes from other clients and block additional website-flow creation until the actual count is below the configured limit. Do not require Android/iOS source changes or alter their invite flows.
+- [x] Enforce access/trial/payment/seat/active-code checks atomically for website actions. Show trainers a clear reason and the exact extra monthly price before an invite that will add a billable seat; require confirmation. ADM edits and any explicit over-limit emergency override require a reason and audit record.
+
+### 30e. ADM emergency student registration under a trainer
+
+- [x] Add a `Cadastrar aluno` recovery action inside the selected trainer's ADM detail. It creates a minimal draft under that trainer and optionally prepares the normal invite flow; identify the selected trainer clearly and audit who created it. Do not create a student Auth account with a shared/ADM-known password or skip the student's normal email verification and invite claim.
+- [x] Permit the ADM path only for a valid, non-suspended trainer with an assigned, currently valid paid plan or trial; enforce this access/billing gate in Firestore Rules using server request time, not only the caller's clock. A draft without an invite does not reserve a seat or incur an extra-seat charge, matching 30b. Apply the seat/trial cap, active-code cap, price confirmation, and any quota adjustment or audited override in the normal invite-reservation flow. Do not expose unrelated trainers' student records or health fields in the recovery UI.
+
+### 30f. Data protection, audit, and compatibility
+
+- [x] Keep plan templates ADM-writable only; trainer subscriptions/invoices ADM-writable only, with trainer read limited to their own documents. Users cannot self-promote, change trainer ownership, extend trials, alter `accessStatus`, or mark themselves paid. Add least-privilege Rules tests for ADM, trainer, student, unauthenticated, and direct forged writes.
+- [x] Record plan assignment/override, invoice creation, payment, deadline/trial extension, invite reservation/claim/cancel/ADM resolution (and legacy expiry handling), manual student creation, and override in `adminAudit`, preserving append-only rules and strict action schemas. Do not grant ADM access to student health data as a side effect.
+- [x] Preserve current trainer self-registration/request approval and admin trainer creation flows, or explicitly route each through assigning a plan before activation. Verify old subscription records are not silently rewritten. Preserve existing manual suspension semantics and audit history.
+
+### 30g. Verification and completion
+
+- [x] Add unit tests for price arithmetic in integer cents, included/extra seat boundaries, trials, deadline extensions, and template snapshot behavior; Firestore Rules tests for direct tampering and trainer lock; and emulator tests for concurrent cooperating website reservations, claim/cancel, legacy `expiresAt` compatibility, capacity, billing, and ADM recovery creation. Include proof that the Website limit does not claim to cover mobile or direct writes outside its cooperative flow.
+- [ ] Drive the Web ADM and trainer flows end to end: edit defaults, assign and override plans, provision a trainer, use trial, fill seats, verify extra price, send/claim/cancel no-expiry invites, resolve a legacy no-expiry invite as ADM, and test time-based expiry only for a legacy record with `expiresAt`; create a recovery draft, mark an invoice paid, extend a due date, and confirm blocked access is restored only by payment when overdue. Verify both allowed and denied paths.
+  > **Checked 2026-10-05** (same setup): created a plan template (R$ 49,90 · 2 included · R$ 6,50 extra · 3 codes · trial
+  > 2/7 d → saved as v1); assigned it to the seeded personal as a paid plan (template values copied); billable seats
+  > = 4 linked + 1 reserved invite = 5 → R$ 69,40 (49,90 + 3 × 6,50) matches the estimate and the invoice; emitted the
+  > invoice, extended its due date by 5 days, registered payment (state "Paga"); the personal sees the same terms and
+  > invoice read-only on `/app/conta`. Invite cap: with 1 of 3 codes in use, two more were issued (with the extra-seat
+  > warning) and a fourth was refused with "Limite de códigos ativos atingido (3/3)"; a student claiming an invite
+  > moved linked 4 → 5 and active codes 3 → 2 and left a "Convite aceito" audit entry; the ADM resolved a legacy invite
+  > by code (reserved 2 → 1, audited); the ADM emergency "Cadastrar aluno" created a draft that reserves no seat.
+  > **Not exercised:** the trial path and trial cap, blocking by an overdue invoice (the due-date field has `min=today`,
+  > so an overdue invoice cannot be created from the UI — covered by `platformFlows.test.ts` instead), concurrent
+  > invite attempts, and the default-template assignment when the ADM provisions a new personal.
+- [ ] **Done when:** all configured prices and limits are owner-controlled, invoice and audit records match the calculation, concurrent attempts through the cooperating website flow cannot exceed its active-code cap, the displayed count updates after claim/cancel and legacy-expiry compatibility handling, trainer blocking is enforced by rules, and out-of-scope mobile/direct-write behavior remains explicitly outside the Web limit.
+
+### 30h. Manual Firebase setup and rollout gate
+
+- [ ] **Manual, after owner approval:** configure Firestore indexes/emulators and, only if a callable is selected, enable Blaze and deploy reviewed Functions. Never turn on billing or deploy production rules/functions automatically. If Blaze is declined, keep the website-flow limit in the reviewed cooperative atomic path and do not describe it as a global Firestore-enforced limit.
+- [ ] **Manual, after owner reviews the exact combined rules diff:** publish Firestore Rules and any Functions. Confirm ADM recovery writes are narrowly scoped, website invite creation respects the cap, and the locked trainer remains recoverable by ADM.
+- [ ] Test with controlled ADM, trainer, and student accounts after deployment. Do not use real payment credentials, real customer financial data, or student health data for verification.
+
+**Implementation status in the current worktree:** Web code includes versioned plan/trial defaults, per-trainer terms, billing and invoice controls, an ADM student-recovery draft, a cooperative active-invite cap, and privacy-safe ADM aggregation through callable Functions. The ADM sees linked seats, active invite reservations/codes, and totals without reading raw invite profiles. New Web invites have no expiry and are cancelled manually; legacy no-expiry invites remain active until ADM resolution, and numeric legacy expiry remains supported. A blocked account cannot be reopened by invoice extension or plan reassignment while the current invoice is unpaid; payment and audit linkage are covered by Rules and Functions Emulator tests. Mobile invite creation and direct writes outside the cooperative Web flow are not globally limited. Local verification passed: 397 unit tests, lint, TypeScript/Functions build, 139 Firestore/Storage/Functions Emulator tests, root static export and HTTP route/asset smoke, plus the `/Personal_app_android/` compatibility build. Full ADM/trainer browser flows and production Firestore/Functions publication, Blaze approval, and controlled live checks remain open.
+
+---
+## 31. Process — Web security review and Cloudflare Pages readiness
+(2026-10-02, via `/newgoal`)
+
+**The request:** determine what visitors and signed-in users can copy from the web site, reduce unauthorized access to account data, and assess moving the web deployment from GitHub Pages to Cloudflare Pages because the current GitHub Pages setup may require a public source repository.
+
+**Goal type: Process** — security and hosting readiness for the existing static web client. This plan does not implement changes. Scope is the website, Firebase configuration/rules, and deployment workflow; do not edit Android or iOS source. Shared Firestore-rule changes must be emulator-tested against existing client behavior. Any mitigation that requires changing Android/iOS clients is a scope decision to bring back to the owner before implementation.
+
+**Baseline checked 2026-10-02:**
+- `web/next.config.ts` uses Next.js static export (`output: "export"`) and accepts `NEXT_PUBLIC_BASE_PATH`; `.github/workflows/web-deploy.yml` sets `/Personal_app_android` for GitHub Pages. Firebase Auth, Firestore, Storage, and Gemini calls run from the browser; there is no private web server layer in this deployment.
+- Site HTML, JavaScript, CSS, images, and any other assets delivered to a visitor can be saved or copied. A browser user can also copy any data their account is authorized to read. Hosting changes, minification, disabled right-click, and copy-blocking overlays cannot make already delivered content secret; security work must prevent unauthorized data access and minimize data returned to each role.
+- Rules reviewed in the current worktree deny anonymous Firestore access, but ADM reads include whole `users/{uid}` documents; Firestore rules cannot redact individual fields from a document. In addition, a signed-in user who knows an invite code can read that invite document, which currently contains student contact/health fields. Codes are short, and invitations without expiry remain active until cancelled/resolved. Confirm the final Goal 30 state before changing these shared rules.
+- Gemini requests originate in the browser, and the visible use counter is client-side. Verify Firebase AI Logic's deployed App Check/authentication enforcement and quota controls in the Firebase console; UI role checks alone are not a security boundary.
+- GitHub Pages on GitHub Free requires a public source repository; paid plans can publish from private repositories, while the published Pages site remains public. Cloudflare Pages supports Git-based deployment from private GitHub repositories and static Next.js export. Cloudflare preview URLs are public by default unless protected.
+- Repository files show local configuration only. The Firebase/Cloudflare console settings, currently published rules, deployed response headers, and source repository visibility were not verified as part of this plan.
+
+**Security and hosting decisions:**
+- Report separately on (1) source-repository visibility, (2) public site assets, and (3) Firebase data available to anonymous, ADM, trainer, and student accounts. Do not promise to prevent copying by a user who can already view the data.
+- Prioritize invite-document minimization and safe invite lookup, then ADM access to user profiles and Gemini abuse controls. Preserve existing student claim and trainer/admin flows; do not weaken rules to accommodate a UI query.
+- Treat Firebase browser configuration and reCAPTCHA site keys as public identifiers, not server secrets. Search source and exported assets for actual private credentials without printing them; rotate any confirmed exposed secret through the owner-controlled service.
+- Cloudflare Pages is a viable static host: use the `web` project directory, Node 24, `npm ci`, `npm run build`, `out` as the artifact directory, and leave `NEXT_PUBLIC_BASE_PATH` unset for a root-hosted custom domain or `pages.dev` URL. A private Git repository hides Git history/source, not the deployed JavaScript or data returned to the browser.
+- Keep production domain/DNS, GitHub App installation or permission changes, Firebase console settings, and live Firestore/Storage rule publication as owner-controlled manual steps. Keep GitHub Pages available until the Cloudflare deployment has passed acceptance and rollback is documented.
+- Cloudflare preview deployments are public by default. Before connecting a preview to Firebase, either use an approved staging Firebase project or protect the preview with Cloudflare Access and ensure production data is not exposed to preview builds. Do not assume Access protection on one hostname protects every `pages.dev` or preview alias.
+- Add response security headers only after a report-only CSP and browser checks cover Next.js hydration, Firebase Auth, Firebase endpoints, and reCAPTCHA Enterprise. A restrictive header that breaks sign-in is not a completed security improvement.
+
+**Research (checked 2026-10-02):** Cloudflare documents Next.js static export, Git integration, private repository access, preview deployments, Pages limits, custom domains, and `_headers`; Firebase documents its security checklist, API-key handling, Firestore rule/query behavior, App Check, Auth authorized domains, and AI Logic security. See [Cloudflare static Next.js deployment](https://developers.cloudflare.com/pages/framework-guides/nextjs/deploy-a-static-nextjs-site/), [Cloudflare Git integration](https://developers.cloudflare.com/pages/configuration/git-integration/), [Cloudflare preview deployments](https://developers.cloudflare.com/pages/configuration/preview-deployments/), [Cloudflare headers](https://developers.cloudflare.com/pages/configuration/headers/), [GitHub Pages eligibility](https://docs.github.com/en/pages/getting-started-with-github-pages), [Firebase security checklist](https://firebase.google.com/support/guides/security-checklist), [Firestore rules and queries](https://firebase.google.com/docs/firestore/security/rules-query), [App Check for web](https://firebase.google.com/docs/app-check/web/recaptcha-enterprise-provider), and [Firebase AI Logic security checklist](https://firebase.google.com/docs/ai-logic/security-checklist).
+
+**Execução local e registro de risco (2026-10-02; sem alterações em produção):**
+- **Assets públicos — esperado:** HTML, JavaScript, CSS, imagens e prompts/tabela de referência do Gemini entregues ao navegador podem ser salvos por qualquer visitante. O export tem zero source maps; a busca de padrões de credenciais privadas em arquivos rastreados e histórico acessível não encontrou correspondências. Firebase Web API key e chave de site reCAPTCHA são identificadores públicos esperados, não segredos.
+- **Leitura por papel — risco médio de excesso para ADM:** visitantes anônimos não leem Firestore; avatares em Storage só são lidos pelo UID proprietário. Trainer lê seus alunos e registros vinculados; aluno lê o próprio perfil/medidas/registros e treinos atribuídos. As regras do ADM permitem a leitura dos documentos completos `users/{uid}`, inclusive contato e observações de saúde, pois Firestore não mascara campos dentro de um documento. Uma conta autorizada pode salvar os dados que lê.
+- **Convites — risco alto de privacidade:** `allow get` em `invites/{code}` permite que qualquer conta autenticada que saiba o código baixe o documento inteiro, incluindo nome, telefone, gênero, objetivo, experiência, observações médicas e dias de treino. Os códigos são 8 dígitos hexadecimais (32 bits), sem throttling por código nas Rules; convites Web não expiram por decisão do dono de 2026-10-01 e dependem de cancelamento manual. A regra atual não restringe a leitura ao destinatário do convite. Isso permite copiar os campos se o código for obtido ou adivinhado; o callable de billing não expõe os documentos crus.
+- **Gemini/App Check — console pendente:** chamadas de AI Logic partem do navegador e o contador em `localStorage` pode ser apagado ou contornado. O client pede tokens App Check de uso limitado e as callables aplicam App Check fora do Emulator; o enforcement de produção, autenticação/quotas AI Logic, domínios Auth e allowlist da chave reCAPTCHA não foram conferidos no console. A documentação do Firebase indica enforcement obrigatório para AI Logic a partir de 2026-11-02.
+- **Dependências:** `npm audit --omit=dev` do Web reportou quatro alertas high no caminho Firebase → Firestore → `@grpc/grpc-js@1.9.16`; esse pacote não aparece no export estático e os avisos dependem de uso gRPC server específico. Functions reporta nove caminhos moderate, zero high/critical, principalmente a cadeia `uuid` via `firebase-admin@13.10.0`/`firebase-functions@6.6.0`; as correções indicadas exigem majors. Nenhum pacote foi alterado automaticamente.
+- **Cloudflare:** export estático raiz gerou 26 rotas; smoke HTTP local retornou 200 para `/`, áreas e contas ADM/trainer/aluno, `/convite/`, `/entrar/` e um chunk JS, sem prefixo GitHub Pages. A build com `/Personal_app_android/` também passou. O workflow de CI agora instala Functions em Node 22 e roda Rules Emulator com Java 21 após checks Web em Node 24; YAML validado localmente, sem execução remota do Actions. Não há `_headers` no repositório.
+- **Não verificado fora do checkout:** visibilidade/plano do GitHub, proteção de branch/status obrigatório, integração GitHub App da Cloudflare, URLs e proteção de previews, DNS/domínio, cabeçalhos publicados, regras Firebase atualmente publicadas, App Check/AI Logic/Auth settings e plano/bucket Storage.
+
+**Decisão necessária antes de corrigir a exposição de convites:** o cliente Android/iOS legado lê `invites/{code}` diretamente e as Rules não podem ocultar campos do documento. A opção de claim mediada por callable devolve apenas os campos necessários, mas requer migração dos clientes móveis e infraestrutura Firebase/Blaze; a projeção segura do diretório ADM também exige uma coleção/backend com migração das telas. Não alterei Android/iOS nem implantei backend; aguardo autorização explícita para essa mudança de escopo.
+
+```mermaid
+flowchart TD
+    A[31a. Inventory assets, data, and trust boundaries] --> B[31b. Fix and test Firebase access risks]
+    B --> C[31c. Verify security regressions in Emulator and CI]
+    A --> D[31d. Prepare Cloudflare static build and private-repo connection]
+    C --> E[31e. Stage, verify Auth/App Check, headers, and previews]
+    D --> E
+    E --> F[31f. Owner acceptance, production cutover, and rollback]
+```
+
+Suggested: gpt-6-astra · xhigh — invite and account rules expose sensitive student data if changed incorrectly, while production hosting/Auth cutover spans multiple owner-controlled services.
+
+### 31a. Inventory site-copy and data-access boundaries
+
+Suggested: sonnet · high — map the static browser bundle and each role's actual Firebase read paths before changing rules.
+
+- [x] Inspect the exported `web/out` assets and source-map settings for private credentials, unintended student data, admin-only content, and client-side prompts. Record the result without copying any secret value into logs or this plan. Distinguish Firebase's public client config from service-account keys, private API keys, or bearer tokens.
+- [x] Trace Firestore and Storage reads for anonymous visitors, ADM, trainer, student, and a second account with a different trainer. Include direct SDK/API access, not just hidden UI routes. Document which fields each role can receive and which outputs can be saved by design.
+- [x] Confirm the invite threat model: exact-code lookup, code entropy, enumeration/rate controls, cancellation, legacy invites without expiry, and which PII/health fields are stored in the invite document. Treat a valid invite link/code as a credential that may be copied or forwarded.
+- [ ] Confirm current deployed Firestore/Storage rules, App Check enforcement, AI Logic authentication settings, Auth authorized domains, and repository visibility with the owner-controlled consoles; record code-vs-console drift.
+- [x] **Done when:** a concise risk register names each exposed asset/data class, who can read it, how it can be copied, severity, and the enforcing layer (UI, Firebase rule, App Check, or backend); no claim equates obfuscation or hosting privacy with data authorization. Owner-console drift remains pending above.
+
+### 31b. Reduce unauthorized Firebase data access
+
+> **2026-10-05 — rules v4 narrows invite reads.** A spent invite (used, cancelled, revoked, expired) is now readable
+> only by its trainer, an ADM and the account that claimed it; a live invite is still readable by any signed-in user
+> who knows the code (the claim reads it before the account exists), and a missing code still answers "invalid".
+> Tests: `web/rules/firestore.rules.test.ts` "reading an invite (rules v4)" (6 of the 11 fail against v3, proving they
+> discriminate) and the two claim messages in `dataLayer.test.ts`. Cost on the phone: a spent code now ends in
+> PERMISSION_DENIED, so `AuthRepository.claimInvite` shows its "account already linked" text instead of "código já
+> utilizado" — an Android wording fix, not made. **Still open:** live invites remain readable to anyone holding the
+> code (32-bit random codes; stronger codes or a callable need the Android/iOS claim to change), and the ADM's whole-
+> document read of `users/{uid}`.
+
+Suggested: opus · xhigh — invite claims, ADM profile access, shared rules, and Gemini requests cross identity and sensitive-data boundaries.
+
+- [ ] Minimize invite documents so code lookup returns only claim-required fields. Evaluate stronger random codes, safe cancellation/expiry behavior, and abuse throttling. Preserve the existing Android/iOS claim flow without source edits; if a sound fix needs a client migration or backend, document options and stop for an explicit scope decision before making that change.
+- [ ] Review broad ADM reads of `users/{uid}`. Decide whether a separate least-privilege admin directory/backend is needed so ADM screens do not receive student health/contact fields merely to list trainers. Do not rely on Firestore rules to hide selected fields within one document; test trainer creation, promotion, billing, recovery, and directory flows after any approved data-shape change.
+- [x] Verify role/ownership checks on every Firestore and Storage path, including list versus get, cross-trainer access, disabled accounts, and exact invite claims. Add Emulator tests for anonymous, unrelated authenticated user, same trainer, different trainer, student, and ADM cases.
+- [ ] Verify App Check enforcement and authenticated-use settings for Firebase AI Logic, and whether direct Gemini calls can bypass the trainer-only UI. Set practical quota/abuse controls at the service boundary; treat the `localStorage` usage counter as non-authoritative.
+- [x] Confirm no private server credentials ship in Git history, `web/out`, browser source maps, or `NEXT_PUBLIC_*` variables. If an actual credential was exposed, remove it and coordinate owner-side rotation; public Firebase config and reCAPTCHA site keys are expected in a web client.
+- [ ] **Done when:** automated direct-access tests prove least privilege for all roles, invite responses contain only claim-required data, and remaining risks that require Android/iOS edits or owner decisions are explicit rather than silently bypassed.
+
+### 31c. Keep security behavior covered
+
+Suggested: sonnet · high — Firebase Emulator tests should catch rule regressions before either static host is changed.
+
+- [x] Add or update Firestore/Storage Emulator tests for every access boundary changed in 31b, including both current Web flows and compatible legacy clients where their rules behavior is shared.
+- [x] Run the repository's existing web lint, unit tests, static build, and rules emulator suite; add the rule suite to CI if it is not already a required check. Do not mark rule work complete based only on UI visibility.
+- [ ] **Done when:** CI exercises the revised authorization rules and all positive and negative role tests pass without edits to Android/iOS source.
+
+### 31d. Prepare Cloudflare Pages without exposing production
+
+Suggested: sonnet · medium — the app already exports static files; the main changes are build settings, root-path URLs, and host configuration.
+
+- [x] Prove the Cloudflare-compatible static build settings locally: project root `web`, Node 24, `npm ci`, `npm run build`, output directory `out`, and no GitHub Pages `NEXT_PUBLIC_BASE_PATH`. The clean root export and root routes/assets (`/convite/`, `/entrar/`, account and dashboard routes) returned HTTP 200; GitHub Pages base-path compatibility also builds.
+- [ ] Verify invite claiming and Firebase Auth action links end-to-end on an isolated preview at the root path; static route responses alone do not verify those Firebase flows.
+- [ ] If the owner chooses Cloudflare Git integration, request access only to this repository and document the required GitHub App permissions. Keep the source repository visibility unchanged unless the owner separately chooses to change it.
+- [ ] Configure an isolated preview using a staging Firebase project, or protect it with Cloudflare Access and prove production Firebase credentials/data are not reachable from the preview. Check both the branch preview and immutable deployment URL.
+- [ ] **Done when:** a preview build serves every exported route at the intended root URL, production is untouched, and the private-source/public-output distinction is documented for the chosen GitHub plan and Cloudflare setup.
+
+### 31e. Verify web identity, anti-abuse, and response headers
+
+Suggested: opus · high — domain allowlists, reCAPTCHA, Auth action links, and CSP can break or weaken sign-in when misconfigured.
+
+- [ ] On the approved staging host, verify sign-in/out, role routing, password reset, email verification/change continuation links, invite claim, Firestore and avatar access, and App Check from a real browser session. Add the staging and final production hostnames to Firebase Auth authorized domains and the reCAPTCHA Enterprise site-key allowlist only after owner approval.
+- [ ] Verify deployed AI Logic App Check/auth enforcement and Firebase rule versions in their consoles; test that a copied invite URL/code or direct API call cannot read unrelated private fields.
+- [ ] Configure a report-only Content Security Policy and suitable `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, and frame policy through Cloudflare Pages `_headers`; review violations and then enforce a policy that keeps required Firebase/reCAPTCHA/Auth flows working.
+- [ ] **Done when:** staging checks pass for all three roles, network responses do not contain data beyond each role's need, preview access is intentional, and the live response headers match the approved policy.
+
+### 31f. Owner production cutover and rollback
+
+Suggested: sonnet · medium — domain and account changes are external operations with an explicit rollback path.
+
+- [ ] Present the risk register, Cloudflare plan/build evidence, required Firebase console changes, GitHub App scope, estimated hosting limits/costs, and rollback steps for owner approval. Do not change DNS, connect a repository, publish Firebase rules, or disable GitHub Pages as part of local implementation.
+- [ ] After explicit owner approval, deploy to Cloudflare, verify the production custom domain and `pages.dev` exposure policy, Firebase Auth/App Check, role flows, response headers, and error logs. Keep the previous Pages deployment recoverable until acceptance.
+- [ ] **Done when:** the owner has accepted the observed public-site behavior and role data boundaries, the chosen host/domain is live, and documented rollback has been tested without modifying Android/iOS source.
 
 ## Suggested build order (what blocks what) — revised 2026-08-18
 

@@ -2,6 +2,8 @@ import { getApp, getApps, initializeApp, type FirebaseApp } from "firebase/app";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider } from "firebase/app-check";
 import { connectAuthEmulator, getAuth, type Auth } from "firebase/auth";
 import { connectFirestoreEmulator, getFirestore, type Firestore } from "firebase/firestore";
+import { connectFunctionsEmulator, getFunctions, type Functions } from "firebase/functions";
+import { connectStorageEmulator, getStorage, type FirebaseStorage } from "firebase/storage";
 import { APP_CHECK_SITE_KEY, EMULATOR_PROJECT_ID, firebaseConfig } from "./firebaseConfig";
 
 // GOALS.md §23e: the one place the web app connects to Firebase. Everything else takes a Firestore
@@ -16,6 +18,8 @@ export interface FirebaseClients {
   app: FirebaseApp;
   db: Firestore;
   auth: Auth;
+  storage: FirebaseStorage;
+  functions: Functions;
 }
 
 const useEmulators = process.env.NEXT_PUBLIC_FIREBASE_EMULATORS === "true";
@@ -37,6 +41,8 @@ export function getFirebase(): FirebaseClients {
     : initializeApp(useEmulators ? { ...firebaseConfig, projectId: EMULATOR_PROJECT_ID } : firebaseConfig);
   const db = getFirestore(app);
   const auth = getAuth(app);
+  const storage = getStorage(app);
+  const functions = getFunctions(app, "southamerica-east1");
   // Firebase's own e-mails — the password reset and the §27 verification link — in Portuguese,
   // whatever language the console's templates default to.
   auth.languageCode = "pt-BR";
@@ -44,6 +50,8 @@ export function getFirebase(): FirebaseClients {
   if (useEmulators) {
     connectFirestoreEmulator(db, "127.0.0.1", 8081);
     connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });
+    connectStorageEmulator(storage, "127.0.0.1", 9199);
+    connectFunctionsEmulator(functions, "127.0.0.1", 5001);
   } else {
     // Before any Firestore or Auth call, so the token rides along on the first request — the same
     // order the Kotlin/JS build used (App Check first, then everything else).
@@ -53,6 +61,6 @@ export function getFirebase(): FirebaseClients {
     });
   }
 
-  clients = { app, db, auth };
+  clients = { app, db, auth, storage, functions };
   return clients;
 }

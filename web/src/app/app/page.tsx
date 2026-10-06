@@ -13,7 +13,7 @@ import { trainedDays } from "../../domain/metrics";
 import { formatCents } from "../../domain/payments";
 import { formatSets, recentLogs } from "../../domain/progression";
 import { AGENDA_DAYS, bookingsOn, type Schedule } from "../../domain/schedules";
-import type { Student } from "../../domain/students";
+import { filterStudentsByPause, type Student } from "../../domain/students";
 import { Avatar } from "../_shared/Avatar";
 import { agendaHourNumber, hourIn, longDate, shortDate } from "../_shared/dateLabels";
 import { useSession } from "../SessionProvider";
@@ -81,26 +81,32 @@ function Dashboard({ trainerId }: { trainerId: string }) {
 
   const { today, timeZone, snapshot } = data;
   const figures = dashboardFigures(snapshot, today, timeZone);
+  const activeStudents = filterStudentsByPause(snapshot.students);
+  const pausedStudentIds = new Set(snapshot.students.filter((student) => student.paused).map((student) => student.id));
+  const activeSchedules = schedules === null || schedules === "error"
+    ? schedules
+    : schedules.filter((schedule) => !pausedStudentIds.has(schedule.studentId));
+  const activeLogs = snapshot.logs.filter((log) => !pausedStudentIds.has(log.studentId));
   // A charge can sit under the id of a draft the student has since claimed (domain/billing.ts).
   const owners = billingOwners(snapshot.students, snapshot.claimedDraftByAccount);
 
   const todayName = weekdayOf(today);
   const todayBookings =
-    schedules === null || schedules === "error"
+    activeSchedules === null || activeSchedules === "error"
       ? []
-      : schedules
+      : activeSchedules
           .filter((schedule) => schedule.dayOfWeek === todayName)
           .sort((a, b) => agendaHourNumber(a.hour) - agendaHourNumber(b.hour));
   const summary =
-    schedules === null || schedules === "error"
+    activeSchedules === null || activeSchedules === "error"
       ? "O ritmo da sua semana e dos seus alunos."
       : todayBookings.length === 0
         ? "Nenhum horário agendado para hoje."
         : `${todayBookings.length} ${todayBookings.length === 1 ? "horário agendado" : "horários agendados"} para hoje.`;
 
-  const trained = trainedDays(snapshot.logs, timeZone);
-  const latest = recentLogs(snapshot.logs, 1)[0];
-  const latestStudent = latest ? snapshot.students.find((s) => s.id === latest.studentId) : undefined;
+  const trained = trainedDays(activeLogs, timeZone);
+  const latest = recentLogs(activeLogs, 1)[0];
+  const latestStudent = latest ? activeStudents.find((s) => s.id === latest.studentId) : undefined;
 
   return (
     <main>
@@ -120,7 +126,7 @@ function Dashboard({ trainerId }: { trainerId: string }) {
 
       {data.chargesCreated > 0 && <p role="status">{data.chargesCreated} cobrança(s) do mês gerada(s) agora.</p>}
 
-      <WeekStrip today={today} schedules={schedules} />
+      <WeekStrip today={today} schedules={activeSchedules} />
 
       <div className="work-grid">
         <section className="agenda-section" aria-labelledby="agenda-title">
@@ -131,9 +137,9 @@ function Dashboard({ trainerId }: { trainerId: string }) {
             </span>
           </div>
           <DayAgenda
-            schedules={schedules}
+            schedules={activeSchedules}
             bookings={todayBookings}
-            students={snapshot.students}
+            students={activeStudents}
             names={new Map([...snapshot.drafts, ...snapshot.linked].map((s) => [s.id, s.name]))}
             trainedToday={(studentId) => trained.get(studentId)?.has(today) ?? false}
             nowHour={hourIn(data.now, timeZone)}
@@ -148,7 +154,7 @@ function Dashboard({ trainerId }: { trainerId: string }) {
             <h2 id="roster-title">Seus alunos</h2>
             <span className="quiet-count">{figures.students.total} no total</span>
           </div>
-          <Roster students={snapshot.students} />
+          <Roster students={activeStudents} />
           {latest && (
             <section className="record-note" aria-labelledby="record-title">
               <h3 id="record-title">Último registro{latestStudent ? ` · ${latestStudent.name}` : ""}</h3>

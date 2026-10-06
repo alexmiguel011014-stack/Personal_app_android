@@ -4,7 +4,7 @@ import { SignedInShortcut } from "./SignedInShortcut";
 
 // GOALS.md §23i: the public landing — what the service is, and the ways in. Static on purpose (it's
 // the one page a search engine or a first-time visitor sees); only the shortcut for someone already
-// signed in runs in the browser. §23k: the ALLU template's voice — a forest-green band, then plain
+// signed in runs in the browser. §23k: the ALLU template's voice — an ink-dark band, then plain
 // columns. The trainer asked (2026-09-30) for as few doors as possible: one "Entrar" in the header
 // for people who already have an account, and the invite-code button — no other sign-in links.
 export default function Landing() {

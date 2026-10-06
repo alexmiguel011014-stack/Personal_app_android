@@ -91,9 +91,15 @@ trainer's validation (§23j, 2026-09-28). The visual pass (§23k) followed, from
 ALLU template. `web-ci.yml` checks it on every push and pull request; `web-deploy.yml` publishes
 it. Until §23 says otherwise:
 
-- **Styling is one stylesheet, `web/src/app/globals.css`** — the ALLU template's tokens, class
-  names and breakpoints (>1050, 861–1050, ≤860 tablet/phone with a bottom tab bar, ≤600, ≤430),
-  plus defaults for bare elements. No CSS framework, no component library, no CSS-in-JS. Extend
+- **Styling is one stylesheet, `web/src/app/globals.css`** — the ALLU template's class names and
+  breakpoints (>1050, 861–1050, ≤860 tablet/phone with a bottom tab bar, ≤600, ≤430), plus
+  defaults for bare elements, in the colours and type of **direction B "Energia"** (chosen from
+  `web/design/preview.html`, 2026-10-05): warm paper, ink-dark rail, burnt orange `#c2410c` for the
+  primary action and the current nav item, 6 px corners, Barlow Condensed headings over Inter
+  (self-hosted from `@fontsource/*`, imported in `layout.tsx`, so the CSP's `font-src 'self'`
+  holds). Colours are tokens in `:root` (the names `--forest`/`--leaf` survive from the first
+  green pass and now mean "dark ink" / "highlight on dark"); success/warning/danger keep green /
+  amber / red and always come with a word. No CSS framework, no component library, no CSS-in-JS. Extend
   the stylesheet (or the shared frames in `src/app/_shared/`: `AppShell`, `PublicShell`) rather
   than adding a stylesheet per screen; keep text ≥12px, controls ≥44px, form fields 16px on
   touch widths, and give every table that has more than three columns `className="stack"` with a
@@ -140,6 +146,38 @@ ADM create-personal flow uses a named secondary Firebase app/Auth instance, then
 deletes it so the ADM session stays active. When emulators are enabled, the secondary Auth instance
 must connect to the Auth emulator too; the primary Firestore client continues to handle the profile
 and audit write. See `web/src/data/adminCreate.ts` and GOALS.md §26 for the manual App Check caveat.
+
+**Account settings (§29).** Each role has a guarded account route: `/admin/conta`, `/app/conta`,
+and `/aluno/conta`; the profile/avatar chip links there while sign-out stays separate. `users/{uid}`
+stores the optional contact `phone` and `avatarStoragePath`. Phone is unverified contact info, not
+Firebase phone authentication. Auth remains authoritative for e-mail/password: e-mail changes use
+`verifyBeforeUpdateEmail`, then reload/refresh the ID token and sync the verified address into the
+user profile; password changes require current-password reauthentication. Reset-email actions remain
+the recovery path. Avatar objects use `account-avatars/{uid}/profile`, are read as bytes through the
+authenticated client (no bearer download URL), and are limited by UI and `storage.rules` to JPEG,
+PNG or WebP up to 2 MiB. Keep initials as fallback. `firebase.json` configures the Storage emulator
+on port 9199. Production bucket/plan/App Check setup and deployment of reviewed rules are owner-run
+manual gates; never enable Blaze or publish rules automatically.
+
+**Platform subscriptions and website invite capacity (§30).** Platform terms, invoices and payment
+records are separate from `billingPlans`/`payments`, which are what a trainer charges their own
+students. ADM plan templates/defaults live at `/admin/planos`; trainer terms, trial, invoice/payment,
+extensions, and manual invite resolution by code are in the trainer's admin detail. That ADM screen
+does not list invitation documents or show their exact count because those documents contain
+student contact and health fields; the ADM asks the trainer for a code and records a reason to
+resolve it. A privacy-safe exact ADM count still needs an aggregate/backend design. Trainer student
+detail shows the trainer's own live website invite count and limit. The ADM recovery action creates
+only a draft for the selected trainer, without creating an Auth account or bypassing the student's
+verified-email invite claim. New Web invites have `expiresAt: null` and do not expire automatically;
+the trainer cancels them manually. Legacy invitations with no `expiresAt` remain active until ADM
+resolution; numeric legacy `expiresAt` values retain time-based handling for compatibility.
+
+The invitation cap applies to the cooperative Web creation flow only. Its reservation/revision
+transaction serializes cooperating site requests, and the trainer's count includes active invites
+created by other clients. Android/mobile creation and direct Firestore writes outside that flow are
+not globally constrained by this website counter. Never document or describe it as a global limit.
+Production Firestore rules publication, any owner decision to enable Blaze/deploy a callable, and
+controlled live-account checks remain manual gates until completed and evidenced.
 
 Before writing route code in `web/`, read `web/AGENTS.md`: this Next differs from what models
 remember (global `PageProps`/`LayoutProps` helpers, `params` as a Promise).
@@ -258,6 +296,16 @@ with their own login). **`firestore.rules` on `main` is the live copy** (the web
 GOALS.md §23d on `feature/kmp-web`): it carries the `payments`/`billingPlans` rules and closes the
 privilege hole an older §17 version had. Any older copy on another branch must not be published.
 Never publish a copy without diffing it against what's live.
+
+**Rules are versioned in ascending order.** The first line of `firestore.rules` is `// Rules version: N`,
+and every set is kept byte for byte as `firestore-rules/versions/vN.rules` (v3 is what was live on 2026-10-05).
+Work that changes the rules bumps N by one for the whole unpublished set — **v4** carries the
+account/plan/billing rules (§29–§30) and the spent-invite read restriction (§31b) — and adds `vN.rules`
+in the same PR, identical to `firestore.rules`. Until the trainer publishes it, a candidate may still change:
+edit both files together (`cp firestore.rules firestore-rules/versions/vN.rules`) and keep them identical.
+Once a version is published its file is frozen: later changes start the next number. `npm run check:rules-version`
+(from `web/`; also a unit test, so `npm test` and the deploy build enforce it, and a named CI step) fails when the
+header, the archive's existence or the two files' contents disagree.
 
 Every rules change gets a test in `web/rules/firestore.rules.test.ts`, run against the local
 emulator with `npm run test:rules` from `web/` (Java 21; see `web/README.md`). `assertFails`

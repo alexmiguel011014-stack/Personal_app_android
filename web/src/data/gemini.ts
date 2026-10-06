@@ -33,9 +33,6 @@ const FICHA_SCHEMA = Schema.object({
                 nome: Schema.string(),
                 series: Schema.integer(),
                 reps: Schema.string(),
-                ativacao: Schema.array({
-                  items: Schema.object({ properties: { musculo: Schema.string(), coeficiente: Schema.number() } }),
-                }),
               },
             }),
           }),

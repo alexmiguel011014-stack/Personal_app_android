@@ -9,7 +9,7 @@ import { Avatar } from "./Avatar";
 import { NavIcon, type IconName } from "./icons";
 import { Wordmark } from "./Wordmark";
 
-// The ALLU template's frame (DESIGN.md): a forest-green rail with the wordmark and the navigation
+// The ALLU template's frame (DESIGN.md): an ink-dark rail (direction B, §24) with the wordmark and the navigation
 // on a desktop; on a tablet or phone (<= 860px, see globals.css) the rail shrinks to a slim top bar
 // and the navigation moves to a tab bar at the bottom of the screen, where a thumb reaches it. One
 // component for both areas — `area` only changes the content width and the copy.
@@ -48,6 +48,7 @@ export function AppShell({
   const pathname = usePathname();
   const { session } = useSession();
   const who = session.status === "signedIn" ? (session.email ?? "Minha conta") : "";
+  const accountHref = `${home.replace(/\/$/, "")}/conta`;
 
   return (
     <>
@@ -76,11 +77,20 @@ export function AppShell({
             <span className="note-byline">Caderno ALLU</span>
           </div>
           <div className="profile-chip">
-            <Avatar name={who || "ALLU"} tone="dark" />
-            <span className="profile-meta">
-              <strong title={who}>{who}</strong>
-              <small>{roleLabel}</small>
-            </span>
+            <Link
+              className="profile-account"
+              href={accountHref}
+              title="Abrir configurações da minha conta"
+              aria-label="Abrir configurações da minha conta"
+              aria-current={pathname.replace(/\/+$/, "") === accountHref ? "page" : undefined}
+            >
+              <Avatar name={who || "ALLU"} tone="dark" uid={session.status === "signedIn" ? session.uid : undefined} />
+              <span className="profile-meta">
+                <strong title={who}>{who}</strong>
+                <small>{roleLabel} · Minha conta</small>
+              </span>
+              <span className="account-mobile-label" aria-hidden="true">Conta</span>
+            </Link>
             <SignOutButton className="signout" />
           </div>
         </aside>

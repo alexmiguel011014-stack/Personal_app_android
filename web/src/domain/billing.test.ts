@@ -4,7 +4,7 @@ import { monthlyCharge, type BillingPlan } from "./payments";
 import type { Student } from "./students";
 
 function student(id: string, name: string, linked: boolean): Student {
-  return { id, name, linked, goal: "", medicalNotes: "", trainingDays: [], createdAt: 0, pendingAssessmentRequest: false };
+  return { id, name, linked, goal: "", medicalNotes: "", trainingDays: [], createdAt: 0, pendingAssessmentRequest: false, paused: false };
 }
 
 function plan(studentId: string): BillingPlan {

@@ -303,7 +303,9 @@ Work that changes the rules bumps N by one for the whole unpublished set — **v
 account/plan/billing rules (§29–§30) and the spent-invite read restriction (§31b) — and adds `vN.rules`
 in the same PR, identical to `firestore.rules`. Until the trainer publishes it, a candidate may still change:
 edit both files together (`cp firestore.rules firestore-rules/versions/vN.rules`) and keep them identical.
-Once a version is published its file is frozen: later changes start the next number.
+Once a version is published its file is frozen: later changes start the next number. `npm run check:rules-version`
+(from `web/`; also a unit test, so `npm test` and the deploy build enforce it, and a named CI step) fails when the
+header, the archive's existence or the two files' contents disagree.
 
 Every rules change gets a test in `web/rules/firestore.rules.test.ts`, run against the local
 emulator with `npm run test:rules` from `web/` (Java 21; see `web/README.md`). `assertFails`

@@ -29,6 +29,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # firestore.rules starts with `// Rules version: N` and firestore-rules/versions/vN.rules must be
+      # the same file (CLAUDE.md, "Security rules"). Fails fast, before the slower steps.
+      - name: Rules version archive
+        run: npm run check:rules-version
+
       - name: Lint
         run: npm run lint
 

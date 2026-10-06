@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { createAdminRecoveryDraft } from "../../../../data/adminCreateStudent";
 import { getFirebase } from "../../../../data/firebase";
 import { useSession } from "../../../SessionProvider";
+import { FocusNotice } from "../../../_shared/FocusNotice";
 
 export function AdminCreateStudentRecovery({ trainerUid, trainerName, canManage }: {
   trainerUid: string;
@@ -51,10 +52,10 @@ export function AdminCreateStudentRecovery({ trainerUid, trainerName, canManage 
       </p>
       {error && <p role="alert">{error}</p>}
       <div className="page-actions">
-        <button type="submit" disabled={busy}>{busy ? "Salvando…" : "Criar rascunho"}</button>
+        <button type="submit" aria-disabled={busy}>{busy ? "Salvando…" : "Criar rascunho"}</button>
         <button type="button" disabled={busy} onClick={() => { setOpen(false); setError(null); }}>Cancelar</button>
       </div>
     </form>}
-    {notice && <p role="status">{notice}</p>}
+    {notice && <FocusNotice>{notice}</FocusNotice>}
   </section>;
 }

@@ -5601,6 +5601,27 @@ Suggested: opus · high — emulator rules and end-to-end role coverage are the 
   > An ADM opening `/aluno/conta` is sent back to `/admin`. **Not exercised:** e-mail change, password change and avatar
   > for the trainer and student roles (same shared component, only the ADM was driven), focus handling after save/error,
   > and the ADM *trainer-directory* refresh after a trainer's e-mail change.
+  >
+  > **Checked 2026-10-06** with `web/e2e/account.mjs` (headless Chrome over the emulators; real typing and Tab; the
+  > emulators' REST used to verify what the page claims) — **trainer 44/44, student 43/43, and both at 390 px 45/45 and
+  > 46/46**: phone (formatted, persisted, `123` refused, empty accepted); e-mail change refused with a wrong password,
+  > pending with the old address still signing in, then — from the emulator's link — Auth, the `users` mirror *and the
+  > ADM's trainer directory* all show the new address; password mismatch / wrong current / success, fields cleared, old
+  > one stops working; avatar upload, replace (one object at `account-avatars/{uid}/profile`), `.txt` and 2.5 MB refused,
+  > remove deletes the object; the trainer sees the student's initials, never their private photo; Tab order reaches every
+  > field, every stop has a name and a focus ring; 390 px has no overflow, controls ≥ 44 px, fields 16 px.
+  > **Found and fixed:** the fields and buttons were `disabled` while saving, which drops keyboard focus to `<body>` —
+  > they are now `readOnly` / `aria-disabled` with a double-submit guard (`AccountSettings.tsx`, `AccountAvatarSettings.tsx`),
+  > and the phone error is tied to its field (`aria-invalid`, `aria-describedby`).
+  > **The ADM screens had the same defect and were fixed the same day** (`web/e2e/admin-focus.mjs`, 13/13; 1/13 before the
+  > fix): every button that starts an action (`/admin/conta`, `/admin/planos`, the trainer detail panel — terms, trial
+  > extension, invoice, due date, payment, invite resolution —, `/admin/personais/novo`, `/admin/solicitacoes`) is now
+  > `aria-disabled` with a guard in its handler, so pressing Enter leaves focus on it; where the button legitimately goes
+  > away after success (a closed editor, a paid invoice, a created trainer) the new `_shared/FocusNotice.tsx` takes focus
+  > only if it would otherwise fall to `<body>`, so the next Tab continues from the result message.
+  > **Still not covered:** the screen-reader experience itself (only the DOM contract was checked), the buttons that
+  > merely open a form or dialog (they stay `disabled={busy}`; focus is not on them when busy starts), and the live site with
+  > real Firebase (emulators only).
 - [x] Regression-check the existing cross-client Firestore rule cases. Do not edit Android/iOS files. Because `firestore.rules` is shared, do not publish it to Firebase until the owner reviews the exact combined diff and approves the live rules step.
 - [x] Update `CLAUDE.md` and `web/README.md` with account fields, Auth flows, Storage rules/emulator setup, and the manual Firebase/billing gate. Tick only behaviorally verified items here.
 - [ ] **Done when:** all three live web roles can use their own account settings on the deployed site; the e-mail and password flows follow Firebase's confirmation/reauthentication requirements; avatar access is private; and the owner has completed the Storage setup. If Storage billing is declined, keep avatar upload open/deferred and do not mark the whole feature complete.
@@ -5699,6 +5720,16 @@ flowchart TD
   > **Not exercised:** the trial path and trial cap, blocking by an overdue invoice (the due-date field has `min=today`,
   > so an overdue invoice cannot be created from the UI — covered by `platformFlows.test.ts` instead), concurrent
   > invite attempts, and the default-template assignment when the ADM provisions a new personal.
+  >
+  > **Checked 2026-10-06** with `web/e2e/billing.mjs` (23/23): a template with a 2-student trial cap assigned as a free trial
+  > → the panel says so and says it charges nothing, the invoice button is unavailable, the trainer sees "Teste" with its
+  > end date, and a new invite is refused with "Limite de alunos do teste atingido (5/2)" **and no invite document is
+  > written**; the trial can be extended; switching to a paid plan and issuing an invoice leaves the trainer working;
+  > with the due date and the access deadline in the past (written into the emulator — the site has no clock job) the
+  > trainer's area shows "Conta temporariamente bloqueada" with re-check and sign-out, `/app/conta` still shows the plan
+  > and invoice, the student list is locked, **an extension that is still in the past does not unlock**, and registering
+  > the payment does. **Still not covered:** concurrent invite attempts; the default template applied when the ADM
+  > provisions a new personal; the same flows against the real Firebase project.
 - [ ] **Done when:** all configured prices and limits are owner-controlled, invoice and audit records match the calculation, concurrent attempts through the cooperating website flow cannot exceed its active-code cap, the displayed count updates after claim/cancel and legacy-expiry compatibility handling, trainer blocking is enforced by rules, and out-of-scope mobile/direct-write behavior remains explicitly outside the Web limit.
 
 ### 30h. Manual Firebase setup and rollout gate

@@ -32,7 +32,7 @@ export default function RequestsPage() {
   }, [version]);
 
   async function execute() {
-    if (!decision || !adminUid) return;
+    if (!decision || !adminUid || busy) return;
     setBusy(true); setNotice(null);
     try {
       const { kind, request } = decision;
@@ -53,7 +53,7 @@ export default function RequestsPage() {
 
   async function manualPromote(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!adminUid || !promotionUid.trim()) return;
+    if (!adminUid || !promotionUid.trim() || busy) return;
     setBusy(true); setNotice(null);
     try {
       const defaultsApplied = await promoteToTrainer(getFirebase().db, adminUid, promotionUid.trim(), promotionName.trim() || "Personal");
@@ -77,7 +77,7 @@ export default function RequestsPage() {
         <button type="button" disabled={busy} onClick={() => setDecision({ kind: "reject", request })}>Recusar</button>
       </form>
     </article>)}</section>)}
-    <section className="panel"><h2>Promover por UID</h2><p>Use quando a solicitação não chegou à fila, mas a conta já existe no Firebase Authentication.</p><form onSubmit={(event) => void manualPromote(event)}><p><label>UID da conta<input required value={promotionUid} onChange={(event) => setPromotionUid(event.target.value)} /></label><label>Nome<input maxLength={100} value={promotionName} onChange={(event) => setPromotionName(event.target.value)} /></label></p><button type="submit" disabled={busy}>Promover conta</button></form></section>
+    <section className="panel"><h2>Promover por UID</h2><p>Use quando a solicitação não chegou à fila, mas a conta já existe no Firebase Authentication.</p><form onSubmit={(event) => void manualPromote(event)}><p><label>UID da conta<input required value={promotionUid} onChange={(event) => setPromotionUid(event.target.value)} /></label><label>Nome<input maxLength={100} value={promotionName} onChange={(event) => setPromotionName(event.target.value)} /></label></p><button type="submit" aria-disabled={busy}>Promover conta</button></form></section>
     <ConfirmDialog open={decision !== null} title={decision?.kind === "approve" ? "Aprovar solicitação?" : "Recusar solicitação?"} yesLabel={busy ? "Salvando…" : decision?.kind === "approve" ? "Aprovar personal" : "Recusar solicitação"} onYes={() => void execute()} onNo={() => setDecision(null)}>
       {decision?.kind === "approve" ? <p>A conta {decision.request.email} receberá acesso à área de personal. O nome informado será salvo no perfil.</p> : <p>A solicitação de {decision?.request.email} será removida da fila. A conta não será excluída.</p>}
     </ConfirmDialog>

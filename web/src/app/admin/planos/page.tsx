@@ -14,6 +14,7 @@ import { getFirebase } from "../../../data/firebase";
 import type { PlatformBillingPlanTemplate } from "../../../domain/platformBilling";
 import { formatCents, parseAmountCents } from "../../../domain/payments";
 import { useSession } from "../../SessionProvider";
+import { FocusNotice } from "../../_shared/FocusNotice";
 import { Empty, Money, PageHeading } from "../AdminPrimitives";
 
 type TemplateDraft = {
@@ -148,6 +149,7 @@ export default function PlatformPlansPage() {
 
   async function saveTrial(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (busy || loading) return;
     setBusy(true); setError(null); setNotice(null);
     try {
       const saved = await savePlatformTrialDefaults(getFirebase().db, adminUid, {
@@ -169,6 +171,7 @@ export default function PlatformPlansPage() {
 
   async function saveTemplate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (busy) return;
     setBusy(true); setError(null); setNotice(null);
     try {
       const values = templateValues(planDraft);
@@ -187,8 +190,8 @@ export default function PlatformPlansPage() {
 
   return <main>
     <PageHeading title="Planos e padrões">Configure os modelos para novas contas de personal e as condições padrão do teste grátis.</PageHeading>
-    {error && <p role="alert">{error}</p>}
-    {notice && <p role="status">{notice}</p>}
+    {error && <FocusNotice role="alert">{error}</FocusNotice>}
+    {notice && <FocusNotice>{notice}</FocusNotice>}
     {loading && <p className="loading" role="status">Carregando planos e padrões…</p>}
 
     <section className="panel">
@@ -211,7 +214,7 @@ export default function PlatformPlansPage() {
           </label>
         </p>
         <p><label>Motivo da alteração<input required maxLength={200} value={defaultsReason} onChange={(event) => setDefaultsReason(event.target.value)} /></label></p>
-        <button type="submit" disabled={busy || loading}>{busy ? "Salvando…" : "Salvar padrão do teste"}</button>
+        <button type="submit" aria-disabled={busy || loading}>{busy ? "Salvando…" : "Salvar padrão do teste"}</button>
       </form>
     </section>
 
@@ -234,7 +237,7 @@ export default function PlatformPlansPage() {
           <label>Máximo de alunos durante o teste<input type="number" min="0" step="1" required value={planDraft.trialMaxStudentSeats} onChange={(event) => setPlanDraft((value) => ({ ...value, trialMaxStudentSeats: event.target.value }))} /></label>
           <label>Duração do teste deste plano (dias)<input type="number" min="0" step="1" required value={planDraft.trialDurationDays} onChange={(event) => setPlanDraft((value) => ({ ...value, trialDurationDays: event.target.value }))} /></label>
         </p>
-        <div className="page-actions"><button type="submit" disabled={busy}>{busy ? "Salvando…" : "Salvar modelo"}</button><button type="button" disabled={busy} onClick={() => { setEditorOpen(false); setEditingId(null); setPlanDraft(EMPTY_TEMPLATE); }}>Cancelar</button></div>
+        <div className="page-actions"><button type="submit" aria-disabled={busy}>{busy ? "Salvando…" : "Salvar modelo"}</button><button type="button" disabled={busy} onClick={() => { setEditorOpen(false); setEditingId(null); setPlanDraft(EMPTY_TEMPLATE); }}>Cancelar</button></div>
       </form>}
 
       {loading ? null : templates.length === 0 ? <Empty>Nenhum modelo cadastrado. Crie um plano para usá-lo como padrão ao configurar um personal.</Empty> : <div className="admin-cards">{templates.map((template) => <article className="admin-card" key={template.id}>

@@ -25,7 +25,7 @@ export default function AdminAccountPage() {
   }, []);
 
   async function sendReset() {
-    if (!email) return;
+    if (!email || busy) return;
     setBusy(true); setError(null); setNotice(null);
     try {
       await sendPasswordResetEmail(getFirebase().auth, email);
@@ -40,7 +40,7 @@ export default function AdminAccountPage() {
     <AccountSettings />
     <section className="panel"><h2>Conta conectada</h2><dl><div><dt>E-mail</dt><dd>{email ?? "Ainda sem dados"}</dd></div><div><dt>Administradores cadastrados</dt><dd>{loading ? "Carregando…" : admins ?? "Ainda sem dados"}</dd></div><div><dt>Autenticação em dois fatores</dt><dd>Não há informação de MFA disponível nesta versão.</dd></div></dl>
       {notice && <p role="status">{notice}</p>}{error && <p role="alert">{error}</p>}
-      <button type="button" disabled={busy || !email} onClick={() => void sendReset()}>{busy ? "Enviando…" : "Enviar link para redefinir senha"}</button>
+      <button type="button" aria-disabled={busy || !email} onClick={() => void sendReset()}>{busy ? "Enviando…" : "Enviar link para redefinir senha"}</button>
     </section>
   </main>;
 }

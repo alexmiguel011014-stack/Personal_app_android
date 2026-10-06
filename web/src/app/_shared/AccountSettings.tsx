@@ -108,7 +108,7 @@ export function AccountSettings() {
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (session.status !== "signedIn") return;
+    if (session.status !== "signedIn" || busy) return;
     setBusy(true);
     setPhoneError(null);
     setPhoneNotice(null);
@@ -132,7 +132,7 @@ export function AccountSettings() {
 
   async function sendEmailChange(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (session.status !== "signedIn") return;
+    if (session.status !== "signedIn" || emailSending) return;
     const user = getFirebase().auth.currentUser;
     setEmailSending(true);
     setEmailError(null);
@@ -161,7 +161,7 @@ export function AccountSettings() {
 
   async function submitPasswordChange(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (session.status !== "signedIn") return;
+    if (session.status !== "signedIn" || passwordBusy) return;
     const user = getFirebase().auth.currentUser;
     setPasswordBusy(true);
     setPasswordError(null);
@@ -191,24 +191,24 @@ export function AccountSettings() {
         {emailNotice && <p role="status">{emailNotice}</p>}
         {emailError && <p role="alert">{emailError}</p>}
         {emailSyncError && <p role="alert">{emailSyncError}{emailSyncAddress && <> Endereço detectado: <strong>{emailSyncAddress}</strong>.</>}</p>}
-        {emailSyncError && <button type="button" disabled={emailSyncing} onClick={() => void syncEmail(pendingEmail ?? undefined)}>
+        {emailSyncError && <button type="button" aria-disabled={emailSyncing} onClick={() => { if (!emailSyncing) void syncEmail(pendingEmail ?? undefined); }}>
           {emailSyncing ? "Sincronizando…" : "Tentar sincronizar e-mail"}
         </button>}
-        {pendingEmail && !emailSyncError && <button type="button" disabled={emailSyncing} onClick={() => void syncEmail(pendingEmail)}>
+        {pendingEmail && !emailSyncError && <button type="button" aria-disabled={emailSyncing} onClick={() => { if (!emailSyncing) void syncEmail(pendingEmail); }}>
           {emailSyncing ? "Verificando…" : "Já confirmei o e-mail"}
         </button>}
         <form onSubmit={(event) => void sendEmailChange(event)}>
           <p>
             <label>
               Novo e-mail
-              <input type="email" autoComplete="email" required value={emailDraft} onChange={(event) => setEmailDraft(event.target.value)} disabled={emailSending} />
+              <input type="email" autoComplete="email" required value={emailDraft} onChange={(event) => setEmailDraft(event.target.value)} readOnly={emailSending} />
             </label>
             <label>
               Senha atual
-              <input type="password" autoComplete="current-password" required value={emailCurrentPassword} onChange={(event) => setEmailCurrentPassword(event.target.value)} disabled={emailSending} />
+              <input type="password" autoComplete="current-password" required value={emailCurrentPassword} onChange={(event) => setEmailCurrentPassword(event.target.value)} readOnly={emailSending} />
             </label>
           </p>
-          <button type="submit" disabled={emailSending || session.status !== "signedIn"}>
+          <button type="submit" aria-disabled={emailSending || session.status !== "signedIn"}>
             {emailSending ? "Enviando confirmação…" : "Enviar confirmação de e-mail"}
           </button>
         </form>
@@ -223,18 +223,18 @@ export function AccountSettings() {
           <p>
             <label>
               Senha atual
-              <input type="password" autoComplete="current-password" required value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} disabled={passwordBusy} />
+              <input type="password" autoComplete="current-password" required value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} readOnly={passwordBusy} />
             </label>
             <label>
               Nova senha
-              <input type="password" autoComplete="new-password" required value={newPassword} onChange={(event) => setNewPassword(event.target.value)} disabled={passwordBusy} />
+              <input type="password" autoComplete="new-password" required value={newPassword} onChange={(event) => setNewPassword(event.target.value)} readOnly={passwordBusy} />
             </label>
             <label>
               Confirme a nova senha
-              <input type="password" autoComplete="new-password" required value={passwordConfirmation} onChange={(event) => setPasswordConfirmation(event.target.value)} disabled={passwordBusy} />
+              <input type="password" autoComplete="new-password" required value={passwordConfirmation} onChange={(event) => setPasswordConfirmation(event.target.value)} readOnly={passwordBusy} />
             </label>
           </p>
-          <button type="submit" disabled={passwordBusy || session.status !== "signedIn"}>
+          <button type="submit" aria-disabled={passwordBusy || session.status !== "signedIn"}>
             {passwordBusy ? "Alterando…" : "Alterar senha"}
           </button>
         </form>
@@ -246,7 +246,7 @@ export function AccountSettings() {
         {session.status === "signedIn" && <dl>
           <div><dt>Perfil</dt><dd>{session.profile.role === "ADM" ? "Administrador" : session.profile.role === "TRAINER" ? "Personal" : session.profile.role === "STUDENT" ? "Aluno" : "Sem perfil"}</dd></div>
         </dl>}
-        {phoneError && <p role="alert">{phoneError}</p>}
+        {phoneError && <p role="alert" id="account-phone-error">{phoneError}</p>}
         {phoneNotice && <p role="status">{phoneNotice}</p>}
         <form onSubmit={(event) => void save(event)}>
           <p>
@@ -259,12 +259,15 @@ export function AccountSettings() {
                 maxLength={40}
                 value={phone}
                 onChange={(event) => setPhone(event.target.value)}
-                disabled={loading || busy || session.status !== "signedIn"}
+                aria-invalid={phoneError ? true : undefined}
+                aria-describedby={phoneError ? "account-phone-error" : undefined}
+                readOnly={loading || busy}
+                disabled={session.status !== "signedIn"}
                 placeholder="(11) 99999-9999"
               />
             </label>
           </p>
-          <button type="submit" disabled={loading || busy || session.status !== "signedIn"}>
+          <button type="submit" aria-disabled={loading || busy || session.status !== "signedIn"}>
             {loading ? "Carregando…" : busy ? "Salvando…" : "Salvar telefone"}
           </button>
         </form>

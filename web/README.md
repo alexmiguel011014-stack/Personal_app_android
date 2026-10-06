@@ -175,7 +175,7 @@ default location); each run re-seeds the emulators first. No dependencies: a sma
 `e2e/lib.mjs`, with the emulators' REST endpoints used to check what the page claims (Auth, Firestore, Storage).
 
 ```bash
-npm run e2e:account -- trainer          # or: student;  add "mobile" for 390 px   (GOALS.md §29)
+npm run e2e:account -- trainer          # or: student, admin;  add "mobile" for 390 px   (GOALS.md §29)
 npm run e2e:billing                     # trial cap, overdue lock, extension, payment   (GOALS.md §30)
 npm run e2e:admin-focus                 # keyboard focus after every ADM action button  (GOALS.md §29e)
 ```

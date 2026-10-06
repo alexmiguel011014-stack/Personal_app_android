@@ -1,4 +1,4 @@
-import { doc, getDoc, updateDoc, type Firestore } from "firebase/firestore";
+import { doc, getDoc, serverTimestamp, updateDoc, type Firestore } from "firebase/firestore";
 import {
   EmailAuthProvider,
   getIdToken,
@@ -8,6 +8,8 @@ import {
   verifyBeforeUpdateEmail,
   type User,
 } from "firebase/auth";
+
+import { normalizeAccountName } from "../domain/accountName";
 
 const MAX_PHONE_LENGTH = 40;
 
@@ -41,6 +43,19 @@ export async function loadPersonalPhone(db: Firestore, uid: string): Promise<str
 export interface PersonalAccountMirror {
   phone: string;
   email: string | null;
+  /** The display name on the profile (what the trainer and the ADM see). */
+  name: string;
+  /** When the user last changed their own name on the account page (server time); null when never. */
+  nameChangedAt: number | null;
+}
+
+/** `nameChangedAt` is a Firestore timestamp (written with the server's clock); an integer is read leniently. */
+function millisOrNull(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (value !== null && typeof value === "object" && "toMillis" in value && typeof (value as { toMillis: unknown }).toMillis === "function") {
+    return (value as { toMillis: () => number }).toMillis();
+  }
+  return null;
 }
 
 export async function loadPersonalAccount(db: Firestore, uid: string): Promise<PersonalAccountMirror> {
@@ -48,10 +63,26 @@ export async function loadPersonalAccount(db: Firestore, uid: string): Promise<P
   if (!snapshot.exists()) throw new Error("Não foi possível localizar seu perfil.");
   const phone = snapshot.get("phone");
   const email = snapshot.get("email");
+  const name = snapshot.get("name");
   return {
     phone: typeof phone === "string" ? formatPersonalPhone(phone) : "",
     email: typeof email === "string" ? email : null,
+    name: typeof name === "string" ? name : "",
+    nameChangedAt: millisOrNull(snapshot.get("nameChangedAt")),
   };
+}
+
+/**
+ * Self-service rename: at most once every 60 days. The change is stamped with `serverTimestamp()` and firestore.rules (v5)
+ * accept it only when that stamp is the request's own time and the previous stamp is missing or at least 60 days old, so the
+ * wait cannot be shortened with a wrong device clock. Resolves with the stored name and the server's stamp.
+ */
+export async function savePersonalName(db: Firestore, uid: string, input: string): Promise<{ name: string; nameChangedAt: number | null }> {
+  const name = normalizeAccountName(input);
+  const ref = doc(db, "users", uid);
+  await updateDoc(ref, { name, nameChangedAt: serverTimestamp() });
+  const saved = await getDoc(ref);
+  return { name, nameChangedAt: millisOrNull(saved.get("nameChangedAt")) };
 }
 
 /** Self-update of the existing optional phone field; Firestore rules remain the authorization boundary. */

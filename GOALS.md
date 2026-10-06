@@ -5641,6 +5641,19 @@ Suggested: haiku · low — console work and a controlled-account check, both ow
 
 ---
 
+### 29g. Change own name — once every 60 days (2026-10-06)
+
+The trainer asked that every user (ADM, trainer, student) be able to correct their own name, at most once every 60 days.
+`firestore.rules` already let a user write their own `name` with no limit, so the limit is new on the rules side too.
+
+- [x] Pure rules in `web/src/domain/accountName.ts` (+ test): `normalizeAccountName` (trim, collapse whitespace, 2–80 characters, no control characters), `canChangeName`, `nextNameChangeAt`, `daysUntilNameChange` (never counts from before the server's stamp).
+- [x] `data/account.ts`: `loadPersonalAccount` returns `name` and `nameChangedAt`; `savePersonalName` writes `{ name, nameChangedAt: serverTimestamp() }` and re-reads the stamp.
+- [x] **Rules v5** (`firestore.rules`, archived as `firestore-rules/versions/v5.rules`): `validSelfNameChange` — a rename must carry `nameChangedAt == request.time`, differ from the current name, be 2–80 characters, trimmed, without control characters, and the previous stamp must be missing or ≥ 60 days old; the stamp cannot move without a rename; nothing else may ride along. The trainer's correction of a student's name is unchanged and does not touch the stamp. Tests: "own name, once every 60 days (rules v5)" (18 cases, 7 of which fail against v4) and "account name data flow" (4).
+- [x] `_shared/AccountNameSettings.tsx` on the three account pages: explains the rule, asks "Alterar seu nome?" before using the wait up, then shows when it unlocks; the field and button lock while the wait lasts and after a reload. Refusals (too short, same name) never open the dialog.
+- [x] Browser tests (`web/e2e/account.mjs`, now also `admin`): cancel writes nothing, a valid name asks first, confirming stores the name and a server stamp within two minutes of now, the screen locks with "faltam 60 dias" and the right unlock date, a second change is not offered, still locked after a reload, focus is not lost, the trainer's student list and the ADM's directory show the new name. Trainer 56/56, student 55/55, ADM 53/53 and 59/59, 58/58, 56/56 at 390 px.
+- [ ] **Manual:** publish `firestore.rules` v5 before the site that carries this screen is merged — against v4 the new `nameChangedAt` field is refused and the save fails with "Não foi possível alterar o nome". Check the diff first (`firestore-rules/versions/v4.rules` → `v5.rules`).
+- Not covered: a change of name does not rewrite names copied elsewhere — a connected student's old `students/{draft}` document, past `adminAudit` entries — and the shell's profile chip still shows the e-mail, not the name. Android and iOS were not touched; they never write a user's own `name`, but a whole-document `set` of a user by the phone (the ADM promotion) would reset the stamp.
+
 ## 30. Feature — ADM plan defaults, trainer billing, capacity, and student recovery (web)
 
 **Type:** Feature · **Priority:** High · **Scope:** Web ADM and trainer flows only. Do not edit Android or iOS source or alter their invite behavior under this goal. This active-code cap applies to invitations generated through the website; mobile invite creation is out of scope.

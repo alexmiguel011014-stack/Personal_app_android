@@ -153,7 +153,13 @@ stores the optional contact `phone` and `avatarStoragePath`. Phone is unverified
 Firebase phone authentication. Auth remains authoritative for e-mail/password: e-mail changes use
 `verifyBeforeUpdateEmail`, then reload/refresh the ID token and sync the verified address into the
 user profile; password changes require current-password reauthentication. Reset-email actions remain
-the recovery path. Avatar objects use `account-avatars/{uid}/profile`, are read as bytes through the
+the recovery path. **A user may correct their own name once every 60 days** (§29g, rules v5): the account page's "Nome"
+section (`_shared/AccountNameSettings.tsx`, `data/account.ts` `savePersonalName`, pure rules in `domain/accountName.ts`)
+writes `users/{uid}.name` together with `nameChangedAt`, a Firestore timestamp stamped by the server (web-only, like
+`archivedAt`; the phone ignores it). `firestore.rules`' `validSelfNameChange` accepts a rename only when the name is 2–80
+characters, trimmed, without control characters, different from the current one, `nameChangedAt == request.time` (so a
+device clock decides nothing) and the previous stamp is missing or at least 60 days old; without a rename the stamp cannot
+move. The owning trainer's correction of a linked student's name is another rule and neither needs nor resets the stamp. Avatar objects use `account-avatars/{uid}/profile`, are read as bytes through the
 authenticated client (no bearer download URL), and are limited by UI and `storage.rules` to JPEG,
 PNG or WebP up to 2 MiB. Keep initials as fallback. `firebase.json` configures the Storage emulator
 on port 9199. Production bucket/plan/App Check setup and deployment of reviewed rules are owner-run
@@ -299,8 +305,9 @@ Never publish a copy without diffing it against what's live.
 
 **Rules are versioned in ascending order.** The first line of `firestore.rules` is `// Rules version: N`,
 and every set is kept byte for byte as `firestore-rules/versions/vN.rules` (v3 is what was live on 2026-10-05).
-Work that changes the rules bumps N by one for the whole unpublished set — **v4** carries the
-account/plan/billing rules (§29–§30) and the spent-invite read restriction (§31b) — and adds `vN.rules`
+Work that changes the rules bumps N by one for the whole unpublished set — **v4** carried the
+account/plan/billing rules (§29–§30) and the spent-invite read restriction (§31b), **v5** adds the 60-day own-name
+rule (§29g) — and adds `vN.rules`
 in the same PR, identical to `firestore.rules`. Until the trainer publishes it, a candidate may still change:
 edit both files together (`cp firestore.rules firestore-rules/versions/vN.rules`) and keep them identical.
 Once a version is published its file is frozen: later changes start the next number. `npm run check:rules-version`

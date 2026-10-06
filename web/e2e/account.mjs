@@ -1,12 +1,13 @@
-// node e2e/account.mjs <trainer|student> [desktop|mobile] — GOALS.md §29: phone, e-mail, password, avatar, keyboard, 390 px.
+// node e2e/account.mjs <trainer|student|admin> [desktop|mobile] — GOALS.md §29: name (once per 60 days), phone, e-mail, password, avatar, keyboard, 390 px.
 import { browser, check, summary, sleep, reseed, uidByEmail, fsGet, fieldValue, authSignIn, oobCodes, avatarObjects } from "./lib.mjs";
 
 const role = process.argv[2] ?? "trainer";
 const vp = process.argv[3] ?? "desktop";
-const OLD = role === "trainer" ? "treinador@teste.dev" : "ana@teste.dev";
-const NEW = role === "trainer" ? "treinador.novo@teste.dev" : "ana.nova@teste.dev";
-const PATH = role === "trainer" ? "/app/conta/" : "/aluno/conta/";
-const HOME = role === "trainer" ? "/app/" : "/aluno/";
+const OLD = { trainer: "treinador@teste.dev", student: "ana@teste.dev", admin: "admin@teste.dev" }[role];
+const NEW = { trainer: "treinador.novo@teste.dev", student: "ana.nova@teste.dev", admin: "admin.novo@teste.dev" }[role];
+const PATH = { trainer: "/app/conta/", student: "/aluno/conta/", admin: "/admin/conta/" }[role];
+const HOME = { trainer: "/app/", student: "/aluno/", admin: "/admin/" }[role];
+const NEW_NAME = { trainer: "Treinador Corrigido", student: "Ana Corrigida Costa", admin: "Administrador Corrigido" }[role];
 const NEWPASS = "novaSenha456";
 
 await reseed();
@@ -44,6 +45,57 @@ try {
   for (const n of needed) check(`[${role}] keyboard reaches "${n}"`, mainStops.some((s) => s.name.startsWith(n)));
   check(`[${role}] keyboard: every stop has an accessible name`, stops.every((s) => s.name.length > 0), stops.filter((s) => !s.name).map((s) => s.tag + ":" + s.type).join(","));
   check(`[${role}] keyboard: every stop shows a focus outline`, stops.every((s) => s.outline), stops.filter((s) => !s.outline).map((s) => s.name).join(","));
+
+  // ---------- name: once every 60 days (GOALS.md §29g, rules v5) ----------
+  const nameField = `main section[aria-labelledby=account-name-title]`;
+  const nameState = () => b.eval(`(()=>{const sec=document.querySelector(${JSON.stringify(nameField)}); if(!sec) return null; const i=sec.querySelector('input'); const btn=sec.querySelector('button[type=submit]'); return {value:i.value, readOnly:i.readOnly, btnAria:btn.getAttribute('aria-disabled'), text:sec.innerText.replace(/\\n+/g,' | '), dialog:!!document.querySelector('dialog[open]')};})()`);
+  const typeName = async (v) => { await b.eval(`(()=>{const i=document.querySelector(${JSON.stringify(nameField)}+' input'); i.focus(); i.select();})()`); await b.type(v, { replace: false }); };
+  const dialogButton = async (label) => b.eval(`(()=>{const x=[...document.querySelectorAll('dialog[open] button')].find(x=>new RegExp(${JSON.stringify(label)},'i').test(x.textContent)); if(!x) return false; x.focus(); return document.activeElement===x;})()`);
+  const before = await nameState();
+  check(`[${role}] name: section is there, explains the 60-day rule, and is editable`, before && /uma vez a cada 60 dias/.test(before.text) && !before.readOnly && before.btnAria !== "true", before?.text?.slice(0, 120));
+  const oldName = before?.value ?? "";
+  // refused inputs never open the confirmation or write anything
+  await typeName("A"); await b.key("Enter"); await sleep(600);
+  let st = await nameState();
+  check(`[${role}] name: one character is refused with a message, no dialog`, !st.dialog && (await notes()).some((t) => /pelo menos 2/.test(t)), (await notes()).join(" | "));
+  await typeName(oldName || "Nome Igual Teste"); await b.key("Enter"); await sleep(600);
+  st = await nameState();
+  if (oldName) check(`[${role}] name: the same name is refused`, !st.dialog && (await notes()).some((t) => /já é o seu nome/.test(t)), (await notes()).join(" | "));
+  // cancel keeps everything
+  await typeName(NEW_NAME); await b.key("Enter"); await sleep(700);
+  st = await nameState();
+  check(`[${role}] name: a valid name asks for confirmation first`, st.dialog);
+  await dialogButton("Cancelar"); await b.key("Enter"); await sleep(700);
+  let doc = await fsGet(`users/${uid}`);
+  check(`[${role}] name: cancelling writes nothing`, !(await nameState()).dialog && !doc?.fields?.nameChangedAt && (fieldValue(doc?.fields?.name) ?? "") === oldName, JSON.stringify(fieldValue(doc?.fields?.name)));
+  // confirm
+  await typeName(NEW_NAME); await b.key("Enter"); await sleep(700);
+  await dialogButton("Alterar nome"); await b.key("Enter");
+  await b.waitFor(`/Nome alterado/.test(document.querySelector('main').innerText)`, 8000);
+  doc = await fsGet(`users/${uid}`);
+  const stamp = doc?.fields?.nameChangedAt?.timestampValue;
+  check(`[${role}] name: confirming saves the name and the server's stamp`, fieldValue(doc?.fields?.name) === NEW_NAME && !!stamp && Math.abs(Date.parse(stamp) - Date.now()) < 120000, `${fieldValue(doc?.fields?.name)} / ${stamp}`);
+  st = await nameState();
+  check(`[${role}] name: the screen locks and says until when`, st.readOnly && st.btnAria === "true" && /Poderá alterá-lo de novo a partir de/.test(st.text) && /faltam 60 dias/.test(st.text), st.text.slice(0, 220));
+  const unlockOn = new Date(Date.parse(stamp) + 60 * 86400000).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+  check(`[${role}] name: the unlock date is 60 days out`, st.text.includes(unlockOn), unlockOn);
+  const focusAfter = await b.eval(`(()=>{const a=document.activeElement; return a? a.tagName+':'+(a.getAttribute('role')||a.textContent.trim().slice(0,20)):'none'})()`);
+  check(`[${role}] name: focus is not lost to <body> after saving`, !/^BODY/.test(focusAfter), focusAfter);
+  // a second attempt is not even offered, and stays locked after a reload
+  await typeName("Outro Nome Qualquer"); await b.key("Enter"); await sleep(600);
+  check(`[${role}] name: a second change is not offered`, !(await nameState()).dialog && (await fsGet(`users/${uid}`))?.fields?.name?.stringValue === NEW_NAME);
+  await b.go(PATH, 3500);
+  st = await nameState();
+  check(`[${role}] name: still locked after a reload`, st && st.readOnly && st.value === NEW_NAME && /faltam 60 dias/.test(st.text), st?.text?.slice(0, 120));
+  // who else sees the new name
+  if (role === "student") {
+    const tv = await browser("trainer-sees-name", vp);
+    try { await tv.login("treinador@teste.dev"); await tv.go("/app/alunos/", 5000); check(`[student] the trainer's list shows the new name`, (await tv.text()).includes(NEW_NAME), (await tv.text()).slice(0, 160)); } finally { tv.close(); }
+  }
+  if (role === "trainer") {
+    const av = await browser("adm-sees-name", vp);
+    try { await av.login("admin@teste.dev"); await av.go("/admin/personais/", 2500); const seen = await av.waitFor(`document.querySelector('main').innerText.includes(${JSON.stringify(NEW_NAME)})`, 30000); check(`[trainer] the ADM's directory shows the new name`, !!seen, (await av.text()).slice(0, 160)); } finally { av.close(); }
+  }
 
   // ---------- phone ----------
   await b.go(PATH, 3000);

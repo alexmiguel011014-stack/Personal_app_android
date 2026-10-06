@@ -7,13 +7,13 @@ import { describeAiError } from "../../../../domain/aiErrors";
 import { buildAdjustMessage, buildAiUserMessage } from "../../../../domain/aiRequest";
 import { treinosFromAi } from "../../../../domain/aiResponse";
 import { recordUse, usesToday } from "../../../../domain/aiUsage";
-import { TABLE_PLACEHOLDER, type PromptStudent } from "../../../../domain/fichaPrompt";
+import type { PromptStudent } from "../../../../domain/fichaPrompt";
 import type { ParsedWorkout } from "../../../../domain/workoutParser";
 
 // GOALS.md §25i: the "Gemini" tab — generate the treinos here instead of copying a prompt to another
-// AI app. It asks Gemini (data/gemini.ts, Firebase AI Logic) with the rules and the reference table as
-// the system instruction, and hands the answer to the same review screen a pasted answer reaches. A
-// follow-up box ("Ajustar") continues the same conversation. Failures say what happened and point at
+// AI app. It asks Gemini (data/gemini.ts, Firebase AI Logic) with the rules as the system instruction
+// (GOALS.md §33: never the reference table — the site computes the muscles itself), and hands the answer
+// to the same review screen a pasted answer reaches. A follow-up box ("Ajustar") continues the same conversation. Failures say what happened and point at
 // the other tab. Nothing is saved from here: saving is the review screen's job.
 
 const PRIVACY_NOTE =
@@ -47,9 +47,8 @@ export function GeminiPanel({
     setError(null);
     try {
       if (fresh || chat.current === null) {
-        // The reference table, spliced in once, is the context that stays for the whole conversation.
-        const system = assets.geminiSystem.split(TABLE_PLACEHOLDER).join(assets.volumeReference);
-        chat.current = await startFichaChat(system);
+        // The rules, set once, are the context that stays for the whole conversation.
+        chat.current = await startFichaChat(assets.geminiSystem);
       }
       const reply = await send(chat.current);
       setUsedToday(recordUse(window.localStorage, new Date()));
@@ -72,8 +71,8 @@ export function GeminiPanel({
   return (
     <div className="gemini-panel">
       <p>
-        O Gemini monta os treinos aqui mesmo, já conhecendo a tabela de exercícios e ativações musculares. O resultado
-        cai na mesma tela de revisão — você confere antes de salvar.
+        O Gemini monta os treinos aqui mesmo e o site calcula os músculos de cada exercício. O resultado cai na mesma
+        tela de revisão — você confere antes de salvar.
       </p>
       <p className="section-footnote">{PRIVACY_NOTE}</p>
       <p>
@@ -97,7 +96,7 @@ export function GeminiPanel({
             : `${usedToday} ${usedToday === 1 ? "geração" : "gerações"} hoje neste navegador`}
         </span>
       </div>
-      {assets === "error" && <p role="alert">Não foi possível carregar a tabela de referência. Recarregue a página.</p>}
+      {assets === "error" && <p role="alert">Não foi possível carregar o modelo do pedido. Recarregue a página.</p>}
       {error && <p role="alert">{error}</p>}
 
       {generated && (

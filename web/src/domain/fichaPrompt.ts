@@ -40,18 +40,13 @@ export function buildFichaPrompt(
 }
 
 // ---------------------------------------------------------------------------------------------
-// GOALS.md §25f — the multi-treino prompt. WEB-ONLY: the shared template asks for one ficha and the
-// phone's paste would pile several into one, so the web has its own (web/prompt/ficha_prompt_multi.md);
-// buildFichaPrompt above, which mirrors the phone's, is not changed.
+// GOALS.md §25f/§33 — the web's own prompts. WEB-ONLY: the phone's template asks for one ficha with a
+// muscle block per line, which only makes sense with the reference table in the prompt; the web never
+// puts that table in front of a reader or an AI (§33), so its templates (web/prompt/) ask for names and
+// sets x reps only, and the site fills in the muscles itself. buildFichaPrompt above, which mirrors the
+// phone's, is not changed.
 
-/** What replaces the reference table when the trainer keeps it in an AI project instead. */
-export const SHORT_TABLE_NOTE =
-  "(A tabela de referência dos exercícios e das ativações musculares está nos arquivos do meu projeto — " +
-  "use-a, com os nomes exatos dos exercícios.)";
-
-export interface MultiPromptOptions {
-  /** The table lives in the trainer's own AI project — leave it out and the prompt gets much shorter. */
-  shortPrompt?: boolean;
+export interface WebPromptOptions {
   /** Send "Aluno" and "não informado" instead of the student's name and medical notes. */
   deidentify?: boolean;
 }
@@ -69,16 +64,22 @@ export function deidentified(student: PromptStudent): PromptStudent {
   };
 }
 
-export function buildMultiFichaPrompt(
+/**
+ * A web template (single- or multi-treino) + the student's profile + the request. Refuses a template that
+ * still carries the table placeholder: splicing "nothing" into it would hide a regression instead of
+ * failing it (GOALS.md §33f).
+ */
+export function buildWebFichaPrompt(
   template: string,
-  volumeReference: string,
   student: PromptStudent | null,
   request: string,
-  options: MultiPromptOptions = {},
+  options: WebPromptOptions = {},
 ): string {
-  const table = options.shortPrompt ? SHORT_TABLE_NOTE : volumeReference;
+  if (template.includes(TABLE_PLACEHOLDER)) {
+    throw new Error("A web prompt template must not carry the table placeholder.");
+  }
   const who = student !== null && options.deidentify ? deidentified(student) : student;
-  return buildFichaPrompt(template, table, who, request);
+  return buildFichaPrompt(template, "", who, request);
 }
 
 function profileBlock(student: PromptStudent): string {

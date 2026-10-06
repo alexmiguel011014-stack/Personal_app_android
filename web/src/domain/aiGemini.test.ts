@@ -114,8 +114,8 @@ describe("the daily counter", () => {
 describe("the Gemini system instruction", () => {
   const system = readFileSync(new URL("../../prompt/ficha_system_gemini.md", import.meta.url), "utf8");
 
-  it("has one table placeholder and asks for JSON only, a full ficha back on adjustments", () => {
-    expect(system.split(TABLE_PLACEHOLDER)).toHaveLength(2);
+  it("has no table placeholder (GOALS.md §33) and asks for JSON only, a full ficha back on adjustments", () => {
+    expect(system).not.toContain(TABLE_PLACEHOLDER);
     const flat = system.replace(/\s+/g, " "); // the file wraps lines mid-sentence
     expect(flat).toContain("SOMENTE em JSON");
     expect(flat).toContain("completa e atualizada");

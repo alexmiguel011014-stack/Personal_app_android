@@ -6323,12 +6323,13 @@ Suggested: haiku · low — recording choices; nothing is built here.
 Suggested: sonnet · high — prompt wording drives what the AI returns and what the parser accepts; small mistakes
 silently break the paste flow, so every change gets a test against the real parser.
 
-- [ ] **A web-only single-treino template, `web/prompt/ficha_prompt_single.md`**, for *editing an existing ficha*: the
+- [x] **A web-only single-treino template, `web/prompt/ficha_prompt_single.md`**, for *editing an existing ficha*: the
       phone's template (Android asset, not to be changed) asks for `[Músculo:coeficiente]` blocks that only make sense
       with the table. The new one asks for one treino title + `Nome SÉRIESxREPS` lines, no brackets, one code block,
       same rules as the multi template. Done when: `FichaEditor.tsx` uses it for an existing ficha and a pasted
       reply of that shape parses through `applyPaste` to the same exercises.
-- [ ] **Rewrite `web/prompt/ficha_prompt_multi.md` and `web/prompt/ficha_system_gemini.md`**: remove the table section
+      **Done (2026-10-06):** `ficha_prompt_single.md` written; `FichaEditor.tsx` uses it for an existing ficha; `fichaPrompt.multi.test.ts` proves its own worked example reads through `parseWorkouts`/`applyPaste` (one treino, three exercises, no muscle blocks).
+- [x] **Rewrite `web/prompt/ficha_prompt_multi.md` and `web/prompt/ficha_system_gemini.md`**: remove the table section
       and its placeholder, "exatamente como está na tabela de referência", every mention of coefficients, the scale
       and the RIR adjustments "da tabela"; replace with "use nomes comuns de exercícios em português, sem marca de
       equipamento" and a **generic** volume paragraph (distribute the weekly target across the returned treinos; direct
@@ -6337,18 +6338,21 @@ silently break the paste flow, so every change gets a test against the real pars
       proves it). Keep the output-format rules (one code block, `Treino A — foco`, `Nome SxR`, JSON schema for
       Gemini) byte-compatible with what `parseWorkouts` / `treinosFromAi` read. Done when: neither file contains
       `$TABLE_PLACEHOLDER$`, "tabela", "coeficiente", "régua" or "PDF", and the parser tests still pass.
-- [ ] **`domain/fichaPrompt.ts`**: delete `SHORT_TABLE_NOTE` and the `shortPrompt` option; the web builders drop the
+      **Done (2026-10-06):** Both rewritten (generic names and generic volume paragraph; the output-format rules unchanged, the multi example still splits into Treino A/B/C). The examples use names that are not catalog rows — `domain/referenceLeak.test.ts` (33f) is what proves it against the real source. A line added for the 33e volume helper: "se eu te enviar depois um resumo do volume por músculo, ajuste as séries…".
+- [x] **`domain/fichaPrompt.ts`**: delete `SHORT_TABLE_NOTE` and the `shortPrompt` option; the web builders drop the
       `volumeReference` parameter (add `buildWebFichaPrompt(template, student, request, { deidentify })` = template +
       profile block + request). `buildFichaPrompt` and `TABLE_PLACEHOLDER` **stay** for Kotlin parity (its test reads the
       phone's template and table from the repository, never at runtime). Done when: nothing under `web/src/app` or
       `web/src/data` references `TABLE_PLACEHOLDER`, `volumeReference` or `SHORT_TABLE_NOTE`.
+      **Done (2026-10-06):** `SHORT_TABLE_NOTE`, `shortPrompt`, `buildMultiFichaPrompt` removed; `buildWebFichaPrompt(template, student, request, { deidentify })` added and it **throws** if a template still carries the placeholder; `buildFichaPrompt`/`TABLE_PLACEHOLDER` kept for phone parity with its test untouched. grep finds no use of them under `web/src/app` or `web/src/data`.
 - [ ] **`data/promptAssets.ts` + `scripts/copy-prompt-assets.mjs`**: `PromptAssets` loses `volumeReference` and the
       Android template; gains `singleTemplate`; the script copies **only** the three web-only templates and **deletes
       stale generated files** (`hypertrophy_volume_reference.md`, `ficha_prompt_template.md`, `exercise-catalog.json`)
       from `public/prompt/` so an old local build can never ship them. Done when: after `npm run build`,
       `out/prompt/` holds only the three web-only templates.
-- [ ] **`GeminiPanel.tsx`**: the system instruction is `assets.geminiSystem` as is (no splice); the intro and error
+- [x] **`GeminiPanel.tsx`**: the system instruction is `assets.geminiSystem` as is (no splice); the intro and error
       lines stop naming a table. Done when: the instruction string passed to `startFichaChat` is asserted table-free.
+      **Done (2026-10-06):** The panel passes `assets.geminiSystem` unchanged to `startFichaChat`; intro and error lines no longer name a table; `aiGemini.test.ts` asserts the instruction file carries no placeholder.
 
 **33d. Hidden delivery — one gated document, rules v6, no public file**
 

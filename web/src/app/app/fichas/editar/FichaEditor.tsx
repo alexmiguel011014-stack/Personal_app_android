@@ -12,7 +12,7 @@ import { loadStudentWorkouts, newWorkout, replaceFicha, saveWorkout, saveWorkout
 import type { Exercise } from "../../../../domain/exercise";
 import { applyCatalogActivations, type ExerciseCatalog } from "../../../../domain/exerciseCatalog";
 import { currentFicha, historyFicha } from "../../../../domain/fichaHistory";
-import { buildFichaPrompt, buildMultiFichaPrompt } from "../../../../domain/fichaPrompt";
+import { buildWebFichaPrompt } from "../../../../domain/fichaPrompt";
 import { isKotlinBlank, kotlinTrim } from "../../../../domain/kotlin";
 import { exerciseErrors, tidied } from "../../../../domain/reviewEdit";
 import { calculateEffectiveVolume, parseWorkouts, type ParsedWorkout } from "../../../../domain/workoutParser";
@@ -139,7 +139,6 @@ function FichaForm({
   const [reviewErrors, setReviewErrors] = useState<string[]>([]);
   // GOALS.md §25f/§25i: two ways of asking an AI — copy a prompt to another app, or Gemini here.
   const [tab, setTab] = useState<"copy" | "gemini">("copy");
-  const [shortPrompt, setShortPrompt] = useState(false);
   const [includePersonal, setIncludePersonal] = useState(true);
 
   // Fetched up front, so "Copiar prompt" can copy inside the click itself — some browsers refuse a
@@ -160,13 +159,11 @@ function FichaForm({
   }, []);
 
   async function copyPrompt(loaded: PromptAssets) {
-    // New fichas ask for several treinos at once (web-only template); an existing ficha is one treino.
-    const text = existing
-      ? buildFichaPrompt(loaded.template, loaded.volumeReference, student.doc, request)
-      : buildMultiFichaPrompt(loaded.multiTemplate, loaded.volumeReference, student.doc, request, {
-          shortPrompt,
-          deidentify: !includePersonal,
-        });
+    // New fichas ask for several treinos at once; an existing ficha is one treino. Both templates are
+    // web-only and carry no reference table (GOALS.md §33).
+    const text = buildWebFichaPrompt(existing ? loaded.singleTemplate : loaded.multiTemplate, student.doc, request, {
+      deidentify: !includePersonal,
+    });
     setPrompt(text);
     try {
       await navigator.clipboard.writeText(text);
@@ -398,12 +395,6 @@ function FichaForm({
               </p>
               {!existing && (
                 <>
-                  <p>
-                    <label>
-                      <input type="checkbox" checked={shortPrompt} onChange={(e) => setShortPrompt(e.target.checked)} />
-                      Já tenho a tabela de exercícios no meu projeto de IA (prompt curto, sem a tabela)
-                    </label>
-                  </p>
                   <p>
                     <label>
                       <input

@@ -6403,29 +6403,34 @@ removes public files; a wrong order makes the editor lose its catalog for real u
 
 Suggested: sonnet · medium — UI wording and one small pure function with tests; behaviour of saving is unchanged.
 
-- [ ] **Remove the full catalog dropdown** from `MultiFichaReview.tsx` (the "Catálogo" `<optgroup>` and its group
+- [x] **Remove the full catalog dropdown** from `MultiFichaReview.tsx` (the "Catálogo" `<optgroup>` and its group
       suffixes); keep only up to **3** "Quis dizer…?" suggestions from a new pure `suggestExercises(catalog, name,
       limit = 3)` in `domain/exerciseCatalog.ts` (token-overlap ranking, deterministic, tested on a synthetic catalog).
       Done when: no screen lists more than 3 catalog names, and an unrecognised name says "sem ativação calculada —
       o volume não conta este exercício" with the suggestions (if any).
-- [ ] **Neutral wording everywhere** (33a-S5): "Usei a tabela" / "Ativação do catálogo" → a neutral "Músculos reconhecidos"
+      **Done (2026-10-06):** The "Catálogo" `<optgroup>` and its group suffixes are gone from `MultiFichaReview.tsx`; `suggestExercises` (cap `MAX_SUGGESTIONS = 3`, enforced inside) and `offeredSuggestions` (the close match first) in `domain/exerciseCatalog.ts`, tested on a synthetic catalog; the row shows "Quis dizer:" buttons ("Usar …") for at most 3 names, or "Sem ativação calculada — o volume não conta este exercício." (browser check: 33g).
+- [x] **Neutral wording everywhere** (33a-S5): "Usei a tabela" / "Ativação do catálogo" → a neutral "Músculos reconhecidos"
       / "Ajustado à mão"; "Carregando tabela…" / "…carregamento da tabela de exercícios…" / "…carregar a tabela de
       referência…" → "Carregando dados dos exercícios…" / "Não foi possível carregar os dados dos exercícios; os
       músculos não serão calculados automaticamente."; remove the short-prompt switch and its state from
       `FichaEditor.tsx`; the Gemini intro says the AI "monta os treinos" and the site "calcula os músculos". Done
       when: `grep -ri "tabela" web/src/app` finds no user-visible string about the reference.
-- [ ] **Volume numbers per 33b.** If the default holds, keep them. If the owner chose bands-only, `MultiFichaReview.tsx`
+      **Done (2026-10-06):** All the strings moved to `domain/editorCopy.ts` (`EDITOR_COPY`, so the leak test in 33f can read them); the short-prompt switch was removed in 33c; `grep -ri tabela web/src/app` now finds only the unrelated billing sentence in `BillingSection.tsx`. **Found while executing, not in the plan:** the single-ficha editor's "Músculos" column printed every exercise's coefficients (a table row verbatim) — it now says "calculados" or "—" (`FichaEditor.tsx`).
+- [x] **Volume numbers per 33b.** If the default holds, keep them. If the owner chose bands-only, `MultiFichaReview.tsx`
       shows `volumeBand(sets).label` only and the numeric column goes. Either way the screen never shows a single
       exercise's row (only totals across the included treinos).
-- [ ] **The volume helper** (`domain/volumeFeedback.ts`, pure, tested): `buildVolumeAdjustMessage(volume)` turns the
+      **Done (2026-10-06):** Default kept (the per-muscle numbers are totals across the included treinos; no single exercise's row is shown). The owner's choice in 33b is still open; bands-only would be a one-column change in `MultiFichaReview.tsx` and in the editor's volume list.
+- [x] **The volume helper** (`domain/volumeFeedback.ts`, pure, tested): `buildVolumeAdjustMessage(volume)` turns the
       review's per-muscle totals into one pt-BR paragraph — muscles below 12, above 20, and the numbers — and **nothing
       else** (no exercise names, no coefficients). Gemini tab: an "Ajustar volume" button sends it through the
       existing follow-up path (`buildAdjustMessage` style) and the answer reopens the review; copy tab: a "Copiar
       pedido de ajuste de volume" button copies it. Done when: tests prove the message contains only muscle labels,
       totals and band words, and that an all-ideal plan produces "nada a ajustar" instead of a request.
-- [ ] **Unit tests for the prompt flow** (`fichaPrompt*.test.ts`, `aiGemini.test.ts`, `fichaRequest.test.ts` as needed):
+      **Done (2026-10-06):** `domain/volumeFeedback.ts`: `includedVolume`, `buildVolumeAdjustMessage` (only muscles ≥ 4 effective sets that are below 12 or above 20; null when nothing to adjust), tested. Wired in the UI: the review shows the request in a read-only box with "Copiar pedido de ajuste de volume", and the Gemini tab has "Ajustar volume com o Gemini" (sends it through the same chat). Typecheck/lint/unit tests only so far — the click-through is 33g.
+- [x] **Unit tests for the prompt flow** (`fichaPrompt*.test.ts`, `aiGemini.test.ts`, `fichaRequest.test.ts` as needed):
       update the ones that expected a table; add: the multi and single prompts for a sample student contain the
       profile, the request and the format rules and **no** placeholder.
+      **Done (2026-10-06):** Done in 33c (`fichaPrompt.multi.test.ts`: both web templates, `buildWebFichaPrompt`, no placeholder, deidentify; `aiGemini.test.ts`: the instruction file carries no placeholder); `fichaPrompt.test.ts` (the phone's prompt) is untouched. Unit suite 487/487.
 
 **33f. Guards — a re-leak must fail the build**
 

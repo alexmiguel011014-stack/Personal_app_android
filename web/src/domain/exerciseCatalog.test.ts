@@ -12,6 +12,7 @@ import {
   catalogActivation,
   lookupExercise,
   normalizeName,
+  offeredSuggestions,
   suggestExercises,
   type ExerciseCatalog,
 } from "./exerciseCatalog";
@@ -195,5 +196,20 @@ describe("suggestExercises — a few names for a name nobody matched, never the 
       exercises: Array.from({ length: 40 }, (_, index) => ({ name: `Exercício ${index}`, group: "G", muscles: { "Músculo X": 1 } })),
     };
     expect(suggestExercises(big, "Exercício", 1000)).toHaveLength(3);
+  });
+});
+
+describe("offeredSuggestions - what the review shows beside an exercise", () => {
+  it("offers nothing for an exact or normalized match, and the close match first for a close one", () => {
+    expect(offeredSuggestions(catalog, "Exercício Alfa")).toEqual([]);
+    expect(offeredSuggestions(catalog, "EXERCÍCIO ÁLFA com barra")).toEqual([]);
+    expect(offeredSuggestions(catalog, "Gama estendido").map((entry) => entry.name)).toEqual(["Exercício Gama longo estendido"]);
+  });
+
+  it("offers up to three nearest names for an unmatched one, never the list, and nothing for an unrelated one", () => {
+    const offered = offeredSuggestions(catalog, "Alfa lateral").map((entry) => entry.name);
+    expect(offered).toEqual(["Exercício Alfa", "Exercício Alfa inclinado"]);
+    expect(offeredSuggestions(catalog, "Exercício")).toHaveLength(3);
+    expect(offeredSuggestions(catalog, "Nada a ver")).toEqual([]);
   });
 });

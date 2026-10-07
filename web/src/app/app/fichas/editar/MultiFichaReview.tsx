@@ -3,9 +3,10 @@
 import { useState, type FormEvent } from "react";
 import type { Exercise } from "../../../../domain/exercise";
 import { parseSetsText, renamedExercise } from "../../../../domain/reviewEdit";
-import { applyCatalogActivations, catalogActivation, lookupExercise, type ExerciseCatalog } from "../../../../domain/exerciseCatalog";
+import { EDITOR_COPY } from "../../../../domain/editorCopy";
+import { catalogActivation, lookupExercise, offeredSuggestions, type ExerciseCatalog } from "../../../../domain/exerciseCatalog";
+import { includedVolume } from "../../../../domain/volumeFeedback";
 import { volumeBand } from "../../../../domain/volumeBands";
-import { calculateEffectiveVolume } from "../../../../domain/workoutParser";
 import { manualExercise } from "../../../../domain/workouts";
 
 // GOALS.md §25e: when one pasted answer holds several treinos ("Treino A", "B", "C"…), this is the
@@ -52,6 +53,8 @@ function ExerciseRow({
   const match = typeof catalog === "object" ? lookupExercise(catalog, exercise.name) : null;
   const tableActivation = match ? catalogActivation(match.entry) : null;
   const usesDifferentActivation = match !== null && !sameActivation(exercise.muscleActivation, tableActivation);
+  // GOALS.md section 33: never the whole catalog - at most a few "Quis dizer...?" names for an exercise nobody matched.
+  const suggestions = typeof catalog === "object" ? offeredSuggestions(catalog, exercise.name) : [];
 
   return (
     <li className="review-exercise">
@@ -65,42 +68,30 @@ function ExerciseRow({
           onChange={(e) => onChange(renamedExercise(exercise, e.target.value))}
         />
         {catalog === "loading" ? (
-          <small>Carregando catálogo de exercícios…</small>
+          <small>{EDITOR_COPY.loading}</small>
         ) : catalog === "error" ? (
-          <small>Catálogo indisponível; revise a ativação manualmente.</small>
+          <small>{EDITOR_COPY.unavailableRow}</small>
         ) : match?.how === "close" ? (
-          <small>Correspondência aproximada com “{match.entry.name}” — confira.</small>
+          <small>{EDITOR_COPY.closeMatch(match.entry.name)}</small>
         ) : match ? (
-          <small>{usesDifferentActivation ? "Usei a tabela" : "Ativação do catálogo"}</small>
+          <small>{usesDifferentActivation ? EDITOR_COPY.recognizedReplacing : EDITOR_COPY.recognized}</small>
         ) : (
-          <small>
-            sem ativação no catálogo{exercise.muscleActivation ? " — mantive a ativação recebida" : ""}
-          </small>
+          <small>{exercise.muscleActivation ? EDITOR_COPY.noMatchKept : EDITOR_COPY.noMatch}</small>
         )}
-        {typeof catalog === "object" && (!match || match.how === "close") && (
-          <select
-            aria-label={`Escolher exercício do catálogo (${where})`}
-            value=""
-            onChange={(event) => {
-              if (event.target.value) onSelectCatalog(event.target.value);
-            }}
-          >
-            <option value="">Escolher exercício no catálogo…</option>
-            {match?.how === "close" && (
-              <optgroup label="Sugestão aproximada — escolha para usar">
-                <option value={match.entry.name}>{match.entry.name} — {match.entry.group}</option>
-              </optgroup>
-            )}
-            <optgroup label="Catálogo">
-              {catalog.exercises
-                .filter((entry) => match?.how !== "close" || entry.name !== match.entry.name)
-                .map((entry) => (
-                  <option key={entry.name} value={entry.name}>
-                    {entry.name} — {entry.group}
-                  </option>
-                ))}
-            </optgroup>
-          </select>
+        {suggestions.length > 0 && (
+          <span className="review-suggestions">
+            <small>{EDITOR_COPY.suggestions}</small>{" "}
+            {suggestions.map((entry) => (
+              <button
+                type="button"
+                key={entry.name}
+                aria-label={`Usar ${entry.name} (${where})`}
+                onClick={() => onSelectCatalog(entry.name)}
+              >
+                {entry.name}
+              </button>
+            ))}
+          </span>
         )}
       </div>
       <input
@@ -180,6 +171,7 @@ export function MultiFichaReview({
   warnings,
   errors,
   busy,
+  volumeRequest,
   onChange,
   onSave,
   onCancel,
@@ -189,17 +181,26 @@ export function MultiFichaReview({
   warnings: readonly string[];
   errors: readonly string[];
   busy: boolean;
+  /** GOALS.md section 33e: the "adjust the volume" request for the AI, or null when the week is already in range. */
+  volumeRequest: string | null;
   onChange: (items: ReviewItem[]) => void;
   onSave: () => void;
   onCancel: () => void;
 }) {
   const included = items.filter((item) => item.include);
-  const volumeExercises = included.flatMap((item) =>
-    typeof catalog === "object" ? applyCatalogActivations(item.exercises, catalog) : item.exercises,
-  );
-  const volume = Object.entries(calculateEffectiveVolume(volumeExercises)).sort(
+  const volume = Object.entries(includedVolume(items, typeof catalog === "object" ? catalog : null)).sort(
     ([, a], [, b]) => b - a,
   );
+  const [requestNote, setRequestNote] = useState<string | null>(null);
+  async function copyVolumeRequest() {
+    if (volumeRequest === null) return;
+    try {
+      await navigator.clipboard.writeText(volumeRequest);
+      setRequestNote(EDITOR_COPY.volumeRequestCopied);
+    } catch {
+      setRequestNote(EDITOR_COPY.volumeRequestNotCopied);
+    }
+  }
   const update = (key: string, change: Partial<ReviewItem>) =>
     onChange(items.map((item) => (item.key === key ? { ...item, ...change } : item)));
   const updateExercise = (item: ReviewItem, index: number, exercise: Exercise) =>
@@ -220,7 +221,7 @@ export function MultiFichaReview({
         </ul>
       )}
       {catalog === "error" && (
-        <p role="status">Não foi possível carregar a tabela. As correspondências não serão aplicadas automaticamente.</p>
+        <p role="status">{EDITOR_COPY.unavailable}</p>
       )}
 
       {items.map((item) => (
@@ -295,6 +296,20 @@ export function MultiFichaReview({
         </table>
       )}
 
+      {volume.length > 0 &&
+        (volumeRequest !== null ? (
+          <div>
+            <p role="status">{EDITOR_COPY.volumeHelperHint}</p>
+            <button type="button" onClick={() => void copyVolumeRequest()}>
+              {EDITOR_COPY.copyVolumeRequest}
+            </button>
+            {requestNote && <p role="status">{requestNote}</p>}
+            <textarea readOnly value={volumeRequest} rows={6} aria-label="Pedido de ajuste de volume" />
+          </div>
+        ) : (
+          <p role="status">{EDITOR_COPY.volumeAllGood}</p>
+        ))}
+
       {errors.length > 0 && (
         <ul role="alert">
           {errors.map((error) => (
@@ -312,7 +327,7 @@ export function MultiFichaReview({
           {busy
             ? "Salvando…"
             : catalog === "loading"
-              ? "Carregando tabela…"
+              ? EDITOR_COPY.loading
               : `Salvar ${included.length} ${included.length === 1 ? "ficha" : "fichas"}`}
         </button>
         <button type="button" disabled={busy} onClick={onCancel}>

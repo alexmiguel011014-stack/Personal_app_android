@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { buildVolumeAdjustMessage } from "./volumeFeedback";
+import type { Exercise } from "./exercise";
+import type { ExerciseCatalog } from "./exerciseCatalog";
+import { buildVolumeAdjustMessage, includedVolume } from "./volumeFeedback";
 
 // GOALS.md §33e — the message that tells the AI where the week landed, without ever showing it the reference.
 
@@ -36,5 +38,36 @@ describe("buildVolumeAdjustMessage", () => {
     for (const forbidden of [/coeficiente/i, /tabela/i, /régua/i, /PDF/, /exerc[ií]cio\b(?! )/i]) {
       expect(withoutNumbers).not.toMatch(forbidden);
     }
+  });
+});
+
+describe("includedVolume", () => {
+  const exercise = (name: string, sets: number, muscleActivation: Record<string, number> | null = null): Exercise => ({
+    name,
+    sets,
+    reps: "10",
+    weight: null,
+    restSeconds: null,
+    notes: null,
+    muscleActivation,
+  });
+  const catalog: ExerciseCatalog = {
+    version: "v",
+    exercises: [{ name: "Exercício Alfa", group: "G", muscles: { "Músculo X": 1, "Músculo Y": 0.5 } }],
+  };
+
+  it("adds up only the treinos that are included, with the catalog's muscles filled in", () => {
+    const items = [
+      { include: true, exercises: [exercise("Exercício Alfa", 4), exercise("Outro", 2, { "Músculo X": 0.5 })] },
+      { include: true, exercises: [exercise("Exercício Alfa", 2)] },
+      { include: false, exercises: [exercise("Exercício Alfa", 10)] },
+    ];
+    expect(includedVolume(items, catalog)).toEqual({ "Músculo X": 7, "Músculo Y": 3 });
+  });
+
+  it("falls back to the muscles the exercises already carry when there is no catalog", () => {
+    expect(includedVolume([{ include: true, exercises: [exercise("Exercício Alfa", 4), exercise("Outro", 2, { "Músculo X": 0.5 })] }], null)).toEqual({
+      "Músculo X": 1,
+    });
   });
 });

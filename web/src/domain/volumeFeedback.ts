@@ -1,4 +1,7 @@
+import type { Exercise } from "./exercise";
+import { applyCatalogActivations, type ExerciseCatalog } from "./exerciseCatalog";
 import { IDEAL_FROM, IDEAL_TO, MINIMUM, volumeBand } from "./volumeBands";
+import { calculateEffectiveVolume } from "./workoutParser";
 
 // GOALS.md §33e — the loop that replaces the AI doing the table's arithmetic. The AI no longer sees the
 // reference table, so the site (which still has it, behind the gate) adds up each muscle's effective sets and,
@@ -7,6 +10,15 @@ import { IDEAL_FROM, IDEAL_TO, MINIMUM, volumeBand } from "./volumeBands";
 // holding the reference.
 
 const SETS = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 1 });
+
+/** The week's effective sets per muscle across the treinos that will be saved, with the catalog's muscles filled in. */
+export function includedVolume(
+  items: ReadonlyArray<{ include: boolean; exercises: readonly Exercise[] }>,
+  catalog: ExerciseCatalog | null,
+): Record<string, number> {
+  const exercises = items.filter((item) => item.include).flatMap((item) => (catalog ? applyCatalogActivations(item.exercises, catalog) : [...item.exercises]));
+  return calculateEffectiveVolume(exercises);
+}
 
 /**
  * One pt-BR message listing the muscles whose weekly effective volume is above the ideal range, or between the

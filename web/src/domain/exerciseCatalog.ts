@@ -127,6 +127,18 @@ export function suggestExercises(catalog: ExerciseCatalog, name: string, limit: 
     .map((scored) => scored.entry);
 }
 
+/**
+ * What the review offers beside an exercise the catalog did not match for certain: the one close match (if any)
+ * first, then the nearest others, at most MAX_SUGGESTIONS in all. An exact or normalized match offers nothing.
+ */
+export function offeredSuggestions(catalog: ExerciseCatalog, name: string): ExerciseCatalogEntry[] {
+  const match = lookupExercise(catalog, name);
+  if (match && match.how !== "close") return [];
+  const first = match ? [match.entry] : [];
+  const rest = suggestExercises(catalog, name).filter((entry) => !first.some((chosen) => chosen.name === entry.name));
+  return [...first, ...rest].slice(0, MAX_SUGGESTIONS);
+}
+
 /** Only non-zero muscles contribute volume and need to travel with a stored exercise. */
 export function catalogActivation(entry: ExerciseCatalogEntry): Record<string, number> {
   return Object.fromEntries(Object.entries(entry.muscles).filter(([, coefficient]) => coefficient !== 0));

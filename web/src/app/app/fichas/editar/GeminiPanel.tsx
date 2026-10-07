@@ -7,6 +7,7 @@ import { describeAiError } from "../../../../domain/aiErrors";
 import { buildAdjustMessage, buildAiUserMessage } from "../../../../domain/aiRequest";
 import { treinosFromAi } from "../../../../domain/aiResponse";
 import { recordUse, usesToday } from "../../../../domain/aiUsage";
+import { EDITOR_COPY } from "../../../../domain/editorCopy";
 import type { PromptStudent } from "../../../../domain/fichaPrompt";
 import type { ParsedWorkout } from "../../../../domain/workoutParser";
 
@@ -24,11 +25,14 @@ export function GeminiPanel({
   student,
   request,
   assets,
+  volumeRequest,
   onResult,
 }: {
   student: PromptStudent;
   request: string;
   assets: PromptAssets | "error" | null;
+  /** GOALS.md section 33e: aggregated totals for the AI to rebalance from (never a coefficient), or null. */
+  volumeRequest: string | null;
   onResult: (workouts: ParsedWorkout[], warnings: string[]) => void;
 }) {
   const chat = useRef<FichaChat | null>(null);
@@ -71,8 +75,7 @@ export function GeminiPanel({
   return (
     <div className="gemini-panel">
       <p>
-        O Gemini monta os treinos aqui mesmo e o site calcula os músculos de cada exercício. O resultado cai na mesma
-        tela de revisão — você confere antes de salvar.
+        {EDITOR_COPY.geminiIntro}
       </p>
       <p className="section-footnote">{PRIVACY_NOTE}</p>
       <p>
@@ -96,8 +99,16 @@ export function GeminiPanel({
             : `${usedToday} ${usedToday === 1 ? "geração" : "gerações"} hoje neste navegador`}
         </span>
       </div>
-      {assets === "error" && <p role="alert">Não foi possível carregar o modelo do pedido. Recarregue a página.</p>}
+      {assets === "error" && <p role="alert">{EDITOR_COPY.promptModelError}</p>}
       {error && <p role="alert">{error}</p>}
+
+      {generated && volumeRequest !== null && (
+        <p>
+          <button type="button" disabled={busy} onClick={() => void run((c) => c.send(volumeRequest), false)}>
+            {EDITOR_COPY.askGeminiVolume}
+          </button>
+        </p>
+      )}
 
       {generated && (
         <p>

@@ -10,12 +10,14 @@ import { loadPromptAssets, type PromptAssets } from "../../../../data/promptAsse
 import type { TrainerStudent } from "../../../../data/students";
 import { loadStudentWorkouts, newWorkout, replaceFicha, saveWorkout, saveWorkouts } from "../../../../data/workouts";
 import type { Exercise } from "../../../../domain/exercise";
+import { EDITOR_COPY } from "../../../../domain/editorCopy";
 import { applyCatalogActivations, type ExerciseCatalog } from "../../../../domain/exerciseCatalog";
 import { currentFicha, historyFicha } from "../../../../domain/fichaHistory";
 import { buildWebFichaPrompt } from "../../../../domain/fichaPrompt";
 import { isKotlinBlank, kotlinTrim } from "../../../../domain/kotlin";
 import { exerciseErrors, tidied } from "../../../../domain/reviewEdit";
 import { calculateEffectiveVolume, parseWorkouts, type ParsedWorkout } from "../../../../domain/workoutParser";
+import { buildVolumeAdjustMessage, includedVolume } from "../../../../domain/volumeFeedback";
 import { applyPaste, manualExercise, workoutErrors, type Workout } from "../../../../domain/workouts";
 import { ConfirmDialog } from "../../../_shared/ConfirmDialog";
 import { useSession } from "../../../SessionProvider";
@@ -272,7 +274,7 @@ function FichaForm({
 
   async function save(now: number) {
     if (!existing && catalog === "loading") {
-      setErrors(["Aguarde o carregamento da tabela de exercícios antes de salvar."]);
+      setErrors([EDITOR_COPY.waitToSave]);
       return;
     }
     const found = workoutErrors(name, exercises);
@@ -304,7 +306,7 @@ function FichaForm({
   async function saveAll(now: number) {
     if (review === null) return;
     if (catalog === "loading") {
-      setReviewErrors(["Aguarde o carregamento da tabela de exercícios antes de salvar."]);
+      setReviewErrors([EDITOR_COPY.waitToSave]);
       return;
     }
     const chosen = review.filter((item) => item.include);
@@ -342,6 +344,9 @@ function FichaForm({
     await Promise.all(Array.from({ length: count }, () => trackActivity(db, trainerId, "fichaSaved", now, timeZone)));
   }
 
+  // GOALS.md section 33e: what to ask the AI when the review's week is outside the ideal range (null: nothing to adjust).
+  const reviewVolumeRequest =
+    review === null ? null : buildVolumeAdjustMessage(includedVolume(review, typeof catalog === "object" ? catalog : null));
   const volumeExercises = catalog !== "loading" && catalog !== "error" ? applyCatalogActivations(exercises, catalog) : exercises;
   const volume = Object.entries(calculateEffectiveVolume(volumeExercises)).sort(([, a], [, b]) => b - a);
 
@@ -385,7 +390,13 @@ function FichaForm({
           aria-labelledby={existing ? undefined : `tab-${tab}`}
         >
           {!existing && tab === "gemini" ? (
-            <GeminiPanel student={student.doc} request={request} assets={assets} onResult={fromGemini} />
+            <GeminiPanel
+              student={student.doc}
+              request={request}
+              assets={assets}
+              volumeRequest={reviewVolumeRequest}
+              onResult={fromGemini}
+            />
           ) : (
             <>
               <p>
@@ -457,6 +468,7 @@ function FichaForm({
           warnings={reviewWarnings}
           errors={reviewErrors}
           busy={busy}
+          volumeRequest={reviewVolumeRequest}
           onChange={setReview}
           onSave={() => void saveAll(Date.now())}
           onCancel={() => {
@@ -495,11 +507,7 @@ function FichaForm({
                       <td data-label="Séries">{exercise.sets}</td>
                       <td data-label="Reps">{exercise.reps}</td>
                       <td data-label="Músculos">
-                        {exercise.muscleActivation
-                          ? Object.entries(exercise.muscleActivation)
-                              .map(([muscle, coefficient]) => `${muscle} ${coefficient}`)
-                              .join(", ")
-                          : "—"}
+                        {volumeExercises[index]?.muscleActivation ? EDITOR_COPY.musclesCalculated : EDITOR_COPY.musclesNone}
                       </td>
                       <td data-label="">
                         <button type="button" onClick={() => setExercises(exercises.filter((_, i) => i !== index))}>
@@ -552,7 +560,7 @@ function FichaForm({
             </ul>
           )}
           <button type="button" className="button-primary" disabled={busy || (!existing && catalog === "loading")} onClick={() => void save(Date.now())}>
-            {busy ? "Salvando…" : !existing && catalog === "loading" ? "Carregando tabela…" : "Salvar ficha"}
+            {busy ? "Salvando…" : !existing && catalog === "loading" ? EDITOR_COPY.loading : "Salvar ficha"}
           </button>
         </>
       )}

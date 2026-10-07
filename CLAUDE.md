@@ -147,6 +147,23 @@ deletes it so the ADM session stays active. When emulators are enabled, the seco
 must connect to the Auth emulator too; the primary Firestore client continues to handle the profile
 and audit write. See `web/src/data/adminCreate.ts` and GOALS.md §26 for the manual App Check caveat.
 
+**The trainer's exercise reference is hidden** (GOALS.md §33, 2026-10-06). The reference behind the muscle
+activations is never shipped, bundled, prompted or named on screen. It lives only in the gated Firestore document
+`appData/exerciseCatalog` (rules v6: an approved active trainer or the ADM may `get` it, nobody can list, only the
+ADM writes), seeded and updated by the owner-run `npm run catalog:publish` (emulators by default, `-- --production`
+for the real project) from the Android asset or `CATALOG_SOURCE`. The web's own prompts (`web/prompt/`: single,
+multi, Gemini system instruction) ask the AI for names + sets × reps only; the site fills the muscles in by name
+(`data/exerciseCatalog.ts` `loadExerciseCatalog`, memory-only, cleared at sign-out) and computes the per-muscle
+volume itself; `domain/volumeFeedback.ts` sends the AI only aggregated totals, never a coefficient. Every sentence
+about the data is in `domain/editorCopy.ts`, and the review offers at most three "Quis dizer…?" names, never the
+list. The guards are `domain/referenceLeak.test.ts`, `npm run check:leak` (in `web-ci.yml` and before the Pages
+upload in `web-deploy.yml`) and `npm run e2e:ficha-privacy`; their sentinels are derived from the source at run time
+(`LEAK_SENTINELS_FILE`, `LEAK_EXTRA_PHRASES`) and they fail, not pass, when there is nothing to guard. **Do not**
+reproduce rows, the ruler, the document's wording or its original file name in any tracked file, comment, doc or test,
+and never put the reference under `public/`. What a static site cannot hide — a signed-in trainer's DevTools, the
+per-muscle totals — only a server (Cloud Function, Blaze) would; that and the public repository/Android asset are
+owner decisions (GOALS.md §33i). `domain/fichaPrompt.ts` `buildFichaPrompt` stays only as the phone's prompt port.
+
 **Branded Firebase e-mails (§32).** The verification, password-reset and e-mail-change mails are Firebase's,
 sent from its own sender; the repo keeps only what the console is told to say — `web/email/*.html` (the exact
 bodies pasted into Authentication → Templates, which has no versioning; `src/domain/authEmailTemplates.ts`
@@ -223,7 +240,7 @@ that branch):
 | `web/src/` | Kotlin original |
 |---|---|
 | `domain/workoutParser.ts` (Smart Paste) | `util/WorkoutParser.kt`; its tests port `WorkoutParserTest.kt` |
-| `domain/fichaPrompt.ts` | `PromptFichaViewModel.buildPrompt`; template and volume table are `app/src/main/assets/`, copied by `scripts/copy-prompt-assets.mjs` |
+| `domain/fichaPrompt.ts` `buildFichaPrompt` | `PromptFichaViewModel.buildPrompt` (the phone's template and table are Android assets; **the web no longer copies or uses them** — §33) |
 | `data/converters.ts` | `data/repository/FirestoreMappers.kt` (including `fieldOrNull`'s leniency) |
 | `domain/exercise.ts` | `data/model/Exercise.kt`, `PerformedSet.kt` (the kotlinx JSON in `exercisesJson`/`performedSetsJson`) |
 | `domain/workouts.ts`, `data/workouts.ts` | `TrainerRepository`'s status derivation; `PromptFichaScreen`/`ManualWorkoutScreen` save and paste rules |
@@ -243,10 +260,10 @@ treino each — it is *added beside* `parseWorkoutName`/`parseExercises`/`applyP
 `WorkoutParser.kt` and must NOT change (the phone still pastes one ficha at a time, and the two must
 agree on it); `data/workouts.ts` `saveWorkouts` writes the treinos in one atomic batch (same stored
 documents as one-by-one); the review screen is `fichas/editar/MultiFichaReview.tsx`. The multi-treino
-prompt (`web/prompt/ficha_prompt_multi.md`) and the Gemini system instruction
-(`web/prompt/ficha_system_gemini.md`) are web-only for the same reason — the shared
-`ficha_prompt_template.md` asks for one ficha — and `scripts/copy-prompt-assets.mjs` copies them next
-to the shared assets.
+prompt (`web/prompt/ficha_prompt_multi.md`), the single-treino prompt used when editing a ficha
+(`ficha_prompt_single.md`) and the Gemini system instruction (`web/prompt/ficha_system_gemini.md`) are web-only —
+the phone's template asks for one ficha with a muscle block per line, which needs the reference table the web
+never shows (§33) — and `scripts/copy-prompt-assets.mjs` copies only these three into `public/prompt/`.
 
 **A student adds extra sets only if the trainer allowed it** (2026-10-01): `users/{uid}.canAddSets`,
 a third trainer-granted flag beside `canSelfAssess`/`canLogBiometrics` — off by default and when the
@@ -319,7 +336,7 @@ Never publish a copy without diffing it against what's live.
 and every set is kept byte for byte as `firestore-rules/versions/vN.rules` (v3 is what was live on 2026-10-05).
 Work that changes the rules bumps N by one for the whole unpublished set — **v4** carried the
 account/plan/billing rules (§29–§30) and the spent-invite read restriction (§31b), **v5** adds the 60-day own-name
-rule (§29g) — and adds `vN.rules`
+rule (§29g), **v6** adds the gated `appData/exerciseCatalog` document (§33) — and adds `vN.rules`
 in the same PR, identical to `firestore.rules`. Until the trainer publishes it, a candidate may still change:
 edit both files together (`cp firestore.rules firestore-rules/versions/vN.rules`) and keep them identical.
 Once a version is published its file is frozen: later changes start the next number. `npm run check:rules-version`

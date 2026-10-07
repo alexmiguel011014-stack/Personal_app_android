@@ -225,7 +225,7 @@ depends on it.
 
 - [x] **AI ficha generation — ground it in the hypertrophy volume reference table (researched
       2026-08-17 via `/newgoal`, user supplied the actual PDF this session:
-      `tabela_volume_direto_indireto_hipertrofia_final_v9.pdf`, 4 pages, ~15.7KB). Implemented
+      the trainer's reference PDF, 4 pages, ~15.7KB). Implemented
       2026-08-17 via `/execgoals` (approach 1, text-embedding — see below): asset created at
       `app/src/main/assets/hypertrophy_volume_reference.md` with the exact content specified;
       `GenerativeAiService` now takes `@ApplicationContext Context` (Hilt), reads the asset once
@@ -335,98 +335,9 @@ depends on it.
            categories per-call based on the student's stated training days, rather than always
            sending the whole table — not needed at today's size, don't build it preemptively.
 
-      **Exact content for `app/src/main/assets/hypertrophy_volume_reference.md`:**
-      ```markdown
-      # Tabela de Volume Direto/Indireto para Hipertrofia
-
-      Estima quanto uma série dura de um exercício conta para a hipertrofia provável de cada
-      músculo (não é % de ativação, não precisa somar 1 na mesma linha). Use para séries de boa
-      qualidade, amplitude adequada, ~0-3 reps em reserva.
-
-      Régua: 1,0 = volume direto/alvo principal · 0,75 = secundário muito forte/quase direto ·
-      0,5 = indireto relevante · 0,25 = participação baixa · 0 = não contar.
-
-      ## Empurrar
-      | Exercício | Peitoral | Delt. ant. | Delt. lat. | Delt. post. | Tríceps geral | Cabeça longa tríceps |
-      |---|---|---|---|---|---|---|
-      | Supino reto | 1 | 0,5 | 0 | 0 | 0,5 | 0,25 |
-      | Supino inclinado | 1 | 0,75 | 0 | 0 | 0,5 | 0,25 |
-      | Paralela inclinada / foco peito | 1 | 0,5 | 0 | 0 | 0,75 | 0,25 |
-      | Paralela vertical / foco tríceps | 0,75 | 0,5 | 0 | 0 | 1 | 0,25 |
-      | Tríceps banco alta amplitude | 0,5 | 0,5 | 0 | 0 | 1 | 0,25 |
-      | Desenvolvimento vertical | 0,25 | 1 | 0,75 | 0 | 0,5 | 0,25 |
-      | Flexão tradicional | 1 | 0,5 | 0 | 0 | 0,5 | 0,25 |
-
-      ## Puxar
-      | Exercício | Latíssimo/redondo maior | Trapézio médio/romboides | Delt. post. | Bíceps | Braquial/braquiorradial |
-      |---|---|---|---|---|---|
-      | Puxada/barra fixa pronada | 1 | 0,25 | 0,25 | 0,5 | 0,5 |
-      | Puxada/barra fixa neutra | 1 | 0,25 | 0,25 | 0,5 | 0,75 |
-      | Puxada/barra fixa supinada | 1 | 0,25 | 0,25 | 0,75 | 0,5 |
-      | Remada neutra cotovelo junto | 1 | 0,75 | 0,5 | 0,5 | 0,75 |
-      | Remada supinada cotovelo junto | 1 | 0,75 | 0,5 | 0,75 | 0,5 |
-      | Remada aberta / high row | 0,5 | 1 | 1 | 0,5 | 0,5 |
-      | Remada australiana pronada | 1 | 1 | 1 | 0,5 | 0,5 |
-      | Remada australiana supinada | 1 | 0,75 | 0,75 | 0,75 | 0,5 |
-
-      ## Quadril e joelho (agachamentos, leg press, unilaterais)
-      | Exercício | Vastos/quadríceps | Reto femoral | Isquios | Glúteo máx. | Glúteo médio | Adutores | Eretor |
-      |---|---|---|---|---|---|---|---|
-      | Agachamento profundo | 1 | 0,25 | 0,25 | 1 | 0,25 | 1 | 0,5 |
-      | Agachamento sumô | 1 | 0,25 | 0,25 | 0,75 | 0,25 | 1 | 0,25 |
-      | Leg press 45° profundo | 1 | 0,25 | 0,25 | 1 | 0 | 0,75 | 0 |
-      | Leg press 180° profundo | 1 | 0,25 | 0,25 | 1 | 0 | 0,75 | 0 |
-      | Leg press 180° unilateral profundo | 1 | 0,25 | 0,25 | 1 | 0,25 | 0,75 | 0 |
-      | Hack squat | 1 | 0,25 | 0 | 0,5 | 0 | 0,5 | 0 |
-      | Afundo padrão | 1 | 0,25 | 0,25 | 0,75 | 0,5 | 0,5 | 0 |
-      | Búlgaro | 1 | 0,25 | 0,5 | 1 | 0,5 | 0,5 | 0 |
-      | Agachamento unilateral | 1 | 0,25 | 0,5 | 1 | 0,75 | 0,5 | 0 |
-      | Step-up médio/alto | 1 | 0,25 | 0,5 | 1 | 0,75 | 0,5 | 0,25 |
-
-      ## Posterior, glúteo e hinges
-      | Exercício | Vastos/quadríceps | Reto femoral | Isquios | Glúteo máx. | Glúteo médio | Adutores | Eretor | Gastrocnêmio |
-      |---|---|---|---|---|---|---|---|---|
-      | Stiff | 0 | 0 | 1 | 0,75 | 0 | 0,25 | 0,75 | 0 |
-      | RDL | 0 | 0 | 1 | 0,75 | 0 | 0,25 | 0,5 | 0 |
-      | Terra convencional | 0,5 | 0 | 0,5 | 0,75 | 0 | 0,25 | 1 | 0 |
-      | Terra sumô | 0,5 | 0 | 0,5 | 0,75 | 0,25 | 1 | 0,5 | 0 |
-      | Elevação pélvica / hip thrust | 0 | 0 | 0,25 | 1 | 0,25 | 0 | 0 | 0 |
-      | Flexão nórdica / Nordic | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0,25 |
-
-      ## Monoarticulares e isolados (alvo 1,0 → outros níveis)
-      | Exercício | 1,0 | 0,75 | 0,5 | 0,25 |
-      |---|---|---|---|---|
-      | Cadeira extensora | Vastos; reto femoral; quadríceps | - | - | - |
-      | Mesa/cadeira flexora | Isquiotibiais | - | - | Gastrocnêmio (se tornozelo dorsifletido) |
-      | Panturrilha em pé | Gastrocnêmio | Sóleo | - | - |
-      | Panturrilha sentada | Sóleo | - | - | Gastrocnêmio |
-      | Elevação lateral | Deltoide lateral | - | - | Delt. ant.; post.; trapézio superior |
-      | Crucifixo inverso | Deltoide posterior | - | Trapézio médio/romboides | - |
-      | Peck deck / crucifixo | Peitoral | - | - | Deltoide anterior |
-      | Rosca supinada / Scott / 45° / Bayesian | Bíceps braquial | - | Braquial | Braquiorradial |
-      | Rosca martelo | Braquial/braquiorradial | Bíceps braquial | - | - |
-      | Rosca reversa | Braquiorradial/braquial | - | - | Bíceps braquial |
-      | Tríceps pushdown | Tríceps geral | Cabeça longa | - | - |
-      | Tríceps overhead/francês | Tríceps geral; cabeça longa | - | - | - |
-      | Tríceps coice/coreano | Tríceps geral | - | Cabeça longa | Delt. post./latíssimo |
-      | Cadeira abdutora | Glúteo médio/mínimo | - | TFL | Glúteo máximo (fibras superiores) |
-      | Cadeira adutora | Adutores | - | - | - |
-      | Pulldown braços estendidos | Latíssimo/redondo maior | - | - | Delt. post.; cabeça longa tríceps; peitoral esternal |
-
-      ## Core, calistenia e peso corporal
-      | Exercício | 1,0 | 0,75 | 0,5 | 0,25 |
-      |---|---|---|---|---|
-      | Abdominal na rodinha | Reto abdominal | Oblíquos; core profundo | - | Serrátil; peitoral; latíssimo; tríceps |
-      | Prancha abdominal tradicional | - | - | Reto abdominal; oblíquos; core profundo | Serrátil; deltoide ant.; eretor; glúteo máx.; reto femoral |
-      | Muscle-up estrito | Latíssimo/redondo maior | Bíceps; peitoral; tríceps geral; antebraço | Braquial/braquiorradial; deltoide ant.; trapézio/romboides; serrátil; core | Deltoide posterior |
-
-      ## Ajustes por RIR (aplicar antes de somar volume)
-      - 0-2 RIR e boa amplitude: valor cheio.
-      - 3-4 RIR: mantém o principal se a série foi desafiadora, mas reduz secundários em 0,25.
-      - 5+ RIR: conta no máximo metade do valor, ou não conta.
-      - Músculo-alvo não foi limitante (ex.: stiff interrompido pela lombar antes dos posteriores):
-        reduza o valor, não conte como 1.
-      ```
+      **Exact content for `app/src/main/assets/hypertrophy_volume_reference.md`:** not reproduced here any more
+      (GOALS.md §33, 2026-10-06: the trainer's reference table is kept out of tracked documents). It exists as that
+      Android asset; the web reads it only through the gated Firestore document `appData/exerciseCatalog`.
 
 **5e. ADM Dashboard — currently 100% mocked (found 2026-08-17, from a real-device screenshot
 after the first successful ADM login).** All three tabs render fixed data that never changes and
@@ -1021,7 +932,7 @@ flowchart TD
       — `Ficha X` header line + `Exercício NxM` lines, GOALS.md's own module docs) with an
       *optional* trailing annotation per exercise line naming which muscles it hits and at what
       coefficient from `hypertrophy_volume_reference.md`, e.g.:
-      `Supino reto 4x10 [Peitoral:1.0, Delt.ant:0.5, Tríceps:0.5]`
+      `Nome do exercício 4x10 [Músculo:coeficiente, Músculo:coeficiente]` (example values omitted — GOALS.md §33)
       Optional so a line with no annotation (or a human pasting a plain WhatsApp-style ficha,
       today's existing use case) still parses exactly as before — this is additive, not a
       breaking format change.
@@ -3962,6 +3873,8 @@ service-worker mode.
 ## 25. Feature — Make creating fichas as easy as possible: several treinos at once, a PDF-backed exercise catalog, and (gated) in-site generation
 (2026-09-30, via `/newgoal`)
 
+**Superseded in part by §33 (2026-10-06):** wherever 25a/25c/25f/25i say the reference table is put in the prompt, is a public catalog file under `public/prompt/`, or can be kept in the trainer's own AI project ("já tenho a tabela" switch), that is no longer true: the prompts carry no table, the public files are gone, the switch was removed, and the catalog is read from the gated Firestore document `appData/exerciseCatalog`. The splitter, the review screen, the Gemini tab and the volume bands of this section stand.
+
 **The request:** "facilitar o máximo possível a criação da ficha." The trainer has a PDF of exercises
 with their partial muscle activations and wants an AI chat inside the site that always has that
 context — but found no free chat, and believes Gemini Flash no longer has a free tier. Second idea:
@@ -4114,8 +4027,7 @@ Suggested: sonnet · medium — already done; kept so the decision can be re-rea
       the most likely explanation of "no longer exists" besides the 2.5 retirement. Done when: the
       two rows of numbers are written here with today's date.
 - [x] **(manual)** The trainer says which PDF this is: is it the source of the table already in
-      `app/src/main/assets/hypertrophy_volume_reference.md` (the "Tabela de Volume Direto/Indireto
-      para Hipertrofia", 5.4 KB, used today in the prompt), or a larger/different document? Put the
+      `app/src/main/assets/hypertrophy_volume_reference.md` (5.4 KB, used today in the prompt), or a larger/different document? Put the
       PDF at `dev/exercise-reference.pdf` (or give the path). Done when: the file is in the repo
       (or the path is written here) and this item says which case it is. Copyright: confirm it is
       fine to keep the PDF in the repository, else keep it outside and commit only the derived table.
@@ -4178,11 +4090,12 @@ feeds a matcher whose mistakes change a student's recorded volume.
       one **and** exactly one catalog entry qualifies; two candidates or none → `null` (ambiguity is
       surfaced to the trainer in 25e, never guessed). Pure, no I/O, catalog passed in.
 - [x] Tests (`exerciseCatalog.test.ts`, plus a test of the build script's parser against the real
-      Markdown file so a future edit that breaks the table fails CI): `Supino reto` → Peitoral 1,
-      Delt. ant. 0.5, Tríceps geral 0.5, Cabeça longa 0.25 (values from the current table); accent and
-      case variants match; `Supino reto com barra` matches by the second attempt; `Supino` alone is
-      ambiguous → null; an exercise not in the table → null; monoarticular row `Elevação lateral`
-      → Deltoide lateral 1, others 0.25; every catalog coefficient is one of 0, 0.25, 0.5, 0.75, 1.
+      Markdown file so a future edit that breaks the table fails CI): an exact name returns the source row
+      with its muscle labels (row values omitted here — GOALS.md §33; §33 moved these tests to a synthetic
+      catalog and kept only a structural check of the real source); accent and case variants match; a name
+      with a known equipment qualifier matches by the second attempt; a bare first word is ambiguous → null;
+      an exercise not in the table → null; a monoarticular row keeps its muscle labels; every catalog
+      coefficient is one of 0, 0.25, 0.5, 0.75, 1.
       Done when: `npm test` passes and the JSON for today's table has the expected entry count (count
       the table rows in the test, do not hard-code a guess).
 
@@ -6463,7 +6376,7 @@ Suggested: sonnet · high — the guard is only as good as its sentinels; a vacu
       **and** in `.github/workflows/web-deploy.yml` (before "Upload Pages artifact", so a leaking site is never
       published). Done when: both workflows run it and fail the job on a hit.
       **Done (2026-10-06):** A "No reference table in the build" step (`npm run check:leak`) after the build in `web-ci.yml`, and after "Build static site" and before "Upload Pages artifact" in `web-deploy.yml`, whose stale "prebuild copies the Android assets" comment was corrected. Not yet run on GitHub Actions (nothing was pushed).
-- [ ] **Convention for future tests:** tests and fixtures from now on use **synthetic** exercises, never real rows
+- [x] **Convention for future tests:** tests and fixtures from now on use **synthetic** exercises, never real rows
       (the one real label left in `exerciseCatalog.test.ts` is replaced). Written in `web/README.md` (33j).
       **Done (2026-10-06):** Partly: the real label in `exerciseCatalog.test.ts` is gone (that file is now synthetic, and the real source is only checked for structure). Clarification found by scanning the repo: parser fixtures (`workoutParser.multi.test.ts`, `__fixtures__/multiFicha.ts`, `aiResponse.test.ts`…) use common gym exercise NAMES in the phone's `Nome SxR` format — names, never coefficients, notes or rows — and stay as they are; the rule is "no coefficients, no prose, no rows". The README sentence is 33j's.
 
@@ -6540,21 +6453,25 @@ Suggested: haiku · low — recording owner decisions with the facts needed to t
 Suggested: haiku · low — documentation so the new rule is findable and the old exposure is trimmed; last because it
 describes what exists.
 
-- [ ] **`CLAUDE.md` → "Web front":** one paragraph — the reference table is never shipped, prompted, bundled or named
+- [x] **`CLAUDE.md` → "Web front":** one paragraph — the reference table is never shipped, prompted, bundled or named
       on screen; it lives only in the gated `appData/exerciseCatalog` document, seeded by `catalog:publish`; prompts
       carry names + sets × reps only and the site fills the muscles; the leak test/scan are the guard; **do not** reproduce
       rows, the ruler or the source's file name in any tracked file. Update the `domain/fichaPrompt.ts` row of the
       hand-port table (the phone's template/table are no longer copied to the web).
-- [ ] **`web/README.md`:** replace lines 24–29 (the "copied to `public/prompt/`; the reference table stays
+      **Done (2026-10-06):** New paragraph "The trainer's exercise reference is hidden (§33)"; the `buildFichaPrompt` row of the hand-port table now says the web no longer copies or uses the phone's template/table; the §25 paragraph says `copy-prompt-assets.mjs` copies only the three web templates; the rules paragraph lists v6.
+- [x] **`web/README.md`:** replace lines 24–29 (the "copied to `public/prompt/`; the reference table stays
       single-sourced" paragraph); add `catalog:publish`, `check:leak`, `e2e:ficha-privacy`, the `CATALOG_SOURCE` and
       `LEAK_SENTINELS_FILE` variables, the synthetic-fixtures convention, and the 33h order; document the rules v6 block.
-- [ ] **`GOALS.md`:** mark §25a/§25c/§25f/§25i wording about the table in the prompt, the public catalog and the
+      **Done (2026-10-06):** The old "copied next to the shared Android assets" paragraph replaced by a section "The trainer's exercise reference stays hidden" (where it lives, `catalog:publish` incl. `--production`, the guards and `LEAK_*` variables, contributor rules incl. the synthetic-fixtures convention, what a static site cannot hide, the rollout order); `e2e:ficha-privacy` added to "Browser tests".
+- [x] **`GOALS.md`:** mark §25a/§25c/§25f/§25i wording about the table in the prompt, the public catalog and the
       "já tenho a tabela" switch as **superseded by §33**; in §5's 2026-08-17 note **delete the pasted table block and
       replace the PDF's file name with "the trainer's reference PDF"** (history keeps them — D1); tick this section's
       items with dates as they are verified and record 33b's decisions and 33h's live results in place.
-- [ ] **Done when:** a reader who has never seen this plan can find, from `CLAUDE.md` or `web/README.md`, where the table
+      **Done (2026-10-06):** A "Superseded in part by §33" note at the top of §25; in §5's 2026-08-17 note the pasted table block is replaced by a pointer and the PDF's file name by "the trainer's reference PDF"; two example lines elsewhere that carried a coefficient row (§15 annotation example, §25c test description) were neutralised. A scan of the tracked docs now finds no ruler, heading or PDF name (only the Android asset's own file name, which is public in the repository and cannot change here — D1). History keeps everything.
+- [x] **Done when:** a reader who has never seen this plan can find, from `CLAUDE.md` or `web/README.md`, where the table
       lives, how to update it, which tests guard it, and what must never be committed; and a search of tracked
       documentation for the ruler, the headings or the PDF's file name finds nothing outside git history.
+      **Done (2026-10-06):** Verified 2026-10-06: `CLAUDE.md` and `web/README.md` say where the reference lives, how to update it (`catalog:publish`), which tests guard it and what must never be committed; a scan of all tracked docs for the source's title, headings and prose openings finds nothing (the document title that was wrapped across two lines in §5 was the last hit and is trimmed), and none names the PDF. What remains is the Android asset's own file name (public in the repository; D1) and generic exercise names in old plan prose.
 
 ## Suggested build order (what blocks what) — revised 2026-08-18
 

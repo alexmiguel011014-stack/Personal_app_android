@@ -23,10 +23,43 @@ chatter are tolerated; a spreadsheet paste works too) and a review screen shows 
 **Salvar N fichas** writes them in one batch. Two ways of asking the AI sit in tabs: **Outra IA** (copy the
 prompt, paste the answer) and **Gemini** (generated here, same review screen).
 
-Web-only files: `prompt/ficha_prompt_multi.md` (the copy-and-paste prompt) and
-`prompt/ficha_system_gemini.md` (the Gemini system instruction), copied to `public/prompt/` by
-`scripts/copy-prompt-assets.mjs` next to the shared Android assets; the reference table
-(`hypertrophy_volume_reference.md`) stays single-sourced in `app/src/main/assets/`.
+Web-only files: `prompt/ficha_prompt_single.md` and `prompt/ficha_prompt_multi.md` (the copy-and-paste
+prompts: one treino when editing a ficha, several for a new one) and `prompt/ficha_system_gemini.md` (the
+Gemini system instruction), copied to `public/prompt/` by `scripts/copy-prompt-assets.mjs` — which also
+**deletes** any older copy of the reference or the phone's template from there. None of them carries the
+trainer's exercise reference (see the next section).
+
+## The trainer's exercise reference stays hidden (GOALS.md §33)
+
+The reference behind each exercise's muscles is **never** a public file, never in the JS bundle, never in a
+prompt, never named on screen. The prompts ask the AI for exercise names plus sets × reps only; the site fills
+in the muscles by name and computes the per-muscle volume itself.
+
+- **Where it lives:** one Firestore document, `appData/exerciseCatalog` (`firestore.rules` v6: an approved,
+  active trainer or the ADM may `get` it; nobody can list the collection; only the ADM writes it). The editor
+  reads it through `src/data/exerciseCatalog.ts` — kept in memory only and dropped at sign-out.
+- **Publishing / updating it (owner-run):** `npm run catalog:publish` writes it to the **local emulators**
+  (account `admin@teste.dev`); `npm run catalog:publish -- --production` writes to the real project after you
+  type its id, signing in with your ADM e-mail and password (typed hidden, never stored or printed). The source
+  is the Android asset unless `CATALOG_SOURCE=<path>` points at a private copy; an unchanged source writes
+  nothing. The emulator seed (`npm run seed:emulators`) writes the same document.
+- **Guards:** `src/domain/referenceLeak.test.ts` (prompts, copy and editor sources), `npm run check:leak` (run
+  it after `npm run build`; also a step in `web-ci.yml` and, before the Pages upload, in `web-deploy.yml`) and
+  `npm run e2e:ficha-privacy`. The sentinels are **derived from the source at run time** (nothing from the
+  reference is written in this repository's tests); with no source they **fail** instead of passing.
+  `LEAK_SENTINELS_FILE=<json {phrases,names}>` replaces the source when it has moved out of the checkout, and
+  `LEAK_EXTRA_PHRASES='a|b'` adds phrases — put the reference's original file name there; it is deliberately not
+  written in any tracked file.
+- **Rules for contributors:** never put rows, the ruler or the document's wording or file name in a tracked
+  file, comment, doc or test fixture (tests use synthetic exercises; parser fixtures may use common exercise
+  *names* in the phone's `Nome SxR` format, never coefficients or prose); never put the reference under
+  `public/`; every sentence about the exercise data lives in `src/domain/editorCopy.ts` so the leak test reads it.
+- **What a static site cannot hide:** a signed-in trainer's own DevTools, and the per-muscle totals and a few
+  "Quis dizer…?" names the review computes. Only a server (a Cloud Function, which needs Blaze) would close that —
+  an owner decision, with the public repository and the Android asset (GOALS.md §33i).
+- **Rollout order (owner):** open the PR → publish rules v6 (diff `v5` → `v6` first) → `npm run catalog:publish --
+  --production` → merge (the deploy replaces the public files) → check `curl -I` on the two old `/prompt/` URLs
+  (404) and a trainer's new-ficha screen. GOALS.md §33h has the whole checklist and the rollback.
 
 **Making the Gemini tab work for real needs the Firebase console** (nothing here can do it from code):
 
@@ -201,6 +234,7 @@ default location); each run re-seeds the emulators first. No dependencies: a sma
 npm run e2e:account -- trainer          # or: student, admin;  add "mobile" for 390 px   (GOALS.md §29)
 npm run e2e:billing                     # trial cap, overdue lock, extension, payment   (GOALS.md §30)
 npm run e2e:admin-focus                 # keyboard focus after every ADM action button  (GOALS.md §29e)
+npm run e2e:ficha-privacy [-- mobile]   # the exercise reference stays out of sight       (GOALS.md §33g)
 ```
 
 Local-only artefact worth knowing: the emulators speak HTTP/1.1, so a single Chrome profile that

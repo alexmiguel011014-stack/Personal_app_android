@@ -5,7 +5,7 @@ name: iOS CI
 # while the KMP migration (§18) is in progress, and shouldn't block the working Android CI.
 on:
   push:
-    branches: [main, feature/kmp-ios]
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:

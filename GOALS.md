@@ -1345,6 +1345,13 @@ flowchart TD
 ## 18. Build — Cross-platform: bring the app to iOS via Kotlin Multiplatform
 (2026-08-21, via `/newgoal /repertoire`)
 
+> **ABANDONED 2026-10-07 (owner decision).** The Android and iOS apps will be rebuilt from scratch later,
+> so this migration is not continued: PR #2 (`feature/kmp-ios`, tip `bac30b23735b2739e9fd2bba11dbbe0190be459c`)
+> and PR #3 (`claude/tarefas-abertas-front-9834f6`, tip `7c96edcf67fd09706e1276d219b1015a3883822f`) were closed
+> unmerged and both remote branches deleted. The commits survive only in local worktrees until those are
+> removed; to restore one, `git push origin <tip>:refs/heads/<name>`. Every mention of those branches in
+> §18–§31 below is history. Items here that are still `[ ]` will not be executed.
+
 The single biggest architecture change to this project since it began — bigger than the §4a
 Firestore migration. Full research feeding this section is in `REPERTOIRE.md` Part 2 (regulatory
 lens: what iOS distribution actually costs/allows in 2026; competitive lens: why KMP fits this

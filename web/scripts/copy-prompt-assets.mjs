@@ -9,12 +9,10 @@
 // only approved trainers can read (data/exerciseCatalog.ts, firestore.rules v6).
 
 import { copyFileSync, mkdirSync, rmSync } from "node:fs";
+import { STALE_FILES, WEB_TEMPLATES } from "./lib/webTemplates.mjs";
 
 const webPrompts = new URL("../prompt/", import.meta.url);
 const to = new URL("../public/prompt/", import.meta.url);
-
-export const WEB_TEMPLATES = ["ficha_prompt_single.md", "ficha_prompt_multi.md", "ficha_system_gemini.md"];
-export const STALE_FILES = ["hypertrophy_volume_reference.md", "ficha_prompt_template.md", "exercise-catalog.json"];
 
 mkdirSync(to, { recursive: true });
 for (const name of STALE_FILES) rmSync(new URL(name, to), { force: true });

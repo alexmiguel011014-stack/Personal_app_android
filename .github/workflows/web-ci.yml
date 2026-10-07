@@ -43,6 +43,10 @@ jobs:
       - name: Build
         run: npm run build
 
+      # GOALS.md section 33f: the built site must not carry the trainer's exercise reference or point at it.
+      - name: No reference table in the build
+        run: npm run check:leak
+
       # The Functions lockfile targets Node 22; keep the Web checks on Node 24 above.
       - name: Set up Node 22 for emulator tests
         uses: actions/setup-node@v4

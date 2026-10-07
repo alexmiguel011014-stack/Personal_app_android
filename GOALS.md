@@ -6345,11 +6345,12 @@ silently break the paste flow, so every change gets a test against the real pars
       phone's template and table from the repository, never at runtime). Done when: nothing under `web/src/app` or
       `web/src/data` references `TABLE_PLACEHOLDER`, `volumeReference` or `SHORT_TABLE_NOTE`.
       **Done (2026-10-06):** `SHORT_TABLE_NOTE`, `shortPrompt`, `buildMultiFichaPrompt` removed; `buildWebFichaPrompt(template, student, request, { deidentify })` added and it **throws** if a template still carries the placeholder; `buildFichaPrompt`/`TABLE_PLACEHOLDER` kept for phone parity with its test untouched. grep finds no use of them under `web/src/app` or `web/src/data`.
-- [ ] **`data/promptAssets.ts` + `scripts/copy-prompt-assets.mjs`**: `PromptAssets` loses `volumeReference` and the
+- [x] **`data/promptAssets.ts` + `scripts/copy-prompt-assets.mjs`**: `PromptAssets` loses `volumeReference` and the
       Android template; gains `singleTemplate`; the script copies **only** the three web-only templates and **deletes
       stale generated files** (`hypertrophy_volume_reference.md`, `ficha_prompt_template.md`, `exercise-catalog.json`)
       from `public/prompt/` so an old local build can never ship them. Done when: after `npm run build`,
       `out/prompt/` holds only the three web-only templates.
+      **Done (2026-10-06):** `PromptAssets` is now `{ singleTemplate, multiTemplate, geminiSystem }`; the script copies only the three web templates (list shared with the build scan in `scripts/lib/webTemplates.mjs`) and deletes the stale reference/template/JSON files. Verified by the build: `out/prompt/` holds exactly those three (33f scan).
 - [x] **`GeminiPanel.tsx`**: the system instruction is `assets.geminiSystem` as is (no splice); the intro and error
       lines stop naming a table. Done when: the instruction string passed to `startFichaChat` is asserted table-free.
       **Done (2026-10-06):** The panel passes `assets.geminiSystem` unchanged to `startFichaChat`; intro and error lines no longer name a table; `aiGemini.test.ts` asserts the instruction file carries no placeholder.
@@ -6436,28 +6437,33 @@ Suggested: sonnet · medium — UI wording and one small pure function with test
 
 Suggested: sonnet · high — the guard is only as good as its sentinels; a vacuous pass is the failure mode to design out.
 
-- [ ] **Sentinel set, `web/scripts/lib/referenceSentinels.mjs`**, derived at run time from the source
+- [x] **Sentinel set, `web/scripts/lib/referenceSentinels.mjs`**, derived at run time from the source
       (`CATALOG_SOURCE` or the Android asset, via `parseExerciseCatalog`): the document title line, the ruler
       paragraph's first sentence, the section headings, the PDF's file name and the words "hypertrophy_volume_reference"
       and "exercise-catalog", plus **every exercise name**. **If the source cannot be read, or yields no sentinels,
       the guard FAILS** (never passes vacuously); `LEAK_SENTINELS_FILE` can supply a list when the source has moved.
-- [ ] **Leak unit test** (`domain/referenceLeak.test.ts`): every text the product can put in front of a user or send to
+      **Done (2026-10-06):** `loadSentinels()` derives, at run time from the source, the title and every heading of 3+ words, the first five words of each prose line, and every exercise name (50 names, 18 phrases today), plus two file-name phrases; it THROWS when the source is missing/empty or yields nothing (proved in the unit test). `LEAK_SENTINELS_FILE` replaces the source; deviation: the reference's original file name is not written in any tracked file — the owner supplies it with `LEAK_EXTRA_PHRASES=a|b` (documented in 33j). `findLeaks`/`isLeak` never return the matched text.
+- [x] **Leak unit test** (`domain/referenceLeak.test.ts`): every text the product can put in front of a user or send to
       an AI — the three web templates, `buildWebFichaPrompt` for both flows, the Gemini system instruction,
       `buildAiUserMessage`, `buildAdjustMessage`, `buildVolumeAdjustMessage`, and the user-visible strings of the editor,
       review and Gemini components (exported constants, not scraped JSX) — contains **no sentinel**, no
       "tabela de referência", "coeficiente", "régua", "PDF", and, from the exercise names, **no match at all in the
       templates' examples** and **fewer than 3 distinct names** anywhere else (a lone generic word like "Stiff" in an
       example is not a leak; a pasted list is). Done when: it fails if a row of the real table is pasted into any template.
-- [ ] **Build scan, `web/scripts/check-no-reference-leak.mjs` (`npm run check:leak`)** over `web/out/`: fails when any
+      **Done (2026-10-06):** 37 tests: the three templates, the built prompts (multi, single, deidentified, Gemini user message, follow-up, volume request), every `EDITOR_COPY` sentence and the source of the four editor components carry no phrase, no name (templates/prompts/copy tolerate 0, components fewer than 3) and none of the naming words; it catches a pasted prose line, heading or three names and is not trigger-happy about one. Proved to discriminate: appending 1.5 KB of the real table to the multi template made 3 tests fail; restored, 37/37.
+- [x] **Build scan, `web/scripts/check-no-reference-leak.mjs` (`npm run check:leak`)** over `web/out/`: fails when any
       file (HTML, JS, JSON, CSS, `.md`, `.map`) contains a title/ruler/heading/file-name sentinel, or **3+ distinct
       exercise names**, or when `out/prompt/` holds anything but the web-only templates, or when any source map exists.
       Prints file + sentinel kind, never the matched table text. Done when: seeding `web/public/prompt/` with a copy
       of the old table makes it fail (prove it once, then undo), and a clean build passes.
-- [ ] **CI wiring:** a "No reference table in the build" step after `npm run build` in `.github/workflows/web-ci.yml`
+      **Done (2026-10-06):** Clean build (`NEXT_PUBLIC_BASE_PATH=/Personal_app_android`): 175 text files scanned, `out/prompt/` holds exactly the three web templates, exit 0 (this also verifies 33c's `copy-prompt-assets` item). Proved to fail: with the old table, a catalog JSON and a source map dropped into `out/`, it listed 6 problems and exited 1; cleaned, exit 0. Never prints matched text.
+- [x] **CI wiring:** a "No reference table in the build" step after `npm run build` in `.github/workflows/web-ci.yml`
       **and** in `.github/workflows/web-deploy.yml` (before "Upload Pages artifact", so a leaking site is never
       published). Done when: both workflows run it and fail the job on a hit.
+      **Done (2026-10-06):** A "No reference table in the build" step (`npm run check:leak`) after the build in `web-ci.yml`, and after "Build static site" and before "Upload Pages artifact" in `web-deploy.yml`, whose stale "prebuild copies the Android assets" comment was corrected. Not yet run on GitHub Actions (nothing was pushed).
 - [ ] **Convention for future tests:** tests and fixtures from now on use **synthetic** exercises, never real rows
       (the one real label left in `exerciseCatalog.test.ts` is replaced). Written in `web/README.md` (33j).
+      **Done (2026-10-06):** Partly: the real label in `exerciseCatalog.test.ts` is gone (that file is now synthetic, and the real source is only checked for structure). Clarification found by scanning the repo: parser fixtures (`workoutParser.multi.test.ts`, `__fixtures__/multiFicha.ts`, `aiResponse.test.ts`…) use common gym exercise NAMES in the phone's `Nome SxR` format — names, never coefficients, notes or rows — and stay as they are; the rule is "no coefficients, no prose, no rows". The README sentence is 33j's.
 
 **33g. Browser verification**
 

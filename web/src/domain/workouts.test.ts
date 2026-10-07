@@ -12,7 +12,7 @@ const ficha: Workout = {
   createdAt: 1,
   status: "draft",
   assignedAt: null,
-  archivedAt: null,
+  ficha: null,
 };
 
 const supino: Exercise = {
@@ -38,18 +38,6 @@ describe("withDerivedStatus — SqlDelightTrainerRepository's rule", () => {
     const off = withDerivedStatus({ ...ficha, isActive: false, status: "assigned", assignedAt: 10 }, 50);
     expect(off).toMatchObject({ status: "draft", assignedAt: null });
     expect(withDerivedStatus({ ...off, isActive: true }, 70)).toMatchObject({ status: "assigned", assignedAt: 70 });
-  });
-});
-
-describe("withDerivedStatus — GOALS.md §28 history", () => {
-  it("activating a treino takes it out of the history", () => {
-    const inHistory = { ...ficha, isActive: false, status: "draft" as const, archivedAt: 90 };
-    expect(withDerivedStatus({ ...inHistory, isActive: true }, 100)).toMatchObject({ isActive: true, archivedAt: null });
-  });
-
-  it("saving an inactive treino leaves its mark alone", () => {
-    const inHistory = { ...ficha, isActive: false, status: "draft" as const, archivedAt: 90 };
-    expect(withDerivedStatus(inHistory, 100).archivedAt).toBe(90);
   });
 });
 

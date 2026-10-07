@@ -2,9 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { buildCatalog, readCatalogSource } from "../../scripts/lib/catalogSource.mjs";
 import { findLeaks, isLeak, loadSentinels, normalizeForScan } from "../../scripts/lib/referenceSentinels.mjs";
-import { DEFAULT_REQUEST, buildAdjustMessage, buildAiUserMessage } from "./aiRequest";
 import { EDITOR_COPY } from "./editorCopy";
-import { buildWebFichaPrompt, type PromptStudent } from "./fichaPrompt";
 import { buildVolumeAdjustMessage } from "./volumeFeedback";
 
 // GOALS.md section 33f - the trainer's reference table must never reach a reader or an AI. This is the unit-level guard
@@ -16,28 +14,12 @@ const sentinels = loadSentinels();
 const here = (path: string) => new URL(path, import.meta.url);
 const read = (path: string) => readFileSync(here(path), "utf8");
 
-const maria: PromptStudent = {
-  name: "Maria Souza",
-  gender: "Feminino",
-  goal: "Hipertrofia",
-  experienceLevel: "Iniciante",
-  medicalNotes: "Hérnia de disco L4-L5",
-  trainingDays: ["Segunda", "Quarta", "Sexta"],
-};
-
 // What a person or an AI could be shown, as text.
 const templates = {
-  "ficha_prompt_multi.md": read("../../prompt/ficha_prompt_multi.md"),
-  "ficha_prompt_single.md": read("../../prompt/ficha_prompt_single.md"),
-  "ficha_system_gemini.md": read("../../prompt/ficha_system_gemini.md"),
+  "ficha_prompt_format.md": read("../../prompt/ficha_prompt_format.md"),
 };
 
 const prompts: Record<string, string> = {
-  "multi prompt": buildWebFichaPrompt(templates["ficha_prompt_multi.md"], maria, "Monte 3 treinos."),
-  "multi prompt, deidentified": buildWebFichaPrompt(templates["ficha_prompt_multi.md"], maria, "x", { deidentify: true }),
-  "single prompt": buildWebFichaPrompt(templates["ficha_prompt_single.md"], maria, "foco em pernas"),
-  "gemini user message": buildAiUserMessage(maria, DEFAULT_REQUEST, true),
-  "gemini follow-up": buildAdjustMessage("troque um exercício"),
   "volume request": buildVolumeAdjustMessage({ "Músculo A": 24, "Músculo B": 8, "Músculo C": 15 }) ?? "",
 };
 
@@ -46,7 +28,7 @@ const copy: Record<string, string> = Object.fromEntries(
 );
 
 const componentSources: Record<string, string> = Object.fromEntries(
-  ["FichaEditor.tsx", "GeminiPanel.tsx", "MultiFichaReview.tsx", "RequestBuilder.tsx"].map((file) => [
+  ["FichaEditor.tsx", "TreinosEditor.tsx"].map((file) => [
     file,
     read(`../app/app/fichas/editar/${file}`),
   ]),

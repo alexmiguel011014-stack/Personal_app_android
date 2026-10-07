@@ -56,17 +56,20 @@ describe("includedVolume", () => {
     exercises: [{ name: "Exercício Alfa", group: "G", muscles: { "Músculo X": 1, "Músculo Y": 0.5 } }],
   };
 
-  it("adds up only the treinos that are included, with the catalog's muscles filled in", () => {
+  it("adds up every treino of the ficha, with the catalog's muscles filled in", () => {
     const items = [
-      { include: true, exercises: [exercise("Exercício Alfa", 4), exercise("Outro", 2, { "Músculo X": 0.5 })] },
-      { include: true, exercises: [exercise("Exercício Alfa", 2)] },
-      { include: false, exercises: [exercise("Exercício Alfa", 10)] },
+      { exercises: [exercise("Exercício Alfa", 4), exercise("Outro", 2, { "Músculo X": 0.5 })] },
+      { exercises: [exercise("Exercício Alfa", 2)] },
     ];
     expect(includedVolume(items, catalog)).toEqual({ "Músculo X": 7, "Músculo Y": 3 });
   });
 
+  it("is empty for a ficha with no treino", () => {
+    expect(includedVolume([], catalog)).toEqual({});
+  });
+
   it("falls back to the muscles the exercises already carry when there is no catalog", () => {
-    expect(includedVolume([{ include: true, exercises: [exercise("Exercício Alfa", 4), exercise("Outro", 2, { "Músculo X": 0.5 })] }], null)).toEqual({
+    expect(includedVolume([{ exercises: [exercise("Exercício Alfa", 4), exercise("Outro", 2, { "Músculo X": 0.5 })] }], null)).toEqual({
       "Músculo X": 1,
     });
   });

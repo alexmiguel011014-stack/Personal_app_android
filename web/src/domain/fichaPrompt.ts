@@ -6,8 +6,9 @@ import { kotlinTrimIndent } from "./kotlin";
 // already use and pastes the reply back into Smart Paste (workoutParser.ts).
 //
 // This function mirrors the PHONE's prompt (the template and the table it splices in are Android assets). It is kept
-// for parity and for its test, which reads those assets from the repository; the web itself never puts the table in
-// front of anyone any more (GOALS.md §33) and builds its prompts with buildWebFichaPrompt below.
+// for parity and for its test, which reads those assets from the repository. The web itself builds no prompt any more:
+// it offers one static "Prompt de formatação de ficha" (web/prompt/, GOALS.md §34), and never puts the table in front
+// of anyone (§33).
 
 export const TABLE_PLACEHOLDER = "$TABLE_PLACEHOLDER$";
 
@@ -36,49 +37,6 @@ export function buildFichaPrompt(
   const fullTemplate = template.split(TABLE_PLACEHOLDER).join(volumeReference);
   const profile = student === null ? "" : profileBlock(student);
   return `${fullTemplate}${profile}\n\nPedido do Professor: ${request}`;
-}
-
-// ---------------------------------------------------------------------------------------------
-// GOALS.md §25f/§33 — the web's own prompts. WEB-ONLY: the phone's template asks for one ficha with a
-// muscle block per line, which only makes sense with the reference table in the prompt; the web never
-// puts that table in front of a reader or an AI (§33), so its templates (web/prompt/) ask for names and
-// sets x reps only, and the site fills in the muscles itself. buildFichaPrompt above, which mirrors the
-// phone's, is not changed.
-
-export interface WebPromptOptions {
-  /** Send "Aluno" and "não informado" instead of the student's name and medical notes. */
-  deidentify?: boolean;
-}
-
-/**
- * The student without the two fields that identify or expose them — name and medical notes. When
- * there ARE notes the AI is told they exist (so it stays cautious) without being given their text.
- */
-export function deidentified(student: PromptStudent): PromptStudent {
-  const hasNotes = student.medicalNotes.trim() !== "";
-  return {
-    ...student,
-    name: "Aluno",
-    medicalNotes: hasNotes ? "há restrições registradas pelo personal (texto não enviado por privacidade)" : "não informado",
-  };
-}
-
-/**
- * A web template (single- or multi-treino) + the student's profile + the request. Refuses a template that
- * still carries the table placeholder: splicing "nothing" into it would hide a regression instead of
- * failing it (GOALS.md §33f).
- */
-export function buildWebFichaPrompt(
-  template: string,
-  student: PromptStudent | null,
-  request: string,
-  options: WebPromptOptions = {},
-): string {
-  if (template.includes(TABLE_PLACEHOLDER)) {
-    throw new Error("A web prompt template must not carry the table placeholder.");
-  }
-  const who = student !== null && options.deidentify ? deidentified(student) : student;
-  return buildFichaPrompt(template, "", who, request);
 }
 
 function profileBlock(student: PromptStudent): string {

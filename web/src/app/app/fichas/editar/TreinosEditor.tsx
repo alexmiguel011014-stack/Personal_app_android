@@ -5,25 +5,30 @@ import type { Exercise } from "../../../../domain/exercise";
 import { parseSetsText, renamedExercise } from "../../../../domain/reviewEdit";
 import { EDITOR_COPY } from "../../../../domain/editorCopy";
 import { catalogActivation, lookupExercise, offeredSuggestions, type ExerciseCatalog } from "../../../../domain/exerciseCatalog";
-import { includedVolume } from "../../../../domain/volumeFeedback";
+import { buildVolumeAdjustMessage, includedVolume } from "../../../../domain/volumeFeedback";
 import { volumeBand } from "../../../../domain/volumeBands";
 import { manualExercise } from "../../../../domain/workouts";
 
-// GOALS.md §25e: when one pasted answer holds several treinos ("Treino A", "B", "C"…), this is the
-// review the trainer gets before anything is saved — what was found, and for each treino a name, an
-// "incluir" box, every exercise editable (name, séries, reps) and removable, a form to add one, and the
-// week's effective volume across the treinos that will be saved. One click then saves them all
-// (data/workouts.ts `saveWorkouts`, a single atomic batch).
+// GOALS.md §34 (grown from §25e's review of several pasted treinos): the treinos of the ficha being made or edited.
+// For each treino a name, every exercise editable (name, séries, reps) and removable, a form to add one and a button
+// to remove the whole treino; a button to add an empty treino; and the week's effective volume across all of them,
+// with the "adjust the volume" request for the trainer's own AI. "Salvar ficha" (FichaEditor) then writes the whole
+// ficha in one batch (data/workouts.ts `createFicha` / `saveFicha`).
 //
-// Editing here cannot disturb the reading of the pasted text: that happened once, when it was pasted;
-// this screen works on plain data and "Salvar" stores what it shows (domain/reviewEdit.ts has the
-// rules). Pasting again, or asking Gemini to adjust, replaces what is on screen.
+// Editing here cannot disturb the reading of the pasted text: that happened once, when it was pasted; this screen
+// works on plain data and saving stores what it shows (domain/reviewEdit.ts has the rules). Pasting again replaces
+// what is on screen.
 
-export interface ReviewItem {
+export interface TreinoItem {
   key: string;
+  /** The stored treino's id when editing a ficha; null for a treino made or pasted in this editor. */
+  id: string | null;
   name: string;
-  include: boolean;
   exercises: Exercise[];
+}
+
+export function newTreinoItem(): TreinoItem {
+  return { key: crypto.randomUUID(), id: null, name: "", exercises: [] };
 }
 
 const VOLUME = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
@@ -166,32 +171,19 @@ function AddExercise({ treino, onAdd }: { treino: string; onAdd: (exercise: Exer
   );
 }
 
-export function MultiFichaReview({
+export function TreinosEditor({
   items,
   catalog,
-  warnings,
-  errors,
-  busy,
-  volumeRequest,
   onChange,
-  onSave,
-  onCancel,
 }: {
-  items: readonly ReviewItem[];
+  items: readonly TreinoItem[];
   catalog: ExerciseCatalog | "loading" | "error";
-  warnings: readonly string[];
-  errors: readonly string[];
-  busy: boolean;
-  /** GOALS.md section 33e: the "adjust the volume" request for the AI, or null when the week is already in range. */
-  volumeRequest: string | null;
-  onChange: (items: ReviewItem[]) => void;
-  onSave: () => void;
-  onCancel: () => void;
+  onChange: (items: TreinoItem[]) => void;
 }) {
-  const included = items.filter((item) => item.include);
-  const volume = Object.entries(includedVolume(items, typeof catalog === "object" ? catalog : null)).sort(
-    ([, a], [, b]) => b - a,
-  );
+  const totals = includedVolume(items, typeof catalog === "object" ? catalog : null);
+  const volume = Object.entries(totals).sort(([, a], [, b]) => b - a);
+  // GOALS.md section 33e: what to ask the trainer's own AI when the week is outside the ideal range (null: nothing to adjust).
+  const volumeRequest = buildVolumeAdjustMessage(totals);
   const [requestNote, setRequestNote] = useState<string | null>(null);
   async function copyVolumeRequest() {
     if (volumeRequest === null) return;
@@ -202,28 +194,16 @@ export function MultiFichaReview({
       setRequestNote(EDITOR_COPY.volumeRequestNotCopied);
     }
   }
-  const update = (key: string, change: Partial<ReviewItem>) =>
+  const update = (key: string, change: Partial<TreinoItem>) =>
     onChange(items.map((item) => (item.key === key ? { ...item, ...change } : item)));
-  const updateExercise = (item: ReviewItem, index: number, exercise: Exercise) =>
+  const updateExercise = (item: TreinoItem, index: number, exercise: Exercise) =>
     update(item.key, { exercises: item.exercises.map((current, i) => (i === index ? exercise : current)) });
 
   return (
-    <section className="review" aria-labelledby="review-title">
-      <h2 id="review-title">Encontrei {items.length} treinos</h2>
-      <p>
-        {items.map((item) => `${item.name} (${item.exercises.length})`).join(" · ")}. Confira e ajuste o que precisar —
-        nome do treino, exercícios, séries e repetições — ou tire o que não quiser. Cada treino vira uma ficha do aluno.
-      </p>
-      {warnings.length > 0 && (
-        <ul role="status">
-          {warnings.map((warning) => (
-            <li key={warning}>{warning}</li>
-          ))}
-        </ul>
-      )}
-      {catalog === "error" && (
-        <p role="status">{EDITOR_COPY.unavailable}</p>
-      )}
+    <div className="treinos">
+      <h3>Treinos ({items.length})</h3>
+      {catalog === "error" && <p role="status">{EDITOR_COPY.unavailable}</p>}
+      {items.length === 0 && <p>Nenhum treino ainda. Cole a resposta da IA acima ou adicione um treino.</p>}
 
       {items.map((item) => (
         <article className="review-card" key={item.key}>
@@ -232,14 +212,13 @@ export function MultiFichaReview({
               Nome do treino
               <input value={item.name} onChange={(e) => update(item.key, { name: e.target.value })} />
             </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={item.include}
-                onChange={(e) => update(item.key, { include: e.target.checked })}
-              />
-              Incluir
-            </label>
+            <button
+              type="button"
+              aria-label={`Remover treino ${item.name || "sem nome"}`}
+              onClick={() => onChange(items.filter((other) => other.key !== item.key))}
+            >
+              Remover treino
+            </button>
           </div>
           {item.exercises.length === 0 ? (
             <p>Sem exercícios.</p>
@@ -273,7 +252,13 @@ export function MultiFichaReview({
         </article>
       ))}
 
-      <h3>Volume efetivo por músculo (soma dos treinos incluídos)</h3>
+      <p>
+        <button type="button" onClick={() => onChange([...items, newTreinoItem()])}>
+          Adicionar treino
+        </button>
+      </p>
+
+      <h3>Volume efetivo por músculo (soma dos treinos)</h3>
       {volume.length === 0 ? (
         <p>Nenhum exercício traz ativação muscular, então não há volume para somar.</p>
       ) : (
@@ -310,32 +295,7 @@ export function MultiFichaReview({
         ) : (
           <p role="status">{EDITOR_COPY.volumeAllGood}</p>
         ))}
-
-      {errors.length > 0 && (
-        <ul role="alert">
-          {errors.map((error) => (
-            <li key={error}>{error}</li>
-          ))}
-        </ul>
-      )}
-      <div className="review-actions">
-        <button
-          type="button"
-          className="button-primary"
-          disabled={busy || included.length === 0 || catalog === "loading"}
-          onClick={onSave}
-        >
-          {busy
-            ? "Salvando…"
-            : catalog === "loading"
-              ? EDITOR_COPY.loading
-              : `Salvar ${included.length} ${included.length === 1 ? "ficha" : "fichas"}`}
-        </button>
-        <button type="button" disabled={busy} onClick={onCancel}>
-          Voltar ao importador
-        </button>
-      </div>
-    </section>
+    </div>
   );
 }
 

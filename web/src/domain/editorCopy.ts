@@ -19,15 +19,10 @@ export const EDITOR_COPY = {
   /** The editor's per-exercise "Músculos" cell: a state, never the coefficients. */
   musclesCalculated: "calculados",
   musclesNone: "—",
-  /** The Gemini tab. */
-  geminiIntro:
-    "O Gemini monta os treinos aqui mesmo e o site calcula os músculos de cada exercício. O resultado cai na mesma tela de revisão — você confere antes de salvar.",
-  promptModelError: "Não foi possível carregar o modelo do pedido. Recarregue a página.",
   /** The volume helper. */
   volumeHelperHint: "O volume de alguns músculos está fora da faixa ideal.",
   copyVolumeRequest: "Copiar pedido de ajuste de volume",
   volumeRequestCopied: "Pedido copiado! Cole na mesma conversa com a sua IA.",
   volumeRequestNotCopied: "Não foi possível copiar — selecione o texto abaixo e copie à mão.",
-  askGeminiVolume: "Ajustar volume com o Gemini",
   volumeAllGood: "Volume dentro da faixa ideal — nada a ajustar.",
 } as const;

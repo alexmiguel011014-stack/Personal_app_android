@@ -11,12 +11,12 @@ import { calculateEffectiveVolume } from "./workoutParser";
 
 const SETS = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 1 });
 
-/** The week's effective sets per muscle across the treinos that will be saved, with the catalog's muscles filled in. */
+/** The week's effective sets per muscle across the ficha's treinos, with the catalog's muscles filled in. */
 export function includedVolume(
-  items: ReadonlyArray<{ include: boolean; exercises: readonly Exercise[] }>,
+  items: ReadonlyArray<{ exercises: readonly Exercise[] }>,
   catalog: ExerciseCatalog | null,
 ): Record<string, number> {
-  const exercises = items.filter((item) => item.include).flatMap((item) => (catalog ? applyCatalogActivations(item.exercises, catalog) : [...item.exercises]));
+  const exercises = items.flatMap((item) => (catalog ? applyCatalogActivations(item.exercises, catalog) : [...item.exercises]));
   return calculateEffectiveVolume(exercises);
 }
 

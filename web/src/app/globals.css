@@ -337,7 +337,9 @@ button.day-cell.selected:hover { background: var(--leaf); }
 /* ---------- Student area ---------- */
 
 .workout-card { margin: 14px 0; padding: 18px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--white); }
-.main-content .workout-card h2 { margin-bottom: 10px; font-size: 25px; }
+.ficha-group { margin-top: 26px; }
+.main-content .ficha-group > h2 { margin-bottom: 4px; }
+.main-content .workout-card h3 { margin-bottom: 10px; color: var(--forest); font-size: 25px; letter-spacing: 0; line-height: 1.2; }
 .workout-card .button { width: 100%; }
 .workout-card ol { padding-left: 20px; }
 .set-row { display: grid; grid-template-columns: 64px minmax(0, 1fr) minmax(0, 1fr); align-items: end; gap: 10px; }
@@ -358,7 +360,7 @@ dialog.confirm::backdrop { background: #12161c8c; }
 .confirm-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 18px; }
 .confirm-actions button { min-width: 96px; }
 
-/* ---------- Ficha editor: review of several treinos pasted at once (GOALS.md §25e) ---------- */
+/* ---------- Ficha editor: the treinos of a ficha (GOALS.md §25e, §34) ---------- */
 
 .review { margin-top: 26px; padding: 22px; border: 1px solid #d9d4cc; border-radius: var(--radius); background: var(--white); }
 .review > :last-child { margin-bottom: 0; }
@@ -382,14 +384,6 @@ dialog.confirm::backdrop { background: #12161c8c; }
 .review-add > label:not(:first-child) { flex: 0 0 96px; }
 .review-add p[role="alert"] { flex: 1 1 100%; margin: 0; }
 .review-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
-
-/* The two ways of asking an AI (GOALS.md §25i): copy a prompt, or Gemini here. */
-.tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 16px; border-bottom: 1px solid var(--line); }
-.tabs [role="tab"] { min-height: 46px; margin-bottom: -1px; padding: 0 18px; border: 1px solid transparent; border-bottom: 0; border-radius: var(--radius) 8px 0 0; background: transparent; color: var(--muted); font-weight: 600; }
-.tabs [role="tab"]:hover { background: var(--tint); }
-.tabs [role="tab"][aria-selected="true"] { border-color: var(--line); background: var(--white); color: var(--forest); box-shadow: inset 0 3px var(--leaf-dark); }
-.gemini-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-bottom: 14px; }
-.gemini-panel .section-footnote { margin-top: 0; }
 
 /* ---------- Public pages: landing, sign-in, invite ---------- */
 

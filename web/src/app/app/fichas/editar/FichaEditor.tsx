@@ -2,78 +2,73 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState } from "react";
 import { getFirebase } from "../../../../data/firebase";
 import { trackActivity } from "../../../../data/activity";
 import { loadExerciseCatalog } from "../../../../data/exerciseCatalog";
-import { loadPromptAssets, type PromptAssets } from "../../../../data/promptAssets";
+import { loadFormatPrompt } from "../../../../data/promptAssets";
 import type { TrainerStudent } from "../../../../data/students";
-import { loadStudentWorkouts, newWorkout, replaceFicha, saveWorkout, saveWorkouts } from "../../../../data/workouts";
+import { FichaNotFound, createFicha, loadStudentFichas, saveFicha } from "../../../../data/workouts";
+import { formatDate, localDate } from "../../../../domain/dates";
 import type { Exercise } from "../../../../domain/exercise";
 import { EDITOR_COPY } from "../../../../domain/editorCopy";
 import { applyCatalogActivations, type ExerciseCatalog } from "../../../../domain/exerciseCatalog";
-import { currentFicha, historyFicha } from "../../../../domain/fichaHistory";
-import { buildWebFichaPrompt } from "../../../../domain/fichaPrompt";
-import { isKotlinBlank, kotlinTrim } from "../../../../domain/kotlin";
-import { exerciseErrors, tidied } from "../../../../domain/reviewEdit";
-import { calculateEffectiveVolume, parseWorkouts, type ParsedWorkout } from "../../../../domain/workoutParser";
-import { buildVolumeAdjustMessage, includedVolume } from "../../../../domain/volumeFeedback";
-import { applyPaste, manualExercise, workoutErrors, type Workout } from "../../../../domain/workouts";
+import { LEGACY_FICHA_NAME, MAX_FICHAS, fichaSaveErrors, type Ficha } from "../../../../domain/fichas";
+import { kotlinTrim } from "../../../../domain/kotlin";
+import { tidied } from "../../../../domain/reviewEdit";
+import { parseWorkouts } from "../../../../domain/workoutParser";
 import { ConfirmDialog } from "../../../_shared/ConfirmDialog";
 import { useSession } from "../../../SessionProvider";
 import { useTrainerData } from "../../useTrainerData";
-import { GeminiPanel } from "./GeminiPanel";
-import { MultiFichaReview, type ReviewItem } from "./MultiFichaReview";
-import { RequestBuilder } from "./RequestBuilder";
+import { TreinosEditor, type TreinoItem } from "./TreinosEditor";
 
-// GOALS.md §23g: building a ficha — PromptFichaScreen and ManualWorkoutScreen on one page, since a
-// desktop has the room: copy the §15 prompt into any AI app, paste the reply into Smart Paste
-// (name and exercises fill in), adjust by hand, save. Texts follow the Android screens.
+// GOALS.md §34: making or editing a ficha — one screen for both. Top to bottom: the "Prompt de formatação de ficha"
+// (a static text the trainer copies into their own AI), the Importador Inteligente (paste the AI's answer; each
+// "Treino A/B/C…" title becomes a treino below), then the ficha itself: its name and its treinos. Nothing is written
+// until "Salvar ficha"; then the whole ficha goes in one batch (data/workouts.ts). The site calls no AI.
 
-const VOLUME = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-
-/** GOALS.md §28: new treinos waiting for the answer to "Substituir a ficha atual?". */
-interface ReplaceQuestion {
-  current: Workout[];
-  history: Workout[];
-  workouts: Workout[];
+/** A ficha being saved as new while the student already has the most the site keeps (MAX_FICHAS). */
+interface OldestQuestion {
+  /** The fichas that saving removes: the oldest one (oldest first would also list extras, which never happens in practice). */
+  going: Ficha[];
+  treinos: { name: string; exercises: Exercise[] }[];
   now: number;
-  /** From the several-treinos review (its errors show there) rather than the single form. */
-  multi: boolean;
 }
+
+type FormatPrompt = { status: "loading" } | { status: "error" } | { status: "ready"; text: string };
 
 export function FichaEditor() {
   const { session } = useSession();
   const params = useSearchParams();
   const studentId = params.get("aluno") ?? "";
-  const workoutId = params.get("id");
+  const fichaId = params.get("ficha");
   if (session.status !== "signedIn") return null;
-  return <Loader trainerId={session.uid} studentId={studentId} workoutId={workoutId} />;
+  return <Loader trainerId={session.uid} studentId={studentId} fichaId={fichaId} />;
 }
 
 function Loader({
   trainerId,
   studentId,
-  workoutId,
+  fichaId,
 }: {
   trainerId: string;
   studentId: string;
-  workoutId: string | null;
+  fichaId: string | null;
 }) {
   const { data } = useTrainerData(trainerId);
-  const [existing, setExisting] = useState<Workout | null | undefined>(workoutId ? undefined : null);
+  const [existing, setExisting] = useState<Ficha | null | undefined>(fichaId ? undefined : null);
 
   useEffect(() => {
-    if (!workoutId) return;
+    if (!fichaId) return;
     let cancelled = false;
-    loadStudentWorkouts(getFirebase().db, trainerId, studentId).then(
-      (workouts) => !cancelled && setExisting(workouts.find((w) => w.id === workoutId) ?? null),
+    loadStudentFichas(getFirebase().db, trainerId, studentId).then(
+      (fichas) => !cancelled && setExisting(fichas.find((f) => f.id === fichaId) ?? null),
       () => !cancelled && setExisting(null),
     );
     return () => {
       cancelled = true;
     };
-  }, [trainerId, studentId, workoutId]);
+  }, [trainerId, studentId, fichaId]);
 
   if (data.status === "loading" || existing === undefined) return <p className="loading">Carregando…</p>;
   if (data.status === "error") return <p role="alert">{data.message}</p>;
@@ -88,14 +83,14 @@ function Loader({
   const back = `/app/alunos/detalhe?id=${encodeURIComponent(studentId)}`;
 
   if (student === null) return <p>Aluno não encontrado.</p>;
-  if (workoutId && existing === null) {
+  if (fichaId && existing === null) {
     return (
       <p>
         Ficha não encontrada. <Link href={back}>Voltar</Link>
       </p>
     );
   }
-  // New fichas only for a connected student — see WorkoutsSection for why.
+  // New fichas only for a connected student — see FichasSection for why.
   if (!existing && student.kind === "draft") {
     return (
       <p>
@@ -115,41 +110,31 @@ function FichaForm({
 }: {
   trainerId: string;
   student: TrainerStudent;
-  existing: Workout | null;
+  existing: Ficha | null;
   back: string;
   timeZone: string;
 }) {
   const router = useRouter();
-  const [assets, setAssets] = useState<PromptAssets | "error" | null>(null);
+  const [formatPrompt, setFormatPrompt] = useState<FormatPrompt>({ status: "loading" });
   const [catalog, setCatalog] = useState<ExerciseCatalog | "error" | "loading">("loading");
-  const [request, setRequest] = useState("");
-  const [prompt, setPrompt] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const [pasted, setPasted] = useState("");
-  const [name, setName] = useState(existing?.name ?? "");
-  const [exercises, setExercises] = useState<Exercise[]>(existing?.exercises ?? []);
-  const [newName, setNewName] = useState("");
-  const [newSets, setNewSets] = useState("");
-  const [newReps, setNewReps] = useState("");
-  const [addError, setAddError] = useState<string | null>(null);
+  const [warnings, setWarnings] = useState<string[]>([]);
+  const [name, setName] = useState(existing ? (existing.legacy ? LEGACY_FICHA_NAME : existing.name) : "");
+  const [items, setItems] = useState<TreinoItem[]>(
+    () => existing?.treinos.map((t) => ({ key: t.id, id: t.id, name: t.name, exercises: t.exercises })) ?? [],
+  );
   const [errors, setErrors] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
-  const [question, setQuestion] = useState<ReplaceQuestion | null>(null);
-  // GOALS.md §25: set when the pasted answer holds two or more treinos (new fichas only).
-  const [review, setReview] = useState<ReviewItem[] | null>(null);
-  const [reviewWarnings, setReviewWarnings] = useState<string[]>([]);
-  const [reviewErrors, setReviewErrors] = useState<string[]>([]);
-  // GOALS.md §25f/§25i: two ways of asking an AI — copy a prompt to another app, or Gemini here.
-  const [tab, setTab] = useState<"copy" | "gemini">("copy");
-  const [includePersonal, setIncludePersonal] = useState(true);
+  const [question, setQuestion] = useState<OldestQuestion | null>(null);
 
-  // Fetched up front, so "Copiar prompt" can copy inside the click itself — some browsers refuse a
-  // clipboard write that waits on a network request first.
+  // Fetched up front, so "Copiar prompt" can copy inside the click itself — some browsers refuse a clipboard write
+  // that waits on a network request first.
   useEffect(() => {
     let cancelled = false;
-    loadPromptAssets().then(
-      (loaded) => !cancelled && setAssets(loaded),
-      () => !cancelled && setAssets("error"),
+    loadFormatPrompt().then(
+      (text) => !cancelled && setFormatPrompt({ status: "ready", text }),
+      () => !cancelled && setFormatPrompt({ status: "error" }),
     );
     loadExerciseCatalog(getFirebase().db, trainerId).then(
       (loaded) => !cancelled && setCatalog(loaded),
@@ -160,195 +145,102 @@ function FichaForm({
     };
   }, [trainerId]);
 
-  async function copyPrompt(loaded: PromptAssets) {
-    // New fichas ask for several treinos at once; an existing ficha is one treino. Both templates are
-    // web-only and carry no reference table (GOALS.md §33).
-    const text = buildWebFichaPrompt(existing ? loaded.singleTemplate : loaded.multiTemplate, student.doc, request, {
-      deidentify: !includePersonal,
-    });
-    setPrompt(text);
+  async function copyPrompt(text: string) {
     try {
       await navigator.clipboard.writeText(text);
       setCopyStatus("Prompt copiado! Cole na sua IA de preferência.");
     } catch {
-      setCopyStatus("Não foi possível copiar — selecione o prompt abaixo e copie à mão.");
+      setCopyStatus("Não foi possível copiar — abra “Ver o texto do prompt”, selecione e copie à mão.");
     }
   }
 
-  /** Two or more treinos (new fichas only) open the review; the phone's paste would pile them into one. */
-  function openReview(workouts: ParsedWorkout[], warnings: string[]) {
-    setReviewErrors([]);
-    setReview(workouts.map((w, i) => ({ key: `${i}-${w.name}`, name: w.name, include: true, exercises: w.exercises })));
-    setReviewWarnings(warnings);
-  }
-
-  /** What Gemini returned: several treinos go to the review, a single one fills the editor below. */
-  function fromGemini(workouts: ParsedWorkout[], warnings: string[]) {
-    void trackActivity(getFirebase().db, trainerId, "geminiGenerated", Date.now(), timeZone);
-    if (!existing && workouts.length >= 2) {
-      openReview(workouts, warnings);
-      return;
-    }
-    setReview(null);
-    setReviewWarnings([]);
-    const only = workouts[0];
-    setName((current) => (isKotlinBlank(current) ? only.name : current));
-    setExercises(only.exercises);
-  }
-
+  /** The AI's answer replaces the treinos below (a text with no exercise changes nothing). Saving is separate. */
   function paste(text: string) {
     setPasted(text);
-    setReviewErrors([]);
-    // An existing ficha is always a single treino.
-    if (!existing) {
-      const parsed = parseWorkouts(text);
-      if (parsed.workouts.length >= 2) {
-        openReview(parsed.workouts, parsed.warnings);
-        return;
-      }
-    }
-    setReview(null);
-    setReviewWarnings([]);
-    const next = applyPaste(text, { name, exercises });
-    setName(next.name);
-    setExercises(next.exercises);
-  }
-
-  function addExercise(event: FormEvent) {
-    event.preventDefault();
-    const result = manualExercise(newName, newSets, newReps);
-    if ("error" in result) {
-      setAddError(result.error);
+    const parsed = parseWorkouts(text);
+    if (parsed.workouts.length === 0) {
+      setWarnings(
+        text.trim() === "" ? [] : ["Não encontrei exercícios nesse texto. Peça à IA no formato do prompt acima."],
+      );
       return;
     }
-    setExercises([...exercises, result.exercise]);
-    setNewName("");
-    setNewSets("");
-    setNewReps("");
-    setAddError(null);
+    setWarnings(parsed.warnings);
+    setItems(parsed.workouts.map((w) => ({ key: crypto.randomUUID(), id: null, name: w.name, exercises: w.exercises })));
   }
 
-  /**
-   * GOALS.md §28 — new treinos only (editing one never replaces). If the student already has an active
-   * ficha, ask what the new one does; true means the question is open and saving waits for the answer.
-   * If what the student has cannot be read, it is a plain add: nothing is ever deleted on a guess.
-   */
-  async function askBeforeSaving(workouts: Workout[], now: number, multi: boolean): Promise<boolean> {
-    let all: Workout[];
-    try {
-      all = await loadStudentWorkouts(getFirebase().db, trainerId, student.doc.id);
-    } catch {
-      return false;
-    }
-    const current = currentFicha(all);
-    if (current.length === 0) return false;
-    setQuestion({ current, history: historyFicha(all), workouts, now, multi });
-    setBusy(false);
-    return true;
+  async function trackSaved(now: number) {
+    await trackActivity(getFirebase().db, trainerId, "fichaSaved", now, timeZone);
   }
 
-  async function answer(choice: "replace" | "add") {
+  async function create(treinos: OldestQuestion["treinos"], now: number) {
+    const { db } = getFirebase();
+    await createFicha(db, trainerId, student.doc.id, { name, treinos }, now);
+    await trackSaved(now);
+    router.push(back);
+  }
+
+  async function confirmOldest() {
     if (question === null) return;
-    const { workouts, now, multi } = question;
+    const { treinos, now } = question;
     setQuestion(null);
     setBusy(true);
     try {
-      const { db } = getFirebase();
-      if (choice === "replace") await replaceFicha(db, trainerId, student.doc.id, workouts, now);
-      else if (workouts.length === 1) await saveWorkout(db, trainerId, workouts[0], now);
-      else await saveWorkouts(db, trainerId, workouts, now);
-      await trackFichas(db, workouts.length, now);
-      router.push(back);
+      await create(treinos, now);
     } catch {
-      const message =
-        choice === "replace"
-          ? "Não foi possível substituir. Nada foi alterado."
-          : multi
-            ? "Não foi possível salvar as fichas. Nenhuma foi gravada — tente de novo."
-            : "Não foi possível salvar a ficha. Tente de novo.";
-      if (multi) setReviewErrors([message]);
-      else setErrors([message]);
+      setErrors(["Não foi possível salvar a ficha. Nada foi alterado — tente de novo."]);
       setBusy(false);
     }
   }
 
   async function save(now: number) {
-    if (!existing && catalog === "loading") {
+    if (catalog === "loading") {
       setErrors([EDITOR_COPY.waitToSave]);
       return;
     }
-    const found = workoutErrors(name, exercises);
+    const found = fichaSaveErrors(name, items);
     setErrors(found);
     if (found.length > 0) return;
+    // The exercise data's muscles go onto every treino, new and edited, before anything is stored.
+    const treinos = items.map((item) => ({
+      id: item.id,
+      name: kotlinTrim(item.name),
+      exercises: tidied(catalog !== "error" ? applyCatalogActivations(item.exercises, catalog) : item.exercises),
+    }));
     setBusy(true);
     try {
+      const { db } = getFirebase();
       if (existing) {
-        // ManualWorkoutScreen: existing.copy(name, exercises)
-        const { db } = getFirebase();
-        await saveWorkout(db, trainerId, { ...existing, name: kotlinTrim(name), exercises }, now);
-        await trackFichas(db, 1, now);
+        await saveFicha(db, trainerId, student.doc.id, existing.id, { name, treinos }, now);
+        await trackSaved(now);
         router.push(back);
         return;
       }
-      const newExercises = catalog !== "loading" && catalog !== "error" ? applyCatalogActivations(exercises, catalog) : exercises;
-      const workout = newWorkout(trainerId, student.doc.id, kotlinTrim(name), newExercises, now);
-      if (await askBeforeSaving([workout], now, false)) return;
-      const { db } = getFirebase();
-      await saveWorkout(db, trainerId, workout, now);
-      await trackFichas(db, 1, now);
-      router.push(back);
-    } catch {
-      setErrors(["Não foi possível salvar a ficha. Tente de novo."]);
+      // Nothing is ever deleted on a guess: if what the student has cannot be read, nothing is saved.
+      let current: Ficha[];
+      try {
+        current = await loadStudentFichas(db, trainerId, student.doc.id);
+      } catch {
+        setErrors(["Não foi possível conferir as fichas do aluno. Nada foi salvo — tente de novo."]);
+        setBusy(false);
+        return;
+      }
+      if (current.length >= MAX_FICHAS) {
+        setQuestion({ going: current.slice(MAX_FICHAS - 1), treinos, now });
+        setBusy(false);
+        return;
+      }
+      await create(treinos, now);
+    } catch (error) {
+      setErrors([
+        error instanceof FichaNotFound
+          ? "Esta ficha já não existe. Volte para a lista do aluno."
+          : "Não foi possível salvar a ficha. Nada foi alterado — tente de novo.",
+      ]);
       setBusy(false);
     }
   }
 
-  async function saveAll(now: number) {
-    if (review === null) return;
-    if (catalog === "loading") {
-      setReviewErrors([EDITOR_COPY.waitToSave]);
-      return;
-    }
-    const chosen = review.filter((item) => item.include);
-    const found = chosen.flatMap((item) =>
-      [...workoutErrors(item.name, item.exercises), ...exerciseErrors(item.exercises)].map(
-        (error) => `${kotlinTrim(item.name) || "Treino sem nome"}: ${error}`,
-      ),
-    );
-    setReviewErrors(found);
-    if (found.length > 0 || chosen.length === 0) return;
-    setBusy(true);
-    try {
-      // createdAt falls from the first treino to the last, so the trainer's newest-first list reads A, B, C.
-      const workouts = chosen.map((item, index) =>
-        newWorkout(
-          trainerId,
-          student.doc.id,
-          kotlinTrim(item.name),
-          tidied(catalog !== "error" ? applyCatalogActivations(item.exercises, catalog) : item.exercises),
-          now + (chosen.length - 1 - index),
-        ),
-      );
-      if (await askBeforeSaving(workouts, now, true)) return;
-      const { db } = getFirebase();
-      await saveWorkouts(db, trainerId, workouts, now);
-      await trackFichas(db, workouts.length, now);
-      router.push(back);
-    } catch {
-      setReviewErrors(["Não foi possível salvar as fichas. Nenhuma foi gravada — tente de novo."]);
-      setBusy(false);
-    }
-  }
-
-  async function trackFichas(db: ReturnType<typeof getFirebase>["db"], count: number, now: number) {
-    await Promise.all(Array.from({ length: count }, () => trackActivity(db, trainerId, "fichaSaved", now, timeZone)));
-  }
-
-  // GOALS.md section 33e: what to ask the AI when the review's week is outside the ideal range (null: nothing to adjust).
-  const reviewVolumeRequest =
-    review === null ? null : buildVolumeAdjustMessage(includedVolume(review, typeof catalog === "object" ? catalog : null));
-  const volumeExercises = catalog !== "loading" && catalog !== "error" ? applyCatalogActivations(exercises, catalog) : exercises;
-  const volume = Object.entries(calculateEffectiveVolume(volumeExercises)).sort(([, a], [, b]) => b - a);
+  const when = (ficha: Ficha) => formatDate(localDate(ficha.updatedAt, timeZone));
 
   return (
     <main>
@@ -358,100 +250,35 @@ function FichaForm({
       <h1>{existing ? "Editar ficha" : "Nova ficha"}</h1>
 
       <section>
-        <h2>Pedir à IA (opcional)</h2>
-        <RequestBuilder trainingDays={student.doc.trainingDays} request={request} onRequest={setRequest} />
-        {!existing && (
-          <div className="tabs" role="tablist" aria-label="Como pedir à IA">
-            <button
-              type="button"
-              role="tab"
-              id="tab-copy"
-              aria-selected={tab === "copy"}
-              aria-controls="panel-ai"
-              onClick={() => setTab("copy")}
-            >
-              Outra IA (copiar e colar)
-            </button>
-            <button
-              type="button"
-              role="tab"
-              id="tab-gemini"
-              aria-selected={tab === "gemini"}
-              aria-controls="panel-ai"
-              onClick={() => setTab("gemini")}
-            >
-              Gemini (gerar aqui)
-            </button>
-          </div>
-        )}
-        <div
-          id="panel-ai"
-          role={existing ? undefined : "tabpanel"}
-          aria-labelledby={existing ? undefined : `tab-${tab}`}
+        <h2>Prompt de formatação de ficha</h2>
+        <p>
+          Cole este texto na IA que você usa, junto com o seu pedido, para ela devolver a ficha no formato que o site
+          entende.
+        </p>
+        <button
+          type="button"
+          disabled={formatPrompt.status !== "ready"}
+          onClick={() => {
+            if (formatPrompt.status === "ready") void copyPrompt(formatPrompt.text);
+          }}
         >
-          {!existing && tab === "gemini" ? (
-            <GeminiPanel
-              student={student.doc}
-              request={request}
-              assets={assets}
-              volumeRequest={reviewVolumeRequest}
-              onResult={fromGemini}
-            />
-          ) : (
-            <>
-              <p>
-                1. Descreva o que você quer acima. 2. Copie o prompt. 3. Cole em qualquer IA que você já usa (ChatGPT,
-                Gemini, Claude...). 4. Cole a resposta dela no Importador Inteligente mais abaixo — se vierem vários
-                treinos (A, B, C…), o site separa um por um.
-              </p>
-              {!existing && (
-                <>
-                  <p>
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={includePersonal}
-                        onChange={(e) => setIncludePersonal(e.target.checked)}
-                      />
-                      Incluir o nome e as restrições médicas do aluno no prompt
-                    </label>
-                  </p>
-                </>
-              )}
-              <button
-                type="button"
-                disabled={assets === null || assets === "error"}
-                onClick={() => {
-                  if (assets !== null && assets !== "error") void copyPrompt(assets);
-                }}
-              >
-                Copiar prompt
-              </button>
-              {assets === "error" && (
-                <p role="alert">Não foi possível carregar o modelo do prompt. Recarregue a página.</p>
-              )}
-              {copyStatus && <p role="status">{copyStatus}</p>}
-              {prompt !== null && (
-                <p>
-                  <textarea readOnly value={prompt} rows={10} aria-label="Prompt" />
-                  <small className="section-footnote">
-                    Tamanho do prompt: ≈{" "}
-                    {new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 }).format(prompt.length / 1000)} mil
-                    caracteres
-                  </small>
-                </p>
-              )}
-            </>
-          )}
-        </div>
+          Copiar prompt
+        </button>
+        {formatPrompt.status === "error" && (
+          <p role="alert">Não foi possível carregar o prompt. Recarregue a página.</p>
+        )}
+        {copyStatus && <p role="status">{copyStatus}</p>}
+        {formatPrompt.status === "ready" && (
+          <details>
+            <summary>Ver o texto do prompt</summary>
+            <textarea readOnly value={formatPrompt.text} rows={14} aria-label="Prompt de formatação" />
+          </details>
+        )}
       </section>
 
       <section>
         <h2>Importador Inteligente</h2>
-        <p>
-          Cole o texto (ex: Biceps 12x4) abaixo para identificar os exercícios automaticamente. Se ele trouxer vários
-          treinos (Treino A, B, C…), cada um vira uma ficha.
-        </p>
+        <p>Cole aqui a resposta da IA. Cada título (Treino A, B, C…) vira um treino abaixo.</p>
         <textarea
           value={pasted}
           onChange={(e) => paste(e.target.value)}
@@ -459,137 +286,59 @@ function FichaForm({
           aria-label="Texto para importar"
           placeholder={"Ex:\nTreino A\nSupino 3x12\nTreino B\nBiceps 12x4"}
         />
+        {warnings.length > 0 && (
+          <ul role="status">
+            {warnings.map((warning) => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
+        )}
       </section>
 
-      {review !== null ? (
-        <MultiFichaReview
-          items={review}
-          catalog={catalog}
-          warnings={reviewWarnings}
-          errors={reviewErrors}
-          busy={busy}
-          volumeRequest={reviewVolumeRequest}
-          onChange={setReview}
-          onSave={() => void saveAll(Date.now())}
-          onCancel={() => {
-            setReview(null);
-            setReviewWarnings([]);
-            setReviewErrors([]);
-          }}
-        />
-      ) : (
-        <>
-          <section>
-            <h2>Ficha</h2>
-            <p>
-              <label>
-                Nome do treino (ex: Ficha A) <input value={name} onChange={(e) => setName(e.target.value)} />
-              </label>
-            </p>
-            <h3>Lista de exercícios ({exercises.length})</h3>
-            {exercises.length === 0 ? (
-              <p>Nenhum exercício ainda.</p>
-            ) : (
-              <table className="stack">
-                <thead>
-                  <tr>
-                    <th scope="col">Exercício</th>
-                    <th scope="col">Séries</th>
-                    <th scope="col">Reps</th>
-                    <th scope="col">Músculos</th>
-                    <th scope="col">Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {exercises.map((exercise, index) => (
-                    <tr key={index}>
-                      <td data-label="Exercício">{exercise.name}</td>
-                      <td data-label="Séries">{exercise.sets}</td>
-                      <td data-label="Reps">{exercise.reps}</td>
-                      <td data-label="Músculos">
-                        {volumeExercises[index]?.muscleActivation ? EDITOR_COPY.musclesCalculated : EDITOR_COPY.musclesNone}
-                      </td>
-                      <td data-label="">
-                        <button type="button" onClick={() => setExercises(exercises.filter((_, i) => i !== index))}>
-                          Remover
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-            <form onSubmit={addExercise}>
-              <fieldset>
-                <legend>Novo exercício</legend>
-                <label>
-                  Nome <input value={newName} onChange={(e) => setNewName(e.target.value)} />
-                </label>{" "}
-                <label>
-                  Séries <input inputMode="numeric" value={newSets} onChange={(e) => setNewSets(e.target.value)} />
-                </label>{" "}
-                <label>
-                  Reps <input value={newReps} onChange={(e) => setNewReps(e.target.value)} />
-                </label>{" "}
-                <button type="submit">Adicionar</button>
-                {addError && <p role="alert">{addError}</p>}
-              </fieldset>
-            </form>
-
-            {volume.length > 0 && (
-              <>
-                <h3>Volume efetivo por músculo (nesta ficha)</h3>
-                <p>Faixa ideal de referência (intermediário): ~12-20 séries efetivas/semana por músculo.</p>
-                <dl>
-                  {volume.map(([muscle, sets]) => (
-                    <div key={muscle}>
-                      <dt>{muscle}</dt>
-                      <dd>{VOLUME.format(sets)} séries efetivas</dd>
-                    </div>
-                  ))}
-                </dl>
-              </>
-            )}
-          </section>
-
-          {errors.length > 0 && (
-            <ul role="alert">
-              {errors.map((error) => (
-                <li key={error}>{error}</li>
-              ))}
-            </ul>
-          )}
-          <button type="button" className="button-primary" disabled={busy || (!existing && catalog === "loading")} onClick={() => void save(Date.now())}>
-            {busy ? "Salvando…" : !existing && catalog === "loading" ? EDITOR_COPY.loading : "Salvar ficha"}
-          </button>
-        </>
-      )}
+      <section>
+        <h2>Ficha</h2>
+        <p>
+          <label>
+            Nome da ficha
+            <input value={name} placeholder="Ex: Hipertrofia – outubro" onChange={(e) => setName(e.target.value)} />
+          </label>
+        </p>
+        {existing?.legacy && (
+          <p role="note">Esta ficha foi criada antes dos nomes de ficha; ao salvar, ela passa a ter o nome acima.</p>
+        )}
+        <TreinosEditor items={items} catalog={catalog} onChange={setItems} />
+        {errors.length > 0 && (
+          <ul role="alert">
+            {errors.map((error) => (
+              <li key={error}>{error}</li>
+            ))}
+          </ul>
+        )}
+        <button
+          type="button"
+          className="button-primary"
+          disabled={busy || catalog === "loading"}
+          onClick={() => void save(Date.now())}
+        >
+          {busy ? "Salvando…" : catalog === "loading" ? EDITOR_COPY.loading : "Salvar ficha"}
+        </button>
+      </section>
 
       <ConfirmDialog
         open={question !== null}
-        title="Substituir a ficha atual?"
-        yesLabel="Substituir"
-        altLabel="Só adicionar"
+        title={`Você já tem ${MAX_FICHAS} fichas`}
+        yesLabel="Excluir a mais antiga e salvar"
         noLabel="Cancelar"
-        onYes={() => void answer("replace")}
-        onAlt={() => void answer("add")}
+        onYes={() => void confirmOldest()}
         onNo={() => setQuestion(null)}
       >
         {question && (
-          <>
-            <p>
-              {student.doc.name} tem hoje: <strong>{question.current.map((w) => w.name).join(", ")}</strong>.
-            </p>
-            <p>
-              <strong>Substituir:</strong> a ficha atual vira a <em>ficha anterior</em> (o aluno deixa de vê-la) e a
-              que já era a anterior (
-              {question.history.length === 0 ? "nenhuma" : question.history.map((w) => w.name).join(", ")}) é{" "}
-              <strong>excluída para sempre</strong>.
-            </p>
-            <p>
-              <strong>Só adicionar:</strong> a nova se junta às que já existem; nada é apagado.
-            </p>
-          </>
+          <p>
+            Ao salvar, {question.going.length === 1 ? "a mais antiga" : "as mais antigas"} —{" "}
+            {question.going.map((ficha) => `“${ficha.name}”, modificada em ${when(ficha)}`).join("; ")} —{" "}
+            {question.going.length === 1 ? "será excluída" : "serão excluídas"} para sempre. Esse processo não pode ser
+            desfeito.
+          </p>
         )}
       </ConfirmDialog>
     </main>

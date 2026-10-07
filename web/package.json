@@ -22,6 +22,7 @@
     "e2e:billing": "node e2e/billing.mjs",
     "e2e:admin-focus": "node e2e/admin-focus.mjs",
     "e2e:ficha-privacy": "node e2e/ficha-privacy.mjs",
+    "e2e:fichas": "node e2e/fichas.mjs",
     "test:rules": "npm --prefix ../functions run build && firebase emulators:exec --config ../firebase.json --project demo-personal-tracker --only auth,firestore,functions,storage \"vitest run --dir rules --testTimeout=30000 --no-file-parallelism\""
   },
   "dependencies": {

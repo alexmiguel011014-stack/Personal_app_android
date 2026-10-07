@@ -6,6 +6,20 @@ import { parseExercises, parseWorkoutName } from "./workoutParser";
 
 export type WorkoutStatus = "draft" | "assigned";
 
+/**
+ * GOALS.md §34: which ficha a treino belongs to — web-only, one map so it is all-or-nothing. A ficha is the set of
+ * treinos that share `id`; `name`/`createdAt`/`updatedAt` are repeated on each member and `order` is the treino's
+ * place inside it. The phone neither reads nor writes it, and a phone save drops it (that treino then reads as a
+ * legacy one: no membership).
+ */
+export interface FichaMembership {
+  id: string;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
+  order: number;
+}
+
 export interface Workout {
   id: string;
   trainerId: string;
@@ -17,12 +31,8 @@ export interface Workout {
   createdAt: number;
   status: WorkoutStatus;
   assignedAt: number | null;
-  /**
-   * GOALS.md §28: web-only. Set (to the time of a replacement) only on the treinos a "Substituir" retired —
-   * the student's "ficha anterior". The phone neither reads nor writes it; it is the one mark that makes a
-   * treino a candidate for the NEXT replacement's delete (domain/fichaHistory.ts). Null on every other treino.
-   */
-  archivedAt: number | null;
+  /** GOALS.md §34: null on every document the phone wrote and on treinos that predate fichas (they read as the legacy ficha). */
+  ficha: FichaMembership | null;
 }
 
 /**
@@ -32,9 +42,8 @@ export interface Workout {
  * without this stays invisible to them forever (the Kotlin comment says exactly that).
  */
 export function withDerivedStatus(workout: Workout, now: number): Workout {
-  // Active again means current again: a treino taken out of the history (GOALS.md §28) leaves it for good.
   return workout.isActive
-    ? { ...workout, status: "assigned", assignedAt: workout.assignedAt ?? now, archivedAt: null }
+    ? { ...workout, status: "assigned", assignedAt: workout.assignedAt ?? now }
     : { ...workout, status: "draft", assignedAt: null };
 }
 

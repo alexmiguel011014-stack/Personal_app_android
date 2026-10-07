@@ -150,7 +150,7 @@ describe("toWorkout / workoutToFirestore — FirestoreMappers' workout mapping",
     createdAt: 5,
     status: "assigned",
     assignedAt: 6,
-    archivedAt: null,
+    ficha: null,
   };
 
   it("writes WorkoutEntity.toFirestoreMap's fields and reads them back", () => {
@@ -179,20 +179,35 @@ describe("toWorkout / workoutToFirestore — FirestoreMappers' workout mapping",
       createdAt: 0,
       status: "draft",
       assignedAt: null,
-      archivedAt: null,
+      ficha: null,
     });
   });
 
-  it("GOALS.md §28: archivedAt is web-only — written only when set, read leniently", () => {
-    expect(workoutToFirestore(workout, "trainerA")).not.toHaveProperty("archivedAt");
-    const archived = { ...workout, isActive: false, status: "draft" as const, assignedAt: null, archivedAt: 900 };
-    const data = workoutToFirestore(archived, "trainerA");
-    expect(data.archivedAt).toBe(900);
-    expect(toWorkout("w1", data)).toEqual(archived);
-    for (const bad of ["900", 1.5, null, true]) {
-      expect(toWorkout("w1", { studentId: "s1", name: "Ficha A", archivedAt: bad })?.archivedAt).toBeNull();
+  it("GOALS.md §34: the ficha map is web-only — written only when set, round-trips, and a document without it is untouched", () => {
+    // Without membership the document has exactly the keys it had before fichas existed.
+    expect(Object.keys(workoutToFirestore(workout, "trainerA")).sort()).toEqual(
+      ["assignedAt", "createdAt", "exercisesJson", "isActive", "name", "status", "studentId", "trainerId"],
+    );
+    const member = { ...workout, ficha: { id: "f1", name: "Hipertrofia", createdAt: 5, updatedAt: 9, order: 2 } };
+    const data = workoutToFirestore(member, "trainerA");
+    expect(data.ficha).toEqual({ id: "f1", name: "Hipertrofia", createdAt: 5, updatedAt: 9, order: 2 });
+    expect(toWorkout("w1", data)).toEqual(member);
+  });
+
+  it("GOALS.md §34: a malformed or partial ficha map reads leniently — never a throw", () => {
+    const base = { studentId: "s1", name: "Ficha A", createdAt: 7 };
+    for (const bad of [undefined, null, "f1", 3, true, [], [{ id: "f1", name: "X" }], {}, { id: "f1" }, { name: "X" }, { id: "", name: "X" }, { id: "f1", name: "  " }, { id: 4, name: "X" }]) {
+      expect(toWorkout("w1", { ...base, ficha: bad })?.ficha ?? null).toBeNull();
     }
-    expect(toWorkout("w1", { studentId: "s1", name: "Ficha A" })?.archivedAt).toBeNull();
+    // Missing numbers fall back to the treino's own createdAt, then to that; a fractional or string number too.
+    expect(toWorkout("w1", { ...base, ficha: { id: "f1", name: "X" } })?.ficha).toEqual({ id: "f1", name: "X", createdAt: 7, updatedAt: 7, order: 0 });
+    expect(toWorkout("w1", { ...base, ficha: { id: "f1", name: "X", createdAt: 3, updatedAt: "9", order: 1.5 } })?.ficha).toEqual({
+      id: "f1",
+      name: "X",
+      createdAt: 3,
+      updatedAt: 3,
+      order: 0,
+    });
   });
 
   it("skips a document without a student or a name", () => {

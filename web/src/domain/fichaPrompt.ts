@@ -5,10 +5,9 @@ import { kotlinTrimIndent } from "./kotlin";
 // PromptFichaViewModel.buildPrompt: the trainer copies this prompt into whichever AI app they
 // already use and pastes the reply back into Smart Paste (workoutParser.ts).
 //
-// The template and the volume table are app/src/main/assets/ficha_prompt_template.md and
-// hypertrophy_volume_reference.md — the same bytes the phone ships (the Android line keeps them
-// under composeResources/files/; verified identical 2026-09-24). They're passed in rather than
-// imported, so there is still exactly one copy of each in the repo.
+// This function mirrors the PHONE's prompt (the template and the table it splices in are Android assets). It is kept
+// for parity and for its test, which reads those assets from the repository; the web itself never puts the table in
+// front of anyone any more (GOALS.md §33) and builds its prompts with buildWebFichaPrompt below.
 
 export const TABLE_PLACEHOLDER = "$TABLE_PLACEHOLDER$";
 

@@ -6394,11 +6394,13 @@ removes public files; a wrong order makes the editor lose its catalog for real u
       seeded `admin@teste.dev` it creates the document and the editor reads it; a second run with an unchanged
       source reports "already up to date".
       **Done (2026-10-06):** Written and exercised against the emulators by `rules/exerciseCatalog.test.ts`: creates the document as an ADM, prints only version and count (the test checks the password and content are not printed), a second run says "Already up to date", a non-ADM or wrong password writes nothing. Deviation from the plan: it defaults to the EMULATORS and needs `--production` (plus typing the project id) for the real project, instead of reading `NEXT_PUBLIC_FIREBASE_EMULATORS`.
-- [ ] **Seed:** `scripts/seed-emulators.mjs` also writes the catalog document (same builder), so `dev:local`, the e2e
+- [x] **Seed:** `scripts/seed-emulators.mjs` also writes the catalog document (same builder), so `dev:local`, the e2e
       scripts and the rules tests have it; update the header comment. Done when: after `npm run seed:emulators` the
       document exists and `dev:local` shows recognised exercises on the review screen.
-- [ ] **Done when:** no file the build copies or generates under `web/public/` contains any exercise row, the ruler
+      **Done (2026-10-06):** Writes `appData/exerciseCatalog` from the same builder (a warning, not a failure, when the source is missing); verified by the browser test: after `reseed()` the trainer reads the document (REST 200) and the review recognises exercises.
+- [x] **Done when:** no file the build copies or generates under `web/public/` contains any exercise row, the ruler
       or the table's headings (33f proves it), and the editor loads the catalog only through Firestore.
+      **Done (2026-10-06):** Verified twice: the clean static build scanned by `check:leak` (175 text files, `out/prompt/` = the three web templates) and the browser test (old `/prompt/` table and catalog files 404, the phone's template 404, every loaded script free of phrases, the editor reading the catalog only via Firestore).
 
 **33e. Review screen, editor copy and the volume helper**
 
@@ -6469,16 +6471,18 @@ Suggested: sonnet · high — the guard is only as good as its sentinels; a vacu
 
 Suggested: sonnet · medium — the same headless-Chrome + emulator pattern as `e2e/account.mjs`.
 
-- [ ] **`web/e2e/ficha-privacy.mjs` (`npm run e2e:ficha-privacy`)**, signed in as the seeded trainer: opens a student's
+- [x] **`web/e2e/ficha-privacy.mjs` (`npm run e2e:ficha-privacy`)**, signed in as the seeded trainer: opens a student's
       new-ficha screen; clicks "Copiar prompt"; reads the textarea and `navigator.clipboard` text and asserts no sentinel;
       reads the whole DOM text and every loaded script/response body for sentinels; asserts
       `GET /prompt/hypertrophy_volume_reference.md` and `/prompt/exercise-catalog.json` are **404** (dev server) and the
       three web-only templates are 200; pastes a synthetic AI answer, checks recognised exercises show their muscles
       and the per-muscle volume appears, an unrecognised one shows the "sem ativação" line with ≤3 suggestions and **no**
       dropdown of the full list; opens the Gemini tab and asserts its visible text names no table.
-- [ ] **Access checks** in the same script: signed in as the seeded **student** (`ana@teste.dev`) and as the suspended
+      **Done (2026-10-06):** Written and green: 40/40 on desktop and 40/40 at 390 px (Chrome headless over CDP against the emulators, like `account.mjs`). It reads the prompt textarea, the clipboard, the Gemini tab, the page text and all 24 loaded scripts; asserts the old public files 404; pastes an answer built from the source's own exercise names (none written in the file), checks recognised exercises, no dropdown, ≤3 suggestions per row, the volume table and the volume-adjust request; saves and checks `exercisesJson` carries `muscleActivation` for a recognised exercise and none for an invented one. Proved to discriminate: with the old table served from `public/prompt/` and appended to the multi template it went 36/40 (404 check, prompt on screen, prompt on clipboard failing); restored, 40/40. Deviation: proved by re-planting the leak rather than by checking out `main`'s old tree.
+- [x] **Access checks** in the same script: signed in as the seeded **student** (`ana@teste.dev`) and as the suspended
       trainer (`suspended@teste.dev`), a direct Firestore REST read of `appData/exerciseCatalog` with their ID token is
       denied; as the trainer it succeeds; with no token it is denied.
+      **Done (2026-10-06):** Firestore REST with real emulator ID tokens: trainer 200, ADM 200, student 403, suspended trainer 403, no token 403.
 - [ ] **Done when:** the script is green on desktop and 390 px, red against the pre-change code (prove once, then
       restore), and its recipe is added to `web/README.md` "Browser tests".
 

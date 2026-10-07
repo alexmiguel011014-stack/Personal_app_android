@@ -52,7 +52,8 @@ function ExerciseRow({
   const where = `${treino || "treino"}, exercício ${index + 1}`;
   const match = typeof catalog === "object" ? lookupExercise(catalog, exercise.name) : null;
   const tableActivation = match ? catalogActivation(match.entry) : null;
-  const usesDifferentActivation = match !== null && !sameActivation(exercise.muscleActivation, tableActivation);
+  // Only when the exercise arrived WITH muscles of its own that the catalog replaces; none received is just "recognised".
+  const usesDifferentActivation = match !== null && exercise.muscleActivation !== null && !sameActivation(exercise.muscleActivation, tableActivation);
   // GOALS.md section 33: never the whole catalog - at most a few "Quis dizer...?" names for an exercise nobody matched.
   const suggestions = typeof catalog === "object" ? offeredSuggestions(catalog, exercise.name) : [];
 

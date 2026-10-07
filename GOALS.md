@@ -6396,8 +6396,9 @@ Suggested: sonnet · medium — the same headless-Chrome + emulator pattern as `
       trainer (`suspended@teste.dev`), a direct Firestore REST read of `appData/exerciseCatalog` with their ID token is
       denied; as the trainer it succeeds; with no token it is denied.
       **Done (2026-10-06):** Firestore REST with real emulator ID tokens: trainer 200, ADM 200, student 403, suspended trainer 403, no token 403.
-- [ ] **Done when:** the script is green on desktop and 390 px, red against the pre-change code (prove once, then
+- [x] **Done when:** the script is green on desktop and 390 px, red against the pre-change code (prove once, then
       restore), and its recipe is added to `web/README.md` "Browser tests".
+      **Done (2026-10-06):** Green 40/40 on desktop and 40/40 at 390 px; red when the leak is re-planted (36/40); the recipe is in `web/README.md` "Browser tests".
 
 **33h. Rollout (manual, ordered — this is where real users could be hurt)**
 

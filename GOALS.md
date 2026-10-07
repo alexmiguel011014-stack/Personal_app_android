@@ -3875,6 +3875,8 @@ service-worker mode.
 
 **Superseded in part by §33 (2026-10-06):** wherever 25a/25c/25f/25i say the reference table is put in the prompt, is a public catalog file under `public/prompt/`, or can be kept in the trainer's own AI project ("já tenho a tabela" switch), that is no longer true: the prompts carry no table, the public files are gone, the switch was removed, and the catalog is read from the gated Firestore document `appData/exerciseCatalog`. The splitter, the review screen, the Gemini tab and the volume bands of this section stand.
 
+**Superseded in part by §34 (2026-10-07):** the review as its own step, the request shortcuts (25f), the in-site Gemini tab (25i) and the single/multi prompt templates are gone — the editor now has one static "Prompt de formatação de ficha", the importer, and the ficha's treino cards (`TreinosEditor`); a ficha is a named set of treinos, at most two per student. The splitter (`parseWorkouts`), the treino cards' editing, the volume bands and the catalog loading of this section stand.
+
 **The request:** "facilitar o máximo possível a criação da ficha." The trainer has a PDF of exercises
 with their partial muscle activations and wants an AI chat inside the site that always has that
 context — but found no free chat, and believes Gemini Flash no longer has a free tier. Second idea:
@@ -5193,6 +5195,8 @@ Suggested: haiku · low — documentation and ticks, fully specified.
 ## 28. Feature — Keep only the previous ficha: replacing a ficha archives the current one and deletes the older one
 (2026-10-01, via `/newgoal`)
 
+**Superseded by §34 (2026-10-07):** the "Substituir a ficha atual?" question, the one-previous-ficha history, `archivedAt` and `replaceFicha` no longer exist. A student keeps at most two **named fichas**; a third deletes the oldest (after a confirmation); Desativar/Ativar is gone. What stays true from here: nothing is deleted without the trainer's own action (no background job on Spark), `workoutLogs` are never touched, and treinos the phone wrote are never silently lost (they read as one "Ficha atual").
+
 **The request:** "tem que ver como vamos gerenciar o excesso de fichas criadas também, para evitar de gastar espaço
 à toa. Eu queria criar um histórico que salva somente a ficha passada da pessoa e o resto exclui."
 
@@ -6101,6 +6105,8 @@ Suggested: haiku · low — documentation so the new thing is findable, last bec
 ## 33. Feature — Hide the trainer's exercise-reference table: out of the prompts, the screen, the public files and the bundle
 (2026-10-06, via `/newgoal`)
 
+**Superseded in part by §34 (2026-10-07):** 33c's web templates (single / multi / Gemini system instruction, `buildWebFichaPrompt`) and 33e's review screen with the Gemini tab were replaced by one static `ficha_prompt_format.md` and the unified ficha editor. What §33 built stands: the gated `appData/exerciseCatalog` document and rules v6, the muscles filled in by name at save, the per-muscle volume totals and the volume-adjust request, the ≤3 "Quis dizer…?" names, and the leak test / build scan / `e2e:ficha-privacy` guards.
+
 **The request:** for "gerar ficha com meia ajuda da IA" (the copy-and-paste prompt, §25f) the prompt shows the
 reference table — the ruler paragraph followed by every table — which comes from the trainer's own PDF (§5, the
 2026-08-17 note; §25c). The owner does **not** want that, nor "any information that points to the PDF", visible: they
@@ -6473,6 +6479,433 @@ describes what exists.
       lives, how to update it, which tests guard it, and what must never be committed; and a search of tracked
       documentation for the ruler, the headings or the PDF's file name finds nothing outside git history.
       **Done (2026-10-06):** Verified 2026-10-06: `CLAUDE.md` and `web/README.md` say where the reference lives, how to update it (`catalog:publish`), which tests guard it and what must never be committed; a scan of all tracked docs for the source's title, headings and prose openings finds nothing (the document title that was wrapped across two lines in §5 was the last hit and is trimmed), and none names the PDF. What remains is the Android asset's own file name (public in the repository; D1) and generic exercise names in old plan prose.
+
+## 34. Feature — Fichas as simple named cards: a ficha is a named set of treinos, at most two per student, and the "Pedir à IA" card becomes one "Prompt de formatação de ficha"
+(2026-10-06, via `/newgoal`)
+
+**The request (owner, in Portuguese, with two screenshots — the student page's "Fichas" list and the "Nova ficha" page):**
+"vamos ter que reescrever isso… refazer cada passo, e o que já tiver sido alterado na sessão passada você sobrescreve."
+**Image 1 (student page):** replace the list with **one simple card per ficha — the name the trainer gave it plus its
+modification date**. A new ficha makes "the card go down" and creates a new card with its own date. **At most 2 active
+fichas; the third deletes the oldest.** No "Desativar" button — only **Editar** (which opens the *same screen as creating a
+ficha*) and **Excluir**, the latter with a confirmation card saying "esse processo não pode ser desfeito".
+**Image 2 (new ficha):** **the whole "Pedir à IA (opcional)" card is deleted.** In its place, **one card on top titled
+"Prompt de formatação de ficha"** that tells an external AI how to build the ficha so the site accepts the format. The
+ficha gets **an input to name it**, and then the rest continues — naming each treino too.
+
+**Goal type: Feature** — a bounded change to flows that work (nothing is broken; the owner's design changed). One minority
+of **cleanup** (code that dies with the removed card) rides inside it. Research is done (2026-10-06, by reading the code on
+`claude/hide-reference-table` and the Firestore rules) and recorded in 34a so nothing is looked up twice.
+
+**What this overwrites (so nobody "fixes" it back).** This section supersedes, where they conflict: §28 (the "Substituir a
+ficha atual?" question, the one-previous-ficha history, `archivedAt`, `replaceFicha`); §25e/§25f/§25i (the multi-treino review
+as a separate step, the request shortcuts, the **in-site Gemini tab**); §33c/§33e's **web prompt templates** (single / multi /
+Gemini system instruction, `buildWebFichaPrompt`) and the "Incluir o nome e as restrições médicas" switch. What §33 built
+**stays and must keep passing**: the gated `appData/exerciseCatalog` document and rules v6, the muscles filled in by name
+at save, the per-muscle volume totals and the "adjust the volume" helper, ≤3 "Quis dizer…?" names, the leak test/scan and
+`e2e:ficha-privacy` (the last one gets its clicks updated, not its assertions weakened).
+
+**The short answer.** No new collection and **no rules change**: a ficha is the set of `workouts/{id}` documents that share
+one web-only map field `ficha: { id, name, createdAt, updatedAt, order }`. The student page lists fichas as cards (name +
+"Modificada em dd/mm/aaaa" + Editar + Excluir). Creating a third ficha first asks, then — in one atomic batch — creates the new
+treinos and deletes **every treino of the oldest ficha and nothing else**. Editing opens the editor pre-filled with the whole
+ficha (name + all treinos). Treinos that existed before this change (no `ficha` field) appear as **one** card, "Ficha atual",
+so nothing disappears and nothing is deleted by the migration.
+
+**Not touched (explicit, to stop scope creep):** Android and iOS (source, assets, the phone's own prompt; the phone keeps
+reading and writing `workouts` as it does — it ignores the new field, and a phone save drops it, which only makes that treino
+read as a legacy one); `firestore.rules` and `firestore-rules/versions/` (v6 stays exactly as it is); `workoutLogs` and the
+progress charts (a ficha's deletion never touches a log); billing, accounts, e-mails, the ADM console (its Gemini counter keeps
+reading old data); `parseWorkouts` / `applyPaste` / `parseWorkoutName` / `parseExercises` (Kotlin mirrors — **must not
+change**); the exercise reference (§33); the student's logging screen (`aluno/treino`).
+
+**Where this executes:** `web/` only, on a **new branch from `claude/hide-reference-table`** — this plan edits the files §33
+rewrote (`editorCopy.ts`, `MultiFichaReview.tsx`, `volumeFeedback.ts`, the prompts, the leak guards), so it cannot start from
+`main` until §33 is merged. PR, never merge or push without the owner asking. Commit each verified item on its own; every
+commit must leave `npm test`, `npm run lint`, `npx tsc --noEmit` and `npm run build` green (hence the add-beside-then-remove
+order in 34d/34h). Read `web/AGENTS.md` and the relevant guide in `web/node_modules/next/dist/docs/` before touching route code
+(no new route is added: `/app/fichas/editar` only changes its query parameter, static export rules from §23f still apply).
+Reply to the owner in Portuguese.
+
+```mermaid
+flowchart TD
+    A[34a. Findings and decisions] --> B[34b. Model and pure domain]
+    B --> C[34c. Data layer - create, save, delete]
+    A --> D[34d. Format-prompt asset and guards]
+    C --> E[34e. Ficha editor screen]
+    D --> E
+    C --> F[34f. Student page - simple cards]
+    C --> G[34g. Student's own page - grouped]
+    E --> H[34h. Remove what became dead]
+    F --> H
+    G --> H
+    H --> I[34i. Verification - unit, emulator, browser]
+    I --> J[34j. Rollout - manual]
+    J --> K[34k. Docs and registration]
+```
+
+**34a. Findings and decisions**
+
+Suggested: sonnet · medium — already researched; what is left is recording the owner's answers to the open choices.
+
+What exists today (verified 2026-10-06 — do not re-research):
+- A "ficha" is **one treino**: `workouts/{id}` = `{ trainerId, studentId, name, isActive, exercisesJson, createdAt, status
+  ('draft'|'assigned'), assignedAt, archivedAt? }` (`domain/workouts.ts`, `data/converters.ts` `toWorkout`/`workoutToFirestore`).
+  Status is derived (`withDerivedStatus`): active ⇒ `assigned` — the only thing firestore.rules let a student read.
+- Student page `app/app/alunos/detalhe/WorkoutsSection.tsx`: three groups (Ficha atual / Ficha anterior / Outras), a status
+  line and the full exercise list per treino, **Editar** (link `?aluno=&id=<workoutId>`) / **Desativar-Ativar** / **Excluir**
+  (`window.confirm`). Only `StudentDetail.tsx` uses it.
+- Editor `app/app/fichas/editar/FichaEditor.tsx` (597 lines): card "Pedir à IA (opcional)" (`RequestBuilder`, the "O que você
+  quer…" textarea, two tabs — copy-and-paste and `GeminiPanel` —, "Incluir o nome e as restrições médicas", "Copiar prompt"
+  with the student's profile) → card "Importador Inteligente" → either `MultiFichaReview` (≥2 treinos found) or a one-treino
+  form → on save, if the student has an active treino, the "Substituir a ficha atual?" dialog → `replaceFicha`.
+  Editing is per treino and always the one-treino form.
+- `data/workouts.ts`: `loadStudentWorkouts` (trainerId + studentId, newest first), `loadMyWorkouts` (student: `status ==
+  'assigned'`), `saveWorkout`, `saveWorkouts` (atomic batch), `deleteWorkout`, `replaceFicha` (§28). Tests for them live in
+  `web/rules/dataLayer.test.ts` ("replacing a ficha (GOALS.md §28)") and `src/domain/fichaHistory.test.ts`.
+- Student home `app/aluno/page.tsx` lists the assigned treinos flat (sorted by name); `aluno/treino/LogSession.tsx` opens one by id.
+- Rules: on `workouts` the owning trainer creates/updates/deletes (create/update also require the student to be linked), a
+  student reads only their own *assigned* ones; **no field is validated, so a new field needs no rules change**. Kotlin's
+  mapper reads only the known fields and writes only those (§28 checked it), so an extra field is ignored by the phone.
+- Nothing else reads `workouts` (checked with `git grep`: no dashboard, billing or ADM screen counts them). Logs carry
+  `workoutId` + `exerciseName`; charts group by `exerciseName`, so deleting a treino never breaks a record.
+- The Gemini modules (`data/gemini.ts`, `domain/ai{Errors,Request,Response,Usage}.ts`) and `RequestBuilder`/`fichaRequest.ts`
+  are imported **only** by the card being deleted (and their own tests, and `referenceLeak.test.ts`). The ADM console shows
+  a `geminiGenerated` counter from `trainerActivity`; old documents carry it.
+
+Decisions (the defaults below are what 34b–34k build; the owner can change any of them before `/execgoals`):
+- [x] **D1 — Data model:** a ficha = the treinos sharing `workouts/{id}.ficha = { id, name, createdAt, updatedAt, order }` (a
+      single map, so it is all-or-nothing). Considered and not chosen: a `fichas/{id}` collection — it needs rules v7, a student
+      read rule, and a two-document consistency the rules cannot check; the owner would have to publish rules again for no
+      user-visible gain.
+- [x] **D2 — Cap:** at most **2** fichas per student. Creating a third deletes the **oldest by creation** (`ficha.createdAt`),
+      so editing a ficha never changes which one is "oldest" and the bottom card is always the one that goes.
+- [x] **D3 — Order:** **newest on top**, for the trainer's cards and the student's page ("o card vai descer" = the existing card
+      is pushed down by the new one).
+- [x] **D4 — No active/inactive in the UI:** every treino the web saves is active (`isActive: true`, `status: 'assigned'`);
+      "Desativar/Ativar" disappears. (A phone-side deactivation is overwritten the next time the ficha is saved on the web.)
+- [x] **D5 — The card:** name + "Modificada em dd/mm/aaaa" + **Editar** + **Excluir**, nothing else (no exercise list, no
+      status line, no treino count). To see a ficha's content the trainer opens **Editar**.
+- [x] **D6 — Delete:** the shared `ConfirmDialog` (not `window.confirm`), text "Esse processo não pode ser desfeito."; it deletes
+      that ficha's treinos in one batch; `workoutLogs` are never touched (same rule as §28).
+- [x] **D7 — Confirmation before the third:** creating a third ficha first asks ("a mais antiga — «X» — será excluída para sempre.
+      Esse processo não pode ser desfeito."). Not in the request; added because the deletion is automatic and irreversible
+      (owner decision O2 in 34j: keep or drop).
+- [x] **D8 — Existing data:** treinos without `ficha` that are **active** form **one** virtual ficha, "Ficha atual" (id
+      `legacy`, date = their latest assignment/creation). It is a normal card: Editar (saving **adopts** it — the treinos get a
+      real `ficha` map and the name the trainer typed) and Excluir. Treinos without `ficha` that are **inactive** (the §28
+      history, drafts, hand-deactivated) are **hidden, never counted, never deleted** by the UI (owner decision O1 in 34j).
+- [x] **D9 — The "Pedir à IA" card is deleted entirely**, including the in-site **Gemini** tab and the student-profile prompt;
+      the Gemini code is deleted with it (git history keeps it; the `geminiGenerated` activity key stays so old counters render).
+- [x] **D10 — The new card is formatting only:** a static text (no student data, no volume guidance, no persona) that tells an
+      external AI how to answer so `parseWorkouts` can read it. The trainer pastes it into their own AI together with their own
+      request. The ficha's name is **typed by the trainer**, never parsed from the AI's answer.
+- [x] **D11 — Edit = the create screen, pre-filled:** ficha name + every treino; treinos can be added and removed; pasting an AI
+      answer **replaces** the treino list (nothing is written until "Salvar ficha").
+- [x] **D12 — Student's page:** the student sees **both** fichas, grouped under the ficha's name, newest first; treinos inside a
+      ficha in the order the trainer saved them.
+- [x] **D13 — Activity counter:** `fichaSaved` is recorded once per ficha saved (it used to count treinos).
+- [x] **Done when:** the owner has read D1–D13 and either left them or changed them here, with the date (the answers to D2, D3, D7
+      and D8 change code in 34b/34e/34f).
+      **Done (2026-10-07):** the owner ran `/execgoals` after reading D1–D13 in the `/newgoal` report and changed none of them, so they stand as written.
+
+**34b. Model and pure domain (no Firestore, no clock)**
+
+Suggested: sonnet · high — it fixes the stored shape the phone also reads, and the grouping rules decide what is deleted later.
+
+- [x] **`domain/workouts.ts`:** add `ficha: FichaMembership | null` to `Workout`, with `FichaMembership = { id: string; name:
+      string; createdAt: number; updatedAt: number; order: number }`; **remove `archivedAt`** (§28) from the type and stop
+      `withDerivedStatus` touching it (nothing reads it any more: hidden legacy treinos are recognised by `isActive` alone).
+      Comment on the field: web-only, ignored by the phone, dropped by a phone save (that treino then reads as legacy).
+      Done when: `npx tsc --noEmit` is clean once the callers in 34c–34h are updated.
+      **Done (2026-10-06):** `FichaMembership` and `Workout.ficha` added with the web-only comment. **Deviation:** `archivedAt` is NOT removed here but in 34h together with `fichaHistory.ts`, which still reads it — removing it now would break the build between the two areas. `withDerivedStatus` is untouched until then.
+- [x] **`data/converters.ts`:** `toWorkout` reads `ficha` **leniently** — an object with a non-blank string `id` and `name`; its
+      numbers fall back (`createdAt` → the treino's `createdAt`, `updatedAt` → that, `order` → 0); anything else (absent, a
+      string, an array, a missing id) ⇒ `null`, never a throw. `workoutToFirestore` writes `ficha` **only when non-null** (so a
+      legacy or phone-shaped document is byte-for-byte what it was) and no longer writes `archivedAt` (an old document that has
+      one keeps it harmlessly; nothing reads it). Done when: converter tests cover absent / malformed / partial / round trip /
+      "a document without `ficha` serialises to exactly the old keys".
+      **Done (2026-10-06):** `ficha()` reader (lenient, never throws) + write-only-when-set in `workoutToFirestore`; `converters.test.ts` covers absent / 13 malformed shapes / partial numbers / round trip / "a document without `ficha` has exactly the old keys". `archivedAt` writing is dropped in 34h with its field.
+- [x] **`domain/fichas.ts` (new, pure) with `fichas.test.ts` beside it:**
+      `MAX_FICHAS = 2`, `LEGACY_FICHA_ID = "legacy"`, `LEGACY_FICHA_NAME = "Ficha atual"`;
+      `interface Ficha { id; name; createdAt; updatedAt; legacy: boolean; treinos: Workout[] }`;
+      `groupFichas(workouts): Ficha[]` — **newest first** (`createdAt` desc, id as tie-break). Real fichas = treinos grouped by
+      `ficha.id` (whatever their `isActive`); name from the member with the greatest `updatedAt`, `createdAt` = the smallest,
+      `updatedAt` = the greatest. The virtual ficha = treinos with `ficha === null && isActive` (name/id above; `createdAt` =
+      the smallest treino `createdAt`; `updatedAt` = the greatest `assignedAt ?? createdAt`); treinos with `ficha === null &&
+      !isActive` are **excluded**. Treinos inside a ficha: real → by `ficha.order`, then `createdAt`, then name; legacy → by name
+      (`localeCompare("pt-BR", { numeric: true })`, what the student's page does today — §25e staggered their `createdAt` newest-first,
+      so `createdAt` would reverse them).
+      `planNewFicha(existing, incoming): { toCreate; toDelete }` — keeps the newest `MAX_FICHAS − 1` existing fichas and puts
+      **every treino of the others** in `toDelete` (a legacy active ficha included; hidden legacy treinos never); throws if a
+      treino id would be in both lists. It only ever sees one student's treinos (the caller loads them with both equality filters).
+      `fichaNameErrors(name)` — blank (Kotlin blank, `isKotlinBlank`) ⇒ "Nome da ficha é obrigatório."; longer than 80 after
+      `kotlinTrim` ⇒ "Nome da ficha: no máximo 80 caracteres." `fichaSaveErrors(name, treinos)` — the ficha's name errors, "Adicione
+      pelo menos um treino." for none, and for each treino `workoutErrors` + `exerciseErrors`, each prefixed with the treino's name
+      (the text `saveAll` builds today).
+      Done when the tests cover: no treinos; legacy only (one card, "Ficha atual", hidden inactive ignored); real only; real +
+      legacy (two cards, order); three fichas ⇒ `planNewFicha` deletes exactly the oldest one's treinos; the oldest is a legacy
+      one; two fichas ⇒ deletes the older; one or zero ⇒ deletes nothing; a treino with a malformed `ficha` reads as legacy;
+      treino ordering both ways; name rules (blank, 80, 81, control spaces).
+      **Done (2026-10-06):** `domain/fichas.ts` + `fichas.test.ts` (no treinos; legacy-only with hidden inactive ignored; real; real + legacy order and tie-break; name/date of the member saved last; a dropped map reads as legacy; `planNewFicha` with 0/1/2/3 fichas, legacy oldest, hidden never listed, double-listed refused; name and save rules). Verified: `npx vitest run src/domain/fichas.test.ts src/data/converters.test.ts` green, `npx tsc --noEmit` clean.
+
+**34c. Data layer (create, save, delete — the destructive part)**
+
+Suggested: opus · xhigh — an automatic deletion of a student's fichas; the bound ("only the oldest ficha's own treinos") has to be right the first time.
+
+- [x] **`data/workouts.ts` — `loadStudentFichas(db, trainerId, studentId): Promise<Ficha[]>`** = `groupFichas(await
+      loadStudentWorkouts(…))`. `loadStudentWorkouts` stays as the one query (it still returns hidden legacy treinos; the grouping
+      hides them). `loadMyWorkouts` keeps its query (`status == 'assigned'`).
+      **Done (2026-10-06).**
+- [x] **`createFicha(db, trainerId, studentId, draft, now)`** with `FichaDraft = { name: string; treinos: { name: string;
+      exercises: Exercise[] }[] }` → `{ created: Ficha; deleted: Ficha[] }`. Refuses a draft that fails `fichaSaveErrors`; reads the
+      student's treinos **once**; builds the treinos (new `crypto.randomUUID()` each, `isActive: true`, `createdAt: now`, `ficha =
+      { id: <new uuid>, name: kotlinTrim(name), createdAt: now, updatedAt: now, order: index }`, passed through
+      `withDerivedStatus`); runs `planNewFicha`; refuses with `FichaTooLarge` above `MAX_FICHA_OPERATIONS = 450` (creates + deletes —
+      refused rather than split, it must stay atomic); then **one `writeBatch`**: sets for the new treinos, deletes for `toDelete`.
+      Same-instant two-tab races (a client transaction cannot run a query) may leave three fichas — never lost data: accepted and
+      noted in a comment.
+      **Done (2026-10-06):** reuses `newWorkout` for each treino and attaches the `ficha` map; `FichaTooLarge` above `MAX_FICHA_OPERATIONS`; one `writeBatch`.
+- [x] **`saveFicha(db, trainerId, studentId, fichaId, draft, now)`** with `draft.treinos[].id: string | null`: re-reads the
+      student's treinos; the ficha must exist (else `FichaNotFound`); every given `id` must belong to **that ficha** (else throw
+      before writing — never overwrite another ficha's or another student's treino); kept treinos keep their `createdAt`/`assignedAt`,
+      new ones (no id) are created; **treinos of the ficha missing from the draft are deleted**; every written treino carries
+      `ficha = { id, name, createdAt: <the ficha's>, updatedAt: now, order: index }`; for `fichaId === LEGACY_FICHA_ID` the `id` is
+      a **new uuid** (adoption) and `createdAt` is the virtual ficha's, so it keeps its place in the order. One batch.
+      **Done (2026-10-06):** also refuses a treino id listed twice. Legacy adoption takes a new uuid and keeps the virtual ficha's `createdAt`.
+- [x] **`deleteFicha(db, trainerId, studentId, fichaId)`**: re-reads, deletes exactly the treinos `groupFichas` puts in that ficha
+      (the legacy one: the active legacy treinos) in one batch; `FichaNotFound` if it is already gone (the screen says "A ficha já
+      não existe — a lista foi atualizada."). Never touches `workoutLogs`, hidden legacy treinos or another student's treinos.
+      **Done (2026-10-06).**
+- [x] **Emulator tests in `rules/dataLayer.test.ts`** (replace the "replacing a ficha (GOALS.md §28)" block; same `seed`/`stateOf`
+      helpers): (1) `createFicha` with 3 treinos — one `ficha.id`, `order` 0..2, all active/assigned, `createdAt == updatedAt == now`,
+      and the linked student's own query sees them; (2) a second ficha — `loadStudentFichas` returns it first; (3) a **third** deletes
+      exactly all treinos of the oldest ficha and leaves the newest, the new one, another student's treinos, hidden legacy inactive
+      treinos and every `workoutLogs` document; (4) the oldest being the legacy active ficha is deleted, legacy inactive are not;
+      (5) another trainer / the student writing ⇒ rejected and **nothing changes** (all-or-nothing, as the existing batch test);
+      (6) `saveFicha` — name, exercises and `updatedAt` change on every treino, `createdAt` and `ficha.createdAt` do not; an added
+      treino appears; a removed one is deleted; an `id` of another ficha is refused with nothing written; legacy adoption gives a
+      new `ficha.id`, the typed name and keeps the creation order; (7) `deleteFicha` removes exactly its treinos, a stale call
+      throws `FichaNotFound` without writing; (8) a draft over the size bound is refused before any write.
+      Done when: `npm run test:rules` (Java 21) passes **and** each deletion-bound test was seen failing once against a
+      deliberately widened delete (e.g. `planNewFicha` deleting every ficha) — a "does not delete X" test proves nothing until it
+      has failed.
+      **Done (2026-10-06):** a new block "fichas as named sets of treinos (GOALS.md §34)" with 11 tests (the 8 listed cases, plus "another trainer / the student cannot create, save or delete" and an invalid-ficha refusal). `npm run test:rules` for `rules/dataLayer.test.ts`: 50/50 green on the emulators (Java 21). **Mutation check:** with `planNewFicha`'s delete deliberately widened (`.slice(0)`) 5 tests failed (second ficha, third ficha, pre-ficha oldest, other-ficha id, deleteFicha), then the bound was restored. **Deviation:** the old "replacing a ficha (§28)" block stays until 34h (it tests `replaceFicha`, which is deleted there).
+
+**34d. The format prompt: asset and guards (added beside the old files; the old ones go in 34h)**
+
+Suggested: sonnet · medium — a short text with a hard contract (the parser must read what it asks for) plus plumbing.
+
+- [x] **`web/prompt/ficha_prompt_format.md` (new, pt-BR).** Formatting rules only: it says the answer will be pasted into a site that
+      reads the format automatically; **all treinos in the same answer, inside ONE code block** (plain text, no bold, lists or
+      tables; comments outside the block); each treino starts with a title line `Treino A`, `Treino B`… (optionally `Treino A —
+      Peito e tríceps`; `Treino 1`, `Treino 2` for day-based); one line per exercise `Nome do exercício SÉRIESxREPS` (SÉRIES = number
+      of sets, REPS a number or a range like 10-12); simple, consecrated Brazilian-Portuguese exercise names without equipment
+      brand; **no** muscles, percentages, notes, numbering or bullets on the line; **do not name the whole ficha** (the trainer
+      types that on the site); the same example block as `ficha_prompt_multi.md` (known clean); it ends with an open line the
+      trainer can type after ("Meu pedido para o treino:"). It carries **no student data and no volume guidance**. It must not
+      contain the words "tabela" (singular), "coeficiente", "régua", "PDF" or any name the leak test derives (§33f).
+      **Done (2026-10-07):** the file is in place (same example block as the old multi template; ends with "Meu pedido para o treino:"); no student data, no volume advice, none of the forbidden words.
+- [x] **Plumbing, alongside the old files:** `scripts/lib/webTemplates.mjs` — add `ficha_prompt_format.md` to `WEB_TEMPLATES` (old three
+      stay until 34h); `src/data/promptAssets.ts` — add `loadFormatPrompt(): Promise<string>` (same `fetch` with the base path as
+      `fetchText`); `scripts/check-no-reference-leak.mjs` follows `WEB_TEMPLATES` (no edit expected).
+      **Done (2026-10-07):** `WEB_TEMPLATES` got the new file beside the old three (the old ones left in 34h), `loadFormatPrompt()` added to `data/promptAssets.ts`; `check-no-reference-leak.mjs` follows `WEB_TEMPLATES` unchanged.
+- [x] **Guards:** `referenceLeak.test.ts` scans the new file as text with the same sentinels. A new test pins its contract: the first
+      fenced block of the prompt, fed to `parseWorkouts`, returns exactly the treinos the prompt shows (so the example can never
+      drift from the parser), and the file contains "UM ÚNICO bloco de código" and no `{name}`-like placeholder.
+      Done when: `npm test` and `npm run check:leak` are green with the new file present and the old ones still served.
+      **Done (2026-10-07):** `fichaPrompt.format.test.ts` pins the contract (one block, "Treino A", no profile/volume text, the closing line) and parses the prompt's own example into exactly the treinos it shows; `referenceLeak.test.ts` scans the file. `npm test` green; `npm run build` + `npm run check:leak` green with the old files still served (172 text files scanned).
+
+**34e. The ficha editor screen**
+
+Suggested: sonnet · high — the largest change: one screen replaces three paths (single form, multi review, per-treino edit), with state, a destructive confirmation and the leak guards around it.
+
+- [x] **URL contract:** `/app/fichas/editar?aluno=<id>` (new) and `…&ficha=<fichaId>` (edit; `legacy` for the virtual ficha). The old
+      `&id=<workoutId>` is no longer read (the only link that built it is `WorkoutsSection`, replaced in 34f). The loader uses
+      `loadStudentFichas`; an unknown ficha shows "Ficha não encontrada. Voltar". New fichas stay connected-students-only (as today).
+      **Done (2026-10-07):** `?aluno=` for new, `&ficha=` for edit (`legacy` for the virtual one); `&id=` is no longer read (its only builder, `WorkoutsSection`, is gone).
+- [x] **Layout, top to bottom** — `<h1>` "Nova ficha" / "Editar ficha"; **card 1 "Prompt de formatação de ficha"**; **card 2 "Importador
+      Inteligente"**; **card 3 "Ficha"**. The card "Pedir à IA (opcional)" is **deleted entirely**: no `RequestBuilder`, no "O que você
+      quer nesta ficha?" textarea, no tabs, no `GeminiPanel`, no "Incluir o nome e as restrições médicas", no student-profile prompt and
+      no "Tamanho do prompt" hint, no `buildWebFichaPrompt` call.
+      **Done (2026-10-07):** verified in `e2e/fichas.mjs`: the section headings read "Prompt de formatação de ficha | Importador Inteligente | Ficha", and no "Pedir à IA", Gemini tab, request shortcuts or "Incluir o nome…" remain (desktop 53/53, mobile 57/57).
+- [x] **Card 1:** one sentence ("Cole este texto na IA que você usa, junto com o seu pedido, para ela devolver a ficha no formato que
+      o site entende."), a **"Copiar prompt"** button that copies inside the click (the text is fetched up front, as the template is
+      today; disabled until loaded), a `role="status"` line ("Prompt copiado! Cole na sua IA de preferência." / the manual-copy
+      fallback), and the text itself in a read-only `<textarea aria-label="Prompt de formatação">` inside `<details><summary>Ver o texto
+      do prompt</summary>`. A load failure shows `role="alert"` "Não foi possível carregar o prompt. Recarregue a página."
+      **Done (2026-10-07):** copy button copies the prompt (clipboard stubbed in the test; what is copied has the format rules and nothing of the student), text inside `<details>`, status line and load-failure alert in place.
+- [x] **Card 2:** the paste box (`aria-label="Texto para importar"`) with the copy "Cole aqui a resposta da IA. Cada título (Treino A, B,
+      C…) vira um treino abaixo." Pasting runs `parseWorkouts` and **replaces** the treino list below (create and edit); the parser's
+      warnings show in a `role="status"` list; text with no exercise changes nothing. Nothing is saved until "Salvar ficha".
+      **Done (2026-10-07):** paste replaces the treino list; parser warnings listed; text with no exercise changes nothing and says so.
+- [x] **Card 3 — the ficha:** first the **"Nome da ficha"** input (`<label>`; placeholder "Ex: Hipertrofia – outubro"; required, trimmed
+      with `kotlinTrim`, 80 max), then **"Treinos (N)"**: one card per treino — the existing `MultiFichaReview` card with its
+      `ExerciseRow`/`AddExercise` (rename the component to `TreinosEditor` or keep the file; the pieces stay): **"Nome do treino"**
+      input, exercise rows (name, séries, reps, Remover, the muscle status sentence from `EDITOR_COPY`, ≤3 "Quis dizer…?" buttons),
+      the "Adicionar exercício" form, and a **"Remover treino"** button that replaces the old "Incluir" checkbox (it drops the treino
+      from the in-memory list; nothing is deleted until save); a **"Adicionar treino"** button appends an empty treino card; the empty
+      state says "Nenhum treino ainda. Cole a resposta da IA acima ou adicione um treino." Below: the volume block
+      ("Volume efetivo por músculo (soma dos treinos)", band table, "Copiar pedido de ajuste de volume") fed by **all** treinos —
+      `includedVolume` in `domain/volumeFeedback.ts` stops needing the `include` flag (takes `{ exercises }[]`; update its test).
+      The one-treino form ("Lista de exercícios" table, "Novo exercício" fieldset, "nesta ficha" volume) is **removed**.
+      **Done (2026-10-07):** `MultiFichaReview.tsx` became `TreinosEditor.tsx` (git mv, `ExerciseRow`/`AddExercise` kept); name input, "Nome do treino", "Remover treino" (replaces "Incluir"), "Adicionar treino", the empty state, and the volume block fed by all treinos (`includedVolume` lost its `include` flag; its test updated). The one-treino form is gone.
+- [x] **Save — "Salvar ficha"** (`button-primary`; disabled while saving or while the exercise data loads — `EDITOR_COPY.loading` /
+      `waitToSave` as today): validate with `fichaSaveErrors` (+ `exerciseErrors` per treino) into a `role="alert"` list; apply the
+      exercise data's muscles to **every** treino, new and edited (`applyCatalogActivations`, `tidied`) as `saveAll` does today.
+      **Create:** `loadStudentFichas`; if `length >= MAX_FICHAS` open the `ConfirmDialog` — title "Você já tem 2 fichas", text "Ao
+      salvar, a mais antiga — “{nome}”, modificada em {dd/mm/aaaa} — será excluída para sempre. Esse processo não pode ser
+      desfeito.", yes "Excluir a mais antiga e salvar", no "Cancelar" (Cancel/Escape/backdrop leave everything as it is) — then
+      `createFicha`. If the fichas cannot be read, show a plain error and save nothing ("nothing is ever deleted on a guess").
+      **Edit:** `saveFicha`. Then `router.push` back to the student. `trackActivity(…, "fichaSaved", …)` once per ficha. Errors keep
+      today's wording ("Não foi possível salvar a ficha. Tente de novo." — and nothing was written).
+      **Done (2026-10-07):** validation with `fichaSaveErrors`; muscles applied to every treino; create asks "Você já tem 2 fichas" before a third (Cancelar keeps everything — checked in Firestore; confirming deletes only the oldest); edit uses `saveFicha`; `fichaSaved` once per ficha. Verified end to end in `e2e/fichas.mjs`.
+- [x] **Edit mode:** name and treinos pre-filled from the loaded ficha (treinos keep their ids). For the legacy ficha the name starts
+      as "Ficha atual" and a note says "Esta ficha foi criada antes dos nomes de ficha; ao salvar, ela passa a ter o nome acima."
+      **Done (2026-10-07):** pre-filled name and treinos (ids kept); the legacy ficha starts as "Ficha atual" with the adoption note, and saving it adopts it (checked: the treino now carries the `ficha` map, the hidden inactive one is untouched).
+- [x] **Copy and styles:** every new sentence about the exercise data stays in `EDITOR_COPY` (the leak test reads it); the Gemini-only
+      strings go in 34h. Reuse `.review` / `.review-card`; add only what is missing to `globals.css` (one stylesheet; controls ≥44px,
+      text ≥12px, fields 16px on touch widths, tables with `className="stack"` + `data-label` — §23k).
+      **Done (2026-10-07):** nothing new about the exercise data was written inline (`EDITOR_COPY` reused); `.review` / `.review-card` reused, no new CSS for the editor; the only stylesheet changes are the student-page ficha group and the card title (34g) and the removal of the tab/Gemini rules (34h).
+- [ ] **Switch the plumbing:** the editor stops calling `loadPromptAssets`; it calls `loadFormatPrompt`.
+      Done when: against the emulators — a new ficha (paste → name → save), an edit (rename a treino, remove one, add an exercise)
+      and the third-ficha dialog (cancel keeps, confirm deletes the oldest) all work; the page text at desktop and phone width reads as
+      described (checked through the Browser pane's page text / DOM, not desktop screenshots — the owner confirms the **look** from a
+      screenshot they send of "Nova ficha" at desktop width and ≤430px); `npm test`, `npm run lint`, `npx tsc --noEmit`, `npm run
+      build`, `npm run check:leak` green.
+      **Status (2026-10-07) — everything but the owner's look is done:** the editor calls `loadFormatPrompt`; a new ficha, an edit and the
+      third-ficha dialog work against the emulators (`e2e:fichas` 53/53 desktop, 57/57 mobile); the page text/DOM reads as described at
+      both widths; the five checks are green. **Left open on purpose:** the owner confirms the *look* from a screenshot of "Nova ficha"
+      at desktop width and ≤430px (agents do not take desktop screenshots).
+
+**34f. Student page: one simple card per ficha**
+
+Suggested: sonnet · medium — a small screen, but it carries the delete confirmation the owner asked for.
+
+- [x] **Replace `alunos/detalhe/WorkoutsSection.tsx` with `FichasSection.tsx`** (update the import in `StudentDetail.tsx`): the section
+      title "Fichas", the "Nova ficha" link (connected students only, with today's "Conecte o aluno pelo convite…" text otherwise),
+      a short note "Até 2 fichas por aluno — ao criar a terceira, a mais antiga é excluída.", and the cards from
+      `loadStudentFichas`, newest first: `<article>` with `<h3>` = the ficha's name, `<p>Modificada em dd/mm/aaaa</p>` (`formatDate`
+      of `localDate(updatedAt, timeZone)`), **Editar** (link to `?aluno=&ficha=`) and **Excluir**. Nothing else: no "Ficha atual /
+      anterior / Outras" groups, no status line, no exercise list, no Desativar/Ativar. Empty: "Nenhuma ficha ainda." Loading and
+      error texts as today.
+      **Done (2026-10-07):** `FichasSection` is keyed by student in `StudentDetail` (moving between students never shows the previous one's cards). **Deviation:** "Editar" is rendered as `className="button"` — as a bare inline link it was 19px tall at 390px, under the project's 44px rule (the old section had the same defect).
+- [x] **Excluir:** the shared `ConfirmDialog` — title "Excluir a ficha “{nome}”?", text "Esse processo não pode ser desfeito. O aluno deixa
+      de ver os {N} treinos desta ficha; o histórico de cargas dele não é apagado.", no "Cancelar", yes "Excluir"; confirm calls
+      `deleteFicha` and reloads the list; `FichaNotFound` shows "A ficha já não existe — a lista foi atualizada." and reloads.
+      Done when: with 0, 1 and 2 fichas the page matches D5; Escape, the backdrop and "Cancelar" keep the ficha; confirming removes only
+      that ficha's treinos (checked in Firestore) and the student's `workoutLogs` are unchanged; `npm run lint` / `tsc` / `build` green.
+      **Done (2026-10-07):** verified in `e2e/fichas.mjs`: the dialog names the ficha and says "Esse processo não pode ser desfeito."; Escape and "Cancelar" keep it; confirming deletes only that ficha's treinos; `workoutLogs` count unchanged (24 vs 24).
+
+**34g. Student's own page: fichas grouped under their name**
+
+Suggested: sonnet · medium — a small, user-visible change on the student's side.
+
+- [x] **`aluno/page.tsx`:** group the student's assigned treinos with `groupFichas`; one `<section>` per ficha, newest first, with the ficha's
+      name as `<h2>` and each treino's card (title `<h3>`, the `<details>` exercise list and "Registrar treino de hoje" link as today)
+      in the ficha's order. A student with only pre-change treinos sees one group, "Ficha atual". The empty text "Nenhuma ficha
+      atribuída ainda. Fale com seu personal." stays. Adjust the `.workout-card h2` rules in `globals.css` so the card title keeps the
+      look it has now. `aluno/treino` is not touched.
+      Done when: a seeded student with two fichas sees both groups in the right order with the right names; a student with legacy
+      treinos sees "Ficha atual"; the heading order is valid (h1 → h2 → h3).
+      **Done (2026-10-07):** `<section class="ficha-group">` per ficha (name as `<h2>`, treinos as `<h3>` cards), newest first; the card-title CSS keeps its old look. Verified with the seeded students: Bruno sees "Terceira (editada)" then "Definição — outubro" with their treinos; Ana sees one group, "Ficha atual".
+
+**34h. Remove what became dead**
+
+Suggested: sonnet · medium — mechanical, but each deletion must be proven unused first.
+
+For each item below, run `git grep` for the symbol/file name first and delete only when no importer remains outside what is being deleted:
+- [x] `fichas/editar/GeminiPanel.tsx`, `RequestBuilder.tsx`; `data/gemini.ts`; `domain/aiErrors.ts`, `aiRequest.ts`, `aiResponse.ts`, `aiUsage.ts` and
+      `aiGemini.test.ts`, `aiResponse.test.ts`; `domain/fichaRequest.ts` and its test.
+      **Done (2026-10-07):** deleted (with `data/gemini.ts`, `ai{Errors,Request,Response,Usage}.ts`, their tests, `fichaRequest.ts` + test); `git grep` showed no importer left before each removal.
+- [x] `web/prompt/ficha_system_gemini.md`, `ficha_prompt_single.md`, `ficha_prompt_multi.md`; `WEB_TEMPLATES` = `["ficha_prompt_format.md"]` only and
+      `STALE_FILES` gains the three removed names (so an old local `public/prompt/` is cleaned by `copy-prompt-assets.mjs`);
+      `promptAssets.ts` loses `loadPromptAssets` and the old fields; `referenceLeak.test.ts` loses the Gemini/single/multi builds and its
+      component-source list is updated to the files that exist.
+      **Done (2026-10-07):** deleted; `WEB_TEMPLATES` is just the format prompt, `STALE_FILES` lists the three removed names; `promptAssets.ts` keeps only `loadFormatPrompt`; `fichaPrompt.multi.test.ts` was deleted with them (its worked-example check moved to `fichaPrompt.format.test.ts`); `public/prompt/` and `out/prompt/` hold only `ficha_prompt_format.md`.
+- [x] `domain/fichaPrompt.ts`: remove `buildWebFichaPrompt`, `deidentified`, `WebPromptOptions` and their tests; **keep `buildFichaPrompt`** and
+      `TABLE_PLACEHOLDER` (the phone's port, with its test).
+      **Done (2026-10-07):** `buildWebFichaPrompt`, `deidentified`, `WebPromptOptions` removed; `buildFichaPrompt` and `TABLE_PLACEHOLDER` (the phone's port, with its test) kept.
+- [x] `domain/fichaHistory.ts` + `fichaHistory.test.ts`; in `data/workouts.ts`: `replaceFicha`, `ReplacementTooLarge`, `ReplacementResult`,
+      `saveWorkout`, `saveWorkouts`, `deleteWorkout`, `newWorkout` (when unused); `MAX_REPLACEMENT_OPERATIONS`.
+      **Done (2026-10-07):** removed with `replaceFicha`, `ReplacementTooLarge`, `ReplacementResult`, `saveWorkout(s)`, `deleteWorkout` and `MAX_REPLACEMENT_OPERATIONS`; **`archivedAt`** is gone from the `Workout` type, the converter and `withDerivedStatus` (an old document that carries it keeps it harmlessly). `newWorkout` stays (used by `createFicha`/`saveFicha`). In the tests: the §28 block of `rules/dataLayer.test.ts` and the one-treino-writer tests were replaced by two rules-level tests of what a student may read; `rules/firestore.rules.test.ts`'s `archivedAt` block became the equivalent for the `ficha` map.
+- [x] `domain/editorCopy.ts`: the Gemini-only strings (`geminiIntro`, `promptModelError`, `askGeminiVolume`); CSS used only by what was deleted
+      (`.tabs`… — only after `git grep` shows no other user).
+      **Done (2026-10-07):** `geminiIntro`, `promptModelError`, `askGeminiVolume` removed; the `.tabs` / `.gemini-*` rules are gone from `globals.css` (nothing else used them).
+- [x] **Keep:** `"geminiGenerated"` in `domain/activity.ts`, the ADM label "Gerações Gemini", the seed's use of it and the rules test that
+      writes it — old counters must keep rendering.
+      Done when: `git grep -niE "gemini"` in `web/src`, `web/scripts`, `web/e2e` lists only `activity.ts`, the ADM label, the seed/rules-test
+      counter and comments; `web/public/prompt/` and `out/prompt/` hold only `ficha_prompt_format.md`; `npm test`, `npm run lint`, `npx tsc
+      --noEmit`, `npm run build`, `npm run check:leak` green.
+      **Done (2026-10-07):** kept in `domain/activity.ts`, the ADM label, the seed and the rules test. `git grep -niE gemini` in `web/src`, `scripts`, `e2e`, `rules`, `prompt` now lists only those, `webTemplates.mjs` (the removed names in `STALE_FILES` and a comment), `ficha-privacy.mjs` (the 404 checks for the removed templates) and one ADM shortcut link to Google AI Studio's rate limits in `admin/page.tsx` (left: the ADM console is out of scope here — owner may drop the link). `npm test`, `npm run lint`, `npx tsc --noEmit`, `npm run build`, `npm run check:leak` green.
+
+**34i. Verification — unit, emulator, browser**
+
+Suggested: sonnet · high — end-to-end flows against the emulators, on two viewports, plus updating a test that guards §33.
+
+- [x] **Seed (`scripts/seed-emulators.mjs`):** keep the pre-change shaped treinos for one student (they show as the virtual "Ficha atual") and give
+      another seeded student two real fichas (one with a `ficha` map and two treinos each) so both shapes exist. Done when `npm run seed:emulators`
+      runs and both shapes show.
+      **Done (2026-10-07):** Ana keeps the pre-ficha shape (active + hidden inactive), Bruno gets two real fichas of two treinos each; header comment updated; `npm run seed:emulators` runs (the bench seeds with it).
+- [x] **`e2e/fichas.mjs` + `package.json` script `e2e:fichas` + a line in `web/README.md` "Browser tests"** (same CDP bench as the other `e2e/*.mjs`; `mobile`
+      argument for 390px). Checks: (1) the student page shows the legacy treinos as one card "Ficha atual" with "Modificada em" and only Editar/Excluir;
+      (2) "Nova ficha" shows card "Prompt de formatação de ficha", **no** "Pedir à IA", no Gemini, no "Incluir o nome…"; (3) saving with an empty name shows
+      "Nome da ficha é obrigatório."; paste a 3-treino answer, name it, save ⇒ the new card is **on top**, with today's date, the old card below it;
+      (4) a third ficha ⇒ the dialog names the oldest; Cancelar keeps both; confirming leaves exactly two cards and the right documents in Firestore;
+      (5) Editar opens the same screen with name and treinos filled; rename a treino, remove one, add an exercise, save ⇒ the date is refreshed and the
+      documents match; (6) Excluir ⇒ dialog text "Esse processo não pode ser desfeito."; Escape keeps; confirm deletes only that ficha's treinos; `workoutLogs`
+      count unchanged; (7) the seeded student's home groups by ficha name, newest first; (8) on mobile: no horizontal scroll, buttons ≥44px.
+      **Done (2026-10-07):** `e2e/fichas.mjs`, `npm run e2e:fichas`, README line. Passes 53/53 on desktop and 57/57 with `mobile`. It navigates through the app's own router (`window.next.router.push`): with full page loads Chrome's six connections per host fill with Firestore streams the emulator keeps open for ~45 s, and a later save stalled for 45 s (a bench artifact already described in the README, not a site defect — the standalone probe of the same save took 1 s).
+- [x] **Update `e2e/ficha-privacy.mjs` to the new screen — its assertions are not weakened:** drop the Gemini-tab step; the removed templates answer 404 and
+      `ficha_prompt_format.md` answers 200; the copyable text is now card 1's (it must have the format rules and **no** student profile / "Pedido do
+      Professor" / student name); the review checks move to card 3 (recognised exercises, no catalog listing, ≤3 suggestions, volume block, the
+      volume-adjust request) with "Salvar ficha" instead of "Salvar 2 fichas"; every `clean(...)` leak check stays. Done when it passes at desktop and mobile.
+      **Done (2026-10-07):** Gemini step dropped; the three retired templates answer 404 and `ficha_prompt_format.md` 200; the copyable text is card 1's (format rules, no student profile); the treino checks moved to `.treinos`; "Salvar ficha" replaces "Salvar 2 fichas"; every `clean(...)` leak check stays. Passes 39/39 on desktop and 39/39 on mobile.
+- [x] **Full run from `web/`:** `npm test`, `npm run lint`, `npx tsc --noEmit` (after `npx next typegen` on a fresh checkout), `npm run build`, `npm run
+      check:leak`, `npm run check:rules-version` (still v6, unchanged), `npm run test:rules`, then `e2e:fichas` and `e2e:ficha-privacy` (both viewports) on the
+      `dev:local` bench. Also `git diff --stat <branch point>.. -- app shared firestore.rules firestore-rules` is empty (Android and rules untouched).
+      Done when: all green; results recorded here with the date.
+      **Done (2026-10-07):** `npm test` 482 passed (45 files); `npm run lint` clean; `npx tsc --noEmit` clean; `npm run build` ok; `npm run check:leak` ok (172 text files); `npm run check:rules-version` (v6, identical to its archive); `npm run test:rules` (via the Java 21 emulators) 209 passed in 6 files; `e2e:fichas` and `e2e:ficha-privacy` on both viewports as above. `git diff -- app shared firestore.rules firestore-rules` is empty.
+
+**34j. Rollout (manual — nothing here is run by `/execgoals`)**
+
+Suggested: n/a — owner steps; listed so they are not forgotten.
+
+- [ ] **(manual) No rules to publish for this section** — v6 is unchanged; whatever state §33h left it in still applies and still comes first.
+- [ ] **(manual) Merge order:** this branch is stacked on §33's; merge §33 first (or both together). Pages deploys from `main` (`web-deploy.yml`).
+- [ ] **(manual) Live check after deploy, on a test student:** their existing treinos appear as one "Ficha atual"; create a ficha (card appears on top);
+      create a second; create a third and read the dialog; sign in as that student and see both fichas grouped. (The third step deletes data — use a test student.)
+- [ ] **(manual) O1 — hidden legacy inactive treinos** (the §28 history, drafts, hand-deactivated): stay in Firestore, invisible to everyone, uncounted.
+      Decide: leave them, or later run a one-off purge. Record the date and the choice here.
+- [ ] **(manual) O2 — the confirmation before the third ficha (D7):** keep or drop it. Record here.
+- [ ] **(manual) O3 — the in-site Gemini is gone:** the Firebase AI Logic API / Gemini Developer API can be switched off in the console and the Remote Config parameter
+      `ficha_model_name` deleted; nothing in the code calls them any more. (App Check stays: Firestore uses it.)
+- [ ] **Done when:** O1–O3 each have a dated decision, and the live check passed.
+
+**34k. Docs and registration**
+
+Suggested: haiku · low — documentation so the new rules are findable and the old behaviour is not described as current; last because it describes what exists.
+
+- [x] **`CLAUDE.md` → "Web front":** replace the paragraph "Replacing a student's ficha keeps only the previous one (§28)" with one on the new model — a ficha is the
+      set of treinos sharing `workouts/{id}.ficha`; at most 2, the third deletes the oldest by creation after a confirmation; the grouping and the legacy rule (one
+      virtual "Ficha atual", hidden inactive treinos); delete and cap are bounded to one ficha's own treinos; `workoutLogs` are never touched; the phone ignores the
+      field and a phone save drops it; `fichaSaved` counts fichas. Update "No AI provider key ever reaches the browser" to: the site calls **no** AI — the trainer copies
+      the "Prompt de formatação de ficha" into their own AI and pastes the answer. Fix the §25 paragraph and the §33 paragraph's mentions of the single/multi/Gemini
+      templates (now `web/prompt/ficha_prompt_format.md` only) and the hand-port table rows for `domain/workouts.ts` / `data/workouts.ts` (web-only `ficha` map).
+      **Done (2026-10-07):** the §28 paragraph became "A ficha is a named set of treinos, at most two per student" (model, grouping and legacy rule, cap and delete bounds, the phone's behaviour, the cards, `fichaSaved`); the AI paragraph became "The site calls no AI"; the §25 and §33 paragraphs and the hand-port table now name `ficha_prompt_format.md`, `createFicha`/`saveFicha`/`TreinosEditor` and the `ficha` map.
+- [x] **`web/README.md`:** the prompt-files paragraph and any Gemini/Firebase AI Logic/Remote Config steps; add `e2e:fichas`.
+      **Done (2026-10-07):** the "Fichas" section rewritten, the Gemini console steps replaced by a note that they can be switched off, `e2e:fichas` listed, and the connection-pool note now mentions in-app navigation.
+- [x] **`GOALS.md`:** mark §25e/§25f/§25i, §28 and §33c/§33e's template parts "Superseded in part by §34" (as §33j did for §25); in §23's list of web-only differences
+      replace `archivedAt` with the `ficha` map; tick this section's items with dates as they are verified and record deviations in place.
+      **Done (2026-10-07):** "Superseded in part by §34" notes at the head of §25 and §33 and "Superseded by §34" under §28; this section's items ticked with dates. **Deviation:** §23 has no entry for `archivedAt` among its web-only differences (it was only ever recorded in §28 and `CLAUDE.md`), so there was nothing to replace there; the `ficha` map is recorded in `CLAUDE.md` and in this section instead.
+- [x] **Done when:** a reader who has never seen this plan can find the ficha model and its limits from `CLAUDE.md`, and no document still presents "Substituir a ficha
+      atual?", "Ficha anterior (histórico)", the Gemini tab or "Incluir o nome e as restrições médicas" as current behaviour.
+      **Done (2026-10-07):** `git grep` in `CLAUDE.md` and `web/README.md` finds no "Substituir a ficha atual?", "Ficha anterior (histórico)", Gemini tab or "Incluir o nome e as restrições médicas" described as current behaviour.
+
+**Done when (the whole section):** a trainer opens a student, sees one simple card per ficha (name + modification date, Editar and Excluir only), creates a ficha from a
+single screen that starts with the "Prompt de formatação de ficha" card and asks for the ficha's name and each treino's name, creates a third and sees the oldest go after a
+clear confirmation, edits and deletes (with "Esse processo não pode ser desfeito."), and the student sees both fichas under their names — proven by `e2e:fichas`, with
+§33's privacy test still green and Android and the Firestore rules untouched.
 
 ## Suggested build order (what blocks what) — revised 2026-08-18
 

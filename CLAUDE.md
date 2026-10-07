@@ -151,8 +151,8 @@ and audit write. See `web/src/data/adminCreate.ts` and GOALS.md §26 for the man
 activations is never shipped, bundled, prompted or named on screen. It lives only in the gated Firestore document
 `appData/exerciseCatalog` (rules v6: an approved active trainer or the ADM may `get` it, nobody can list, only the
 ADM writes), seeded and updated by the owner-run `npm run catalog:publish` (emulators by default, `-- --production`
-for the real project) from the Android asset or `CATALOG_SOURCE`. The web's own prompts (`web/prompt/`: single,
-multi, Gemini system instruction) ask the AI for names + sets × reps only; the site fills the muscles in by name
+for the real project) from the Android asset or `CATALOG_SOURCE`. The web's one prompt (`web/prompt/ficha_prompt_format.md`, the "Prompt de
+formatação de ficha") asks the AI for names + sets × reps only; the site fills the muscles in by name
 (`data/exerciseCatalog.ts` `loadExerciseCatalog`, memory-only, cleared at sign-out) and computes the per-muscle
 volume itself; `domain/volumeFeedback.ts` sends the AI only aggregated totals, never a coefficient. Every sentence
 about the data is in `domain/editorCopy.ts`, and the review offers at most three "Quis dizer…?" names, never the
@@ -185,7 +185,7 @@ user profile; password changes require current-password reauthentication. Reset-
 the recovery path. **A user may correct their own name once every 60 days** (§29g, rules v5): the account page's "Nome"
 section (`_shared/AccountNameSettings.tsx`, `data/account.ts` `savePersonalName`, pure rules in `domain/accountName.ts`)
 writes `users/{uid}.name` together with `nameChangedAt`, a Firestore timestamp stamped by the server (web-only, like
-`archivedAt`; the phone ignores it). `firestore.rules`' `validSelfNameChange` accepts a rename only when the name is 2–80
+the `workouts.ficha` map; the phone ignores it). `firestore.rules`' `validSelfNameChange` accepts a rename only when the name is 2–80
 characters, trimmed, without control characters, different from the current one, `nameChangedAt == request.time` (so a
 device clock decides nothing) and the previous stamp is missing or at least 60 days old; without a rename the stamp cannot
 move. The owning trainer's correction of a linked student's name is another rule and neither needs nor resets the stamp. Avatar objects use `account-avatars/{uid}/profile`, are read as bytes through the
@@ -243,7 +243,7 @@ that branch):
 | `domain/fichaPrompt.ts` `buildFichaPrompt` | `PromptFichaViewModel.buildPrompt` (the phone's template and table are Android assets; **the web no longer copies or uses them** — §33) |
 | `data/converters.ts` | `data/repository/FirestoreMappers.kt` (including `fieldOrNull`'s leniency) |
 | `domain/exercise.ts` | `data/model/Exercise.kt`, `PerformedSet.kt` (the kotlinx JSON in `exercisesJson`/`performedSetsJson`) |
-| `domain/workouts.ts`, `data/workouts.ts` | `TrainerRepository`'s status derivation; `PromptFichaScreen`/`ManualWorkoutScreen` save and paste rules |
+| `domain/workouts.ts`, `data/workouts.ts` | `TrainerRepository`'s status derivation; `PromptFichaScreen`/`ManualWorkoutScreen` save and paste rules (the web-only `ficha` map on top of them: §34, `domain/fichas.ts`) |
 | `data/session.ts`, `data/invites.ts` | `AuthRepository.resolveRole` and `RoleRouter`; `AuthRepository.claimInvite` |
 | `domain/studentProfile.ts`, `data/students.ts` | `AddStudentScreen`/`EditStudentScreen`; `TrainerRepository`'s user writes |
 | `domain/assessments.ts`, `data/assessments.ts` | `AssessmentEntity.kt` (`ParQ.QUESTIONS`); `StudentRepository.submitAssessment` |
@@ -258,12 +258,10 @@ trainer decided the phone doesn't show payments), the dashboard's numbers (`doma
 `parseWorkouts` in `domain/workoutParser.ts` splits one pasted answer ("Treino A / B / C…") into one
 treino each — it is *added beside* `parseWorkoutName`/`parseExercises`/`applyPaste`, which mirror
 `WorkoutParser.kt` and must NOT change (the phone still pastes one ficha at a time, and the two must
-agree on it); `data/workouts.ts` `saveWorkouts` writes the treinos in one atomic batch (same stored
-documents as one-by-one); the review screen is `fichas/editar/MultiFichaReview.tsx`. The multi-treino
-prompt (`web/prompt/ficha_prompt_multi.md`), the single-treino prompt used when editing a ficha
-(`ficha_prompt_single.md`) and the Gemini system instruction (`web/prompt/ficha_system_gemini.md`) are web-only —
-the phone's template asks for one ficha with a muscle block per line, which needs the reference table the web
-never shows (§33) — and `scripts/copy-prompt-assets.mjs` copies only these three into `public/prompt/`.
+agree on it); `data/workouts.ts` `createFicha`/`saveFicha` write a ficha's treinos in one atomic batch (the
+treino cards are `fichas/editar/TreinosEditor.tsx`). The one prompt, `web/prompt/ficha_prompt_format.md`, is
+web-only — the phone's template asks for one ficha with a muscle block per line, which needs the reference table
+the web never shows (§33) — and `scripts/copy-prompt-assets.mjs` copies only it into `public/prompt/`.
 
 **A student adds extra sets only if the trainer allowed it** (2026-10-01): `users/{uid}.canAddSets`,
 a third trainer-granted flag beside `canSelfAssess`/`canLogBiometrics` — off by default and when the
@@ -291,34 +289,34 @@ The gate holds only once the rules are republished; if the phone's student sign-
 the same flow first (GOALS.md §27g). On the emulators, `node scripts/verify-email.mjs <email>` opens the
 link.
 
-**Replacing a student's ficha keeps only the previous one** (GOALS.md §28, 2026-10-01). A "ficha" is one treino
-(`workouts/{id}`), with no cycle grouping, so the editor asks — when the student already has an active treino —
-"Substituir a ficha atual?" (*Cancelar* / *Só adicionar* / *Substituir*; `FichaEditor.tsx`, new treinos only —
-editing one never replaces). *Substituir* is `data/workouts.ts` `replaceFicha`: ONE atomic batch that creates the new
-treinos, archives the current (active) ones and deletes the history the previous replacement left. The history is
-marked by a web-only field, `workouts/{id}.archivedAt` (written only when set; the phone ignores it, and a phone save
-that drops it just makes the treino an ordinary inactive one). What may be deleted is decided in
-`domain/fichaHistory.ts` `planReplacement`, and the bound is the point: only **inactive treinos that carry
-`archivedAt`**, and **only when something is archived in the same replacement** — drafts, treinos deactivated by hand
-and anything the phone wrote are never candidates; re-activating a history treino (`withDerivedStatus`) clears the mark.
-Nothing is deleted outside a replace (no background job: Spark has no scheduler), no rules change was needed, and
-`workoutLogs` are never touched, so the progress charts keep their history. Accepted: two tabs replacing at the same
-instant (a client transaction cannot run a query) could leave two active fichas — never lost data. The student page
-(`WorkoutsSection.tsx`) groups the list as Ficha atual / Ficha anterior (histórico) / Outras (inativas).
+**A ficha is a named set of treinos, at most two per student** (GOALS.md §34, 2026-10-07; it replaced §28's
+"keep only the previous one"). A treino is still one `workouts/{id}` document; the web-only map field
+`workouts/{id}.ficha = { id, name, createdAt, updatedAt, order }` groups the treinos that share `ficha.id` into a
+ficha (no new collection, **no rules change**; written only when set — the phone ignores it, and a phone save drops
+it, which makes that treino read as a legacy one). `domain/fichas.ts` (pure) turns a student's treinos into fichas,
+newest first (`groupFichas`): the treinos that predate fichas and are active read as ONE virtual ficha, "Ficha atual"
+(`legacy`; saving it **adopts** it into a real ficha), and inactive treinos with no `ficha` (the §28 history, drafts)
+are hidden — never listed, counted or deleted. `data/workouts.ts`: `createFicha` makes the new treinos and, when the
+student already has `MAX_FICHAS` (2), deletes **every treino of the oldest ficha by creation and nothing else**
+(`planNewFicha`), `saveFicha` rewrites one ficha (kept treinos keep their `createdAt`, removed ones are deleted,
+`updatedAt` = now), `deleteFicha` removes exactly one ficha's treinos — each in ONE batch, never touching
+`workoutLogs`, so the progress charts keep their history. Accepted: two tabs saving at the same instant (a client
+transaction cannot run a query) could leave three fichas — never lost data. Every treino the web saves is active
+(`isActive`/`assigned`): there is no activate/deactivate any more. The student page (`FichasSection.tsx`) is one simple
+card per ficha — name, "Modificada em", Editar, Excluir (the shared `ConfirmDialog`: "Esse processo não pode ser
+desfeito.") — and a third ficha asks first ("Você já tem 2 fichas"); Editar opens the same screen as "Nova ficha"
+(`fichas/editar?aluno=&ficha=`), pre-filled; the student's own page groups treinos under the ficha's name.
+`fichaSaved` counts fichas, not treinos.
 
-**No AI provider key ever reaches the browser** (decided 2026-09-24, GOALS.md §23e): the web builds
-the §15 prompt for the trainer to paste into whichever AI app they use, and reads the reply back
-with Smart Paste. **One exception, added 2026-09-30 (GOALS.md §25i): the ficha editor's "Gemini"
-tab calls Gemini through Firebase AI Logic** (`data/gemini.ts`) — the Gemini Developer API's free
-tier from the browser with *no key in the page* (access is configured in the Firebase console and
-every request carries an App Check token), so the rule about keys still holds. Rules for that call:
-the model id is one constant (`GEMINI_DEFAULT_MODEL`, overridable by the Remote Config parameter
-`ficha_model_name`) because ids rotate and a retired one answers 404; the student's name and medical
-notes are NOT sent unless the trainer ticks the box (on the free tier Google may use content to improve
-its products); every failure points at the copy-and-paste tab, which stays the fallback. Any other
-provider, or any key in the browser, still needs its own decision. Direct generation with BYO keys
-(`GenerativeAiService`) stays on Android; a server-side proxy would be its own item (a Cloud
-Function, which needs the Blaze plan).
+**The site calls no AI.** The ficha editor offers one static "Prompt de formatação de ficha"
+(`web/prompt/ficha_prompt_format.md`: formatting rules only, no student data, no volume advice, ends with "Meu pedido
+para o treino:"): the trainer copies it into whichever AI app they use, with their own request, and pastes the answer
+into the Importador Inteligente (`parseWorkouts` splits "Treino A / B / C…" into the treinos below); the ficha's name is
+typed by the trainer, never read from the answer. The in-site Gemini tab (§25i, Firebase AI Logic) and the request
+shortcuts were removed with the "Pedir à IA" card (§34); no AI provider key or call reaches the browser, and any
+provider or key in the browser needs its own decision. Direct generation with BYO keys (`GenerativeAiService`) stays on
+Android; a server-side proxy would be its own item (a Cloud Function, which needs the Blaze plan). The ADM console
+still shows old `geminiGenerated` counters (the key stays in `domain/activity.ts`).
 
 Checks, from `web/`: `npm test`, `npm run lint`, `npx tsc --noEmit` (run `npx next typegen` first
 on a fresh checkout), `npm run build`, and `npm run test:rules` (emulators, Java 21).

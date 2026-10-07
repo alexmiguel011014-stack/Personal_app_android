@@ -15,19 +15,23 @@ plain, and `package.json` still depends on `next`/`react`/`react-dom` only. Resp
 in the stylesheet's media queries (>1050, 861–1050, ≤860, ≤600, ≤430px); a table with more than three
 columns takes `className="stack"` and a `data-label` per cell so it becomes labelled rows on a phone.
 
-## Fichas: several treinos at once, and the Gemini tab (GOALS.md §25)
+## Fichas: a named set of treinos (GOALS.md §25, §34)
 
-The ficha editor (`/app/fichas/editar`, new fichas) takes **one answer with several treinos** and makes
-one ficha of each: paste an AI's reply that has "Treino A / B / C…" (markdown, bullets, code fences and
-chatter are tolerated; a spreadsheet paste works too) and a review screen shows what was found before
-**Salvar N fichas** writes them in one batch. Two ways of asking the AI sit in tabs: **Outra IA** (copy the
-prompt, paste the answer) and **Gemini** (generated here, same review screen).
+A **ficha** is a named set of treinos; a student keeps at most **two** (saving a third deletes the oldest, after a
+confirmation). The student page shows one simple card per ficha (name, "Modificada em", Editar, Excluir). The editor
+(`/app/fichas/editar?aluno=<id>[&ficha=<id>]`) is one screen for creating and editing: the **Prompt de formatação de
+ficha** card (copy it into your own AI together with your request), the **Importador Inteligente** (paste the AI's
+answer; each "Treino A / B / C…" becomes a treino below — markdown, bullets, code fences and chatter are tolerated, a
+spreadsheet paste works too), then the ficha's name and its treinos. **Salvar ficha** writes everything in one batch.
+The site calls no AI; the in-site Gemini tab was removed (§34).
 
-Web-only files: `prompt/ficha_prompt_single.md` and `prompt/ficha_prompt_multi.md` (the copy-and-paste
-prompts: one treino when editing a ficha, several for a new one) and `prompt/ficha_system_gemini.md` (the
-Gemini system instruction), copied to `public/prompt/` by `scripts/copy-prompt-assets.mjs` — which also
-**deletes** any older copy of the reference or the phone's template from there. None of them carries the
-trainer's exercise reference (see the next section).
+Data: `workouts/{id}.ficha = { id, name, createdAt, updatedAt, order }` groups treinos into a ficha (web-only, the
+phone ignores it; no rules change). Treinos that predate it read as one "Ficha atual". See `src/domain/fichas.ts`.
+
+Web-only file: `prompt/ficha_prompt_format.md` (the formatting prompt), copied to `public/prompt/` by
+`scripts/copy-prompt-assets.mjs` — which also **deletes** any older copy of the reference, the phone's template or
+the retired single/multi/Gemini templates from there. It carries no student data and not the trainer's exercise
+reference (see the next section).
 
 ## The trainer's exercise reference stays hidden (GOALS.md §33)
 
@@ -61,24 +65,9 @@ in the muscles by name and computes the per-muscle volume itself.
   --production` → merge (the deploy replaces the public files) → check `curl -I` on the two old `/prompt/` URLs
   (404) and a trainer's new-ficha screen. GOALS.md §33h has the whole checklist and the rollback.
 
-**Making the Gemini tab work for real needs the Firebase console** (nothing here can do it from code):
-
-1. Build → **AI Logic** → make sure the **Gemini Developer API** is enabled (the "Firebase AI Logic API" and
-   "Gemini Developer API" must both be on, or calls fail with 403 `api-not-enabled`).
-2. **App Check** → APIs → enforce it for **Firebase AI Logic** (mandatory for AI Logic from 2026-11-02 anyway).
-   The site already initialises App Check with reCAPTCHA Enterprise; for `localhost` use a debug token
-   (`self.FIREBASE_APPCHECK_DEBUG_TOKEN = true`, then register the token the console prints).
-3. If the web API key has *API restrictions*, `firebasevertexai.googleapis.com` must be on the list.
-4. Optional: a **Remote Config** parameter `ficha_model_name` (e.g. `gemini-3.8-flash`) switches the model
-   without a deploy — Google retires model ids (a retired one answers 404). The default lives in
-   `src/data/gemini.ts` (`GEMINI_DEFAULT_MODEL`); the Spark-plan free list is at
-   <https://firebase.google.com/docs/ai-logic/models>.
-5. Free-tier limits are per project and not published per model: read them in Google AI Studio
-   (<https://aistudio.google.com/rate-limit>). On the free tier Google may use the content to improve its
-   products, which is why the student's name and medical notes are not sent unless the trainer ticks the box.
-
-The `npm test` suite covers the pure parts (splitting, request building, response mapping, error messages);
-the network call is not tested in CI — try it on the deployed site after steps 1–2.
+**The Gemini tab is gone (GOALS.md §34).** Nothing in the code calls Firebase AI Logic or reads the Remote Config
+parameter `ficha_model_name` any more, so the console's **AI Logic** / **Gemini Developer API** switches and that
+parameter can be turned off or deleted (owner decision; App Check stays — Firestore uses it).
 
 ## Confirmed e-mail for new students (GOALS.md §27) — console steps
 
@@ -235,12 +224,14 @@ npm run e2e:account -- trainer          # or: student, admin;  add "mobile" for 
 npm run e2e:billing                     # trial cap, overdue lock, extension, payment   (GOALS.md §30)
 npm run e2e:admin-focus                 # keyboard focus after every ADM action button  (GOALS.md §29e)
 npm run e2e:ficha-privacy [-- mobile]   # the exercise reference stays out of sight       (GOALS.md §33g)
+npm run e2e:fichas [-- mobile]          # fichas as cards: create, third, edit, delete, student  (GOALS.md §34)
 ```
 
 Local-only artefact worth knowing: the emulators speak HTTP/1.1, so a single Chrome profile that
 reloads many pages in a row can wait tens of seconds for Firestore's first answer (open connections
 from earlier pages exhaust the six-per-origin limit). The scripts therefore use a fresh browser where
-it matters; production talks HTTP/2 and the site navigates without reloading, so this is not a site defect.
+it matters, or navigate through the app's own router (`window.next.router.push`, as `e2e/fichas.mjs` does);
+production talks HTTP/2 and the site navigates without reloading, so this is not a site defect.
 
 ### Running the app on fake data
 

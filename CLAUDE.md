@@ -3,6 +3,13 @@
 Conventions that aren't obvious from reading the code alone. See [GOALS.md](GOALS.md) for the
 full build plan and current status.
 
+> **Status (2026-10-07):** the website in `web/` is the only live front. The owner decided the Android
+> and iOS apps will be **rebuilt from scratch later**, so the two Kotlin Multiplatform pull requests
+> (#2 `feature/kmp-ios`, #3 `claude/tarefas-abertas-front-9834f6`) were closed unmerged and their
+> remote branches deleted (tips `bac30b2`, `7c96edc`, still in the local worktrees until those are
+> removed). What follows about Android describes the older native app that is on `main`; GOALS.md §18
+> and the KMP references in §19+ are history, not a plan to continue.
+
 ## Role routing
 
 `RoleRouter.kt` is the single entry point after login. It reads `AuthState.Authenticated(role)`
@@ -210,7 +217,9 @@ routes). `rules/` has the emulator tests — the rules themselves, and the data 
 them. `scripts/` seeds the emulators with fake data and copies the ficha prompt's assets.
 
 **The Kotlin side is authoritative.** The phone writes and reads back the same documents, so the web
-stores exactly what the Android line in production (`claude/tarefas-abertas-front-9834f6`) stores:
+stores exactly what the Android line stores (until 2026-10-07 that was `claude/tarefas-abertas-front-9834f6`,
+now deleted — see the status note at the top; the Kotlin originals named below are historical, and the web's
+`data/converters.ts` is what a rebuilt app must read and write):
 same fields, types, defaults and read leniency. When the two disagree, the web is wrong. A web-only
 difference is allowed only when it changes nothing the phone reads — stricter input validation,
 trimming, a comma decimal saved with a dot — and each one is commented where it happens and

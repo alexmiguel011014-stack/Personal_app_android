@@ -6,6 +6,9 @@
 //   2. seed them:            npm run seed:emulators
 //   3. run the app on them:  NEXT_PUBLIC_FIREBASE_EMULATORS=true npm run dev
 //
+// It also writes the exercise reference to its one gated home, appData/exerciseCatalog (GOALS.md §33), from the
+// same source the owner's publish script reads — the editor, the e2e scripts and the rules tests need it.
+//
 // Re-running it wipes both emulators first, so it always ends in the same state. Every date is
 // relative to "now", so the dashboard reads the same whichever day it runs. Each student is there to
 // make one of the dashboard's numbers checkable by eye:
@@ -15,11 +18,13 @@
 //          say 3 sessions, not 9); her charge for this month exists and is paid (the plan must not
 //          duplicate it). On her page: two measurements, and loads that go up session by session.
 //          In the agenda: 07h on each of her training days. Logged in (ana@teste.dev): one assigned
-//          ficha — and one inactive she must not see — and she may record her own measurements.
+//          ficha — and one inactive she must not see — and she may record her own measurements. Her treinos
+//          predate fichas, so the trainer's page shows ONE card, "Ficha atual" (GOALS.md §34).
 //   Bruno  hasn't trained in 12 days (gone quiet); last month's charge is unpaid (overdue); his
 //          active plan has no charge this month yet — opening the dashboard creates it. On his page:
 //          a PAR-Q+ with one "sim" (bone/joint), which must show flagged. In the agenda: 18h on his
-//          training days.
+//          training days. He has two real fichas ("Hipertrofia — setembro", "Definição — outubro"): a third is
+//          the case where the oldest goes (§34).
 //   Carla  joined two days ago and hasn't trained — must NOT show as gone quiet.
 //   Diego  has a pending assessment request and no training plan; logged in, he may answer it.
 //   Maria  a draft with an open invite (the /convite flow).
@@ -30,6 +35,7 @@
 //          (no stats document); suspended@teste.dev has recent usage but suspended access.
 
 import { initializeTestEnvironment } from "@firebase/rules-unit-testing";
+import { buildCatalog } from "./lib/catalogSource.mjs";
 
 const PROJECT_ID = "demo-personal-tracker";
 const AUTH = "http://127.0.0.1:9099";
@@ -251,9 +257,16 @@ try {
     [`payments/${ana}_${thisMonth}`, charge(ana, `${thisMonth}-01`, 15000, now)],
     [`payments/${bruno}_${lastMonth}`, charge(bruno, `${lastMonth}-05`, 12000, null)],
 
-    // Ana's fichas: the one her logs belong to, assigned; and an inactive one she must not see.
+    // Ana's treinos predate fichas (no `ficha` map, GOALS.md §34): the active one is her logs' treino and reads as the
+    // one virtual card "Ficha atual"; the inactive one she must not see is hidden from the list and never counted.
     ["workouts/ficha-a", ficha(ana, "Ficha A", true)],
     ["workouts/ficha-b", ficha(ana, "Ficha B — em revisão", false)],
+
+    // Bruno has the most the site keeps — two real fichas of two treinos each (§34): saving a third deletes the older.
+    ["workouts/bruno-hip-a", fichaMember(bruno, "bruno-hip", "Hipertrofia — setembro", "Treino A — Peito e tríceps", 0, 40)],
+    ["workouts/bruno-hip-b", fichaMember(bruno, "bruno-hip", "Hipertrofia — setembro", "Treino B — Costas e bíceps", 1, 40)],
+    ["workouts/bruno-def-a", fichaMember(bruno, "bruno-def", "Definição — outubro", "Treino A — Superiores", 0, 5)],
+    ["workouts/bruno-def-b", fichaMember(bruno, "bruno-def", "Definição — outubro", "Treino B — Inferiores", 1, 5)],
 
     // The agenda: one document per weekly slot, as TrainerViewModel.bookSlot writes it.
     ...[["Segunda", ana, "07h"], ["Quarta", ana, "07h"], ["Sexta", ana, "07h"], ["Terça", bruno, "18h"], ["Quinta", bruno, "18h"]]
@@ -303,6 +316,17 @@ try {
     };
   }
 
+  // A treino that belongs to a ficha (GOALS.md §34): the same document plus the web-only `ficha` map.
+  function fichaMember(studentId, fichaId, fichaName, name, order, daysAgo) {
+    const createdAt = morningOf(daysAgo);
+    return {
+      ...ficha(studentId, name, true),
+      createdAt,
+      assignedAt: createdAt,
+      ficha: { id: fichaId, name: fichaName, createdAt, updatedAt: createdAt, order },
+    };
+  }
+
   function charge(studentId, dueDate, amountCents, paidAt) {
     return {
       trainerId,
@@ -347,9 +371,17 @@ try {
     ...session(diego, 2),
   ]);
 
+  // GOALS.md §33: the exercise reference lives in one gated document; without it the editor reads "no muscles".
+  let reference = {};
+  try {
+    reference = { "appData/exerciseCatalog": { ...buildCatalog(), updatedAt: Date.now() } };
+  } catch (error) {
+    console.warn(`WARNING: exercise reference not seeded — ${error instanceof Error ? error.message : error}`);
+  }
+
   await env.withSecurityRulesDisabled(async (context) => {
     const db = context.firestore();
-    await Promise.all(Object.entries({ ...documents, ...logs }).map(([path, data]) => db.doc(path).set(data)));
+    await Promise.all(Object.entries({ ...documents, ...logs, ...reference }).map(([path, data]) => db.doc(path).set(data)));
   });
 
   console.log("Emulators seeded.");

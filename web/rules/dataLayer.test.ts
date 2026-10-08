@@ -32,13 +32,15 @@ import { emptyProfile } from "../src/domain/studentProfile";
 import { loadMyProfile, resolveProfile } from "../src/data/session";
 import { ensureMonthlyCharges, loadTrainerSnapshot, loadTrainerView } from "../src/data/trainerData";
 import {
-  deleteWorkout,
+  FichaNotFound,
+  FichaTooLarge,
+  createFicha,
+  deleteFicha,
   loadMyWorkouts,
+  loadStudentFichas,
   loadStudentWorkouts,
-  newWorkout,
-  replaceFicha,
-  saveWorkout,
-  saveWorkouts,
+  saveFicha,
+  type FichaDraft,
 } from "../src/data/workouts";
 import { addBiometric, loadMyBiometrics, loadStudentBiometrics, logOwnBiometric } from "../src/data/biometrics";
 import { loadStudentAssessments, submitAssessment } from "../src/data/assessments";
@@ -436,16 +438,12 @@ describe("§26e admin data and §26f activity", () => {
   });
 });
 
-describe("fichas (GOALS.md §23g)", () => {
-  const exercises = [
-    { name: "Supino", sets: 3, reps: "12", weight: null, restSeconds: null, notes: null, muscleActivation: null },
-  ];
-
+describe("treinos (GOALS.md §23g)", () => {
   function stored(overrides: Record<string, unknown>): Record<string, unknown> {
     return {
       trainerId: "trainerA",
       studentId: "s1",
-      name: "Ficha A",
+      name: "Treino A",
       isActive: true,
       exercisesJson: "[]",
       createdAt: 1,
@@ -455,67 +453,22 @@ describe("fichas (GOALS.md §23g)", () => {
     };
   }
 
-  it("saves a ficha the student sees while it's active, and stops seeing once it's deactivated", async () => {
+  it("the student sees a treino only while it is assigned — a draft is never theirs to read", async () => {
     await seed({
       "users/trainerA": { role: "TRAINER" },
       "users/s1": { role: "STUDENT", trainerId: "trainerA", inviteCode: "X", name: "Ana", createdAt: 1 },
+      "workouts/shown": stored({ name: "Visível" }),
+      "workouts/hidden": stored({ name: "Escondido", isActive: false, status: "draft", assignedAt: null }),
     });
-    const trainer = signedInAs("trainerA");
-    const saved = await saveWorkout(trainer, "trainerA", newWorkout("trainerA", "s1", "Ficha A", exercises, 100), 100);
-    expect(saved).toMatchObject({ status: "assigned", assignedAt: 100 });
-
     // The phone's student query (StudentRepository), through the real rules.
     const student = signedInAs("s1");
-    const visible = async () => {
-      const found = await getDocs(
-        query(collection(student, "workouts"), where("studentId", "==", "s1"), where("status", "==", "assigned")),
-      );
-      return found.docs.map((d) => d.id);
-    };
-    expect(await visible()).toEqual([saved.id]);
-
-    await saveWorkout(trainer, "trainerA", { ...saved, isActive: false }, 200);
-    expect(await visible()).toEqual([]);
-    await assertFails(getDoc(doc(student, "workouts", saved.id)));
-    expect(await loadStudentWorkouts(trainer, "trainerA", "s1")).toEqual([
-      { ...saved, isActive: false, status: "draft", assignedAt: null },
-    ]);
+    expect((await loadMyWorkouts(student, "s1")).map((w) => w.name)).toEqual(["Visível"]);
+    await assertFails(getDoc(doc(student, "workouts", "hidden")));
+    // The trainer still reads both, newest first.
+    expect((await loadStudentWorkouts(signedInAs("trainerA"), "trainerA", "s1")).map((w) => w.id).sort()).toEqual(["hidden", "shown"]);
   });
 
-  // GOALS.md §25e — the treinos of one pasted answer, saved together.
-  it("saves several fichas in one batch: all visible to the student, listed newest first", async () => {
-    await seed({
-      "users/trainerA": { role: "TRAINER" },
-      "users/s1": { role: "STUDENT", trainerId: "trainerA", inviteCode: "X", name: "Ana", createdAt: 1 },
-    });
-    const trainer = signedInAs("trainerA");
-    // createdAt descending from A, so the trainer's newest-first list reads A, B, C.
-    const batch = ["Treino A", "Treino B", "Treino C"].map((name, i) =>
-      newWorkout("trainerA", "s1", name, exercises, 100 + (2 - i)),
-    );
-    const saved = await saveWorkouts(trainer, "trainerA", batch, 100);
-    expect(saved.map((w) => w.status)).toEqual(["assigned", "assigned", "assigned"]);
-
-    expect((await loadStudentWorkouts(trainer, "trainerA", "s1")).map((w) => w.name)).toEqual(["Treino A", "Treino B", "Treino C"]);
-    const student = signedInAs("s1");
-    expect((await loadMyWorkouts(student, "s1")).map((w) => w.name)).toEqual(["Treino A", "Treino B", "Treino C"]);
-  });
-
-  it("a batch with one forbidden ficha writes none of them", async () => {
-    await seed({
-      "users/trainerA": { role: "TRAINER" },
-      "users/trainerB": { role: "TRAINER" },
-      "users/s1": { role: "STUDENT", trainerId: "trainerA", inviteCode: "X", name: "Ana", createdAt: 1 },
-    });
-    const trainerB = signedInAs("trainerB");
-    // trainerB tries to write fichas under trainerA's id — the rules refuse it, and with it the batch.
-    const batch = ["Treino A", "Treino B"].map((name) => newWorkout("trainerA", "s1", name, exercises, 100));
-    await assertFails(saveWorkouts(trainerB, "trainerA", batch, 100));
-    const trainerA = signedInAs("trainerA");
-    expect(await loadStudentWorkouts(trainerA, "trainerA", "s1")).toEqual([]);
-  });
-
-  it("lists only this trainer's fichas for the student, newest first; deletes only their own", async () => {
+  it("lists only this trainer's treinos for the student, newest first", async () => {
     await seed({
       "users/trainerA": { role: "TRAINER" },
       "users/trainerB": { role: "TRAINER" },
@@ -526,15 +479,11 @@ describe("fichas (GOALS.md §23g)", () => {
     });
     const trainer = signedInAs("trainerA");
     expect((await loadStudentWorkouts(trainer, "trainerA", "s1")).map((w) => w.id)).toEqual(["new", "old"]);
-
-    await assertFails(deleteWorkout(trainer, "other-trainer"));
-    await deleteWorkout(trainer, "old");
-    expect((await loadStudentWorkouts(trainer, "trainerA", "s1")).map((w) => w.id)).toEqual(["new"]);
   });
 });
 
-// GOALS.md §28 — replacing a student's ficha: the current one becomes the history, the older history goes.
-describe("replacing a ficha (GOALS.md §28)", () => {
+// GOALS.md §34 — a ficha is a named set of treinos, at most two per student; a third deletes the oldest, in one batch.
+describe("fichas as named sets of treinos (GOALS.md §34)", () => {
   const exercises = [
     { name: "Supino", sets: 3, reps: "12", weight: null, restSeconds: null, notes: null, muscleActivation: null },
   ];
@@ -554,7 +503,7 @@ describe("replacing a ficha (GOALS.md §28)", () => {
     };
   }
 
-  /** A document as it is in the database, read with the rules off — what the test asserts against. */
+  /** A document as it is in the database, read with the rules off — what the tests assert against. */
   async function stateOf(path: string): Promise<Record<string, unknown> | null> {
     let data: Record<string, unknown> | null = null;
     await env.withSecurityRulesDisabled(async (context) => {
@@ -564,74 +513,247 @@ describe("replacing a ficha (GOALS.md §28)", () => {
     return data;
   }
 
-  const fresh = (...names: string[]) => names.map((name) => newWorkout("trainerA", "s1", name, exercises, 900));
+  /** Every document id in `workouts`, rules off. */
+  async function workoutIds(): Promise<string[]> {
+    let ids: string[] = [];
+    await env.withSecurityRulesDisabled(async (context) => {
+      ids = (await context.firestore().collection("workouts").get()).docs.map((d) => d.id).sort();
+    });
+    return ids;
+  }
+
+  const draft = (name: string, ...treinos: string[]): FichaDraft => ({
+    name,
+    treinos: treinos.map((treino) => ({ name: treino, exercises })),
+  });
 
   beforeEach(async () => {
     await seed({
       "users/trainerA": { role: "TRAINER" },
       "users/trainerB": { role: "TRAINER" },
       "users/s1": { role: "STUDENT", trainerId: "trainerA", inviteCode: "X", name: "Ana", createdAt: 1 },
-      "workouts/a1": stored({ name: "Treino A" }),
-      "workouts/a2": stored({ name: "Treino B" }),
-      "workouts/history1": stored({ name: "Antigo", ...INACTIVE, archivedAt: 50 }),
-      "workouts/draft1": stored({ name: "Rascunho", ...INACTIVE }),
-      "workouts/other-student": stored({ studentId: "s2", name: "De outro aluno" }),
+      "users/s2": { role: "STUDENT", trainerId: "trainerA", inviteCode: "Y", name: "Bia", createdAt: 1 },
     });
   });
 
-  it("archives the current ficha, deletes the old history and creates the new one — together", async () => {
-    const result = await replaceFicha(signedInAs("trainerA"), "trainerA", "s1", fresh("Novo A", "Novo B"), 1000);
-    expect(result.created).toEqual(["Novo A", "Novo B"]);
-    expect([...result.archived].sort()).toEqual(["Treino A", "Treino B"]);
-    expect(result.deleted).toEqual(["Antigo"]);
-
-    expect(await stateOf("workouts/a1")).toMatchObject({ isActive: false, status: "draft", assignedAt: null, archivedAt: 1000 });
-    expect(await stateOf("workouts/a2")).toMatchObject({ isActive: false, archivedAt: 1000 });
-    expect(await stateOf("workouts/history1")).toBeNull();
-    // Untouched: the draft the trainer prepared, and another student's treino.
-    expect(await stateOf("workouts/draft1")).toMatchObject({ name: "Rascunho", isActive: false });
-    expect(await stateOf("workouts/draft1")).not.toHaveProperty("archivedAt");
-    expect(await stateOf("workouts/other-student")).toMatchObject({ isActive: true, name: "De outro aluno" });
-
-    // The student sees only the new ficha; the archived one is a draft, which the rules never show them.
-    expect((await loadMyWorkouts(signedInAs("s1"), "s1")).map((w) => w.name)).toEqual(["Novo A", "Novo B"]);
-    await assertFails(getDoc(doc(signedInAs("s1"), "workouts", "a1")));
-  });
-
-  it("a second replacement deletes exactly what the first one archived", async () => {
+  it("creates a ficha: every treino shares one ficha id, in order, active, and the student sees them", async () => {
     const trainer = signedInAs("trainerA");
-    await replaceFicha(trainer, "trainerA", "s1", fresh("Novo A", "Novo B"), 1000);
-    const second = await replaceFicha(trainer, "trainerA", "s1", fresh("Terceiro"), 2000);
-    expect([...second.deleted].sort()).toEqual(["Treino A", "Treino B"]);
-    expect([...second.archived].sort()).toEqual(["Novo A", "Novo B"]);
-    expect(await stateOf("workouts/a1")).toBeNull();
-    expect(await stateOf("workouts/draft1")).not.toBeNull();
-    const names = (await loadStudentWorkouts(trainer, "trainerA", "s1")).map((w) => w.name).sort();
-    expect(names).toEqual(["Novo A", "Novo B", "Rascunho", "Terceiro"]);
+    const { created, deleted } = await createFicha(trainer, "trainerA", "s1", draft("  Hipertrofia  ", "Treino A", "Treino B", "Treino C"), 1000);
+    expect(deleted).toEqual([]);
+    expect(created).toMatchObject({ name: "Hipertrofia", legacy: false, createdAt: 1000, updatedAt: 1000 });
+    expect(created.treinos.map((t) => t.name)).toEqual(["Treino A", "Treino B", "Treino C"]);
+
+    for (const [index, treino] of created.treinos.entries()) {
+      const document = await stateOf(`workouts/${treino.id}`);
+      expect(document).toMatchObject({
+        trainerId: "trainerA",
+        studentId: "s1",
+        name: treino.name,
+        isActive: true,
+        status: "assigned",
+        createdAt: 1000,
+        assignedAt: 1000,
+        ficha: { id: created.id, name: "Hipertrofia", createdAt: 1000, updatedAt: 1000, order: index },
+      });
+    }
+    expect((await loadStudentFichas(trainer, "trainerA", "s1")).map((f) => f.name)).toEqual(["Hipertrofia"]);
+    expect((await loadMyWorkouts(signedInAs("s1"), "s1")).map((w) => w.name)).toEqual(["Treino A", "Treino B", "Treino C"]);
   });
 
-  it("with nothing active nothing is archived, so the history is NOT deleted", async () => {
+  it("a second ficha sits beside the first, newest first, and nothing is deleted", async () => {
+    const trainer = signedInAs("trainerA");
+    await createFicha(trainer, "trainerA", "s1", draft("Primeira", "Treino A"), 1000);
+    const second = await createFicha(trainer, "trainerA", "s1", draft("Segunda", "Treino A"), 2000);
+    expect(second.deleted).toEqual([]);
+    expect((await loadStudentFichas(trainer, "trainerA", "s1")).map((f) => f.name)).toEqual(["Segunda", "Primeira"]);
+    expect((await loadMyWorkouts(signedInAs("s1"), "s1")).length).toBe(2);
+  });
+
+  it("a THIRD ficha deletes exactly the oldest ficha's treinos — and nothing else", async () => {
+    const trainer = signedInAs("trainerA");
+    const first = await createFicha(trainer, "trainerA", "s1", draft("Primeira", "Treino A", "Treino B"), 1000);
+    const second = await createFicha(trainer, "trainerA", "s1", draft("Segunda", "Treino A"), 2000);
     await seed({
-      "workouts/a1": stored({ name: "Treino A", ...INACTIVE }),
-      "workouts/a2": stored({ name: "Treino B", ...INACTIVE }),
+      "workouts/other-student": stored({ studentId: "s2", name: "De outro aluno" }),
+      "workouts/hidden-history": stored({ name: "Antigo", ...INACTIVE, archivedAt: 50 }),
+      "workouts/hidden-draft": stored({ name: "Rascunho", ...INACTIVE }),
+      "workoutLogs/log1": {
+        trainerId: "trainerA",
+        studentId: "s1",
+        workoutId: first.created.treinos[0].id,
+        exerciseName: "Supino",
+        date: 1,
+        performedSetsJson: "[]",
+        note: null,
+      },
     });
-    const result = await replaceFicha(signedInAs("trainerA"), "trainerA", "s1", fresh("Novo A"), 1000);
-    expect(result).toMatchObject({ created: ["Novo A"], archived: [], deleted: [] });
-    expect(await stateOf("workouts/history1")).not.toBeNull();
+
+    const third = await createFicha(trainer, "trainerA", "s1", draft("Terceira", "Treino A"), 3000);
+    expect(third.deleted.map((f) => f.name)).toEqual(["Primeira"]);
+    for (const treino of first.created.treinos) expect(await stateOf(`workouts/${treino.id}`)).toBeNull();
+    for (const treino of [...second.created.treinos, ...third.created.treinos]) {
+      expect(await stateOf(`workouts/${treino.id}`)).not.toBeNull();
+    }
+    // Untouched: another student's treino, the hidden pre-ficha treinos, the student's log.
+    expect(await stateOf("workouts/other-student")).toMatchObject({ name: "De outro aluno", isActive: true });
+    expect(await stateOf("workouts/hidden-history")).toMatchObject({ name: "Antigo", isActive: false });
+    expect(await stateOf("workouts/hidden-draft")).toMatchObject({ name: "Rascunho", isActive: false });
+    expect(await stateOf("workoutLogs/log1")).not.toBeNull();
+
+    expect((await loadStudentFichas(trainer, "trainerA", "s1")).map((f) => f.name)).toEqual(["Terceira", "Segunda"]);
+    expect((await loadMyWorkouts(signedInAs("s1"), "s1")).map((w) => w.name)).toEqual(["Treino A", "Treino A"]);
   });
 
-  it("another trainer, or the student, can't replace — and nothing changes", async () => {
-    const before = await stateOf("workouts/a1");
-    await expect(replaceFicha(signedInAs("trainerB"), "trainerA", "s1", fresh("Novo A"), 1000)).rejects.toThrow();
-    await expect(replaceFicha(signedInAs("s1"), "trainerA", "s1", fresh("Novo A"), 1000)).rejects.toThrow();
-    expect(await stateOf("workouts/a1")).toEqual(before);
-    expect(await stateOf("workouts/history1")).not.toBeNull();
+  it("when the oldest is the pre-ficha one, its active treinos go; the hidden ones stay", async () => {
+    const trainer = signedInAs("trainerA");
+    await seed({
+      "workouts/l1": stored({ name: "Treino A", createdAt: 10 }),
+      "workouts/l2": stored({ name: "Treino B", createdAt: 11 }),
+      "workouts/hidden": stored({ name: "Rascunho", createdAt: 12, ...INACTIVE }),
+    });
+    const real = await createFicha(trainer, "trainerA", "s1", draft("Real", "Treino A"), 2000);
+    expect((await loadStudentFichas(trainer, "trainerA", "s1")).map((f) => f.name)).toEqual(["Real", "Ficha atual"]);
+
+    const third = await createFicha(trainer, "trainerA", "s1", draft("Nova", "Treino A"), 3000);
+    expect(third.deleted.map((f) => f.name)).toEqual(["Ficha atual"]);
+    expect(await stateOf("workouts/l1")).toBeNull();
+    expect(await stateOf("workouts/l2")).toBeNull();
+    expect(await stateOf("workouts/hidden")).not.toBeNull();
+    expect(await stateOf(`workouts/${real.created.treinos[0].id}`)).not.toBeNull();
   });
 
-  it("refuses a new treino that belongs to another student, before writing anything", async () => {
-    const wrong = [newWorkout("trainerA", "s2", "De outro", exercises, 900)];
-    await expect(replaceFicha(signedInAs("trainerA"), "trainerA", "s1", wrong, 1000)).rejects.toThrow(/another student/);
-    expect(await stateOf("workouts/a1")).toMatchObject({ isActive: true });
+  it("is all-or-nothing: a creation the rules refuse deletes nothing either", async () => {
+    // s3 belongs to trainerB, so trainerA may not create treinos for them — yet two fichas of trainerA's sit there.
+    await seed({
+      "users/s3": { role: "STUDENT", trainerId: "trainerB", inviteCode: "Z", name: "Caio", createdAt: 1 },
+      "workouts/old1": stored({ studentId: "s3", name: "Velha", createdAt: 100, ficha: { id: "fa", name: "A", createdAt: 100, updatedAt: 100, order: 0 } }),
+      "workouts/old2": stored({ studentId: "s3", name: "Nova", createdAt: 200, ficha: { id: "fb", name: "B", createdAt: 200, updatedAt: 200, order: 0 } }),
+    });
+    await expect(createFicha(signedInAs("trainerA"), "trainerA", "s3", draft("Terceira", "Treino A"), 3000)).rejects.toThrow();
+    expect(await workoutIds()).toEqual(["old1", "old2"]);
+  });
+
+  it("another trainer or the student cannot create, save or delete a ficha — nothing changes", async () => {
+    const trainer = signedInAs("trainerA");
+    const { created } = await createFicha(trainer, "trainerA", "s1", draft("Primeira", "Treino A"), 1000);
+    const before = await workoutIds();
+    for (const who of ["trainerB", "s1"]) {
+      const db = signedInAs(who);
+      await expect(createFicha(db, "trainerA", "s1", draft("Intrusa", "Treino A"), 2000)).rejects.toThrow();
+      await expect(deleteFicha(db, "trainerA", "s1", created.id)).rejects.toThrow();
+      await expect(
+        saveFicha(db, "trainerA", "s1", created.id, { name: "Hackeada", treinos: [{ id: created.treinos[0].id, name: "X", exercises }] }, 2000),
+      ).rejects.toThrow();
+    }
+    expect(await workoutIds()).toEqual(before);
+    expect(await stateOf(`workouts/${created.treinos[0].id}`)).toMatchObject({ name: "Treino A", ficha: { name: "Primeira" } });
+  });
+
+  it("saveFicha: renames it, keeps what it keeps, adds and removes treinos, stamps the new date", async () => {
+    const trainer = signedInAs("trainerA");
+    const { created } = await createFicha(trainer, "trainerA", "s1", draft("Antes", "Treino A", "Treino B"), 1000);
+    const [a, b] = created.treinos;
+    const other = [{ ...exercises[0], name: "Remada", sets: 4 }];
+
+    const saved = await saveFicha(
+      trainer,
+      "trainerA",
+      "s1",
+      created.id,
+      {
+        name: "Depois",
+        treinos: [
+          { id: a.id, name: "Treino A — novo foco", exercises: other },
+          { id: null, name: "Treino C", exercises },
+        ],
+      },
+      2000,
+    );
+    expect(saved).toMatchObject({ id: created.id, name: "Depois", createdAt: 1000, updatedAt: 2000 });
+
+    expect(await stateOf(`workouts/${a.id}`)).toMatchObject({
+      name: "Treino A — novo foco",
+      createdAt: 1000,
+      assignedAt: 1000,
+      isActive: true,
+      status: "assigned",
+      ficha: { id: created.id, name: "Depois", createdAt: 1000, updatedAt: 2000, order: 0 },
+    });
+    expect(String((await stateOf(`workouts/${a.id}`))?.exercisesJson)).toContain("Remada");
+    expect(await stateOf(`workouts/${b.id}`)).toBeNull();
+    const added = saved.treinos[1];
+    expect(await stateOf(`workouts/${added.id}`)).toMatchObject({
+      name: "Treino C",
+      ficha: { id: created.id, name: "Depois", createdAt: 1000, updatedAt: 2000, order: 1 },
+    });
+    expect((await loadStudentFichas(trainer, "trainerA", "s1")).map((f) => [f.name, f.updatedAt, f.treinos.length])).toEqual([["Depois", 2000, 2]]);
+  });
+
+  it("saveFicha refuses a treino id of another ficha, and writes nothing", async () => {
+    const trainer = signedInAs("trainerA");
+    const one = await createFicha(trainer, "trainerA", "s1", draft("Um", "Treino A"), 1000);
+    const two = await createFicha(trainer, "trainerA", "s1", draft("Dois", "Treino A"), 2000);
+    const before = await stateOf(`workouts/${two.created.treinos[0].id}`);
+    await expect(
+      saveFicha(trainer, "trainerA", "s1", one.created.id, { name: "Um", treinos: [{ id: two.created.treinos[0].id, name: "Roubado", exercises }] }, 3000),
+    ).rejects.toThrow(/does not belong/);
+    expect(await stateOf(`workouts/${two.created.treinos[0].id}`)).toEqual(before);
+    expect(await stateOf(`workouts/${one.created.treinos[0].id}`)).toMatchObject({ name: "Treino A" });
+  });
+
+  it("saving the pre-ficha one ADOPTS it: new ficha id, the typed name, the same place in the order; hidden treinos stay", async () => {
+    const trainer = signedInAs("trainerA");
+    await seed({
+      "workouts/l1": stored({ name: "Treino A", createdAt: 10, assignedAt: 10 }),
+      "workouts/l2": stored({ name: "Treino B", createdAt: 11, assignedAt: 11 }),
+      "workouts/hidden": stored({ name: "Rascunho", createdAt: 12, ...INACTIVE }),
+    });
+    const saved = await saveFicha(
+      trainer,
+      "trainerA",
+      "s1",
+      "legacy",
+      { name: "Minha ficha", treinos: [{ id: "l1", name: "Treino A", exercises }, { id: "l2", name: "Treino B", exercises }] },
+      5000,
+    );
+    expect(saved.id).not.toBe("legacy");
+    expect(saved).toMatchObject({ name: "Minha ficha", legacy: false, createdAt: 10, updatedAt: 5000 });
+    expect(await stateOf("workouts/l1")).toMatchObject({ createdAt: 10, ficha: { id: saved.id, name: "Minha ficha", createdAt: 10, order: 0 } });
+    expect(await stateOf("workouts/hidden")).not.toHaveProperty("ficha");
+    const fichas = await loadStudentFichas(trainer, "trainerA", "s1");
+    expect(fichas.map((f) => [f.name, f.legacy])).toEqual([["Minha ficha", false]]);
+  });
+
+  it("deleteFicha removes exactly its treinos; a stale call throws FichaNotFound and writes nothing", async () => {
+    const trainer = signedInAs("trainerA");
+    const one = await createFicha(trainer, "trainerA", "s1", draft("Um", "Treino A", "Treino B"), 1000);
+    const two = await createFicha(trainer, "trainerA", "s1", draft("Dois", "Treino A"), 2000);
+    await seed({ "workouts/other-student": stored({ studentId: "s2" }), "workouts/hidden": stored({ ...INACTIVE }) });
+
+    await deleteFicha(trainer, "trainerA", "s1", one.created.id);
+    for (const treino of one.created.treinos) expect(await stateOf(`workouts/${treino.id}`)).toBeNull();
+    expect(await workoutIds()).toEqual([...two.created.treinos.map((t) => t.id), "hidden", "other-student"].sort());
+
+    const before = await workoutIds();
+    await expect(deleteFicha(trainer, "trainerA", "s1", one.created.id)).rejects.toBeInstanceOf(FichaNotFound);
+    expect(await workoutIds()).toEqual(before);
+  });
+
+  it("refuses a ficha too big for one batch before writing anything", async () => {
+    const trainer = signedInAs("trainerA");
+    const huge = draft("Enorme", ...Array.from({ length: 451 }, (_, i) => `Treino ${i + 1}`));
+    await expect(createFicha(trainer, "trainerA", "s1", huge, 1000)).rejects.toBeInstanceOf(FichaTooLarge);
+    expect(await workoutIds()).toEqual([]);
+  });
+
+  it("refuses a ficha that is not valid (no name, no treino, a treino without exercises)", async () => {
+    const trainer = signedInAs("trainerA");
+    await expect(createFicha(trainer, "trainerA", "s1", draft(" ", "Treino A"), 1000)).rejects.toThrow(/Nome da ficha/);
+    await expect(createFicha(trainer, "trainerA", "s1", draft("X"), 1000)).rejects.toThrow(/pelo menos um treino/);
+    await expect(
+      createFicha(trainer, "trainerA", "s1", { name: "X", treinos: [{ name: "Treino A", exercises: [] }] }, 1000),
+    ).rejects.toThrow(/pelo menos um exercício/);
+    expect(await workoutIds()).toEqual([]);
   });
 });
 

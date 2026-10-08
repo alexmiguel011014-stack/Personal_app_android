@@ -1368,34 +1368,34 @@ describe("verified e-mail: accounts that already exist are not affected", () => 
   });
 });
 
-// GOALS.md §28: `archivedAt` is a web-only field on a treino a replacement retired. The rules validate no
-// workout fields, so it needs no rules change — this proves it, and that who may touch it did not move.
-describe("workouts carrying archivedAt (GOALS.md §28)", () => {
-  const archived = {
+// GOALS.md §34: `ficha` is a web-only map on a treino (the ficha it belongs to). The rules validate no workout
+// fields, so it needs no rules change — this proves it, and that who may touch it did not move.
+describe("workouts carrying a ficha map (GOALS.md §34)", () => {
+  const member = {
     trainerId: TRAINER_A,
     studentId: STUDENT_A,
-    name: "Ficha anterior",
-    isActive: false,
+    name: "Treino A",
+    isActive: true,
     exercisesJson: "[]",
     createdAt: 1,
-    status: "draft",
-    assignedAt: null,
-    archivedAt: 900,
+    status: "assigned",
+    assignedAt: 1,
+    ficha: { id: "f1", name: "Hipertrofia", createdAt: 1, updatedAt: 1, order: 0 },
   };
 
   it("the owning trainer creates, updates and deletes one", async () => {
     const db = as(TRAINER_A);
-    await assertSucceeds(db.doc("workouts/h1").set(archived));
-    await assertSucceeds(db.doc("workouts/h1").update({ isActive: true, status: "assigned", assignedAt: 5, archivedAt: null }));
+    await assertSucceeds(db.doc("workouts/h1").set(member));
+    await assertSucceeds(db.doc("workouts/h1").update({ ficha: { ...member.ficha, name: "Nova", updatedAt: 5 } }));
     await assertSucceeds(db.doc("workouts/h1").delete());
   });
 
-  it("another trainer can't write or delete it, and the student can't read it", async () => {
-    await seed((db) => db.doc("workouts/h1").set(archived));
+  it("the linked student reads it; another trainer can't write or delete it", async () => {
+    await seed((db) => db.doc("workouts/h1").set(member));
+    await assertSucceeds(as(STUDENT_A).doc("workouts/h1").get());
     await assertFails(as(TRAINER_B).doc("workouts/h1").delete());
-    await assertFails(as(TRAINER_B).doc("workouts/h1").update({ archivedAt: null }));
-    await assertFails(as(STUDENT_A).doc("workouts/h1").get());
-    await assertFails(as(STUDENT_A).doc("workouts/h1").update({ archivedAt: null }));
+    await assertFails(as(TRAINER_B).doc("workouts/h1").update({ ficha: null }));
+    await assertFails(as(STUDENT_A).doc("workouts/h1").update({ ficha: null }));
   });
 });
 
@@ -1552,5 +1552,86 @@ describe("GOALS.md §26d — suspended trainers, summaries and audit", () => {
     await assertFails(admin.doc("adminAudit/a1").update({ note: "alterado" }));
     await assertFails(admin.doc("adminAudit/a1").delete());
     await assertFails(as(TRAINER_A).doc("adminAudit/a2").set({ ...entry, adminUid: TRAINER_A }));
+  });
+});
+
+// GOALS.md §33 — the trainer's exercise reference is one gated document, never a public file. Synthetic
+// exercises only (§33f): what is tested is who may read and write the document, not what is in it.
+describe("the exercise catalog document (rules v6)", () => {
+  const PATH = "appData/exerciseCatalog";
+  const catalog = (overrides: Record<string, unknown> = {}) => ({
+    version: "abc123",
+    exercises: [{ name: "Exercício A", group: "Grupo", muscles: { "Músculo X": 1 } }],
+    updatedAt: 1_700_000_000_000,
+    ...overrides,
+  });
+
+  beforeEach(async () => {
+    await seed(async (db) => {
+      await db.doc(PATH).set(catalog());
+      await db.doc("users/trainerSuspended").set({ role: "TRAINER", accessStatus: "suspended", suspendedAt: 1 });
+      await db.doc("users/trainerLocked").set({ role: "TRAINER", platformBillingStatus: "blocked", platformBillingUntil: 1 });
+      await db.doc("users/trainerOverdue").set({ role: "TRAINER", platformBillingStatus: "current", platformBillingUntil: 1 });
+    });
+  });
+
+  it("an active trainer and the ADM can read it", async () => {
+    await assertSucceeds(as(TRAINER_A).doc(PATH).get());
+    await assertSucceeds(as("adminA").doc(PATH).get());
+  });
+
+  it("nobody else can: anonymous, a student, a suspended or billing-locked trainer, a user with no profile", async () => {
+    await assertFails(anonymous().doc(PATH).get());
+    await assertFails(as(STUDENT_A).doc(PATH).get());
+    await assertFails(as("trainerSuspended").doc(PATH).get());
+    await assertFails(as("trainerLocked").doc(PATH).get());
+    await assertFails(as("trainerOverdue").doc(PATH).get());
+    await assertFails(as("nobodyWithoutProfile").doc(PATH).get());
+  });
+
+  it("the collection cannot be listed or queried, not even by the ADM", async () => {
+    await assertFails(as(TRAINER_A).collection("appData").get());
+    await assertFails(as("adminA").collection("appData").get());
+    await assertFails(as(TRAINER_A).collection("appData").where("version", "==", "abc123").get());
+  });
+
+  it("no other document in the collection is readable or writable", async () => {
+    await seed((db) => db.doc("appData/other").set(catalog()));
+    await assertFails(as(TRAINER_A).doc("appData/other").get());
+    await assertFails(as("adminA").doc("appData/other").get());
+    await assertFails(as("adminA").doc("appData/another").set(catalog()));
+  });
+
+  it("only the ADM writes it — a trainer, a student and an anonymous caller cannot create, update or delete", async () => {
+    for (const db of [as(TRAINER_A), as(STUDENT_A), anonymous()]) {
+      await assertFails(db.doc(PATH).set(catalog({ version: "hijack" })));
+      await assertFails(db.doc(PATH).update({ version: "hijack" }));
+      await assertFails(db.doc(PATH).delete());
+    }
+    await seed((db) => db.doc(PATH).delete());
+    await assertFails(as(TRAINER_A).doc(PATH).set(catalog()));
+  });
+
+  it("the ADM can publish a valid document, and cannot delete it", async () => {
+    const admin = as("adminA");
+    await assertSucceeds(admin.doc(PATH).set(catalog({ version: "def456", updatedAt: 1_700_000_000_001 })));
+    await assertSucceeds(admin.doc(PATH).update({ version: "ghi789" }));
+    await assertFails(admin.doc(PATH).delete());
+  });
+
+  const malformed: Array<[string, Record<string, unknown>]> = [
+    ["an extra key", catalog({ extra: "x" })],
+    ["an empty version", catalog({ version: "" })],
+    ["a non-string version", catalog({ version: 7 })],
+    ["an oversized version", catalog({ version: "v".repeat(65) })],
+    ["exercises that is not a list", catalog({ exercises: {} })],
+    ["an empty list", catalog({ exercises: [] })],
+    ["301 exercises", catalog({ exercises: Array.from({ length: 301 }, () => ({ name: "x" })) })],
+    ["a non-integer updatedAt", catalog({ updatedAt: "now" })],
+    ["no updatedAt", { version: "abc123", exercises: catalog().exercises }],
+  ];
+
+  it.each(malformed)("the ADM cannot publish a malformed document: %s", async (_label, data) => {
+    await assertFails(as("adminA").doc(PATH).set(data));
   });
 });

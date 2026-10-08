@@ -2,7 +2,7 @@ import { decodeParQAnswers, type Assessment } from "../domain/assessments";
 import type { Biometric } from "../domain/biometrics";
 import { decodeExercises, encodeExercises } from "../domain/exercise";
 import type { WorkoutLogDoc } from "../domain/metrics";
-import type { Workout } from "../domain/workouts";
+import type { FichaMembership, Workout } from "../domain/workouts";
 import type { BillingPlan, Payment, PaymentMethod, PaymentSource } from "../domain/payments";
 import type { Schedule } from "../domain/schedules";
 import type { DraftStudentDoc, LinkedStudentDoc } from "../domain/students";
@@ -256,11 +256,27 @@ export function workoutLogToFirestore(log: WorkoutLogDoc): Data {
   };
 }
 
+/**
+ * GOALS.md §34, web-only: the `ficha` map of a treino. Lenient like every reader here — an object with a non-blank
+ * string `id` and `name`; its numbers fall back (`createdAt` to the treino's own, `updatedAt` to that, `order` to 0).
+ * Anything else (absent, a string, an array, no id) is no membership: the treino reads as a legacy one, never a throw.
+ */
+function ficha(value: unknown, treinoCreatedAt: number): FichaMembership | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const map = value as Data;
+  const fichaId = str(map, "id");
+  const name = str(map, "name");
+  if (fichaId === null || fichaId.trim() === "" || name === null || name.trim() === "") return null;
+  const createdAt = int(map, "createdAt") ?? treinoCreatedAt;
+  return { id: fichaId, name, createdAt, updatedAt: int(map, "updatedAt") ?? createdAt, order: int(map, "order") ?? 0 };
+}
+
 /** `workouts/{id}` — FirestoreMappers.toWorkoutEntity. */
 export function toWorkout(id: string, data: Data): Workout | null {
   const studentId = str(data, "studentId");
   const name = str(data, "name");
   if (studentId === null || name === null) return null;
+  const createdAt = int(data, "createdAt") ?? 0;
   return {
     id,
     trainerId: str(data, "trainerId") ?? "",
@@ -269,10 +285,10 @@ export function toWorkout(id: string, data: Data): Workout | null {
     isActive: bool(data, "isActive") ?? true,
     // Malformed JSON reads as no exercises, as the Kotlin mapper's try/catch does.
     exercises: decodeExercises(str(data, "exercisesJson")),
-    createdAt: int(data, "createdAt") ?? 0,
+    createdAt,
     status: data.status === "assigned" ? "assigned" : "draft",
     assignedAt: int(data, "assignedAt"),
-    archivedAt: int(data, "archivedAt"),
+    ficha: ficha(data.ficha, createdAt),
   };
 }
 
@@ -287,9 +303,9 @@ export function workoutToFirestore(workout: Workout, trainerId: string): Data {
     createdAt: workout.createdAt,
     status: workout.status,
     assignedAt: workout.assignedAt,
-    // GOALS.md §28, web-only: written only on a treino a replacement archived, so every other document is
-    // exactly what the phone writes (and the phone ignores the field where it is present).
-    ...(workout.archivedAt === null ? {} : { archivedAt: workout.archivedAt }),
+    // GOALS.md §34, web-only: written only on a treino that belongs to a ficha, so every other document is exactly
+    // what the phone writes (and the phone ignores the field where it is present).
+    ...(workout.ficha === null ? {} : { ficha: { ...workout.ficha } }),
   };
 }
 

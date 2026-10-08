@@ -225,7 +225,7 @@ depends on it.
 
 - [x] **AI ficha generation — ground it in the hypertrophy volume reference table (researched
       2026-08-17 via `/newgoal`, user supplied the actual PDF this session:
-      `tabela_volume_direto_indireto_hipertrofia_final_v9.pdf`, 4 pages, ~15.7KB). Implemented
+      the trainer's reference PDF, 4 pages, ~15.7KB). Implemented
       2026-08-17 via `/execgoals` (approach 1, text-embedding — see below): asset created at
       `app/src/main/assets/hypertrophy_volume_reference.md` with the exact content specified;
       `GenerativeAiService` now takes `@ApplicationContext Context` (Hilt), reads the asset once
@@ -335,98 +335,9 @@ depends on it.
            categories per-call based on the student's stated training days, rather than always
            sending the whole table — not needed at today's size, don't build it preemptively.
 
-      **Exact content for `app/src/main/assets/hypertrophy_volume_reference.md`:**
-      ```markdown
-      # Tabela de Volume Direto/Indireto para Hipertrofia
-
-      Estima quanto uma série dura de um exercício conta para a hipertrofia provável de cada
-      músculo (não é % de ativação, não precisa somar 1 na mesma linha). Use para séries de boa
-      qualidade, amplitude adequada, ~0-3 reps em reserva.
-
-      Régua: 1,0 = volume direto/alvo principal · 0,75 = secundário muito forte/quase direto ·
-      0,5 = indireto relevante · 0,25 = participação baixa · 0 = não contar.
-
-      ## Empurrar
-      | Exercício | Peitoral | Delt. ant. | Delt. lat. | Delt. post. | Tríceps geral | Cabeça longa tríceps |
-      |---|---|---|---|---|---|---|
-      | Supino reto | 1 | 0,5 | 0 | 0 | 0,5 | 0,25 |
-      | Supino inclinado | 1 | 0,75 | 0 | 0 | 0,5 | 0,25 |
-      | Paralela inclinada / foco peito | 1 | 0,5 | 0 | 0 | 0,75 | 0,25 |
-      | Paralela vertical / foco tríceps | 0,75 | 0,5 | 0 | 0 | 1 | 0,25 |
-      | Tríceps banco alta amplitude | 0,5 | 0,5 | 0 | 0 | 1 | 0,25 |
-      | Desenvolvimento vertical | 0,25 | 1 | 0,75 | 0 | 0,5 | 0,25 |
-      | Flexão tradicional | 1 | 0,5 | 0 | 0 | 0,5 | 0,25 |
-
-      ## Puxar
-      | Exercício | Latíssimo/redondo maior | Trapézio médio/romboides | Delt. post. | Bíceps | Braquial/braquiorradial |
-      |---|---|---|---|---|---|
-      | Puxada/barra fixa pronada | 1 | 0,25 | 0,25 | 0,5 | 0,5 |
-      | Puxada/barra fixa neutra | 1 | 0,25 | 0,25 | 0,5 | 0,75 |
-      | Puxada/barra fixa supinada | 1 | 0,25 | 0,25 | 0,75 | 0,5 |
-      | Remada neutra cotovelo junto | 1 | 0,75 | 0,5 | 0,5 | 0,75 |
-      | Remada supinada cotovelo junto | 1 | 0,75 | 0,5 | 0,75 | 0,5 |
-      | Remada aberta / high row | 0,5 | 1 | 1 | 0,5 | 0,5 |
-      | Remada australiana pronada | 1 | 1 | 1 | 0,5 | 0,5 |
-      | Remada australiana supinada | 1 | 0,75 | 0,75 | 0,75 | 0,5 |
-
-      ## Quadril e joelho (agachamentos, leg press, unilaterais)
-      | Exercício | Vastos/quadríceps | Reto femoral | Isquios | Glúteo máx. | Glúteo médio | Adutores | Eretor |
-      |---|---|---|---|---|---|---|---|
-      | Agachamento profundo | 1 | 0,25 | 0,25 | 1 | 0,25 | 1 | 0,5 |
-      | Agachamento sumô | 1 | 0,25 | 0,25 | 0,75 | 0,25 | 1 | 0,25 |
-      | Leg press 45° profundo | 1 | 0,25 | 0,25 | 1 | 0 | 0,75 | 0 |
-      | Leg press 180° profundo | 1 | 0,25 | 0,25 | 1 | 0 | 0,75 | 0 |
-      | Leg press 180° unilateral profundo | 1 | 0,25 | 0,25 | 1 | 0,25 | 0,75 | 0 |
-      | Hack squat | 1 | 0,25 | 0 | 0,5 | 0 | 0,5 | 0 |
-      | Afundo padrão | 1 | 0,25 | 0,25 | 0,75 | 0,5 | 0,5 | 0 |
-      | Búlgaro | 1 | 0,25 | 0,5 | 1 | 0,5 | 0,5 | 0 |
-      | Agachamento unilateral | 1 | 0,25 | 0,5 | 1 | 0,75 | 0,5 | 0 |
-      | Step-up médio/alto | 1 | 0,25 | 0,5 | 1 | 0,75 | 0,5 | 0,25 |
-
-      ## Posterior, glúteo e hinges
-      | Exercício | Vastos/quadríceps | Reto femoral | Isquios | Glúteo máx. | Glúteo médio | Adutores | Eretor | Gastrocnêmio |
-      |---|---|---|---|---|---|---|---|---|
-      | Stiff | 0 | 0 | 1 | 0,75 | 0 | 0,25 | 0,75 | 0 |
-      | RDL | 0 | 0 | 1 | 0,75 | 0 | 0,25 | 0,5 | 0 |
-      | Terra convencional | 0,5 | 0 | 0,5 | 0,75 | 0 | 0,25 | 1 | 0 |
-      | Terra sumô | 0,5 | 0 | 0,5 | 0,75 | 0,25 | 1 | 0,5 | 0 |
-      | Elevação pélvica / hip thrust | 0 | 0 | 0,25 | 1 | 0,25 | 0 | 0 | 0 |
-      | Flexão nórdica / Nordic | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0,25 |
-
-      ## Monoarticulares e isolados (alvo 1,0 → outros níveis)
-      | Exercício | 1,0 | 0,75 | 0,5 | 0,25 |
-      |---|---|---|---|---|
-      | Cadeira extensora | Vastos; reto femoral; quadríceps | - | - | - |
-      | Mesa/cadeira flexora | Isquiotibiais | - | - | Gastrocnêmio (se tornozelo dorsifletido) |
-      | Panturrilha em pé | Gastrocnêmio | Sóleo | - | - |
-      | Panturrilha sentada | Sóleo | - | - | Gastrocnêmio |
-      | Elevação lateral | Deltoide lateral | - | - | Delt. ant.; post.; trapézio superior |
-      | Crucifixo inverso | Deltoide posterior | - | Trapézio médio/romboides | - |
-      | Peck deck / crucifixo | Peitoral | - | - | Deltoide anterior |
-      | Rosca supinada / Scott / 45° / Bayesian | Bíceps braquial | - | Braquial | Braquiorradial |
-      | Rosca martelo | Braquial/braquiorradial | Bíceps braquial | - | - |
-      | Rosca reversa | Braquiorradial/braquial | - | - | Bíceps braquial |
-      | Tríceps pushdown | Tríceps geral | Cabeça longa | - | - |
-      | Tríceps overhead/francês | Tríceps geral; cabeça longa | - | - | - |
-      | Tríceps coice/coreano | Tríceps geral | - | Cabeça longa | Delt. post./latíssimo |
-      | Cadeira abdutora | Glúteo médio/mínimo | - | TFL | Glúteo máximo (fibras superiores) |
-      | Cadeira adutora | Adutores | - | - | - |
-      | Pulldown braços estendidos | Latíssimo/redondo maior | - | - | Delt. post.; cabeça longa tríceps; peitoral esternal |
-
-      ## Core, calistenia e peso corporal
-      | Exercício | 1,0 | 0,75 | 0,5 | 0,25 |
-      |---|---|---|---|---|
-      | Abdominal na rodinha | Reto abdominal | Oblíquos; core profundo | - | Serrátil; peitoral; latíssimo; tríceps |
-      | Prancha abdominal tradicional | - | - | Reto abdominal; oblíquos; core profundo | Serrátil; deltoide ant.; eretor; glúteo máx.; reto femoral |
-      | Muscle-up estrito | Latíssimo/redondo maior | Bíceps; peitoral; tríceps geral; antebraço | Braquial/braquiorradial; deltoide ant.; trapézio/romboides; serrátil; core | Deltoide posterior |
-
-      ## Ajustes por RIR (aplicar antes de somar volume)
-      - 0-2 RIR e boa amplitude: valor cheio.
-      - 3-4 RIR: mantém o principal se a série foi desafiadora, mas reduz secundários em 0,25.
-      - 5+ RIR: conta no máximo metade do valor, ou não conta.
-      - Músculo-alvo não foi limitante (ex.: stiff interrompido pela lombar antes dos posteriores):
-        reduza o valor, não conte como 1.
-      ```
+      **Exact content for `app/src/main/assets/hypertrophy_volume_reference.md`:** not reproduced here any more
+      (GOALS.md §33, 2026-10-06: the trainer's reference table is kept out of tracked documents). It exists as that
+      Android asset; the web reads it only through the gated Firestore document `appData/exerciseCatalog`.
 
 **5e. ADM Dashboard — currently 100% mocked (found 2026-08-17, from a real-device screenshot
 after the first successful ADM login).** All three tabs render fixed data that never changes and
@@ -1021,7 +932,7 @@ flowchart TD
       — `Ficha X` header line + `Exercício NxM` lines, GOALS.md's own module docs) with an
       *optional* trailing annotation per exercise line naming which muscles it hits and at what
       coefficient from `hypertrophy_volume_reference.md`, e.g.:
-      `Supino reto 4x10 [Peitoral:1.0, Delt.ant:0.5, Tríceps:0.5]`
+      `Nome do exercício 4x10 [Músculo:coeficiente, Músculo:coeficiente]` (example values omitted — GOALS.md §33)
       Optional so a line with no annotation (or a human pasting a plain WhatsApp-style ficha,
       today's existing use case) still parses exactly as before — this is additive, not a
       breaking format change.
@@ -3969,6 +3880,10 @@ service-worker mode.
 ## 25. Feature — Make creating fichas as easy as possible: several treinos at once, a PDF-backed exercise catalog, and (gated) in-site generation
 (2026-09-30, via `/newgoal`)
 
+**Superseded in part by §33 (2026-10-06):** wherever 25a/25c/25f/25i say the reference table is put in the prompt, is a public catalog file under `public/prompt/`, or can be kept in the trainer's own AI project ("já tenho a tabela" switch), that is no longer true: the prompts carry no table, the public files are gone, the switch was removed, and the catalog is read from the gated Firestore document `appData/exerciseCatalog`. The splitter, the review screen, the Gemini tab and the volume bands of this section stand.
+
+**Superseded in part by §34 (2026-10-07):** the review as its own step, the request shortcuts (25f), the in-site Gemini tab (25i) and the single/multi prompt templates are gone — the editor now has one static "Prompt de formatação de ficha", the importer, and the ficha's treino cards (`TreinosEditor`); a ficha is a named set of treinos, at most two per student. The splitter (`parseWorkouts`), the treino cards' editing, the volume bands and the catalog loading of this section stand.
+
 **The request:** "facilitar o máximo possível a criação da ficha." The trainer has a PDF of exercises
 with their partial muscle activations and wants an AI chat inside the site that always has that
 context — but found no free chat, and believes Gemini Flash no longer has a free tier. Second idea:
@@ -4121,8 +4036,7 @@ Suggested: sonnet · medium — already done; kept so the decision can be re-rea
       the most likely explanation of "no longer exists" besides the 2.5 retirement. Done when: the
       two rows of numbers are written here with today's date.
 - [x] **(manual)** The trainer says which PDF this is: is it the source of the table already in
-      `app/src/main/assets/hypertrophy_volume_reference.md` (the "Tabela de Volume Direto/Indireto
-      para Hipertrofia", 5.4 KB, used today in the prompt), or a larger/different document? Put the
+      `app/src/main/assets/hypertrophy_volume_reference.md` (5.4 KB, used today in the prompt), or a larger/different document? Put the
       PDF at `dev/exercise-reference.pdf` (or give the path). Done when: the file is in the repo
       (or the path is written here) and this item says which case it is. Copyright: confirm it is
       fine to keep the PDF in the repository, else keep it outside and commit only the derived table.
@@ -4185,11 +4099,12 @@ feeds a matcher whose mistakes change a student's recorded volume.
       one **and** exactly one catalog entry qualifies; two candidates or none → `null` (ambiguity is
       surfaced to the trainer in 25e, never guessed). Pure, no I/O, catalog passed in.
 - [x] Tests (`exerciseCatalog.test.ts`, plus a test of the build script's parser against the real
-      Markdown file so a future edit that breaks the table fails CI): `Supino reto` → Peitoral 1,
-      Delt. ant. 0.5, Tríceps geral 0.5, Cabeça longa 0.25 (values from the current table); accent and
-      case variants match; `Supino reto com barra` matches by the second attempt; `Supino` alone is
-      ambiguous → null; an exercise not in the table → null; monoarticular row `Elevação lateral`
-      → Deltoide lateral 1, others 0.25; every catalog coefficient is one of 0, 0.25, 0.5, 0.75, 1.
+      Markdown file so a future edit that breaks the table fails CI): an exact name returns the source row
+      with its muscle labels (row values omitted here — GOALS.md §33; §33 moved these tests to a synthetic
+      catalog and kept only a structural check of the real source); accent and case variants match; a name
+      with a known equipment qualifier matches by the second attempt; a bare first word is ambiguous → null;
+      an exercise not in the table → null; a monoarticular row keeps its muscle labels; every catalog
+      coefficient is one of 0, 0.25, 0.5, 0.75, 1.
       Done when: `npm test` passes and the JSON for today's table has the expected entry count (count
       the table rows in the test, do not hard-code a guess).
 
@@ -5287,6 +5202,8 @@ Suggested: haiku · low — documentation and ticks, fully specified.
 ## 28. Feature — Keep only the previous ficha: replacing a ficha archives the current one and deletes the older one
 (2026-10-01, via `/newgoal`)
 
+**Superseded by §34 (2026-10-07):** the "Substituir a ficha atual?" question, the one-previous-ficha history, `archivedAt` and `replaceFicha` no longer exist. A student keeps at most two **named fichas**; a third deletes the oldest (after a confirmation); Desativar/Ativar is gone. What stays true from here: nothing is deleted without the trainer's own action (no background job on Spark), `workoutLogs` are never touched, and treinos the phone wrote are never silently lost (they read as one "Ficha atual").
+
 **The request:** "tem que ver como vamos gerenciar o excesso de fichas criadas também, para evitar de gastar espaço
 à toa. Eu queria criar um histórico que salva somente a ficha passada da pessoa e o resto exclui."
 
@@ -6191,6 +6108,811 @@ Suggested: haiku · low — documentation so the new thing is findable, last bec
       verified; record 32b's decisions and 32c's findings in place.
 - [x] **Done when** (2026-10-05): a reader who has never seen this plan can find, from `CLAUDE.md` or `web/README.md`, where the
       templates live, how to change them, and how the link page works.
+
+## 33. Feature — Hide the trainer's exercise-reference table: out of the prompts, the screen, the public files and the bundle
+(2026-10-06, via `/newgoal`)
+
+**Superseded in part by §34 (2026-10-07):** 33c's web templates (single / multi / Gemini system instruction, `buildWebFichaPrompt`) and 33e's review screen with the Gemini tab were replaced by one static `ficha_prompt_format.md` and the unified ficha editor. What §33 built stands: the gated `appData/exerciseCatalog` document and rules v6, the muscles filled in by name at save, the per-muscle volume totals and the volume-adjust request, the ≤3 "Quis dizer…?" names, and the leak test / build scan / `e2e:ficha-privacy` guards.
+
+**The request:** for "gerar ficha com meia ajuda da IA" (the copy-and-paste prompt, §25f) the prompt shows the
+reference table — the ruler paragraph followed by every table — which comes from the trainer's own PDF (§5, the
+2026-08-17 note; §25c). The owner does **not** want that, nor "any information that points to the PDF", visible: they
+want all of it hidden "com o máximo de rigor possível" on the site, **while the AI-assisted ficha flow keeps working**.
+
+**Goal type: Feature** — a bounded change to a flow that works (nothing is broken; the owner's requirement changed).
+It borrows from Fix (a leak inventory first) and Process (a repo-exposure decision list, 33i) as minorities; the
+Feature module governs. Research is done (2026-10-06) and recorded in 33a so nothing is looked up twice.
+
+**The short answer to the owner — what the research found (verified by reading the code and by fetching the live site):**
+1. **It is worse than "the prompt shows it".** `web/scripts/copy-prompt-assets.mjs` and `build-exercise-catalog.mjs`
+   publish the table as two ordinary files under `/prompt/` of the static site, and **anyone on the internet — no
+   login — can download both** (checked live 2026-10-06: HTTP 200 on the Markdown table and on the JSON catalog).
+   The same table also goes to Google inside the Gemini tab's system instruction, visible in every trainer's
+   network panel. Hiding only the prompt would leave the front door open.
+2. **The repository is PUBLIC** (`gh repo view` → `PUBLIC`): the Android asset
+   `app/src/main/assets/hypertrophy_volume_reference.md` is readable at github.com / raw.githubusercontent.com
+   (HTTP 200 anonymously), it is in the git history, and this very file (§5, the 2026-08-17 note) pastes a condensed
+   copy and names the PDF. Android is off-limits for this work, so that part is a **decision for the owner (33i)**,
+   not something this section can finish — and it is the biggest residual exposure.
+3. **A static site cannot hide data from the browser that computes with it.** Anything the page uses is, in the end,
+   in that browser's memory and network panel. What *can* be done on the free Spark plan, and what this plan does:
+   (a) the AI prompts carry **no table at all** (so nothing to see on screen, nothing in the clipboard, nothing sent
+   to Google); (b) the table moves out of every public file and out of the JS bundle into **one Firestore document
+   that only an approved, active trainer (and the ADM) can read** (rules v6); (c) the UI stops naming the table or
+   listing its rows; (d) **tests and a build scan make a re-leak fail CI**. The only *complete* concealment is
+   computing on a server (Cloud Function → Blaze) — recorded as decision D4 (33i), **not** enabled here.
+4. **Without the table the AI no longer does the exact volume arithmetic.** It is told only to produce exercise names
+   plus sets × reps; the **site** (which still has the table, behind the gate) fills in each exercise's muscles and
+   the per-muscle volume it already shows on the review screen. To keep the loop useful, 33e adds a "ask the AI to
+   adjust the volume" helper that sends back **aggregated** totals only — never a coefficient. Trade-off, stated plainly:
+   the first draft may sit further from the weekly target than today's; the review screen and the helper close the gap.
+
+**Who can see the reference, before → after this section:**
+
+| Who / where | Today | After 33 |
+|---|---|---|
+| Anyone on the internet (no login) | downloads the Markdown table and the JSON catalog from `/prompt/` | nothing — the files are gone from the site (and a scan keeps them gone) |
+| Signed-in student, or a trainer who is suspended / billing-locked | the same public files | nothing — rules v6 deny the document |
+| Approved, active trainer | the whole table on screen (the prompt textarea, the clipboard), a full "Catálogo" dropdown, "tabela" wording | **no table on screen, in prompts or in the clipboard**; still reachable by **DevTools** (the document is in their browser's memory/network), plus the per-muscle totals and ≤3 "did you mean" names the review screen computes — the residual of any client-side design (D3, D4) |
+| Google (Gemini tab) | receives the full table in every chat | receives no table |
+| Anyone reading the repository | Android asset, `GOALS.md` paste, PDF file name, git history | unchanged by this section except the `GOALS.md` paste/name (33j); the Android asset and history are **D1** |
+
+**Not touched by this section (explicit, to stop scope creep):** Android and iOS — source, assets, `WorkoutParser.kt`,
+`GenerativeAiService`, the phone's own prompt and its copy of the table (the phone is authoritative for what it
+stores and keeps working as is); the "boneco 3D" / muscle-map figure (a separate plan — note its working label was
+also "§32", now taken by the branded e-mails, so it needs the next free number when it lands); the document shape of
+`workouts` (`exercises[].muscleActivation` stays, 33a-S6); billing, accounts, e-mails; enabling Blaze or deploying a
+Cloud Function; rewriting git history; changing the repository's visibility (33i is decisions only).
+
+**Where this executes:** `web/` plus `firestore.rules` (rules **v6**) on a new branch from `main` → PR (CI gates
+lint, tests, build, the new leak scan). **Never publish the rules, never run the publish script against production,
+never merge or push** without the owner asking — those are 33h's manual, ordered steps. Commit each verified item on
+its own. Numbering: §33 because §32 is the branded e-mails on `main`.
+
+```mermaid
+flowchart TD
+    A[33a. Findings — done] --> B[33b. Decisions]
+    B --> C[33c. Prompts without the table]
+    B --> D[33d. Hidden delivery - Firestore document + rules v6]
+    C --> E[33e. Review screen, editor copy, volume helper]
+    D --> E
+    E --> F[33f. Guards - leak tests, build scan, CI]
+    F --> G[33g. Browser verification]
+    G --> H[33h. Rollout — manual, ordered]
+    B --> I[33i. Repo exposure — decisions only]
+    H --> J[33j. Docs and registration]
+    I --> J
+```
+
+Suggested: opus · high — a security-motivated change across prompts, the data layer, UI and rules; the rules, the
+gated delivery and the rollout order (33d, 33h) are the part that cannot be retried casually.
+
+**33a. Findings — where the reference reaches a reader today (verified 2026-10-06)**
+
+Suggested: haiku · low — already done; kept so none of it is rediscovered.
+
+- [x] **S1 — the copyable prompt.** `FichaEditor.tsx` builds it with `buildMultiFichaPrompt` (new fichas) or
+      `buildFichaPrompt` (existing ficha), splices the whole table in at `$TABLE_PLACEHOLDER$`, shows it in a
+      `<textarea aria-label="Prompt">` and writes it to the clipboard. Templates: `web/prompt/ficha_prompt_multi.md`
+      (web-only), `app/src/main/assets/ficha_prompt_template.md` (Android's, used for an existing ficha).
+- [x] **S2 — the Gemini tab.** `GeminiPanel.tsx` splices the table into `web/prompt/ficha_system_gemini.md` and
+      `data/gemini.ts` sends it as the system instruction from the browser (network panel; Google receives it).
+- [x] **S3 — public static files.** `scripts/copy-prompt-assets.mjs` copies the Android table and template into
+      `web/public/prompt/`; `scripts/build-exercise-catalog.mjs` writes `public/prompt/exercise-catalog.json` (every
+      exercise with its muscles and coefficients); `data/promptAssets.ts` and `data/exerciseCatalog.ts` `fetch` them.
+      Gitignored, but **deployed**: both return HTTP 200 anonymously on the live site.
+- [x] **S4 — the review screen** (`MultiFichaReview.tsx`): a dropdown listing **every** catalog exercise with its group
+      ("Escolher exercício no catálogo…"), the labels "Usei a tabela" / "Ativação do catálogo", and the per-muscle
+      effective-volume table (numbers). The numbers are an **oracle**: typing one exercise shows its row of the table.
+- [x] **S5 — UI wording** that names the table: `FichaEditor.tsx` ("Aguarde o carregamento da tabela de exercícios…",
+      the "Já tenho a tabela de exercícios no meu projeto de IA" switch, "Carregando tabela…"), `GeminiPanel.tsx`
+      ("já conhecendo a tabela de exercícios e ativações musculares", "carregar a tabela de referência"),
+      `MultiFichaReview.tsx` ("Não foi possível carregar a tabela…", "Carregando tabela…"); `SHORT_TABLE_NOTE` in
+      `domain/fichaPrompt.ts` ("…está nos arquivos do meu projeto…") is itself a pointer.
+- [x] **S6 — stored data (accepted, not changeable here).** `workouts/{id}.exercises[].muscleActivation` holds the
+      coefficients of the exercises actually prescribed; the phone writes and reads the same field, and no student
+      screen displays it (grep: only the editor, the review and `domain/`). Readable under the existing rules only by
+      the owning trainer and the linked student. This **cannot** reconstruct the table, only the rows used.
+- [x] **S7 — repository and history.** Public repository; the Android asset; this file's pasted table and PDF file
+      name (§5, around lines 225–430); one fixture label in `web/src/domain/exerciseCatalog.test.ts`; git history.
+- [x] **S8 — copies already out.** Whatever was fetched or cached before the next deploy (browser caches, GitHub
+      Pages' short cache, search/archive crawlers). Hiding is forward-looking; the table is already disclosed to
+      anyone who looked (D2).
+- [x] **S9 — what does NOT need hiding** (kept on purpose): the web-only templates' format rules, the generic weekly
+      bands ("4–8 / 12–20 séries por grupo", public science, already on the review screen), the muscle labels (plain
+      anatomy), the Android parsing format `Nome SxR [Músculo:coef]` that `workoutParser.ts` still reads (phone parity).
+
+**33b. Decisions (owner — the recommended default is already written in; change it here, not mid-build)**
+
+Suggested: haiku · low — recording choices; nothing is built here.
+
+- [ ] **(manual) Delivery of the table to the editor.** Default: **one Firestore document, `appData/exerciseCatalog`,
+      readable only by an approved active trainer and the ADM, writable only by the ADM** (rules v6, 33d). Rejected:
+      keeping a static file or a bundled constant (public), obfuscation/encoding (not security), Remote Config
+      (fetchable without sign-in), Storage (needs Blaze). Alternative: a callable Function (D4, Blaze).
+- [ ] **(manual) Unrecognised exercise names on the review screen.** Default: **no full list**; show "sem ativação
+      calculada" and up to **3** closest names as "Quis dizer…?" (`domain/exerciseCatalog.ts` already finds one close
+      match). Alternative: no suggestions at all (stricter, more manual fixing).
+- [ ] **(manual) Numbers on the review screen.** Default: keep the per-muscle effective-volume **numbers** (the §25e
+      feature the trainer asked for) and accept the oracle (33a-S4) as a residual. Alternative: show only the band
+      words ("abaixo do mínimo / na faixa ideal / acima") — fewer clues, less useful.
+- [ ] **(manual) The "I already have the table in my AI project" switch.** Default: **remove it** (its note is a pointer
+      and there is no table left to keep). Alternative: an ADM-only private short prompt — not recommended.
+- [ ] **(manual) The "adjust volume" helper (33e).** Default: **yes** — a button that sends back aggregated totals
+      ("Peitoral 8 séries efetivas — abaixo da faixa 12–20") so the AI can rebalance without ever seeing a coefficient.
+- [ ] **(manual) Source of the table for the publish script.** Default: the Android asset (it is what exists);
+      `CATALOG_SOURCE=<path>` overrides it, so the owner can later keep a private copy outside the repository (D1).
+- [ ] **Done when:** each default above is either confirmed or replaced here with a dated note.
+
+**33c. Prompts without the table**
+
+Suggested: sonnet · high — prompt wording drives what the AI returns and what the parser accepts; small mistakes
+silently break the paste flow, so every change gets a test against the real parser.
+
+- [x] **A web-only single-treino template, `web/prompt/ficha_prompt_single.md`**, for *editing an existing ficha*: the
+      phone's template (Android asset, not to be changed) asks for `[Músculo:coeficiente]` blocks that only make sense
+      with the table. The new one asks for one treino title + `Nome SÉRIESxREPS` lines, no brackets, one code block,
+      same rules as the multi template. Done when: `FichaEditor.tsx` uses it for an existing ficha and a pasted
+      reply of that shape parses through `applyPaste` to the same exercises.
+      **Done (2026-10-06):** `ficha_prompt_single.md` written; `FichaEditor.tsx` uses it for an existing ficha; `fichaPrompt.multi.test.ts` proves its own worked example reads through `parseWorkouts`/`applyPaste` (one treino, three exercises, no muscle blocks).
+- [x] **Rewrite `web/prompt/ficha_prompt_multi.md` and `web/prompt/ficha_system_gemini.md`**: remove the table section
+      and its placeholder, "exatamente como está na tabela de referência", every mention of coefficients, the scale
+      and the RIR adjustments "da tabela"; replace with "use nomes comuns de exercícios em português, sem marca de
+      equipamento" and a **generic** volume paragraph (distribute the weekly target across the returned treinos; direct
+      work counts fully, merely assisting work counts less — **no numbers other than the public bands 4–8 / 12–20**).
+      Example exercises in the templates must be generic names that are **not** rows of the catalog (a test in 33f
+      proves it). Keep the output-format rules (one code block, `Treino A — foco`, `Nome SxR`, JSON schema for
+      Gemini) byte-compatible with what `parseWorkouts` / `treinosFromAi` read. Done when: neither file contains
+      `$TABLE_PLACEHOLDER$`, "tabela", "coeficiente", "régua" or "PDF", and the parser tests still pass.
+      **Done (2026-10-06):** Both rewritten (generic names and generic volume paragraph; the output-format rules unchanged, the multi example still splits into Treino A/B/C). The examples use names that are not catalog rows — `domain/referenceLeak.test.ts` (33f) is what proves it against the real source. A line added for the 33e volume helper: "se eu te enviar depois um resumo do volume por músculo, ajuste as séries…".
+- [x] **`domain/fichaPrompt.ts`**: delete `SHORT_TABLE_NOTE` and the `shortPrompt` option; the web builders drop the
+      `volumeReference` parameter (add `buildWebFichaPrompt(template, student, request, { deidentify })` = template +
+      profile block + request). `buildFichaPrompt` and `TABLE_PLACEHOLDER` **stay** for Kotlin parity (its test reads the
+      phone's template and table from the repository, never at runtime). Done when: nothing under `web/src/app` or
+      `web/src/data` references `TABLE_PLACEHOLDER`, `volumeReference` or `SHORT_TABLE_NOTE`.
+      **Done (2026-10-06):** `SHORT_TABLE_NOTE`, `shortPrompt`, `buildMultiFichaPrompt` removed; `buildWebFichaPrompt(template, student, request, { deidentify })` added and it **throws** if a template still carries the placeholder; `buildFichaPrompt`/`TABLE_PLACEHOLDER` kept for phone parity with its test untouched. grep finds no use of them under `web/src/app` or `web/src/data`.
+- [x] **`data/promptAssets.ts` + `scripts/copy-prompt-assets.mjs`**: `PromptAssets` loses `volumeReference` and the
+      Android template; gains `singleTemplate`; the script copies **only** the three web-only templates and **deletes
+      stale generated files** (`hypertrophy_volume_reference.md`, `ficha_prompt_template.md`, `exercise-catalog.json`)
+      from `public/prompt/` so an old local build can never ship them. Done when: after `npm run build`,
+      `out/prompt/` holds only the three web-only templates.
+      **Done (2026-10-06):** `PromptAssets` is now `{ singleTemplate, multiTemplate, geminiSystem }`; the script copies only the three web templates (list shared with the build scan in `scripts/lib/webTemplates.mjs`) and deletes the stale reference/template/JSON files. Verified by the build: `out/prompt/` holds exactly those three (33f scan).
+- [x] **`GeminiPanel.tsx`**: the system instruction is `assets.geminiSystem` as is (no splice); the intro and error
+      lines stop naming a table. Done when: the instruction string passed to `startFichaChat` is asserted table-free.
+      **Done (2026-10-06):** The panel passes `assets.geminiSystem` unchanged to `startFichaChat`; intro and error lines no longer name a table; `aiGemini.test.ts` asserts the instruction file carries no placeholder.
+
+**33d. Hidden delivery — one gated document, rules v6, no public file**
+
+Suggested: opus · xhigh — Firestore rules, an ADM write path, a manual production seeding step and a deploy that
+removes public files; a wrong order makes the editor lose its catalog for real users.
+
+- [x] **Rules v6** (`firestore.rules`, header `// Rules version: 6`, archive `firestore-rules/versions/v6.rules`
+      identical, `npm run check:rules-version` green): `match /appData/{docId}` — `allow get` only for `docId ==
+      'exerciseCatalog'` and `isSignedIn() && (isAdmin() || isOwningTrainer(request.auth.uid))` (reuses the existing
+      helpers: role `TRAINER`, not suspended, billing current); `allow list: if false`; `allow create, update` only
+      `isAdmin()` and a shape check (`keys().hasOnly(['version','exercises','updatedAt'])`, `version` string ≤ 64,
+      `exercises` a list of 1–300, `updatedAt` int); no delete; students and everyone else denied. Add the collection
+      to the schema comment at the top of the file. Done when: the file and `v6.rules` are identical and the CI guard passes.
+      **Done (2026-10-06):** v6 written (`appData/{docId}`: `get` only for `exerciseCatalog`, ADM or `isOwningTrainer(request.auth.uid)`; no list; ADM-only create/update with a shape check; no delete), archived as `firestore-rules/versions/v6.rules`, `check:rules-version` green. NOT published — that is 33h, the owner's.
+- [x] **Rules tests** in `web/rules/firestore.rules.test.ts` ("the exercise catalog document (rules v6)"): anonymous,
+      student, suspended trainer and billing-locked trainer **cannot get it**; active trainer and ADM **can**; nobody can
+      list or query the collection; trainer and student cannot write; ADM can write a valid document and cannot write
+      extra keys, a non-list `exercises`, an empty or oversized list, or delete. Per this repo's rule, run them once
+      against v5 (`RULES_FILE=firestore-rules/versions/v5.rules npm run test:rules`) and record how many fail —
+      `assertFails` on its own proves nothing. Done when: green on v6 and visibly red on v5.
+      **Done (2026-10-06):** 15 tests. Full emulator suite 204/204 on v6. Against v5 only the 2 positive tests fail (v5 denies everything by default, so the negatives cannot show anything there); the negatives were proved with five mutated v6 copies (open-all, no shape check, no docId check, role-only, list open) — each mutant failed exactly the test that guards it.
+- [x] **Data layer** — `data/exerciseCatalog.ts`: `loadExerciseCatalog(db)` reads `appData/exerciseCatalog` with
+      `getDoc`, parses it with the existing `parseCatalog`, keeps the result **in module memory only** (never
+      `localStorage`/IndexedDB; the SDK is on its default memory cache — verified), and **clears it on sign-out**
+      (hook where the session signs out, `data/session.ts`); `permission-denied` becomes a plain "sem acesso ao
+      catálogo" state; no `console.*` ever prints the document. Test through the emulator in `web/rules/` (a
+      data-layer test beside `dataLayer.test.ts`): trainer gets it, student gets "sem acesso".
+      **Done (2026-10-06):** `loadExerciseCatalog(db, uid)` reads `appData/exerciseCatalog`, memory-only cache per uid, cleared by `SessionProvider` whenever nobody is signed in, `CatalogAccessError` for permission-denied, no logging. Tested in `web/rules/exerciseCatalog.test.ts` (trainer gets it; student, suspended and billing-locked get the access error; cache/clear; unpublished and malformed documents).
+- [x] **Builder becomes a library:** `scripts/build-exercise-catalog.mjs` keeps `parseExerciseCatalog` and `--stdout`
+      but **no longer writes under `public/`**; `predev`/`prebuild` in `package.json` stop calling it; its tests
+      (`domain/exerciseCatalog.test.ts`) change accordingly and use a small **synthetic** catalog, not real rows.
+      **Done (2026-10-06):** `build-exercise-catalog.mjs` is parse-only; the source and the CLI moved to `scripts/lib/catalogSource.mjs` (`CATALOG_SOURCE` override); `predev`/`prebuild` only copy the web templates; `exerciseCatalog.test.ts` now uses a synthetic catalog (the real source is checked for structure only).
+- [x] **Publish script (owner-run), `scripts/publish-exercise-catalog.mjs` + `npm run catalog:publish`**: reads the
+      source (`CATALOG_SOURCE` or the Android asset), builds the catalog, signs in as the ADM (e-mail from env or
+      prompt, password from env or a hidden prompt — **never stored, never logged, never in the repository**), writes
+      `appData/exerciseCatalog` with `{ version, exercises, updatedAt }`, prints only the version and the count.
+      Emulator mode via the existing `NEXT_PUBLIC_FIREBASE_EMULATORS`. Done when: against the emulators with the
+      seeded `admin@teste.dev` it creates the document and the editor reads it; a second run with an unchanged
+      source reports "already up to date".
+      **Done (2026-10-06):** Written and exercised against the emulators by `rules/exerciseCatalog.test.ts`: creates the document as an ADM, prints only version and count (the test checks the password and content are not printed), a second run says "Already up to date", a non-ADM or wrong password writes nothing. Deviation from the plan: it defaults to the EMULATORS and needs `--production` (plus typing the project id) for the real project, instead of reading `NEXT_PUBLIC_FIREBASE_EMULATORS`.
+- [x] **Seed:** `scripts/seed-emulators.mjs` also writes the catalog document (same builder), so `dev:local`, the e2e
+      scripts and the rules tests have it; update the header comment. Done when: after `npm run seed:emulators` the
+      document exists and `dev:local` shows recognised exercises on the review screen.
+      **Done (2026-10-06):** Writes `appData/exerciseCatalog` from the same builder (a warning, not a failure, when the source is missing); verified by the browser test: after `reseed()` the trainer reads the document (REST 200) and the review recognises exercises.
+- [x] **Done when:** no file the build copies or generates under `web/public/` contains any exercise row, the ruler
+      or the table's headings (33f proves it), and the editor loads the catalog only through Firestore.
+      **Done (2026-10-06):** Verified twice: the clean static build scanned by `check:leak` (175 text files, `out/prompt/` = the three web templates) and the browser test (old `/prompt/` table and catalog files 404, the phone's template 404, every loaded script free of phrases, the editor reading the catalog only via Firestore).
+
+**33e. Review screen, editor copy and the volume helper**
+
+Suggested: sonnet · medium — UI wording and one small pure function with tests; behaviour of saving is unchanged.
+
+- [x] **Remove the full catalog dropdown** from `MultiFichaReview.tsx` (the "Catálogo" `<optgroup>` and its group
+      suffixes); keep only up to **3** "Quis dizer…?" suggestions from a new pure `suggestExercises(catalog, name,
+      limit = 3)` in `domain/exerciseCatalog.ts` (token-overlap ranking, deterministic, tested on a synthetic catalog).
+      Done when: no screen lists more than 3 catalog names, and an unrecognised name says "sem ativação calculada —
+      o volume não conta este exercício" with the suggestions (if any).
+      **Done (2026-10-06):** The "Catálogo" `<optgroup>` and its group suffixes are gone from `MultiFichaReview.tsx`; `suggestExercises` (cap `MAX_SUGGESTIONS = 3`, enforced inside) and `offeredSuggestions` (the close match first) in `domain/exerciseCatalog.ts`, tested on a synthetic catalog; the row shows "Quis dizer:" buttons ("Usar …") for at most 3 names, or "Sem ativação calculada — o volume não conta este exercício." (browser check: 33g).
+- [x] **Neutral wording everywhere** (33a-S5): "Usei a tabela" / "Ativação do catálogo" → a neutral "Músculos reconhecidos"
+      / "Ajustado à mão"; "Carregando tabela…" / "…carregamento da tabela de exercícios…" / "…carregar a tabela de
+      referência…" → "Carregando dados dos exercícios…" / "Não foi possível carregar os dados dos exercícios; os
+      músculos não serão calculados automaticamente."; remove the short-prompt switch and its state from
+      `FichaEditor.tsx`; the Gemini intro says the AI "monta os treinos" and the site "calcula os músculos". Done
+      when: `grep -ri "tabela" web/src/app` finds no user-visible string about the reference.
+      **Done (2026-10-06):** All the strings moved to `domain/editorCopy.ts` (`EDITOR_COPY`, so the leak test in 33f can read them); the short-prompt switch was removed in 33c; `grep -ri tabela web/src/app` now finds only the unrelated billing sentence in `BillingSection.tsx`. **Found while executing, not in the plan:** the single-ficha editor's "Músculos" column printed every exercise's coefficients (a table row verbatim) — it now says "calculados" or "—" (`FichaEditor.tsx`).
+- [x] **Volume numbers per 33b.** If the default holds, keep them. If the owner chose bands-only, `MultiFichaReview.tsx`
+      shows `volumeBand(sets).label` only and the numeric column goes. Either way the screen never shows a single
+      exercise's row (only totals across the included treinos).
+      **Done (2026-10-06):** Default kept (the per-muscle numbers are totals across the included treinos; no single exercise's row is shown). The owner's choice in 33b is still open; bands-only would be a one-column change in `MultiFichaReview.tsx` and in the editor's volume list.
+- [x] **The volume helper** (`domain/volumeFeedback.ts`, pure, tested): `buildVolumeAdjustMessage(volume)` turns the
+      review's per-muscle totals into one pt-BR paragraph — muscles below 12, above 20, and the numbers — and **nothing
+      else** (no exercise names, no coefficients). Gemini tab: an "Ajustar volume" button sends it through the
+      existing follow-up path (`buildAdjustMessage` style) and the answer reopens the review; copy tab: a "Copiar
+      pedido de ajuste de volume" button copies it. Done when: tests prove the message contains only muscle labels,
+      totals and band words, and that an all-ideal plan produces "nada a ajustar" instead of a request.
+      **Done (2026-10-06):** `domain/volumeFeedback.ts`: `includedVolume`, `buildVolumeAdjustMessage` (only muscles ≥ 4 effective sets that are below 12 or above 20; null when nothing to adjust), tested. Wired in the UI: the review shows the request in a read-only box with "Copiar pedido de ajuste de volume", and the Gemini tab has "Ajustar volume com o Gemini" (sends it through the same chat). Typecheck/lint/unit tests only so far — the click-through is 33g.
+- [x] **Unit tests for the prompt flow** (`fichaPrompt*.test.ts`, `aiGemini.test.ts`, `fichaRequest.test.ts` as needed):
+      update the ones that expected a table; add: the multi and single prompts for a sample student contain the
+      profile, the request and the format rules and **no** placeholder.
+      **Done (2026-10-06):** Done in 33c (`fichaPrompt.multi.test.ts`: both web templates, `buildWebFichaPrompt`, no placeholder, deidentify; `aiGemini.test.ts`: the instruction file carries no placeholder); `fichaPrompt.test.ts` (the phone's prompt) is untouched. Unit suite 487/487.
+
+**33f. Guards — a re-leak must fail the build**
+
+Suggested: sonnet · high — the guard is only as good as its sentinels; a vacuous pass is the failure mode to design out.
+
+- [x] **Sentinel set, `web/scripts/lib/referenceSentinels.mjs`**, derived at run time from the source
+      (`CATALOG_SOURCE` or the Android asset, via `parseExerciseCatalog`): the document title line, the ruler
+      paragraph's first sentence, the section headings, the PDF's file name and the words "hypertrophy_volume_reference"
+      and "exercise-catalog", plus **every exercise name**. **If the source cannot be read, or yields no sentinels,
+      the guard FAILS** (never passes vacuously); `LEAK_SENTINELS_FILE` can supply a list when the source has moved.
+      **Done (2026-10-06):** `loadSentinels()` derives, at run time from the source, the title and every heading of 3+ words, the first five words of each prose line, and every exercise name (50 names, 18 phrases today), plus two file-name phrases; it THROWS when the source is missing/empty or yields nothing (proved in the unit test). `LEAK_SENTINELS_FILE` replaces the source; deviation: the reference's original file name is not written in any tracked file — the owner supplies it with `LEAK_EXTRA_PHRASES=a|b` (documented in 33j). `findLeaks`/`isLeak` never return the matched text.
+- [x] **Leak unit test** (`domain/referenceLeak.test.ts`): every text the product can put in front of a user or send to
+      an AI — the three web templates, `buildWebFichaPrompt` for both flows, the Gemini system instruction,
+      `buildAiUserMessage`, `buildAdjustMessage`, `buildVolumeAdjustMessage`, and the user-visible strings of the editor,
+      review and Gemini components (exported constants, not scraped JSX) — contains **no sentinel**, no
+      "tabela de referência", "coeficiente", "régua", "PDF", and, from the exercise names, **no match at all in the
+      templates' examples** and **fewer than 3 distinct names** anywhere else (a lone generic word like "Stiff" in an
+      example is not a leak; a pasted list is). Done when: it fails if a row of the real table is pasted into any template.
+      **Done (2026-10-06):** 37 tests: the three templates, the built prompts (multi, single, deidentified, Gemini user message, follow-up, volume request), every `EDITOR_COPY` sentence and the source of the four editor components carry no phrase, no name (templates/prompts/copy tolerate 0, components fewer than 3) and none of the naming words; it catches a pasted prose line, heading or three names and is not trigger-happy about one. Proved to discriminate: appending 1.5 KB of the real table to the multi template made 3 tests fail; restored, 37/37.
+- [x] **Build scan, `web/scripts/check-no-reference-leak.mjs` (`npm run check:leak`)** over `web/out/`: fails when any
+      file (HTML, JS, JSON, CSS, `.md`, `.map`) contains a title/ruler/heading/file-name sentinel, or **3+ distinct
+      exercise names**, or when `out/prompt/` holds anything but the web-only templates, or when any source map exists.
+      Prints file + sentinel kind, never the matched table text. Done when: seeding `web/public/prompt/` with a copy
+      of the old table makes it fail (prove it once, then undo), and a clean build passes.
+      **Done (2026-10-06):** Clean build (`NEXT_PUBLIC_BASE_PATH=/Personal_app_android`): 175 text files scanned, `out/prompt/` holds exactly the three web templates, exit 0 (this also verifies 33c's `copy-prompt-assets` item). Proved to fail: with the old table, a catalog JSON and a source map dropped into `out/`, it listed 6 problems and exited 1; cleaned, exit 0. Never prints matched text.
+- [x] **CI wiring:** a "No reference table in the build" step after `npm run build` in `.github/workflows/web-ci.yml`
+      **and** in `.github/workflows/web-deploy.yml` (before "Upload Pages artifact", so a leaking site is never
+      published). Done when: both workflows run it and fail the job on a hit.
+      **Done (2026-10-06):** A "No reference table in the build" step (`npm run check:leak`) after the build in `web-ci.yml`, and after "Build static site" and before "Upload Pages artifact" in `web-deploy.yml`, whose stale "prebuild copies the Android assets" comment was corrected. Not yet run on GitHub Actions (nothing was pushed).
+- [x] **Convention for future tests:** tests and fixtures from now on use **synthetic** exercises, never real rows
+      (the one real label left in `exerciseCatalog.test.ts` is replaced). Written in `web/README.md` (33j).
+      **Done (2026-10-06):** Partly: the real label in `exerciseCatalog.test.ts` is gone (that file is now synthetic, and the real source is only checked for structure). Clarification found by scanning the repo: parser fixtures (`workoutParser.multi.test.ts`, `__fixtures__/multiFicha.ts`, `aiResponse.test.ts`…) use common gym exercise NAMES in the phone's `Nome SxR` format — names, never coefficients, notes or rows — and stay as they are; the rule is "no coefficients, no prose, no rows". The README sentence is 33j's.
+
+**33g. Browser verification**
+
+Suggested: sonnet · medium — the same headless-Chrome + emulator pattern as `e2e/account.mjs`.
+
+- [x] **`web/e2e/ficha-privacy.mjs` (`npm run e2e:ficha-privacy`)**, signed in as the seeded trainer: opens a student's
+      new-ficha screen; clicks "Copiar prompt"; reads the textarea and `navigator.clipboard` text and asserts no sentinel;
+      reads the whole DOM text and every loaded script/response body for sentinels; asserts
+      `GET /prompt/hypertrophy_volume_reference.md` and `/prompt/exercise-catalog.json` are **404** (dev server) and the
+      three web-only templates are 200; pastes a synthetic AI answer, checks recognised exercises show their muscles
+      and the per-muscle volume appears, an unrecognised one shows the "sem ativação" line with ≤3 suggestions and **no**
+      dropdown of the full list; opens the Gemini tab and asserts its visible text names no table.
+      **Done (2026-10-06):** Written and green: 40/40 on desktop and 40/40 at 390 px (Chrome headless over CDP against the emulators, like `account.mjs`). It reads the prompt textarea, the clipboard, the Gemini tab, the page text and all 24 loaded scripts; asserts the old public files 404; pastes an answer built from the source's own exercise names (none written in the file), checks recognised exercises, no dropdown, ≤3 suggestions per row, the volume table and the volume-adjust request; saves and checks `exercisesJson` carries `muscleActivation` for a recognised exercise and none for an invented one. Proved to discriminate: with the old table served from `public/prompt/` and appended to the multi template it went 36/40 (404 check, prompt on screen, prompt on clipboard failing); restored, 40/40. Deviation: proved by re-planting the leak rather than by checking out `main`'s old tree.
+- [x] **Access checks** in the same script: signed in as the seeded **student** (`ana@teste.dev`) and as the suspended
+      trainer (`suspended@teste.dev`), a direct Firestore REST read of `appData/exerciseCatalog` with their ID token is
+      denied; as the trainer it succeeds; with no token it is denied.
+      **Done (2026-10-06):** Firestore REST with real emulator ID tokens: trainer 200, ADM 200, student 403, suspended trainer 403, no token 403.
+- [x] **Done when:** the script is green on desktop and 390 px, red against the pre-change code (prove once, then
+      restore), and its recipe is added to `web/README.md` "Browser tests".
+      **Done (2026-10-06):** Green 40/40 on desktop and 40/40 at 390 px; red when the leak is re-planted (36/40); the recipe is in `web/README.md` "Browser tests".
+
+**33h. Rollout (manual, ordered — this is where real users could be hurt)**
+
+Suggested: opus · xhigh — publishing rules, seeding production and a deploy that deletes public files; do it in this
+order and stop at the first surprise. `/execgoals` prepares the PR and the exact checklist; **the owner runs these.**
+
+- [ ] **(manual) 1. PR open, CI green** — including the new leak step. State in the PR, at the top, the order below.
+- [ ] **(manual) 2. Publish rules v6** (console copy-paste or `firebase deploy --only firestore:rules` with the owner's
+      login) **after diffing it against what is live**: the diff `versions/v5.rules` → `v6.rules` must show only the
+      `appData` block and the schema comment. Never publish the Android branch's rules copy (its header numbers collide).
+- [ ] **(manual) 3. Seed production once**: `npm run catalog:publish` signed in as the owner's ADM account; confirm in
+      the console that `appData/exerciseCatalog` exists (version + exercise count). Do this **before** the merge: a
+      deploy without the document leaves the editor with no muscles ("catálogo indisponível").
+- [ ] **(manual) 4. Merge → the deploy publishes the site** (the artifact replaces the old one, so the two public files
+      disappear). Wait out Pages' short cache (about ten minutes).
+- [ ] **(manual) 5. Verify live:** `curl -I` the two old `/prompt/` URLs → **404**; the three web-only templates → 200;
+      sign in as a real trainer → copy a prompt → the text has no table; paste a sample answer → muscles and volume
+      appear; the Gemini tab runs; a student account cannot read the document (REST call → 403).
+- [ ] **(manual) 6. Residual copies:** browsers that visited before keep the old files until their cache expires; web
+      archives or search caches may hold them — the owner may request removal; nothing in this repository can undo it.
+- [ ] **Rollback, written before step 2:** rules v6 are additive (leaving them published harms nothing). If the editor
+      misbehaves after the deploy, revert the web PR **only** if the document is unreadable for trainers — and know that
+      reverting re-publishes the public files, so prefer fixing forward (re-seed, or check the trainer's account status).
+- [ ] **Done when:** steps 1–5 are done and dated here, with what step 5 returned.
+
+**33i. Repository and server-side exposure — decisions only (none executed; Android/iOS stay untouched)**
+
+Suggested: haiku · low — recording owner decisions with the facts needed to take them.
+
+- [ ] **(manual) D1 — the public repository.** Facts: public; the Android asset, history, forks and clones hold the
+      table; `GOALS.md` pastes a copy (33j trims it, history keeps it). Options: (a) accept; (b) make the repository
+      private — GitHub Pages from a private repository needs a paid plan, so pair it with moving hosting to Cloudflare
+      Pages (§31 already assesses readiness); (c) remove the asset and rewrite history — needs an Android change
+      (the phone loads that asset) and does not recall existing copies. **Recommended: (b), together with the §31
+      cutover.** Until decided this is the largest residual exposure.
+- [ ] **(manual) D2 — already disclosed.** The table has been downloadable from the live site since the web launch
+      and from the repository since August; treat it as seen by anyone who looked, and judge accordingly.
+- [ ] **(manual) D3 — the numbers oracle** (33a-S4). Default accepts it; the stricter option is bands-only (33b).
+- [ ] **(manual) D4 — the only complete fix: compute on a server.** A callable Function would receive exercise names
+      and return muscles/volume (and could even call Gemini itself), so the table never leaves the server. It needs
+      Blaze (§3, §30 — the owner has not enabled it, and this plan does not). Revisit if D1(a)/(b) is not acceptable or
+      if an approved trainer is judged a threat. The client already reads the catalog through one seam
+      (`data/exerciseCatalog.ts`), so swapping Firestore for a callable later does not touch the screens.
+- [ ] **(manual) D5 — App Check enforcement on Firestore** (console) makes scripted scraping of the document with a
+      stolen trainer token harder; check the console state and record it.
+- [ ] **(manual) D6 — alias coverage.** After 33h, have a trainer generate three fichas with the AI app they use and
+      count the exercises that needed a manual fix. If more than about a quarter, add synonyms **to the private source**
+      that `catalog:publish` reads (never to a tracked file — a synonym list would reveal the catalog's names).
+- [ ] **Done when:** each of D1–D6 has a dated decision here.
+
+**33j. Docs and registration**
+
+Suggested: haiku · low — documentation so the new rule is findable and the old exposure is trimmed; last because it
+describes what exists.
+
+- [x] **`CLAUDE.md` → "Web front":** one paragraph — the reference table is never shipped, prompted, bundled or named
+      on screen; it lives only in the gated `appData/exerciseCatalog` document, seeded by `catalog:publish`; prompts
+      carry names + sets × reps only and the site fills the muscles; the leak test/scan are the guard; **do not** reproduce
+      rows, the ruler or the source's file name in any tracked file. Update the `domain/fichaPrompt.ts` row of the
+      hand-port table (the phone's template/table are no longer copied to the web).
+      **Done (2026-10-06):** New paragraph "The trainer's exercise reference is hidden (§33)"; the `buildFichaPrompt` row of the hand-port table now says the web no longer copies or uses the phone's template/table; the §25 paragraph says `copy-prompt-assets.mjs` copies only the three web templates; the rules paragraph lists v6.
+- [x] **`web/README.md`:** replace lines 24–29 (the "copied to `public/prompt/`; the reference table stays
+      single-sourced" paragraph); add `catalog:publish`, `check:leak`, `e2e:ficha-privacy`, the `CATALOG_SOURCE` and
+      `LEAK_SENTINELS_FILE` variables, the synthetic-fixtures convention, and the 33h order; document the rules v6 block.
+      **Done (2026-10-06):** The old "copied next to the shared Android assets" paragraph replaced by a section "The trainer's exercise reference stays hidden" (where it lives, `catalog:publish` incl. `--production`, the guards and `LEAK_*` variables, contributor rules incl. the synthetic-fixtures convention, what a static site cannot hide, the rollout order); `e2e:ficha-privacy` added to "Browser tests".
+- [x] **`GOALS.md`:** mark §25a/§25c/§25f/§25i wording about the table in the prompt, the public catalog and the
+      "já tenho a tabela" switch as **superseded by §33**; in §5's 2026-08-17 note **delete the pasted table block and
+      replace the PDF's file name with "the trainer's reference PDF"** (history keeps them — D1); tick this section's
+      items with dates as they are verified and record 33b's decisions and 33h's live results in place.
+      **Done (2026-10-06):** A "Superseded in part by §33" note at the top of §25; in §5's 2026-08-17 note the pasted table block is replaced by a pointer and the PDF's file name by "the trainer's reference PDF"; two example lines elsewhere that carried a coefficient row (§15 annotation example, §25c test description) were neutralised. A scan of the tracked docs now finds no ruler, heading or PDF name (only the Android asset's own file name, which is public in the repository and cannot change here — D1). History keeps everything.
+- [x] **Done when:** a reader who has never seen this plan can find, from `CLAUDE.md` or `web/README.md`, where the table
+      lives, how to update it, which tests guard it, and what must never be committed; and a search of tracked
+      documentation for the ruler, the headings or the PDF's file name finds nothing outside git history.
+      **Done (2026-10-06):** Verified 2026-10-06: `CLAUDE.md` and `web/README.md` say where the reference lives, how to update it (`catalog:publish`), which tests guard it and what must never be committed; a scan of all tracked docs for the source's title, headings and prose openings finds nothing (the document title that was wrapped across two lines in §5 was the last hit and is trimmed), and none names the PDF. What remains is the Android asset's own file name (public in the repository; D1) and generic exercise names in old plan prose.
+
+## 34. Feature — Fichas as simple named cards: a ficha is a named set of treinos, at most two per student, and the "Pedir à IA" card becomes one "Prompt de formatação de ficha"
+(2026-10-06, via `/newgoal`)
+
+**The request (owner, in Portuguese, with two screenshots — the student page's "Fichas" list and the "Nova ficha" page):**
+"vamos ter que reescrever isso… refazer cada passo, e o que já tiver sido alterado na sessão passada você sobrescreve."
+**Image 1 (student page):** replace the list with **one simple card per ficha — the name the trainer gave it plus its
+modification date**. A new ficha makes "the card go down" and creates a new card with its own date. **At most 2 active
+fichas; the third deletes the oldest.** No "Desativar" button — only **Editar** (which opens the *same screen as creating a
+ficha*) and **Excluir**, the latter with a confirmation card saying "esse processo não pode ser desfeito".
+**Image 2 (new ficha):** **the whole "Pedir à IA (opcional)" card is deleted.** In its place, **one card on top titled
+"Prompt de formatação de ficha"** that tells an external AI how to build the ficha so the site accepts the format. The
+ficha gets **an input to name it**, and then the rest continues — naming each treino too.
+
+**Goal type: Feature** — a bounded change to flows that work (nothing is broken; the owner's design changed). One minority
+of **cleanup** (code that dies with the removed card) rides inside it. Research is done (2026-10-06, by reading the code on
+`claude/hide-reference-table` and the Firestore rules) and recorded in 34a so nothing is looked up twice.
+
+**What this overwrites (so nobody "fixes" it back).** This section supersedes, where they conflict: §28 (the "Substituir a
+ficha atual?" question, the one-previous-ficha history, `archivedAt`, `replaceFicha`); §25e/§25f/§25i (the multi-treino review
+as a separate step, the request shortcuts, the **in-site Gemini tab**); §33c/§33e's **web prompt templates** (single / multi /
+Gemini system instruction, `buildWebFichaPrompt`) and the "Incluir o nome e as restrições médicas" switch. What §33 built
+**stays and must keep passing**: the gated `appData/exerciseCatalog` document and rules v6, the muscles filled in by name
+at save, the per-muscle volume totals and the "adjust the volume" helper, ≤3 "Quis dizer…?" names, the leak test/scan and
+`e2e:ficha-privacy` (the last one gets its clicks updated, not its assertions weakened).
+
+**The short answer.** No new collection and **no rules change**: a ficha is the set of `workouts/{id}` documents that share
+one web-only map field `ficha: { id, name, createdAt, updatedAt, order }`. The student page lists fichas as cards (name +
+"Modificada em dd/mm/aaaa" + Editar + Excluir). Creating a third ficha first asks, then — in one atomic batch — creates the new
+treinos and deletes **every treino of the oldest ficha and nothing else**. Editing opens the editor pre-filled with the whole
+ficha (name + all treinos). Treinos that existed before this change (no `ficha` field) appear as **one** card, "Ficha atual",
+so nothing disappears and nothing is deleted by the migration.
+
+**Not touched (explicit, to stop scope creep):** Android and iOS (source, assets, the phone's own prompt; the phone keeps
+reading and writing `workouts` as it does — it ignores the new field, and a phone save drops it, which only makes that treino
+read as a legacy one); `firestore.rules` and `firestore-rules/versions/` (v6 stays exactly as it is); `workoutLogs` and the
+progress charts (a ficha's deletion never touches a log); billing, accounts, e-mails, the ADM console (its Gemini counter keeps
+reading old data); `parseWorkouts` / `applyPaste` / `parseWorkoutName` / `parseExercises` (Kotlin mirrors — **must not
+change**); the exercise reference (§33); the student's logging screen (`aluno/treino`).
+
+**Where this executes:** `web/` only, on a **new branch from `claude/hide-reference-table`** — this plan edits the files §33
+rewrote (`editorCopy.ts`, `MultiFichaReview.tsx`, `volumeFeedback.ts`, the prompts, the leak guards), so it cannot start from
+`main` until §33 is merged. PR, never merge or push without the owner asking. Commit each verified item on its own; every
+commit must leave `npm test`, `npm run lint`, `npx tsc --noEmit` and `npm run build` green (hence the add-beside-then-remove
+order in 34d/34h). Read `web/AGENTS.md` and the relevant guide in `web/node_modules/next/dist/docs/` before touching route code
+(no new route is added: `/app/fichas/editar` only changes its query parameter, static export rules from §23f still apply).
+Reply to the owner in Portuguese.
+
+```mermaid
+flowchart TD
+    A[34a. Findings and decisions] --> B[34b. Model and pure domain]
+    B --> C[34c. Data layer - create, save, delete]
+    A --> D[34d. Format-prompt asset and guards]
+    C --> E[34e. Ficha editor screen]
+    D --> E
+    C --> F[34f. Student page - simple cards]
+    C --> G[34g. Student's own page - grouped]
+    E --> H[34h. Remove what became dead]
+    F --> H
+    G --> H
+    H --> I[34i. Verification - unit, emulator, browser]
+    I --> J[34j. Rollout - manual]
+    J --> K[34k. Docs and registration]
+```
+
+**34a. Findings and decisions**
+
+Suggested: sonnet · medium — already researched; what is left is recording the owner's answers to the open choices.
+
+What exists today (verified 2026-10-06 — do not re-research):
+- A "ficha" is **one treino**: `workouts/{id}` = `{ trainerId, studentId, name, isActive, exercisesJson, createdAt, status
+  ('draft'|'assigned'), assignedAt, archivedAt? }` (`domain/workouts.ts`, `data/converters.ts` `toWorkout`/`workoutToFirestore`).
+  Status is derived (`withDerivedStatus`): active ⇒ `assigned` — the only thing firestore.rules let a student read.
+- Student page `app/app/alunos/detalhe/WorkoutsSection.tsx`: three groups (Ficha atual / Ficha anterior / Outras), a status
+  line and the full exercise list per treino, **Editar** (link `?aluno=&id=<workoutId>`) / **Desativar-Ativar** / **Excluir**
+  (`window.confirm`). Only `StudentDetail.tsx` uses it.
+- Editor `app/app/fichas/editar/FichaEditor.tsx` (597 lines): card "Pedir à IA (opcional)" (`RequestBuilder`, the "O que você
+  quer…" textarea, two tabs — copy-and-paste and `GeminiPanel` —, "Incluir o nome e as restrições médicas", "Copiar prompt"
+  with the student's profile) → card "Importador Inteligente" → either `MultiFichaReview` (≥2 treinos found) or a one-treino
+  form → on save, if the student has an active treino, the "Substituir a ficha atual?" dialog → `replaceFicha`.
+  Editing is per treino and always the one-treino form.
+- `data/workouts.ts`: `loadStudentWorkouts` (trainerId + studentId, newest first), `loadMyWorkouts` (student: `status ==
+  'assigned'`), `saveWorkout`, `saveWorkouts` (atomic batch), `deleteWorkout`, `replaceFicha` (§28). Tests for them live in
+  `web/rules/dataLayer.test.ts` ("replacing a ficha (GOALS.md §28)") and `src/domain/fichaHistory.test.ts`.
+- Student home `app/aluno/page.tsx` lists the assigned treinos flat (sorted by name); `aluno/treino/LogSession.tsx` opens one by id.
+- Rules: on `workouts` the owning trainer creates/updates/deletes (create/update also require the student to be linked), a
+  student reads only their own *assigned* ones; **no field is validated, so a new field needs no rules change**. Kotlin's
+  mapper reads only the known fields and writes only those (§28 checked it), so an extra field is ignored by the phone.
+- Nothing else reads `workouts` (checked with `git grep`: no dashboard, billing or ADM screen counts them). Logs carry
+  `workoutId` + `exerciseName`; charts group by `exerciseName`, so deleting a treino never breaks a record.
+- The Gemini modules (`data/gemini.ts`, `domain/ai{Errors,Request,Response,Usage}.ts`) and `RequestBuilder`/`fichaRequest.ts`
+  are imported **only** by the card being deleted (and their own tests, and `referenceLeak.test.ts`). The ADM console shows
+  a `geminiGenerated` counter from `trainerActivity`; old documents carry it.
+
+Decisions (the defaults below are what 34b–34k build; the owner can change any of them before `/execgoals`):
+- [x] **D1 — Data model:** a ficha = the treinos sharing `workouts/{id}.ficha = { id, name, createdAt, updatedAt, order }` (a
+      single map, so it is all-or-nothing). Considered and not chosen: a `fichas/{id}` collection — it needs rules v7, a student
+      read rule, and a two-document consistency the rules cannot check; the owner would have to publish rules again for no
+      user-visible gain.
+- [x] **D2 — Cap:** at most **2** fichas per student. Creating a third deletes the **oldest by creation** (`ficha.createdAt`),
+      so editing a ficha never changes which one is "oldest" and the bottom card is always the one that goes.
+- [x] **D3 — Order:** **newest on top**, for the trainer's cards and the student's page ("o card vai descer" = the existing card
+      is pushed down by the new one).
+- [x] **D4 — No active/inactive in the UI:** every treino the web saves is active (`isActive: true`, `status: 'assigned'`);
+      "Desativar/Ativar" disappears. (A phone-side deactivation is overwritten the next time the ficha is saved on the web.)
+- [x] **D5 — The card:** name + "Modificada em dd/mm/aaaa" + **Editar** + **Excluir**, nothing else (no exercise list, no
+      status line, no treino count). To see a ficha's content the trainer opens **Editar**.
+- [x] **D6 — Delete:** the shared `ConfirmDialog` (not `window.confirm`), text "Esse processo não pode ser desfeito."; it deletes
+      that ficha's treinos in one batch; `workoutLogs` are never touched (same rule as §28).
+- [x] **D7 — Confirmation before the third:** creating a third ficha first asks ("a mais antiga — «X» — será excluída para sempre.
+      Esse processo não pode ser desfeito."). Not in the request; added because the deletion is automatic and irreversible
+      (owner decision O2 in 34j: keep or drop).
+- [x] **D8 — Existing data:** treinos without `ficha` that are **active** form **one** virtual ficha, "Ficha atual" (id
+      `legacy`, date = their latest assignment/creation). It is a normal card: Editar (saving **adopts** it — the treinos get a
+      real `ficha` map and the name the trainer typed) and Excluir. Treinos without `ficha` that are **inactive** (the §28
+      history, drafts, hand-deactivated) are **hidden, never counted, never deleted** by the UI (owner decision O1 in 34j).
+- [x] **D9 — The "Pedir à IA" card is deleted entirely**, including the in-site **Gemini** tab and the student-profile prompt;
+      the Gemini code is deleted with it (git history keeps it; the `geminiGenerated` activity key stays so old counters render).
+- [x] **D10 — The new card is formatting only:** a static text (no student data, no volume guidance, no persona) that tells an
+      external AI how to answer so `parseWorkouts` can read it. The trainer pastes it into their own AI together with their own
+      request. The ficha's name is **typed by the trainer**, never parsed from the AI's answer.
+- [x] **D11 — Edit = the create screen, pre-filled:** ficha name + every treino; treinos can be added and removed; pasting an AI
+      answer **replaces** the treino list (nothing is written until "Salvar ficha").
+- [x] **D12 — Student's page:** the student sees **both** fichas, grouped under the ficha's name, newest first; treinos inside a
+      ficha in the order the trainer saved them.
+- [x] **D13 — Activity counter:** `fichaSaved` is recorded once per ficha saved (it used to count treinos).
+- [x] **Done when:** the owner has read D1–D13 and either left them or changed them here, with the date (the answers to D2, D3, D7
+      and D8 change code in 34b/34e/34f).
+      **Done (2026-10-07):** the owner ran `/execgoals` after reading D1–D13 in the `/newgoal` report and changed none of them, so they stand as written.
+
+**34b. Model and pure domain (no Firestore, no clock)**
+
+Suggested: sonnet · high — it fixes the stored shape the phone also reads, and the grouping rules decide what is deleted later.
+
+- [x] **`domain/workouts.ts`:** add `ficha: FichaMembership | null` to `Workout`, with `FichaMembership = { id: string; name:
+      string; createdAt: number; updatedAt: number; order: number }`; **remove `archivedAt`** (§28) from the type and stop
+      `withDerivedStatus` touching it (nothing reads it any more: hidden legacy treinos are recognised by `isActive` alone).
+      Comment on the field: web-only, ignored by the phone, dropped by a phone save (that treino then reads as legacy).
+      Done when: `npx tsc --noEmit` is clean once the callers in 34c–34h are updated.
+      **Done (2026-10-06):** `FichaMembership` and `Workout.ficha` added with the web-only comment. **Deviation:** `archivedAt` is NOT removed here but in 34h together with `fichaHistory.ts`, which still reads it — removing it now would break the build between the two areas. `withDerivedStatus` is untouched until then.
+- [x] **`data/converters.ts`:** `toWorkout` reads `ficha` **leniently** — an object with a non-blank string `id` and `name`; its
+      numbers fall back (`createdAt` → the treino's `createdAt`, `updatedAt` → that, `order` → 0); anything else (absent, a
+      string, an array, a missing id) ⇒ `null`, never a throw. `workoutToFirestore` writes `ficha` **only when non-null** (so a
+      legacy or phone-shaped document is byte-for-byte what it was) and no longer writes `archivedAt` (an old document that has
+      one keeps it harmlessly; nothing reads it). Done when: converter tests cover absent / malformed / partial / round trip /
+      "a document without `ficha` serialises to exactly the old keys".
+      **Done (2026-10-06):** `ficha()` reader (lenient, never throws) + write-only-when-set in `workoutToFirestore`; `converters.test.ts` covers absent / 13 malformed shapes / partial numbers / round trip / "a document without `ficha` has exactly the old keys". `archivedAt` writing is dropped in 34h with its field.
+- [x] **`domain/fichas.ts` (new, pure) with `fichas.test.ts` beside it:**
+      `MAX_FICHAS = 2`, `LEGACY_FICHA_ID = "legacy"`, `LEGACY_FICHA_NAME = "Ficha atual"`;
+      `interface Ficha { id; name; createdAt; updatedAt; legacy: boolean; treinos: Workout[] }`;
+      `groupFichas(workouts): Ficha[]` — **newest first** (`createdAt` desc, id as tie-break). Real fichas = treinos grouped by
+      `ficha.id` (whatever their `isActive`); name from the member with the greatest `updatedAt`, `createdAt` = the smallest,
+      `updatedAt` = the greatest. The virtual ficha = treinos with `ficha === null && isActive` (name/id above; `createdAt` =
+      the smallest treino `createdAt`; `updatedAt` = the greatest `assignedAt ?? createdAt`); treinos with `ficha === null &&
+      !isActive` are **excluded**. Treinos inside a ficha: real → by `ficha.order`, then `createdAt`, then name; legacy → by name
+      (`localeCompare("pt-BR", { numeric: true })`, what the student's page does today — §25e staggered their `createdAt` newest-first,
+      so `createdAt` would reverse them).
+      `planNewFicha(existing, incoming): { toCreate; toDelete }` — keeps the newest `MAX_FICHAS − 1` existing fichas and puts
+      **every treino of the others** in `toDelete` (a legacy active ficha included; hidden legacy treinos never); throws if a
+      treino id would be in both lists. It only ever sees one student's treinos (the caller loads them with both equality filters).
+      `fichaNameErrors(name)` — blank (Kotlin blank, `isKotlinBlank`) ⇒ "Nome da ficha é obrigatório."; longer than 80 after
+      `kotlinTrim` ⇒ "Nome da ficha: no máximo 80 caracteres." `fichaSaveErrors(name, treinos)` — the ficha's name errors, "Adicione
+      pelo menos um treino." for none, and for each treino `workoutErrors` + `exerciseErrors`, each prefixed with the treino's name
+      (the text `saveAll` builds today).
+      Done when the tests cover: no treinos; legacy only (one card, "Ficha atual", hidden inactive ignored); real only; real +
+      legacy (two cards, order); three fichas ⇒ `planNewFicha` deletes exactly the oldest one's treinos; the oldest is a legacy
+      one; two fichas ⇒ deletes the older; one or zero ⇒ deletes nothing; a treino with a malformed `ficha` reads as legacy;
+      treino ordering both ways; name rules (blank, 80, 81, control spaces).
+      **Done (2026-10-06):** `domain/fichas.ts` + `fichas.test.ts` (no treinos; legacy-only with hidden inactive ignored; real; real + legacy order and tie-break; name/date of the member saved last; a dropped map reads as legacy; `planNewFicha` with 0/1/2/3 fichas, legacy oldest, hidden never listed, double-listed refused; name and save rules). Verified: `npx vitest run src/domain/fichas.test.ts src/data/converters.test.ts` green, `npx tsc --noEmit` clean.
+
+**34c. Data layer (create, save, delete — the destructive part)**
+
+Suggested: opus · xhigh — an automatic deletion of a student's fichas; the bound ("only the oldest ficha's own treinos") has to be right the first time.
+
+- [x] **`data/workouts.ts` — `loadStudentFichas(db, trainerId, studentId): Promise<Ficha[]>`** = `groupFichas(await
+      loadStudentWorkouts(…))`. `loadStudentWorkouts` stays as the one query (it still returns hidden legacy treinos; the grouping
+      hides them). `loadMyWorkouts` keeps its query (`status == 'assigned'`).
+      **Done (2026-10-06).**
+- [x] **`createFicha(db, trainerId, studentId, draft, now)`** with `FichaDraft = { name: string; treinos: { name: string;
+      exercises: Exercise[] }[] }` → `{ created: Ficha; deleted: Ficha[] }`. Refuses a draft that fails `fichaSaveErrors`; reads the
+      student's treinos **once**; builds the treinos (new `crypto.randomUUID()` each, `isActive: true`, `createdAt: now`, `ficha =
+      { id: <new uuid>, name: kotlinTrim(name), createdAt: now, updatedAt: now, order: index }`, passed through
+      `withDerivedStatus`); runs `planNewFicha`; refuses with `FichaTooLarge` above `MAX_FICHA_OPERATIONS = 450` (creates + deletes —
+      refused rather than split, it must stay atomic); then **one `writeBatch`**: sets for the new treinos, deletes for `toDelete`.
+      Same-instant two-tab races (a client transaction cannot run a query) may leave three fichas — never lost data: accepted and
+      noted in a comment.
+      **Done (2026-10-06):** reuses `newWorkout` for each treino and attaches the `ficha` map; `FichaTooLarge` above `MAX_FICHA_OPERATIONS`; one `writeBatch`.
+- [x] **`saveFicha(db, trainerId, studentId, fichaId, draft, now)`** with `draft.treinos[].id: string | null`: re-reads the
+      student's treinos; the ficha must exist (else `FichaNotFound`); every given `id` must belong to **that ficha** (else throw
+      before writing — never overwrite another ficha's or another student's treino); kept treinos keep their `createdAt`/`assignedAt`,
+      new ones (no id) are created; **treinos of the ficha missing from the draft are deleted**; every written treino carries
+      `ficha = { id, name, createdAt: <the ficha's>, updatedAt: now, order: index }`; for `fichaId === LEGACY_FICHA_ID` the `id` is
+      a **new uuid** (adoption) and `createdAt` is the virtual ficha's, so it keeps its place in the order. One batch.
+      **Done (2026-10-06):** also refuses a treino id listed twice. Legacy adoption takes a new uuid and keeps the virtual ficha's `createdAt`.
+- [x] **`deleteFicha(db, trainerId, studentId, fichaId)`**: re-reads, deletes exactly the treinos `groupFichas` puts in that ficha
+      (the legacy one: the active legacy treinos) in one batch; `FichaNotFound` if it is already gone (the screen says "A ficha já
+      não existe — a lista foi atualizada."). Never touches `workoutLogs`, hidden legacy treinos or another student's treinos.
+      **Done (2026-10-06).**
+- [x] **Emulator tests in `rules/dataLayer.test.ts`** (replace the "replacing a ficha (GOALS.md §28)" block; same `seed`/`stateOf`
+      helpers): (1) `createFicha` with 3 treinos — one `ficha.id`, `order` 0..2, all active/assigned, `createdAt == updatedAt == now`,
+      and the linked student's own query sees them; (2) a second ficha — `loadStudentFichas` returns it first; (3) a **third** deletes
+      exactly all treinos of the oldest ficha and leaves the newest, the new one, another student's treinos, hidden legacy inactive
+      treinos and every `workoutLogs` document; (4) the oldest being the legacy active ficha is deleted, legacy inactive are not;
+      (5) another trainer / the student writing ⇒ rejected and **nothing changes** (all-or-nothing, as the existing batch test);
+      (6) `saveFicha` — name, exercises and `updatedAt` change on every treino, `createdAt` and `ficha.createdAt` do not; an added
+      treino appears; a removed one is deleted; an `id` of another ficha is refused with nothing written; legacy adoption gives a
+      new `ficha.id`, the typed name and keeps the creation order; (7) `deleteFicha` removes exactly its treinos, a stale call
+      throws `FichaNotFound` without writing; (8) a draft over the size bound is refused before any write.
+      Done when: `npm run test:rules` (Java 21) passes **and** each deletion-bound test was seen failing once against a
+      deliberately widened delete (e.g. `planNewFicha` deleting every ficha) — a "does not delete X" test proves nothing until it
+      has failed.
+      **Done (2026-10-06):** a new block "fichas as named sets of treinos (GOALS.md §34)" with 11 tests (the 8 listed cases, plus "another trainer / the student cannot create, save or delete" and an invalid-ficha refusal). `npm run test:rules` for `rules/dataLayer.test.ts`: 50/50 green on the emulators (Java 21). **Mutation check:** with `planNewFicha`'s delete deliberately widened (`.slice(0)`) 5 tests failed (second ficha, third ficha, pre-ficha oldest, other-ficha id, deleteFicha), then the bound was restored. **Deviation:** the old "replacing a ficha (§28)" block stays until 34h (it tests `replaceFicha`, which is deleted there).
+
+**34d. The format prompt: asset and guards (added beside the old files; the old ones go in 34h)**
+
+Suggested: sonnet · medium — a short text with a hard contract (the parser must read what it asks for) plus plumbing.
+
+- [x] **`web/prompt/ficha_prompt_format.md` (new, pt-BR).** Formatting rules only: it says the answer will be pasted into a site that
+      reads the format automatically; **all treinos in the same answer, inside ONE code block** (plain text, no bold, lists or
+      tables; comments outside the block); each treino starts with a title line `Treino A`, `Treino B`… (optionally `Treino A —
+      Peito e tríceps`; `Treino 1`, `Treino 2` for day-based); one line per exercise `Nome do exercício SÉRIESxREPS` (SÉRIES = number
+      of sets, REPS a number or a range like 10-12); simple, consecrated Brazilian-Portuguese exercise names without equipment
+      brand; **no** muscles, percentages, notes, numbering or bullets on the line; **do not name the whole ficha** (the trainer
+      types that on the site); the same example block as `ficha_prompt_multi.md` (known clean); it ends with an open line the
+      trainer can type after ("Meu pedido para o treino:"). It carries **no student data and no volume guidance**. It must not
+      contain the words "tabela" (singular), "coeficiente", "régua", "PDF" or any name the leak test derives (§33f).
+      **Done (2026-10-07):** the file is in place (same example block as the old multi template; ends with "Meu pedido para o treino:"); no student data, no volume advice, none of the forbidden words.
+- [x] **Plumbing, alongside the old files:** `scripts/lib/webTemplates.mjs` — add `ficha_prompt_format.md` to `WEB_TEMPLATES` (old three
+      stay until 34h); `src/data/promptAssets.ts` — add `loadFormatPrompt(): Promise<string>` (same `fetch` with the base path as
+      `fetchText`); `scripts/check-no-reference-leak.mjs` follows `WEB_TEMPLATES` (no edit expected).
+      **Done (2026-10-07):** `WEB_TEMPLATES` got the new file beside the old three (the old ones left in 34h), `loadFormatPrompt()` added to `data/promptAssets.ts`; `check-no-reference-leak.mjs` follows `WEB_TEMPLATES` unchanged.
+- [x] **Guards:** `referenceLeak.test.ts` scans the new file as text with the same sentinels. A new test pins its contract: the first
+      fenced block of the prompt, fed to `parseWorkouts`, returns exactly the treinos the prompt shows (so the example can never
+      drift from the parser), and the file contains "UM ÚNICO bloco de código" and no `{name}`-like placeholder.
+      Done when: `npm test` and `npm run check:leak` are green with the new file present and the old ones still served.
+      **Done (2026-10-07):** `fichaPrompt.format.test.ts` pins the contract (one block, "Treino A", no profile/volume text, the closing line) and parses the prompt's own example into exactly the treinos it shows; `referenceLeak.test.ts` scans the file. `npm test` green; `npm run build` + `npm run check:leak` green with the old files still served (172 text files scanned).
+
+**34e. The ficha editor screen**
+
+Suggested: sonnet · high — the largest change: one screen replaces three paths (single form, multi review, per-treino edit), with state, a destructive confirmation and the leak guards around it.
+
+- [x] **URL contract:** `/app/fichas/editar?aluno=<id>` (new) and `…&ficha=<fichaId>` (edit; `legacy` for the virtual ficha). The old
+      `&id=<workoutId>` is no longer read (the only link that built it is `WorkoutsSection`, replaced in 34f). The loader uses
+      `loadStudentFichas`; an unknown ficha shows "Ficha não encontrada. Voltar". New fichas stay connected-students-only (as today).
+      **Done (2026-10-07):** `?aluno=` for new, `&ficha=` for edit (`legacy` for the virtual one); `&id=` is no longer read (its only builder, `WorkoutsSection`, is gone).
+- [x] **Layout, top to bottom** — `<h1>` "Nova ficha" / "Editar ficha"; **card 1 "Prompt de formatação de ficha"**; **card 2 "Importador
+      Inteligente"**; **card 3 "Ficha"**. The card "Pedir à IA (opcional)" is **deleted entirely**: no `RequestBuilder`, no "O que você
+      quer nesta ficha?" textarea, no tabs, no `GeminiPanel`, no "Incluir o nome e as restrições médicas", no student-profile prompt and
+      no "Tamanho do prompt" hint, no `buildWebFichaPrompt` call.
+      **Done (2026-10-07):** verified in `e2e/fichas.mjs`: the section headings read "Prompt de formatação de ficha | Importador Inteligente | Ficha", and no "Pedir à IA", Gemini tab, request shortcuts or "Incluir o nome…" remain (desktop 53/53, mobile 57/57).
+- [x] **Card 1:** one sentence ("Cole este texto na IA que você usa, junto com o seu pedido, para ela devolver a ficha no formato que
+      o site entende."), a **"Copiar prompt"** button that copies inside the click (the text is fetched up front, as the template is
+      today; disabled until loaded), a `role="status"` line ("Prompt copiado! Cole na sua IA de preferência." / the manual-copy
+      fallback), and the text itself in a read-only `<textarea aria-label="Prompt de formatação">` inside `<details><summary>Ver o texto
+      do prompt</summary>`. A load failure shows `role="alert"` "Não foi possível carregar o prompt. Recarregue a página."
+      **Done (2026-10-07):** copy button copies the prompt (clipboard stubbed in the test; what is copied has the format rules and nothing of the student), text inside `<details>`, status line and load-failure alert in place.
+- [x] **Card 2:** the paste box (`aria-label="Texto para importar"`) with the copy "Cole aqui a resposta da IA. Cada título (Treino A, B,
+      C…) vira um treino abaixo." Pasting runs `parseWorkouts` and **replaces** the treino list below (create and edit); the parser's
+      warnings show in a `role="status"` list; text with no exercise changes nothing. Nothing is saved until "Salvar ficha".
+      **Done (2026-10-07):** paste replaces the treino list; parser warnings listed; text with no exercise changes nothing and says so.
+- [x] **Card 3 — the ficha:** first the **"Nome da ficha"** input (`<label>`; placeholder "Ex: Hipertrofia – outubro"; required, trimmed
+      with `kotlinTrim`, 80 max), then **"Treinos (N)"**: one card per treino — the existing `MultiFichaReview` card with its
+      `ExerciseRow`/`AddExercise` (rename the component to `TreinosEditor` or keep the file; the pieces stay): **"Nome do treino"**
+      input, exercise rows (name, séries, reps, Remover, the muscle status sentence from `EDITOR_COPY`, ≤3 "Quis dizer…?" buttons),
+      the "Adicionar exercício" form, and a **"Remover treino"** button that replaces the old "Incluir" checkbox (it drops the treino
+      from the in-memory list; nothing is deleted until save); a **"Adicionar treino"** button appends an empty treino card; the empty
+      state says "Nenhum treino ainda. Cole a resposta da IA acima ou adicione um treino." Below: the volume block
+      ("Volume efetivo por músculo (soma dos treinos)", band table, "Copiar pedido de ajuste de volume") fed by **all** treinos —
+      `includedVolume` in `domain/volumeFeedback.ts` stops needing the `include` flag (takes `{ exercises }[]`; update its test).
+      The one-treino form ("Lista de exercícios" table, "Novo exercício" fieldset, "nesta ficha" volume) is **removed**.
+      **Done (2026-10-07):** `MultiFichaReview.tsx` became `TreinosEditor.tsx` (git mv, `ExerciseRow`/`AddExercise` kept); name input, "Nome do treino", "Remover treino" (replaces "Incluir"), "Adicionar treino", the empty state, and the volume block fed by all treinos (`includedVolume` lost its `include` flag; its test updated). The one-treino form is gone.
+- [x] **Save — "Salvar ficha"** (`button-primary`; disabled while saving or while the exercise data loads — `EDITOR_COPY.loading` /
+      `waitToSave` as today): validate with `fichaSaveErrors` (+ `exerciseErrors` per treino) into a `role="alert"` list; apply the
+      exercise data's muscles to **every** treino, new and edited (`applyCatalogActivations`, `tidied`) as `saveAll` does today.
+      **Create:** `loadStudentFichas`; if `length >= MAX_FICHAS` open the `ConfirmDialog` — title "Você já tem 2 fichas", text "Ao
+      salvar, a mais antiga — “{nome}”, modificada em {dd/mm/aaaa} — será excluída para sempre. Esse processo não pode ser
+      desfeito.", yes "Excluir a mais antiga e salvar", no "Cancelar" (Cancel/Escape/backdrop leave everything as it is) — then
+      `createFicha`. If the fichas cannot be read, show a plain error and save nothing ("nothing is ever deleted on a guess").
+      **Edit:** `saveFicha`. Then `router.push` back to the student. `trackActivity(…, "fichaSaved", …)` once per ficha. Errors keep
+      today's wording ("Não foi possível salvar a ficha. Tente de novo." — and nothing was written).
+      **Done (2026-10-07):** validation with `fichaSaveErrors`; muscles applied to every treino; create asks "Você já tem 2 fichas" before a third (Cancelar keeps everything — checked in Firestore; confirming deletes only the oldest); edit uses `saveFicha`; `fichaSaved` once per ficha. Verified end to end in `e2e/fichas.mjs`.
+- [x] **Edit mode:** name and treinos pre-filled from the loaded ficha (treinos keep their ids). For the legacy ficha the name starts
+      as "Ficha atual" and a note says "Esta ficha foi criada antes dos nomes de ficha; ao salvar, ela passa a ter o nome acima."
+      **Done (2026-10-07):** pre-filled name and treinos (ids kept); the legacy ficha starts as "Ficha atual" with the adoption note, and saving it adopts it (checked: the treino now carries the `ficha` map, the hidden inactive one is untouched).
+- [x] **Copy and styles:** every new sentence about the exercise data stays in `EDITOR_COPY` (the leak test reads it); the Gemini-only
+      strings go in 34h. Reuse `.review` / `.review-card`; add only what is missing to `globals.css` (one stylesheet; controls ≥44px,
+      text ≥12px, fields 16px on touch widths, tables with `className="stack"` + `data-label` — §23k).
+      **Done (2026-10-07):** nothing new about the exercise data was written inline (`EDITOR_COPY` reused); `.review` / `.review-card` reused, no new CSS for the editor; the only stylesheet changes are the student-page ficha group and the card title (34g) and the removal of the tab/Gemini rules (34h).
+- [ ] **Switch the plumbing:** the editor stops calling `loadPromptAssets`; it calls `loadFormatPrompt`.
+      Done when: against the emulators — a new ficha (paste → name → save), an edit (rename a treino, remove one, add an exercise)
+      and the third-ficha dialog (cancel keeps, confirm deletes the oldest) all work; the page text at desktop and phone width reads as
+      described (checked through the Browser pane's page text / DOM, not desktop screenshots — the owner confirms the **look** from a
+      screenshot they send of "Nova ficha" at desktop width and ≤430px); `npm test`, `npm run lint`, `npx tsc --noEmit`, `npm run
+      build`, `npm run check:leak` green.
+      **Status (2026-10-07) — everything but the owner's look is done:** the editor calls `loadFormatPrompt`; a new ficha, an edit and the
+      third-ficha dialog work against the emulators (`e2e:fichas` 53/53 desktop, 57/57 mobile); the page text/DOM reads as described at
+      both widths; the five checks are green. **Left open on purpose:** the owner confirms the *look* from a screenshot of "Nova ficha"
+      at desktop width and ≤430px (agents do not take desktop screenshots).
+
+**34f. Student page: one simple card per ficha**
+
+Suggested: sonnet · medium — a small screen, but it carries the delete confirmation the owner asked for.
+
+- [x] **Replace `alunos/detalhe/WorkoutsSection.tsx` with `FichasSection.tsx`** (update the import in `StudentDetail.tsx`): the section
+      title "Fichas", the "Nova ficha" link (connected students only, with today's "Conecte o aluno pelo convite…" text otherwise),
+      a short note "Até 2 fichas por aluno — ao criar a terceira, a mais antiga é excluída.", and the cards from
+      `loadStudentFichas`, newest first: `<article>` with `<h3>` = the ficha's name, `<p>Modificada em dd/mm/aaaa</p>` (`formatDate`
+      of `localDate(updatedAt, timeZone)`), **Editar** (link to `?aluno=&ficha=`) and **Excluir**. Nothing else: no "Ficha atual /
+      anterior / Outras" groups, no status line, no exercise list, no Desativar/Ativar. Empty: "Nenhuma ficha ainda." Loading and
+      error texts as today.
+      **Done (2026-10-07):** `FichasSection` is keyed by student in `StudentDetail` (moving between students never shows the previous one's cards). **Deviation:** "Editar" is rendered as `className="button"` — as a bare inline link it was 19px tall at 390px, under the project's 44px rule (the old section had the same defect).
+- [x] **Excluir:** the shared `ConfirmDialog` — title "Excluir a ficha “{nome}”?", text "Esse processo não pode ser desfeito. O aluno deixa
+      de ver os {N} treinos desta ficha; o histórico de cargas dele não é apagado.", no "Cancelar", yes "Excluir"; confirm calls
+      `deleteFicha` and reloads the list; `FichaNotFound` shows "A ficha já não existe — a lista foi atualizada." and reloads.
+      Done when: with 0, 1 and 2 fichas the page matches D5; Escape, the backdrop and "Cancelar" keep the ficha; confirming removes only
+      that ficha's treinos (checked in Firestore) and the student's `workoutLogs` are unchanged; `npm run lint` / `tsc` / `build` green.
+      **Done (2026-10-07):** verified in `e2e/fichas.mjs`: the dialog names the ficha and says "Esse processo não pode ser desfeito."; Escape and "Cancelar" keep it; confirming deletes only that ficha's treinos; `workoutLogs` count unchanged (24 vs 24).
+
+**34g. Student's own page: fichas grouped under their name**
+
+Suggested: sonnet · medium — a small, user-visible change on the student's side.
+
+- [x] **`aluno/page.tsx`:** group the student's assigned treinos with `groupFichas`; one `<section>` per ficha, newest first, with the ficha's
+      name as `<h2>` and each treino's card (title `<h3>`, the `<details>` exercise list and "Registrar treino de hoje" link as today)
+      in the ficha's order. A student with only pre-change treinos sees one group, "Ficha atual". The empty text "Nenhuma ficha
+      atribuída ainda. Fale com seu personal." stays. Adjust the `.workout-card h2` rules in `globals.css` so the card title keeps the
+      look it has now. `aluno/treino` is not touched.
+      Done when: a seeded student with two fichas sees both groups in the right order with the right names; a student with legacy
+      treinos sees "Ficha atual"; the heading order is valid (h1 → h2 → h3).
+      **Done (2026-10-07):** `<section class="ficha-group">` per ficha (name as `<h2>`, treinos as `<h3>` cards), newest first; the card-title CSS keeps its old look. Verified with the seeded students: Bruno sees "Terceira (editada)" then "Definição — outubro" with their treinos; Ana sees one group, "Ficha atual".
+
+**34h. Remove what became dead**
+
+Suggested: sonnet · medium — mechanical, but each deletion must be proven unused first.
+
+For each item below, run `git grep` for the symbol/file name first and delete only when no importer remains outside what is being deleted:
+- [x] `fichas/editar/GeminiPanel.tsx`, `RequestBuilder.tsx`; `data/gemini.ts`; `domain/aiErrors.ts`, `aiRequest.ts`, `aiResponse.ts`, `aiUsage.ts` and
+      `aiGemini.test.ts`, `aiResponse.test.ts`; `domain/fichaRequest.ts` and its test.
+      **Done (2026-10-07):** deleted (with `data/gemini.ts`, `ai{Errors,Request,Response,Usage}.ts`, their tests, `fichaRequest.ts` + test); `git grep` showed no importer left before each removal.
+- [x] `web/prompt/ficha_system_gemini.md`, `ficha_prompt_single.md`, `ficha_prompt_multi.md`; `WEB_TEMPLATES` = `["ficha_prompt_format.md"]` only and
+      `STALE_FILES` gains the three removed names (so an old local `public/prompt/` is cleaned by `copy-prompt-assets.mjs`);
+      `promptAssets.ts` loses `loadPromptAssets` and the old fields; `referenceLeak.test.ts` loses the Gemini/single/multi builds and its
+      component-source list is updated to the files that exist.
+      **Done (2026-10-07):** deleted; `WEB_TEMPLATES` is just the format prompt, `STALE_FILES` lists the three removed names; `promptAssets.ts` keeps only `loadFormatPrompt`; `fichaPrompt.multi.test.ts` was deleted with them (its worked-example check moved to `fichaPrompt.format.test.ts`); `public/prompt/` and `out/prompt/` hold only `ficha_prompt_format.md`.
+- [x] `domain/fichaPrompt.ts`: remove `buildWebFichaPrompt`, `deidentified`, `WebPromptOptions` and their tests; **keep `buildFichaPrompt`** and
+      `TABLE_PLACEHOLDER` (the phone's port, with its test).
+      **Done (2026-10-07):** `buildWebFichaPrompt`, `deidentified`, `WebPromptOptions` removed; `buildFichaPrompt` and `TABLE_PLACEHOLDER` (the phone's port, with its test) kept.
+- [x] `domain/fichaHistory.ts` + `fichaHistory.test.ts`; in `data/workouts.ts`: `replaceFicha`, `ReplacementTooLarge`, `ReplacementResult`,
+      `saveWorkout`, `saveWorkouts`, `deleteWorkout`, `newWorkout` (when unused); `MAX_REPLACEMENT_OPERATIONS`.
+      **Done (2026-10-07):** removed with `replaceFicha`, `ReplacementTooLarge`, `ReplacementResult`, `saveWorkout(s)`, `deleteWorkout` and `MAX_REPLACEMENT_OPERATIONS`; **`archivedAt`** is gone from the `Workout` type, the converter and `withDerivedStatus` (an old document that carries it keeps it harmlessly). `newWorkout` stays (used by `createFicha`/`saveFicha`). In the tests: the §28 block of `rules/dataLayer.test.ts` and the one-treino-writer tests were replaced by two rules-level tests of what a student may read; `rules/firestore.rules.test.ts`'s `archivedAt` block became the equivalent for the `ficha` map.
+- [x] `domain/editorCopy.ts`: the Gemini-only strings (`geminiIntro`, `promptModelError`, `askGeminiVolume`); CSS used only by what was deleted
+      (`.tabs`… — only after `git grep` shows no other user).
+      **Done (2026-10-07):** `geminiIntro`, `promptModelError`, `askGeminiVolume` removed; the `.tabs` / `.gemini-*` rules are gone from `globals.css` (nothing else used them).
+- [x] **Keep:** `"geminiGenerated"` in `domain/activity.ts`, the ADM label "Gerações Gemini", the seed's use of it and the rules test that
+      writes it — old counters must keep rendering.
+      Done when: `git grep -niE "gemini"` in `web/src`, `web/scripts`, `web/e2e` lists only `activity.ts`, the ADM label, the seed/rules-test
+      counter and comments; `web/public/prompt/` and `out/prompt/` hold only `ficha_prompt_format.md`; `npm test`, `npm run lint`, `npx tsc
+      --noEmit`, `npm run build`, `npm run check:leak` green.
+      **Done (2026-10-07):** kept in `domain/activity.ts`, the ADM label, the seed and the rules test. `git grep -niE gemini` in `web/src`, `scripts`, `e2e`, `rules`, `prompt` now lists only those, `webTemplates.mjs` (the removed names in `STALE_FILES` and a comment), `ficha-privacy.mjs` (the 404 checks for the removed templates) and one ADM shortcut link to Google AI Studio's rate limits in `admin/page.tsx` (left: the ADM console is out of scope here — owner may drop the link). `npm test`, `npm run lint`, `npx tsc --noEmit`, `npm run build`, `npm run check:leak` green.
+
+**34i. Verification — unit, emulator, browser**
+
+Suggested: sonnet · high — end-to-end flows against the emulators, on two viewports, plus updating a test that guards §33.
+
+- [x] **Seed (`scripts/seed-emulators.mjs`):** keep the pre-change shaped treinos for one student (they show as the virtual "Ficha atual") and give
+      another seeded student two real fichas (one with a `ficha` map and two treinos each) so both shapes exist. Done when `npm run seed:emulators`
+      runs and both shapes show.
+      **Done (2026-10-07):** Ana keeps the pre-ficha shape (active + hidden inactive), Bruno gets two real fichas of two treinos each; header comment updated; `npm run seed:emulators` runs (the bench seeds with it).
+- [x] **`e2e/fichas.mjs` + `package.json` script `e2e:fichas` + a line in `web/README.md` "Browser tests"** (same CDP bench as the other `e2e/*.mjs`; `mobile`
+      argument for 390px). Checks: (1) the student page shows the legacy treinos as one card "Ficha atual" with "Modificada em" and only Editar/Excluir;
+      (2) "Nova ficha" shows card "Prompt de formatação de ficha", **no** "Pedir à IA", no Gemini, no "Incluir o nome…"; (3) saving with an empty name shows
+      "Nome da ficha é obrigatório."; paste a 3-treino answer, name it, save ⇒ the new card is **on top**, with today's date, the old card below it;
+      (4) a third ficha ⇒ the dialog names the oldest; Cancelar keeps both; confirming leaves exactly two cards and the right documents in Firestore;
+      (5) Editar opens the same screen with name and treinos filled; rename a treino, remove one, add an exercise, save ⇒ the date is refreshed and the
+      documents match; (6) Excluir ⇒ dialog text "Esse processo não pode ser desfeito."; Escape keeps; confirm deletes only that ficha's treinos; `workoutLogs`
+      count unchanged; (7) the seeded student's home groups by ficha name, newest first; (8) on mobile: no horizontal scroll, buttons ≥44px.
+      **Done (2026-10-07):** `e2e/fichas.mjs`, `npm run e2e:fichas`, README line. Passes 53/53 on desktop and 57/57 with `mobile`. It navigates through the app's own router (`window.next.router.push`): with full page loads Chrome's six connections per host fill with Firestore streams the emulator keeps open for ~45 s, and a later save stalled for 45 s (a bench artifact already described in the README, not a site defect — the standalone probe of the same save took 1 s).
+- [x] **Update `e2e/ficha-privacy.mjs` to the new screen — its assertions are not weakened:** drop the Gemini-tab step; the removed templates answer 404 and
+      `ficha_prompt_format.md` answers 200; the copyable text is now card 1's (it must have the format rules and **no** student profile / "Pedido do
+      Professor" / student name); the review checks move to card 3 (recognised exercises, no catalog listing, ≤3 suggestions, volume block, the
+      volume-adjust request) with "Salvar ficha" instead of "Salvar 2 fichas"; every `clean(...)` leak check stays. Done when it passes at desktop and mobile.
+      **Done (2026-10-07):** Gemini step dropped; the three retired templates answer 404 and `ficha_prompt_format.md` 200; the copyable text is card 1's (format rules, no student profile); the treino checks moved to `.treinos`; "Salvar ficha" replaces "Salvar 2 fichas"; every `clean(...)` leak check stays. Passes 39/39 on desktop and 39/39 on mobile.
+- [x] **Full run from `web/`:** `npm test`, `npm run lint`, `npx tsc --noEmit` (after `npx next typegen` on a fresh checkout), `npm run build`, `npm run
+      check:leak`, `npm run check:rules-version` (still v6, unchanged), `npm run test:rules`, then `e2e:fichas` and `e2e:ficha-privacy` (both viewports) on the
+      `dev:local` bench. Also `git diff --stat <branch point>.. -- app shared firestore.rules firestore-rules` is empty (Android and rules untouched).
+      Done when: all green; results recorded here with the date.
+      **Done (2026-10-07):** `npm test` 482 passed (45 files); `npm run lint` clean; `npx tsc --noEmit` clean; `npm run build` ok; `npm run check:leak` ok (172 text files); `npm run check:rules-version` (v6, identical to its archive); `npm run test:rules` (via the Java 21 emulators) 209 passed in 6 files; `e2e:fichas` and `e2e:ficha-privacy` on both viewports as above. `git diff -- app shared firestore.rules firestore-rules` is empty.
+
+**34j. Rollout (manual — nothing here is run by `/execgoals`)**
+
+Suggested: n/a — owner steps; listed so they are not forgotten.
+
+- [ ] **(manual) No rules to publish for this section** — v6 is unchanged; whatever state §33h left it in still applies and still comes first.
+- [ ] **(manual) Merge order:** this branch is stacked on §33's; merge §33 first (or both together). Pages deploys from `main` (`web-deploy.yml`).
+- [ ] **(manual) Live check after deploy, on a test student:** their existing treinos appear as one "Ficha atual"; create a ficha (card appears on top);
+      create a second; create a third and read the dialog; sign in as that student and see both fichas grouped. (The third step deletes data — use a test student.)
+- [ ] **(manual) O1 — hidden legacy inactive treinos** (the §28 history, drafts, hand-deactivated): stay in Firestore, invisible to everyone, uncounted.
+      Decide: leave them, or later run a one-off purge. Record the date and the choice here.
+- [ ] **(manual) O2 — the confirmation before the third ficha (D7):** keep or drop it. Record here.
+- [ ] **(manual) O3 — the in-site Gemini is gone:** the Firebase AI Logic API / Gemini Developer API can be switched off in the console and the Remote Config parameter
+      `ficha_model_name` deleted; nothing in the code calls them any more. (App Check stays: Firestore uses it.)
+- [ ] **Done when:** O1–O3 each have a dated decision, and the live check passed.
+
+**34k. Docs and registration**
+
+Suggested: haiku · low — documentation so the new rules are findable and the old behaviour is not described as current; last because it describes what exists.
+
+- [x] **`CLAUDE.md` → "Web front":** replace the paragraph "Replacing a student's ficha keeps only the previous one (§28)" with one on the new model — a ficha is the
+      set of treinos sharing `workouts/{id}.ficha`; at most 2, the third deletes the oldest by creation after a confirmation; the grouping and the legacy rule (one
+      virtual "Ficha atual", hidden inactive treinos); delete and cap are bounded to one ficha's own treinos; `workoutLogs` are never touched; the phone ignores the
+      field and a phone save drops it; `fichaSaved` counts fichas. Update "No AI provider key ever reaches the browser" to: the site calls **no** AI — the trainer copies
+      the "Prompt de formatação de ficha" into their own AI and pastes the answer. Fix the §25 paragraph and the §33 paragraph's mentions of the single/multi/Gemini
+      templates (now `web/prompt/ficha_prompt_format.md` only) and the hand-port table rows for `domain/workouts.ts` / `data/workouts.ts` (web-only `ficha` map).
+      **Done (2026-10-07):** the §28 paragraph became "A ficha is a named set of treinos, at most two per student" (model, grouping and legacy rule, cap and delete bounds, the phone's behaviour, the cards, `fichaSaved`); the AI paragraph became "The site calls no AI"; the §25 and §33 paragraphs and the hand-port table now name `ficha_prompt_format.md`, `createFicha`/`saveFicha`/`TreinosEditor` and the `ficha` map.
+- [x] **`web/README.md`:** the prompt-files paragraph and any Gemini/Firebase AI Logic/Remote Config steps; add `e2e:fichas`.
+      **Done (2026-10-07):** the "Fichas" section rewritten, the Gemini console steps replaced by a note that they can be switched off, `e2e:fichas` listed, and the connection-pool note now mentions in-app navigation.
+- [x] **`GOALS.md`:** mark §25e/§25f/§25i, §28 and §33c/§33e's template parts "Superseded in part by §34" (as §33j did for §25); in §23's list of web-only differences
+      replace `archivedAt` with the `ficha` map; tick this section's items with dates as they are verified and record deviations in place.
+      **Done (2026-10-07):** "Superseded in part by §34" notes at the head of §25 and §33 and "Superseded by §34" under §28; this section's items ticked with dates. **Deviation:** §23 has no entry for `archivedAt` among its web-only differences (it was only ever recorded in §28 and `CLAUDE.md`), so there was nothing to replace there; the `ficha` map is recorded in `CLAUDE.md` and in this section instead.
+- [x] **Done when:** a reader who has never seen this plan can find the ficha model and its limits from `CLAUDE.md`, and no document still presents "Substituir a ficha
+      atual?", "Ficha anterior (histórico)", the Gemini tab or "Incluir o nome e as restrições médicas" as current behaviour.
+      **Done (2026-10-07):** `git grep` in `CLAUDE.md` and `web/README.md` finds no "Substituir a ficha atual?", "Ficha anterior (histórico)", Gemini tab or "Incluir o nome e as restrições médicas" described as current behaviour.
+
+**Done when (the whole section):** a trainer opens a student, sees one simple card per ficha (name + modification date, Editar and Excluir only), creates a ficha from a
+single screen that starts with the "Prompt de formatação de ficha" card and asks for the ficha's name and each treino's name, creates a third and sees the oldest go after a
+clear confirmation, edits and deletes (with "Esse processo não pode ser desfeito."), and the student sees both fichas under their names — proven by `e2e:fichas`, with
+§33's privacy test still green and Android and the Firestore rules untouched.
 
 ## Suggested build order (what blocks what) — revised 2026-08-18
 

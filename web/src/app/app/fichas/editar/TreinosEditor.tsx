@@ -3,26 +3,32 @@
 import { useState, type FormEvent } from "react";
 import type { Exercise } from "../../../../domain/exercise";
 import { parseSetsText, renamedExercise } from "../../../../domain/reviewEdit";
-import { applyCatalogActivations, catalogActivation, lookupExercise, type ExerciseCatalog } from "../../../../domain/exerciseCatalog";
+import { EDITOR_COPY } from "../../../../domain/editorCopy";
+import { catalogActivation, lookupExercise, offeredSuggestions, type ExerciseCatalog } from "../../../../domain/exerciseCatalog";
+import { buildVolumeAdjustMessage, includedVolume } from "../../../../domain/volumeFeedback";
 import { volumeBand } from "../../../../domain/volumeBands";
-import { calculateEffectiveVolume } from "../../../../domain/workoutParser";
 import { manualExercise } from "../../../../domain/workouts";
 
-// GOALS.md §25e: when one pasted answer holds several treinos ("Treino A", "B", "C"…), this is the
-// review the trainer gets before anything is saved — what was found, and for each treino a name, an
-// "incluir" box, every exercise editable (name, séries, reps) and removable, a form to add one, and the
-// week's effective volume across the treinos that will be saved. One click then saves them all
-// (data/workouts.ts `saveWorkouts`, a single atomic batch).
+// GOALS.md §34 (grown from §25e's review of several pasted treinos): the treinos of the ficha being made or edited.
+// For each treino a name, every exercise editable (name, séries, reps) and removable, a form to add one and a button
+// to remove the whole treino; a button to add an empty treino; and the week's effective volume across all of them,
+// with the "adjust the volume" request for the trainer's own AI. "Salvar ficha" (FichaEditor) then writes the whole
+// ficha in one batch (data/workouts.ts `createFicha` / `saveFicha`).
 //
-// Editing here cannot disturb the reading of the pasted text: that happened once, when it was pasted;
-// this screen works on plain data and "Salvar" stores what it shows (domain/reviewEdit.ts has the
-// rules). Pasting again, or asking Gemini to adjust, replaces what is on screen.
+// Editing here cannot disturb the reading of the pasted text: that happened once, when it was pasted; this screen
+// works on plain data and saving stores what it shows (domain/reviewEdit.ts has the rules). Pasting again replaces
+// what is on screen.
 
-export interface ReviewItem {
+export interface TreinoItem {
   key: string;
+  /** The stored treino's id when editing a ficha; null for a treino made or pasted in this editor. */
+  id: string | null;
   name: string;
-  include: boolean;
   exercises: Exercise[];
+}
+
+export function newTreinoItem(): TreinoItem {
+  return { key: crypto.randomUUID(), id: null, name: "", exercises: [] };
 }
 
 const VOLUME = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
@@ -51,7 +57,10 @@ function ExerciseRow({
   const where = `${treino || "treino"}, exercício ${index + 1}`;
   const match = typeof catalog === "object" ? lookupExercise(catalog, exercise.name) : null;
   const tableActivation = match ? catalogActivation(match.entry) : null;
-  const usesDifferentActivation = match !== null && !sameActivation(exercise.muscleActivation, tableActivation);
+  // Only when the exercise arrived WITH muscles of its own that the catalog replaces; none received is just "recognised".
+  const usesDifferentActivation = match !== null && exercise.muscleActivation !== null && !sameActivation(exercise.muscleActivation, tableActivation);
+  // GOALS.md section 33: never the whole catalog - at most a few "Quis dizer...?" names for an exercise nobody matched.
+  const suggestions = typeof catalog === "object" ? offeredSuggestions(catalog, exercise.name) : [];
 
   return (
     <li className="review-exercise">
@@ -65,42 +74,30 @@ function ExerciseRow({
           onChange={(e) => onChange(renamedExercise(exercise, e.target.value))}
         />
         {catalog === "loading" ? (
-          <small>Carregando catálogo de exercícios…</small>
+          <small>{EDITOR_COPY.loading}</small>
         ) : catalog === "error" ? (
-          <small>Catálogo indisponível; revise a ativação manualmente.</small>
+          <small>{EDITOR_COPY.unavailableRow}</small>
         ) : match?.how === "close" ? (
-          <small>Correspondência aproximada com “{match.entry.name}” — confira.</small>
+          <small>{EDITOR_COPY.closeMatch(match.entry.name)}</small>
         ) : match ? (
-          <small>{usesDifferentActivation ? "Usei a tabela" : "Ativação do catálogo"}</small>
+          <small>{usesDifferentActivation ? EDITOR_COPY.recognizedReplacing : EDITOR_COPY.recognized}</small>
         ) : (
-          <small>
-            sem ativação no catálogo{exercise.muscleActivation ? " — mantive a ativação recebida" : ""}
-          </small>
+          <small>{exercise.muscleActivation ? EDITOR_COPY.noMatchKept : EDITOR_COPY.noMatch}</small>
         )}
-        {typeof catalog === "object" && (!match || match.how === "close") && (
-          <select
-            aria-label={`Escolher exercício do catálogo (${where})`}
-            value=""
-            onChange={(event) => {
-              if (event.target.value) onSelectCatalog(event.target.value);
-            }}
-          >
-            <option value="">Escolher exercício no catálogo…</option>
-            {match?.how === "close" && (
-              <optgroup label="Sugestão aproximada — escolha para usar">
-                <option value={match.entry.name}>{match.entry.name} — {match.entry.group}</option>
-              </optgroup>
-            )}
-            <optgroup label="Catálogo">
-              {catalog.exercises
-                .filter((entry) => match?.how !== "close" || entry.name !== match.entry.name)
-                .map((entry) => (
-                  <option key={entry.name} value={entry.name}>
-                    {entry.name} — {entry.group}
-                  </option>
-                ))}
-            </optgroup>
-          </select>
+        {suggestions.length > 0 && (
+          <span className="review-suggestions">
+            <small>{EDITOR_COPY.suggestions}</small>{" "}
+            {suggestions.map((entry) => (
+              <button
+                type="button"
+                key={entry.name}
+                aria-label={`Usar ${entry.name} (${where})`}
+                onClick={() => onSelectCatalog(entry.name)}
+              >
+                {entry.name}
+              </button>
+            ))}
+          </span>
         )}
       </div>
       <input
@@ -174,54 +171,39 @@ function AddExercise({ treino, onAdd }: { treino: string; onAdd: (exercise: Exer
   );
 }
 
-export function MultiFichaReview({
+export function TreinosEditor({
   items,
   catalog,
-  warnings,
-  errors,
-  busy,
   onChange,
-  onSave,
-  onCancel,
 }: {
-  items: readonly ReviewItem[];
+  items: readonly TreinoItem[];
   catalog: ExerciseCatalog | "loading" | "error";
-  warnings: readonly string[];
-  errors: readonly string[];
-  busy: boolean;
-  onChange: (items: ReviewItem[]) => void;
-  onSave: () => void;
-  onCancel: () => void;
+  onChange: (items: TreinoItem[]) => void;
 }) {
-  const included = items.filter((item) => item.include);
-  const volumeExercises = included.flatMap((item) =>
-    typeof catalog === "object" ? applyCatalogActivations(item.exercises, catalog) : item.exercises,
-  );
-  const volume = Object.entries(calculateEffectiveVolume(volumeExercises)).sort(
-    ([, a], [, b]) => b - a,
-  );
-  const update = (key: string, change: Partial<ReviewItem>) =>
+  const totals = includedVolume(items, typeof catalog === "object" ? catalog : null);
+  const volume = Object.entries(totals).sort(([, a], [, b]) => b - a);
+  // GOALS.md section 33e: what to ask the trainer's own AI when the week is outside the ideal range (null: nothing to adjust).
+  const volumeRequest = buildVolumeAdjustMessage(totals);
+  const [requestNote, setRequestNote] = useState<string | null>(null);
+  async function copyVolumeRequest() {
+    if (volumeRequest === null) return;
+    try {
+      await navigator.clipboard.writeText(volumeRequest);
+      setRequestNote(EDITOR_COPY.volumeRequestCopied);
+    } catch {
+      setRequestNote(EDITOR_COPY.volumeRequestNotCopied);
+    }
+  }
+  const update = (key: string, change: Partial<TreinoItem>) =>
     onChange(items.map((item) => (item.key === key ? { ...item, ...change } : item)));
-  const updateExercise = (item: ReviewItem, index: number, exercise: Exercise) =>
+  const updateExercise = (item: TreinoItem, index: number, exercise: Exercise) =>
     update(item.key, { exercises: item.exercises.map((current, i) => (i === index ? exercise : current)) });
 
   return (
-    <section className="review" aria-labelledby="review-title">
-      <h2 id="review-title">Encontrei {items.length} treinos</h2>
-      <p>
-        {items.map((item) => `${item.name} (${item.exercises.length})`).join(" · ")}. Confira e ajuste o que precisar —
-        nome do treino, exercícios, séries e repetições — ou tire o que não quiser. Cada treino vira uma ficha do aluno.
-      </p>
-      {warnings.length > 0 && (
-        <ul role="status">
-          {warnings.map((warning) => (
-            <li key={warning}>{warning}</li>
-          ))}
-        </ul>
-      )}
-      {catalog === "error" && (
-        <p role="status">Não foi possível carregar a tabela. As correspondências não serão aplicadas automaticamente.</p>
-      )}
+    <div className="treinos">
+      <h3>Treinos ({items.length})</h3>
+      {catalog === "error" && <p role="status">{EDITOR_COPY.unavailable}</p>}
+      {items.length === 0 && <p>Nenhum treino ainda. Cole a resposta da IA acima ou adicione um treino.</p>}
 
       {items.map((item) => (
         <article className="review-card" key={item.key}>
@@ -230,14 +212,13 @@ export function MultiFichaReview({
               Nome do treino
               <input value={item.name} onChange={(e) => update(item.key, { name: e.target.value })} />
             </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={item.include}
-                onChange={(e) => update(item.key, { include: e.target.checked })}
-              />
-              Incluir
-            </label>
+            <button
+              type="button"
+              aria-label={`Remover treino ${item.name || "sem nome"}`}
+              onClick={() => onChange(items.filter((other) => other.key !== item.key))}
+            >
+              Remover treino
+            </button>
           </div>
           {item.exercises.length === 0 ? (
             <p>Sem exercícios.</p>
@@ -271,7 +252,13 @@ export function MultiFichaReview({
         </article>
       ))}
 
-      <h3>Volume efetivo por músculo (soma dos treinos incluídos)</h3>
+      <p>
+        <button type="button" onClick={() => onChange([...items, newTreinoItem()])}>
+          Adicionar treino
+        </button>
+      </p>
+
+      <h3>Volume efetivo por músculo (soma dos treinos)</h3>
       {volume.length === 0 ? (
         <p>Nenhum exercício traz ativação muscular, então não há volume para somar.</p>
       ) : (
@@ -295,31 +282,20 @@ export function MultiFichaReview({
         </table>
       )}
 
-      {errors.length > 0 && (
-        <ul role="alert">
-          {errors.map((error) => (
-            <li key={error}>{error}</li>
-          ))}
-        </ul>
-      )}
-      <div className="review-actions">
-        <button
-          type="button"
-          className="button-primary"
-          disabled={busy || included.length === 0 || catalog === "loading"}
-          onClick={onSave}
-        >
-          {busy
-            ? "Salvando…"
-            : catalog === "loading"
-              ? "Carregando tabela…"
-              : `Salvar ${included.length} ${included.length === 1 ? "ficha" : "fichas"}`}
-        </button>
-        <button type="button" disabled={busy} onClick={onCancel}>
-          Voltar ao importador
-        </button>
-      </div>
-    </section>
+      {volume.length > 0 &&
+        (volumeRequest !== null ? (
+          <div>
+            <p role="status">{EDITOR_COPY.volumeHelperHint}</p>
+            <button type="button" onClick={() => void copyVolumeRequest()}>
+              {EDITOR_COPY.copyVolumeRequest}
+            </button>
+            {requestNote && <p role="status">{requestNote}</p>}
+            <textarea readOnly value={volumeRequest} rows={6} aria-label="Pedido de ajuste de volume" />
+          </div>
+        ) : (
+          <p role="status">{EDITOR_COPY.volumeAllGood}</p>
+        ))}
+    </div>
   );
 }
 

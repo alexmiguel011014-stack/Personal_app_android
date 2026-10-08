@@ -26,7 +26,7 @@ import { BillingSection } from "./BillingSection";
 import { MeasurementsSection } from "./MeasurementsSection";
 import { Avatar } from "../../../_shared/Avatar";
 import { ProgressSection } from "../../../_shared/ProgressSection";
-import { WorkoutsSection } from "./WorkoutsSection";
+import { FichasSection } from "./FichasSection";
 
 // GOALS.md §23g: a student's page — profile, and either the invite (a draft) or the §17 permissions
 // (a connected account), then the mensalidade, fichas, self-assessments, measurements and training
@@ -179,7 +179,9 @@ function Detail({ trainerId, studentId }: { trainerId: string; studentId: string
         onChanged={reload}
       />
 
-      <WorkoutsSection
+      {/* keyed by the student: moving from one student to another must not show the previous one's cards while loading */}
+      <FichasSection
+        key={student.doc.id}
         trainerId={trainerId}
         studentId={student.doc.id}
         connected={student.kind === "linked"}

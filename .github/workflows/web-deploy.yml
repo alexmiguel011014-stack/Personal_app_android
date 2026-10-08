@@ -48,11 +48,16 @@ jobs:
       - name: Unit tests
         run: npm test
 
-      # prebuild copies the ficha prompt's assets from app/src/main/assets/ into public/prompt/.
+      # prebuild copies the web-only prompt templates (web/prompt/) into public/prompt/. The trainer's exercise reference
+      # is NOT a public file (GOALS.md section 33): it is read from Firestore by approved trainers only.
       - name: Build static site
         env:
           NEXT_PUBLIC_BASE_PATH: /Personal_app_android
         run: npm run build
+
+      # GOALS.md section 33f: a site that carries the trainer's exercise reference (or a pointer to it) is never published.
+      - name: No reference table in the build
+        run: npm run check:leak
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

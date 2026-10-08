@@ -27,7 +27,8 @@ function fail(message) {
 /** The public web config (identifiers, not secrets) from src/data/firebaseConfig.ts — one place to keep it. */
 function productionConfig() {
   const text = readFileSync(new URL("../src/data/firebaseConfig.ts", import.meta.url), "utf8");
-  const pick = (key) => text.match(new RegExp(`${key}:\s*"([^"]+)"`))?.[1];
+  // `\\s`, not `\s`: inside a template literal a lone backslash-s is just "s", and the pattern would never match.
+  const pick = (key) => text.match(new RegExp(`${key}:\\s*"([^"]+)"`))?.[1];
   const apiKey = pick("apiKey");
   const projectId = pick("projectId");
   if (!apiKey || !projectId) fail("Could not read apiKey/projectId from src/data/firebaseConfig.ts.");

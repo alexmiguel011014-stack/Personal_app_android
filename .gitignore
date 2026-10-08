@@ -31,3 +31,11 @@ google-services.json
 # graphify / repomix generated artifacts
 graphify-out/
 repomix-output.xml
+
+# Secrets and dependencies anywhere in the tree (web/ and functions/ also carry their own)
+.env*
+!.env.example
+node_modules/
+
+# Design-hook cache written by the impeccable plugin
+.impeccable/

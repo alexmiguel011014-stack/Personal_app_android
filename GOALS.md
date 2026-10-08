@@ -5503,7 +5503,7 @@ Suggested: opus · high — a new Storage bucket and rules surface must prove ow
 - [x] Add the Firebase Storage web client and emulator connection. Upload one avatar to a stable UID-scoped path, validate image MIME type and size in the UI and again in Storage rules, support replace/remove, and fall back to initials on missing image or load failure. Limit visibility to the user's own account surfaces in this feature.
 - [x] Add `storage.rules` that allow only the matching signed-in UID to read, replace, or delete their avatar, with an image content-type allowlist and a small maximum size. Apply App Check consistently with the existing web Firebase setup. Store the Storage path, not a bearer download token, in the profile.
 - [x] Add Storage Emulator configuration and tests for owner success, cross-UID denial, unauthenticated denial, invalid MIME/oversized file denial, replacement, and removal. The account UI must remain usable when upload is unavailable.
-- [ ] **Manual Firebase precondition:** before enabling production uploads, the owner checks the project's plan, bucket, App Check and expected billing; do not enable Blaze or create a production bucket automatically. If billing is not approved, keep upload unavailable with a clear message and initials fallback.
+- [ ] **(PENDING — needs Blaze)** **Manual Firebase precondition:** before enabling production uploads, the owner checks the project's plan, bucket, App Check and expected billing; do not enable Blaze or create a production bucket automatically. If billing is not approved, keep upload unavailable with a clear message and initials fallback.
 - [ ] **Done when:** emulator tests prove the path and file constraints, all three roles can manage only their own image, removal returns to initials, and the live upload is enabled only after the owner completes the Firebase setup.
 
 ### 29e. Verification, compatibility, and registration
@@ -5556,7 +5556,7 @@ Suggested: opus · high — emulator rules and end-to-end role coverage are the 
 
 Suggested: haiku · low — console work and a controlled-account check, both owner-operated.
 
-- [ ] **Manual, only after the owner approves billing:** create/configure the Storage bucket, deploy the reviewed `storage.rules`, and verify Storage App Check. Do not enable Blaze or provision production resources automatically; if the owner declines, leave avatar upload deferred and 29d open.
+- [ ] **(PENDING — needs Blaze)** **Manual, only after the owner approves billing:** create/configure the Storage bucket, deploy the reviewed `storage.rules`, and verify Storage App Check. Do not enable Blaze or provision production resources automatically; if the owner declines, leave avatar upload deferred and 29d open.
 - [ ] **Manual, only after the owner reviews the exact combined diff:** publish `firestore.rules` to Firebase. Confirm the existing client permissions and ADM-managed fields remain intact; no Android/iOS source change is included in this goal.
 - [ ] After the site deployment and Firebase setup, use controlled ADM, trainer, and student accounts to verify profile image upload/replace/remove, phone save, confirmed e-mail change and trainer-directory update, password change/reset, and access denial between roles. Do not use student health data for this check.
 - [ ] **Done when:** the owner-approved Firebase configuration is live, the three controlled accounts pass the stated checks on the deployed site, and the avatar is readable only under its authorized UID path.
@@ -5671,8 +5671,8 @@ flowchart TD
 
 ### 30h. Manual Firebase setup and rollout gate
 
-- [ ] **Manual, after owner approval:** configure Firestore indexes/emulators and, only if a callable is selected, enable Blaze and deploy reviewed Functions. Never turn on billing or deploy production rules/functions automatically. If Blaze is declined, keep the website-flow limit in the reviewed cooperative atomic path and do not describe it as a global Firestore-enforced limit.
-- [ ] **Manual, after owner reviews the exact combined rules diff:** publish Firestore Rules and any Functions. Confirm ADM recovery writes are narrowly scoped, website invite creation respects the cap, and the locked trainer remains recoverable by ADM.
+- [ ] **(PENDING — needs Blaze)** (the Functions part; indexes/emulators do not wait) **Manual, after owner approval:** configure Firestore indexes/emulators and, only if a callable is selected, enable Blaze and deploy reviewed Functions. Never turn on billing or deploy production rules/functions automatically. If Blaze is declined, keep the website-flow limit in the reviewed cooperative atomic path and do not describe it as a global Firestore-enforced limit.
+- [ ] **(PENDING — needs Blaze)** (the Functions part; the rules publish does not wait) **Manual, after owner reviews the exact combined rules diff:** publish Firestore Rules and any Functions. Confirm ADM recovery writes are narrowly scoped, website invite creation respects the cap, and the locked trainer remains recoverable by ADM.
 - [ ] Test with controlled ADM, trainer, and student accounts after deployment. Do not use real payment credentials, real customer financial data, or student health data for verification.
 
 **Implementation status in the current worktree:** Web code includes versioned plan/trial defaults, per-trainer terms, billing and invoice controls, an ADM student-recovery draft, a cooperative active-invite cap, and privacy-safe ADM aggregation through callable Functions. The ADM sees linked seats, active invite reservations/codes, and totals without reading raw invite profiles. New Web invites have no expiry and are cancelled manually; legacy no-expiry invites remain active until ADM resolution, and numeric legacy expiry remains supported. A blocked account cannot be reopened by invoice extension or plan reassignment while the current invoice is unpaid; payment and audit linkage are covered by Rules and Functions Emulator tests. Mobile invite creation and direct writes outside the cooperative Web flow are not globally limited. Local verification passed: 397 unit tests, lint, TypeScript/Functions build, 139 Firestore/Storage/Functions Emulator tests, root static export and HTTP route/asset smoke, plus the `/Personal_app_android/` compatibility build. Full ADM/trainer browser flows and production Firestore/Functions publication, Blaze approval, and controlled live checks remain open.
@@ -5713,7 +5713,7 @@ flowchart TD
 - **Cloudflare:** export estático raiz gerou 26 rotas; smoke HTTP local retornou 200 para `/`, áreas e contas ADM/trainer/aluno, `/convite/`, `/entrar/` e um chunk JS, sem prefixo GitHub Pages. A build com `/Personal_app_android/` também passou. O workflow de CI agora instala Functions em Node 22 e roda Rules Emulator com Java 21 após checks Web em Node 24; YAML validado localmente, sem execução remota do Actions. Não há `_headers` no repositório.
 - **Não verificado fora do checkout:** visibilidade/plano do GitHub, proteção de branch/status obrigatório, integração GitHub App da Cloudflare, URLs e proteção de previews, DNS/domínio, cabeçalhos publicados, regras Firebase atualmente publicadas, App Check/AI Logic/Auth settings e plano/bucket Storage.
 
-**Decisão necessária antes de corrigir a exposição de convites:** o cliente Android/iOS legado lê `invites/{code}` diretamente e as Rules não podem ocultar campos do documento. A opção de claim mediada por callable devolve apenas os campos necessários, mas requer migração dos clientes móveis e infraestrutura Firebase/Blaze; a projeção segura do diretório ADM também exige uma coleção/backend com migração das telas. Não alterei Android/iOS nem implantei backend; aguardo autorização explícita para essa mudança de escopo.
+**[PENDENTE — a opção por callable depende do Blaze, 2026-10-08]** **Decisão necessária antes de corrigir a exposição de convites:** o cliente Android/iOS legado lê `invites/{code}` diretamente e as Rules não podem ocultar campos do documento. A opção de claim mediada por callable devolve apenas os campos necessários, mas requer migração dos clientes móveis e infraestrutura Firebase/Blaze; a projeção segura do diretório ADM também exige uma coleção/backend com migração das telas. Não alterei Android/iOS nem implantei backend; aguardo autorização explícita para essa mudança de escopo.
 
 ```mermaid
 flowchart TD
@@ -5795,6 +5795,14 @@ Suggested: sonnet · medium — domain and account changes are external operatio
 
 ## 32. Feature — Branded Firebase e-mails: the verification, password and e-mail-change mails, and the page their link opens
 (2026-10-05, via `/newgoal`)
+
+> **PENDING until the Blaze plan (2026-10-08, owner decision).** Saving any Authentication → Templates change shows
+> "As atualizações de modelos de e-mail não estão disponíveis para este projeto… entre em contato com o suporte do
+> Firebase". The owner concluded the console does not allow template edits (and so a custom action URL for them) without
+> a Blaze account; Firebase's message itself only says to contact support, so the Blaze link is **unconfirmed** — a
+> support ticket (text in the 2026-10-08 conversation) can settle it. Everything in the repository is done and live
+> (the `/acao/` page, `web/email/`, the docs); only the console items below wait. The public-facing name already
+> works and is done. Resume: when Blaze exists (or support enables templates), start at 32c "Probe the editor".
 
 **The request:** "vamos personalizar esse email para ter uma cara mais atrativa para meu programa" — with a
 screenshot of the verification mail §27 sends to a new student.
@@ -5932,21 +5940,21 @@ Suggested: haiku · low — a short list the owner confirms or edits.
 
 Suggested: haiku · low — a click list, plus writing down what the editor actually does.
 
-- [ ] **(manual) Public-facing name** → Firebase console → Project settings → General → *Public-facing name* =
+- [x] **(manual) Public-facing name** (done 2026-10-08: Project settings → *Nome exibido ao público* = `ALLU personal`; verified by a real reset mail whose subject and signature now say "ALLU personal" instead of `project-681428046020`) → Firebase console → Project settings → General → *Public-facing name* =
       `ALLU personal`. Done when the next verification/reset mail says "ALLU personal" in subject and signature.
-- [ ] **(manual) Probe the editor** on *Authentication → Templates → Password reset* (the safest template to test:
+- [ ] **(PENDING — needs Blaze)** **(manual) Probe the editor** on *Authentication → Templates → Password reset* (the safest template to test:
       the sender triggers it on their own account; 150/day): choose language **Português (Brasil)**; note whether the
       message box accepts HTML, a `<table>`, inline `style=""`, a `<a href="%LINK%">` button, an `<img>`; whether an
       HTML-comment/unsupported tag is stripped on save; any size limit. Send the real mail to your own address
       (`Entrar → Esqueci minha senha`, or the ADM's reset button) and read it in **Gmail web and Gmail on the phone,
       light and dark**. Record the findings under this item (dated). Done when the findings answer 32a(1)–(2).
-- [ ] **(manual) Map the templates:** trigger an **e-mail change** from `/app/conta` (§29) on a test account and note
+- [ ] **(PENDING — needs Blaze)** **(manual) Map the templates:** trigger an **e-mail change** from `/app/conta` (§29) on a test account and note
       which template renders, the `mode=` in the link, and whether `%NEW_EMAIL%` is filled (32a(4)–(5)). Done when the
       mapping is written here and 32d knows how many template files it needs.
-- [ ] **(manual) Template language:** make sure the **pt-BR** variant is the one customised, **and** that the
+- [ ] **(PENDING — needs Blaze)** **(manual) Template language:** make sure the **pt-BR** variant is the one customised, **and** that the
       default/English variant is not left stock — Android's reset mail does not set `languageCode`. Done when a mail
       requested with and without `languageCode` both arrive branded.
-- [ ] **(manual) Read the link expiries** the console/docs state for verification, reset and change links (32a(6));
+- [ ] **(PENDING — needs Blaze)** **(manual) Read the link expiries** the console/docs state for verification, reset and change links (32a(6));
       write them here only if the mail copy will mention them (default: it does not).
 
 **32d. Template sources in the repo**
@@ -5975,7 +5983,7 @@ Suggested: sonnet · medium — fiddly HTML for mail clients, low risk; the lint
       "Confirmar novo e-mail" (use `%NEW_EMAIL%` only if 32c proved it fills). Every file ends with a plain
       fallback — "Se o botão não abrir, copie e cole este endereço no navegador: %LINK%" — and "Se não foi você,
       ignore este e-mail: nada muda na sua conta." Sender name `ALLU personal`.
-- [ ] **Only if 32c shows the editor is plain-text only:** add a short `*.txt` sibling per template (heading line,
+- [ ] **(PENDING — needs Blaze)** **Only if 32c shows the editor is plain-text only:** add a short `*.txt` sibling per template (heading line,
       one sentence, `%LINK%`, the ignore line) and paste that instead. Skip otherwise.
 - [x] **Test** (done 2026-10-05: 16 tests; the pure linter is `src/domain/authEmailTemplates.ts` and "fails a template with an <img> added" is the proof it can fail) `web/src/domain/authEmailTemplates.test.ts` (reads `web/email/*.html` with `node:fs`): each file has
       `%LINK%` in an `href` **and** as visible fallback text; uses `%APP_NAME%`; no `%DISPLAY_NAME%`; has no
@@ -6036,7 +6044,7 @@ Suggested: sonnet · medium — mostly re-running the project's own gates, then 
       **Continuar** returns to the invite → opening the same URL again shows the expired/used state; request a reset
       → handler URL → set a password → sign in with it; a `continueUrl=https://evil.example/` falls back to
       `/entrar/`; no `mode` shows "Link inválido"; check the layout at 375 px and desktop width.
-- [ ] **Visual check of the real mails is the owner's:** ask for a screenshot of each mail (Gmail web and phone,
+- [ ] **(PENDING — needs Blaze)** **Visual check of the real mails is the owner's:** ask for a screenshot of each mail (Gmail web and phone,
       light and dark) and say which state it should show — do not capture the desktop.
 - [x] Done when all gates are green and the end-to-end run above is recorded here with its date.
       **Record (2026-10-05):** `npm test` 462/462 (45 files), `npm run lint` and `npx tsc --noEmit` clean, static build
@@ -6058,25 +6066,25 @@ Suggested: sonnet · medium — mostly re-running the project's own gates, then 
 Suggested: sonnet · high — an ordered owner checklist; the step that points every client at the new page is the
 risky one, which is why it is last and per template.
 
-- [ ] **Merge and deploy:** PR → CI green → merge → `web-deploy.yml` publishes to Pages. Then open
+- [x] (done 2026-10-06: PR #14 merged as `840df67`, `web-deploy` succeeded; `/acao/` answers 200 live, checked 2026-10-08) **Merge and deploy:** PR → CI green → merge → `web-deploy.yml` publishes to Pages. Then open
       `https://alexmiguel011014-stack.github.io/Personal_app_android/acao/` live: it must load (200) and show
       "Link inválido" with no parameters. **Do not touch the console before this passes.**
 - [ ] **(manual) Authorized domains:** Authentication → Settings → Authorized domains lists
       `alexmiguel011014-stack.github.io` (§27h already asks for this; a custom action URL needs it too).
-- [ ] **(manual) Paste the templates** from `web/email/` (sender name, subject, body, reply-to) for *Email address
+- [ ] **(PENDING — needs Blaze)** **(manual) Paste the templates** from `web/email/` (sender name, subject, body, reply-to) for *Email address
       verification*, *Password reset* and the change template (32c's mapping), in the pt-BR language variant. The
       action URL is still Firebase's default at this point, so nothing can break yet. Send a real mail per template
       to your own address and read it (Gmail web + phone). Done when each looks as designed, or 32d is adjusted.
-- [ ] **(manual) Switch the action URL, one template at a time**, to
+- [ ] **(PENDING — needs Blaze)** **(manual) Switch the action URL, one template at a time**, to
       `https://alexmiguel011014-stack.github.io/Personal_app_android/acao/`: **verification first** (a real
       `+alias` sign-up through `/convite` — the link must confirm, return to the invite, and "Já confirmei" must
       pass), then the **change** template (an e-mail change from `/app/conta`), then **password reset last** (reset
       the owner's own ADM account and sign in with the new password, **before** telling anyone). Done when each
       template has been proven end to end after its own switch.
-- [ ] **Rollback, written down before the first switch:** in the console, clear the custom action URL (or reset the
+- [ ] **(PENDING — needs Blaze)** **Rollback, written down before the first switch:** in the console, clear the custom action URL (or reset the
       template to default) — links already sent keep working because the one-time code is the same under either
       handler; nothing in the data changes. Keep a second ADM account (§26) signed in while testing the reset.
-- [ ] **Done when:** all three templates are branded, their links open `/acao/` and complete, the rollback was read
+- [ ] **(PENDING — needs Blaze)** **Done when:** all three templates are branded, their links open `/acao/` and complete, the rollback was read
       (not necessarily used), and the dated results are recorded here.
 
 **32h. Deferred options (decision only — none are built by this section)**
@@ -6090,7 +6098,7 @@ Suggested: haiku · low — recording a decision, not doing work.
       through the owner's mail provider; improves the sender and deliverability, **not** the layout. Whether it needs
       the Identity Platform switch (§26k/§27h already weigh that switch) or billing is **unverified** — read the
       console before deciding. Record the decision.
-- [ ] **Own sending** (Admin SDK link + a mail provider, full HTML, logo, fonts) — needs a server, i.e. Blaze (§3,
+- [ ] **(PENDING — needs Blaze)** **Own sending** (Admin SDK link + a mail provider, full HTML, logo, fonts) — needs a server, i.e. Blaze (§3,
       §30). Revisit only if the console templates prove too limited (32c) *and* Blaze is accepted for other reasons.
 - [ ] **Trigger to revisit:** students report the mail in spam, or the owner wants a logo/web-font layout.
 

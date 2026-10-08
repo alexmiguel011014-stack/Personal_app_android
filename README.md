@@ -1,8 +1,30 @@
 # Personal Tracker 🏋️‍♂️
 
-O **Personal Tracker** é um aplicativo Android nativo desenvolvido em Kotlin, projetado para auxiliar Personal Trainers na gestão de seus alunos, treinos, agenda e evolução física, com integração de Inteligência Artificial para geração de fichas.
+O **Personal Tracker** ajuda Personal Trainers a gerir alunos, fichas de treino, agenda, evolução física e mensalidades. Hoje existe em duas frentes:
 
-## 🚀 Funcionalidades Atuais
+| Frente | Estado |
+|---|---|
+| **Site** (`web/`) | **Ativo** — é a frente em uso: <https://alexmiguel011014-stack.github.io/Personal_app_android/> |
+| **App Android** (`app/`, `shared/`) | Versão nativa anterior, mantida no repositório. Os apps Android e iOS serão **refeitos do zero no futuro** (decisão de 2026-10-07); a migração para Kotlin Multiplatform foi abandonada. |
+
+## 🌐 Site (`web/`)
+
+Painéis para o **ADM**, o **Personal** e o **Aluno**, entrada por convite (`/convite/?c=CÓDIGO`) com e-mail confirmado, fichas, registro das sessões, evolução, agenda e mensalidades.
+
+- **Stack:** [Next.js](https://nextjs.org/) 16 (App Router) exportado como site estático, Firebase Auth + Firestore + Storage pelo SDK no navegador, hospedado no GitHub Pages. A segurança está em [`firestore.rules`](firestore.rules) (um único arquivo ao vivo para todos os clientes, publicado à mão; as versões ficam em `firestore-rules/versions/`).
+- **Funções na nuvem:** `functions/` (Node 22) guarda a lógica de cobrança da plataforma; depende da decisão do dono sobre o plano Blaze (veja `GOALS.md` §30).
+- **Rodar localmente** (Node 24+; para os emuladores, Java 21):
+
+```bash
+cd web
+npm ci
+npm run dev:local        # PowerShell: emuladores do Firebase + dados de teste + o site em http://localhost:3000/entrar/
+```
+
+- **Checagens** (a partir de `web/`): `npm test`, `npm run lint`, `npx tsc --noEmit`, `npm run build` e `npm run test:rules`. O CI (`web-ci.yml`) roda todas; `web-deploy.yml` publica a partir da `main`.
+- **Mais detalhes:** [`web/README.md`](web/README.md) (passos do console do Firebase, rotas), [`CLAUDE.md`](CLAUDE.md) (convenções) e [`GOALS.md`](GOALS.md) (plano e estado).
+
+## 🚀 Funcionalidades do app Android (versão anterior)
 
 - **Gestão de Alunos:** Cadastro completo com perfil biométrico, objetivos e observações médicas.
 - **Agenda Interativa:** Organização semanal de horários com vínculo direto aos alunos.

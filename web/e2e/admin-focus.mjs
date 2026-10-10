@@ -1,18 +1,17 @@
 // node e2e/admin-focus.mjs — keyboard focus on the ADM screens: pressing Enter on an action button must leave focus on
 // that button once the action finishes (a disabled control drops focus to <body>). Where the button legitimately goes away
-// after success (the form closes, the invoice is paid) focus must land on the result message, never on <body>.
+// after success (the form closes, a dialog is confirmed) focus must land on the result message, never on <body>.
 import { browser, check, summary, sleep, reseed, uidByEmail } from "./lib.mjs";
 
 await reseed();
 const tid = await uidByEmail("treinador@teste.dev");
-const iso = (d) => new Date(Date.now() + d * 86400000).toISOString().slice(0, 10);
 
 const setField = (b, formMatch, label, value) => b.eval(`(()=>{const f=[...document.querySelectorAll('main form')].find(f=>new RegExp(${JSON.stringify(formMatch)},'i').test(f.innerText)); const l=f&&[...f.querySelectorAll('label')].find(x=>x.innerText.trim().startsWith(${JSON.stringify(label)})); const e=l&&l.querySelector('input,select'); if(!e) return false; const proto=e.tagName==='SELECT'?HTMLSelectElement.prototype:HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(proto,'value').set.call(e,${JSON.stringify(value)}); e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); return true;})()`);
 const notes = (b) => b.eval(`[...document.querySelectorAll('main [role=status], main [role=alert]')].map(e=>e.innerText.trim()).filter(Boolean).join(' | ')`);
 
 /** Focus the button, press Enter like a keyboard user, wait for the action to finish, report where focus went. */
-async function press(b, name, re, { key = "Enter" } = {}) {
-  const found = await b.eval(`(()=>{const x=[...document.querySelectorAll('main button')].find(x=>new RegExp(${JSON.stringify(re)},'i').test(x.textContent)); if(!x) return false; x.focus(); return document.activeElement===x;})()`);
+async function press(b, name, re, { key = "Enter", last = false } = {}) {
+  const found = await b.eval(`(()=>{const all=[...document.querySelectorAll('main button')].filter(x=>new RegExp(${JSON.stringify(re)},'i').test(x.textContent)); const x=${last} ? all[all.length-1] : all[0]; if(!x) return false; x.focus(); return document.activeElement===x;})()`);
   if (!found) { check(`${name}: button found and focusable`, false); return; }
   await b.key(key);
   await sleep(500);
@@ -23,6 +22,20 @@ async function press(b, name, re, { key = "Enter" } = {}) {
   if (after.ok) check(`${name}: focus stays on the button`, true);
   else if (!after.still) check(`${name}: the button went away, focus moves to the result message`, after.onMessage, `focus is on ${after.tag} — ${await notes(b)}`);
   else check(`${name}: focus stays on the button`, false, `focus is on ${after.tag} "${after.text}" — ${await notes(b)}`);
+}
+
+const setDialog = (b, label, value) => b.eval(`(()=>{const l=[...document.querySelectorAll('dialog[open] label')].find(x=>x.innerText.trim().startsWith(${JSON.stringify(label)})); const e=l&&l.querySelector('input'); if(!e) return false; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,${JSON.stringify(value)}); e.dispatchEvent(new Event('input',{bubbles:true})); return true;})()`);
+
+/** The same, for a button inside the open dialog: confirming closes it, so focus goes back to the control that opened it (or to the result message) — never to <body>. */
+async function pressInDialog(b, name, re) {
+  const found = await b.eval(`(()=>{const x=[...document.querySelectorAll('dialog[open] button')].find(x=>new RegExp(${JSON.stringify(re)},'i').test(x.textContent)); if(!x) return false; x.focus(); return document.activeElement===x;})()`);
+  if (!found) { check(`${name}: dialog button found and focusable`, false); return; }
+  await b.key("Enter");
+  await sleep(500);
+  await b.waitFor(`![...document.querySelectorAll('main button')].some(x=>/…$/.test(x.textContent.trim()))`, 15000, 250);
+  await sleep(900);
+  const kept = await b.eval(`(()=>{const a=document.activeElement; return !!a && a!==document.body && (/^(status|alert)$/.test(a.getAttribute('role')||'') || a.tagName==='BUTTON');})()`);
+  check(`${name}: focus returns to a control or the result message, not to <body>`, kept && !!(await notes(b)), await notes(b));
 }
 
 // ---------- /admin/conta ----------
@@ -38,47 +51,47 @@ b = await browser("adm-planos");
 try {
   await b.login("admin@teste.dev");
   await b.go("/admin/planos/", 3000);
-  await setField(b, "Padrão do teste", "Máximo de alunos vinculados", "2");
-  await setField(b, "Padrão do teste", "Duração do teste", "7");
-  await setField(b, "Padrão do teste", "Motivo da alteração", "foco do teclado");
-  await press(b, "Plans: save the trial default", "Salvar padrão do teste");
   await b.click("Novo plano"); await sleep(600);
-  const vals = ["Plano Teste", "49,90", "2", "6,50", "criação de teste", "3", "2", "7"];
-  const labels = ["Nome do plano", "Mensalidade base", "Alunos incluídos", "Adicional mensal", "Motivo da alteração", "Máximo de códigos", "Máximo de alunos durante o teste", "Duração do teste deste plano"];
-  for (let i = 0; i < labels.length; i++) await setField(b, "Novo modelo", labels[i], vals[i]);
-  await press(b, "Plans: save a template", "Salvar modelo");
+  for (const [label, value] of [["Nome do plano", "Plano Teste"], ["Mensalidade (R$)", "49,90"], ["Alunos incluídos", "2"], ["Adicional mensal por aluno excedente", "6,50"], ["Máximo de códigos de convite ativos", "3"], ["Período de teste", "7"]]) await setField(b, "Novo plano", label, value);
+  await press(b, "Plans: save a plan", "Salvar plano");
 } catch (e) { check("planos scenario ran", false, e.message); } finally { b.close(); }
 
-// ---------- the trainer's admin detail: terms, trial extension, invoice, due date, payment, invite resolution ----------
+// ---------- the trainer's admin detail: plan, trial extension, pay (dialog), estorno (dialog), invite resolution ----------
 b = await browser("adm-detail");
 try {
   await b.login("admin@teste.dev");
   await b.go(`/admin/personais/detalhe/?id=${tid}`, 2500);
-  await b.waitFor(`/Assinatura e cobrança/.test(document.body.innerText) && !/Carregando termos/.test(document.body.innerText)`, 40000);
-  const opt = await b.eval(`(()=>{const s=[...document.querySelectorAll('main form select')].find(s=>/Modelo de origem/.test(s.closest('label')?.innerText||'')); return s&&s.options[1]?s.options[1].value:null})()`);
-  check("a plan template exists to assign", !!opt);
+  await b.waitFor(`/Mensalidade/.test(document.body.innerText) && !/Carregando plano/.test(document.body.innerText)`, 40000);
+  const opt = await b.eval(`(()=>{const s=[...document.querySelectorAll('main form select')].find(s=>/Plano/.test(s.closest('label')?.innerText||'')); return s&&s.options[1]?s.options[1].value:null})()`);
+  check("a plan exists to assign", !!opt);
   if (opt) {
-    await setField(b, "Salvar termos", "Modelo de origem", opt);
+    await setField(b, "Cadastrar plano deste personal", "Plano", opt);
     await sleep(400);
-    await setField(b, "Salvar termos", "Motivo da atribuição", "foco do teclado");
-    await press(b, "Detail: assign terms (trial)", "Salvar termos e registrar auditoria");
+    // after saving, this very button is relabelled "Salvar alterações": focus must stay on a button, never fall to <body>
+    await press(b, "Detail: register the plan (trial)", "^(Cadastrar plano|Salvar alterações)$", { last: true });
     await setField(b, "Prorrogar teste", "Adicionar dias", "3");
     await setField(b, "Prorrogar teste", "Motivo", "foco");
     await press(b, "Detail: extend the trial", "^Prorrogar teste$");
-    await setField(b, "Salvar termos", "Modalidade", "paid");
-    await setField(b, "Salvar termos", "Motivo da atribuição", "passando para pago");
-    await press(b, "Detail: assign terms (paid)", "Salvar termos e registrar auditoria");
-    await setField(b, "Emitir fatura manual", "Vencimento", iso(3));
-    await setField(b, "Emitir fatura manual", "Motivo", "fatura de foco");
-    await press(b, "Detail: issue the invoice", "^Emitir fatura$");
-    await setField(b, "Prorrogar vencimento", "Adicionar dias", "2");
-    await setField(b, "Prorrogar vencimento", "Motivo", "foco");
-    await press(b, "Detail: extend the due date", "^Prorrogar vencimento$");
+
+    // Marcar como pago: a keyboard user lands inside the dialog, Escape returns to the button, Confirm lands on the result.
+    const opened = await b.eval(`(()=>{const x=[...document.querySelectorAll('main button')].find(x=>/^Marcar como pago$/.test(x.textContent.trim())); if(!x) return false; x.focus(); return document.activeElement===x;})()`);
+    check("Detail: the pay button is focusable", opened);
+    await b.key("Enter"); await sleep(700);
+    check("Detail: the pay dialog takes focus", await b.eval(`!!document.activeElement && !!document.activeElement.closest('dialog[open]')`));
+    await b.key("Escape"); await sleep(500);
+    check("Detail: Escape closes the pay dialog and returns focus to its button", await b.eval(`!document.querySelector('dialog[open]') && /^Marcar como pago$/.test(document.activeElement?.textContent?.trim()||'')`));
+    await b.click("^Marcar como pago$"); await sleep(700);
+    await pressInDialog(b, "Detail: confirm the payment", "^Confirmar pagamento$");
+
+    await b.waitFor(`[...document.querySelectorAll('main button')].some(x=>/^Estornar$/.test(x.textContent.trim()))`, 15000);
+    await b.click("^Estornar$"); await sleep(700);
+    await setDialog(b, "Motivo", "foco do teclado");
+    await pressInDialog(b, "Detail: confirm the estorno", "^Estornar$");
+
     // invite resolution: confirm() is auto-accepted by the harness
     await setField(b, "Resolver código", "Código de 8 caracteres", "AB12CD34");
     await setField(b, "Resolver código", "Motivo para resolver", "foco");
     await press(b, "Detail: resolve an invite code", "Resolver código");
-    await press(b, "Detail: register the payment", "Registrar pagamento");
   }
 } catch (e) { check("detail scenario ran", false, e.message); } finally { b.close(); }
 

@@ -13,8 +13,7 @@ export interface PlatformBillingTerms {
   extraStudentMonthlyCents: number;
   /** Maximum unused, unrevoked, unexpired invite codes allowed at the same time on the site. */
   maxActiveInviteCodes: number;
-  /** Maximum linked students plus pending invite reservations while on trial. */
-  trialMaxStudentSeats: number;
+  /** Days of free, uncapped trial a new account gets; 0 means no trial (§35: charging starts after it). */
   trialDurationDays: number;
 }
 
@@ -39,6 +38,8 @@ export interface PlatformTrainerTermsSnapshot extends PlatformBillingTerms {
   snapshotVersion: number;
   templateId: string;
   templateVersion: number;
+  /** The plan's name when the terms were copied; absent on snapshots written before §35. */
+  planName?: string;
 }
 
 /**
@@ -55,11 +56,11 @@ export function snapshotPlatformTrainerTerms(
     includedStudentSeats: overrides.includedStudentSeats ?? template.includedStudentSeats,
     extraStudentMonthlyCents: overrides.extraStudentMonthlyCents ?? template.extraStudentMonthlyCents,
     maxActiveInviteCodes: overrides.maxActiveInviteCodes ?? template.maxActiveInviteCodes,
-    trialMaxStudentSeats: overrides.trialMaxStudentSeats ?? template.trialMaxStudentSeats,
     trialDurationDays: overrides.trialDurationDays ?? template.trialDurationDays,
     snapshotVersion,
     templateId: template.id,
     templateVersion: template.version,
+    planName: template.name,
   };
 }
 
@@ -73,36 +74,23 @@ export function effectivePlatformMonthlyAmountCents(
 }
 
 export interface PlatformInviteCapacity {
-  terms: Pick<PlatformBillingTerms, "maxActiveInviteCodes" | "trialMaxStudentSeats">;
-  /** Accounts already linked to this trainer. */
-  linkedStudentSeats: number;
-  /** Seats held by unclaimed invites that count toward the trial's student limit. */
-  pendingInviteReservations: number;
+  terms: Pick<PlatformBillingTerms, "maxActiveInviteCodes">;
   /** Active codes currently owned by this trainer, including codes made outside the site. */
   activeInviteCodes: number;
-  isTrial: boolean;
 }
 
 export type PlatformInviteDecision =
   | { allowed: true }
-  | { allowed: false; reason: "active_invite_code_limit" | "trial_student_seat_limit" };
+  | { allowed: false; reason: "active_invite_code_limit" };
 
 /**
- * Decides whether the site may issue one more invite code. Paid trainers can add students above
- * included seats (the extra-student price applies); during trial, linked seats and pending seat
- * reservations share the trial cap. Active code count is a separate simultaneous-code limit.
+ * Decides whether the site may issue one more invite code. The only limit is the simultaneous
+ * active-code count (§35: a trial has no student cap); a student above the included seats is
+ * allowed and carries the extra-student price.
  */
 export function canCreatePlatformInvite(input: PlatformInviteCapacity): PlatformInviteDecision {
   if (input.activeInviteCodes >= input.terms.maxActiveInviteCodes) {
     return { allowed: false, reason: "active_invite_code_limit" };
   }
-
-  if (
-    input.isTrial &&
-    input.linkedStudentSeats + input.pendingInviteReservations >= input.terms.trialMaxStudentSeats
-  ) {
-    return { allowed: false, reason: "trial_student_seat_limit" };
-  }
-
   return { allowed: true };
 }

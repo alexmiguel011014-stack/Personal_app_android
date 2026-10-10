@@ -1,4 +1,5 @@
 import { addDays, localDate, yearMonth } from "./dates";
+import { mensalidadeStateName, type MensalidadeState } from "./mensalidades";
 import type { TrainerActivity, TrainerStats, TrainerUser } from "../data/converters";
 
 export const OVERDUE_ALERT_CENTS = 10_000;
@@ -20,6 +21,8 @@ export interface TrainerRow {
   statsUpdatedAt: number;
   stale: boolean;
   stats: TrainerStats | null;
+  /** The platform plan and where the personal stands with it (GOALS.md §35); absent when not loaded. */
+  billing?: { planName: string | null; state: MensalidadeState; label?: string };
 }
 
 export function usageStatus(lastSeenAt: number | null, nowMs: number): UsageStatus {
@@ -64,6 +67,7 @@ export function trainerRow(
   activities: readonly TrainerActivity[],
   nowMs: number,
   timeZone: string,
+  billing?: TrainerRow["billing"],
 ): TrainerRow {
   const lastSeenAt = stats?.lastSeenAt ?? null;
   const activePlans = stats?.billing.activePlans ?? 0;
@@ -84,6 +88,7 @@ export function trainerRow(
     statsUpdatedAt: updatedAt,
     stale: stats === null || isStale(updatedAt, nowMs),
     stats,
+    ...(billing ? { billing } : {}),
   };
 }
 
@@ -94,7 +99,7 @@ function csvCell(value: string | number): string {
 }
 
 export function trainersCsv(rows: readonly TrainerRow[]): string {
-  const headers = ["Nome", "E-mail", "Status", "Uso", "Ações em 30 dias", "Dias ativos em 30 dias", "Planos ativos", "Ticket médio (centavos)", "Taxa de recebimento"];
+  const headers = ["Nome", "E-mail", "Status", "Uso", "Ações em 30 dias", "Dias ativos em 30 dias", "Planos ativos", "Ticket médio (centavos)", "Taxa de recebimento", "Plano da plataforma", "Mensalidade da plataforma"];
   const lines = [headers, ...rows.map((row) => [
     row.name,
     row.email,
@@ -105,6 +110,8 @@ export function trainersCsv(rows: readonly TrainerRow[]): string {
     row.activePlans,
     row.averageTicketCents ?? "",
     row.collectionRate ?? "",
+    row.billing?.planName ?? "",
+    row.billing ? mensalidadeStateName(row.billing.state) : "",
   ])];
   return lines.map((line) => line.map(csvCell).join(",")).join("\r\n");
 }

@@ -201,10 +201,26 @@ PNG or WebP up to 2 MiB. Keep initials as fallback. `firebase.json` configures t
 on port 9199. Production bucket/plan/App Check setup and deployment of reviewed rules are owner-run
 manual gates; never enable Blaze or publish rules automatically.
 
-**Platform subscriptions and website invite capacity (§30).** Platform terms, invoices and payment
-records are separate from `billingPlans`/`payments`, which are what a trainer charges their own
-students. ADM plan templates/defaults live at `/admin/planos`; trainer terms, trial, invoice/payment,
-extensions, and manual invite resolution by code are in the trainer's admin detail. That ADM screen
+**Platform subscriptions and website invite capacity (§30, reshaped by §35).** What a trainer pays the
+platform is separate from `billingPlans`/`payments`, which are what a trainer charges their own
+students. ADM **plans** live at `/admin/planos` ("Modelos de plano": name, mensalidade, included students,
+extra per student, max simultaneous active invite codes, trial days — no reason box, no default-trial
+card, no trial student cap). The **Mensalidades** tab (`/admin/mensalidades`) lists every personal as
+`sem_plano / aguardando / teste / em_dia / vence_breve / atrasado` with the days left
+(`domain/mensalidades.ts`, `DUE_SOON_DAYS = 5`; the states are derived from the same
+`users/{uid}.platformBillingStatus/Until` the access gate reads, so the list cannot disagree with who gets in).
+A plan with trial days opens an uncapped free trial (a payment made during it counts from its end); a plan
+with 0 trial days leaves the account `pending` — locked — until the first payment; a trainer never gets a
+second trial. **"Marcar como pago"** (a dialog: amount pre-filled from the plan and the linked students,
+optional reference, the date the access will run through) writes an append-only ledger entry in
+`platformPayments`, moves the trainer to `current` through one calendar month after the current expiry (or
+after today when it already lapsed), flips a trial subscription to `paid`, and appends the `payment.record`
+audit entry — all in one transaction the Rules tie together; **Estornar** undoes the latest payment only,
+while the expiry is still the one it set. This works on the Spark plan (no Cloud Function). The old
+invoice flow (`issuePlatformInvoice`/`getPlatformBillingUsage` callables, `platformInvoices`) stays in
+`functions/`, the Rules and the data layer, **dormant** for a future Blaze decision; its ADM UI is gone and
+a trainer still reads legacy invoices read-only. `platformBillingConfig/trialDefaults` is retired (Rules deny
+it). Trial extension and manual invite resolution by code remain in the trainer's admin detail. That ADM screen
 does not list invitation documents or show their exact count because those documents contain
 student contact and health fields; the ADM asks the trainer for a code and records a reason to
 resolve it. A privacy-safe exact ADM count still needs an aggregate/backend design. Trainer student
@@ -343,7 +359,8 @@ Never publish a copy without diffing it against what's live.
 and every set is kept byte for byte as `firestore-rules/versions/vN.rules` (v3 is what was live on 2026-10-05).
 Work that changes the rules bumps N by one for the whole unpublished set — **v4** carried the
 account/plan/billing rules (§29–§30) and the spent-invite read restriction (§31b), **v5** adds the 60-day own-name
-rule (§29g), **v6** adds the gated `appData/exerciseCatalog` document (§33) — and adds `vN.rules`
+rule (§29g), **v6** adds the gated `appData/exerciseCatalog` document (§33), **v7** adds the `platformPayments`
+ledger and retires `platformBillingConfig` and the template's trial student cap (§35) — and adds `vN.rules`
 in the same PR, identical to `firestore.rules`. Until the trainer publishes it, a candidate may still change:
 edit both files together (`cp firestore.rules firestore-rules/versions/vN.rules`) and keep them identical.
 Once a version is published its file is frozen: later changes start the next number. `npm run check:rules-version`

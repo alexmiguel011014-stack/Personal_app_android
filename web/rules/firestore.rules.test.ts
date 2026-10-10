@@ -105,7 +105,6 @@ function platformSubscription(trainerUid: string, mode: "paid" | "trial" = "paid
       includedStudentSeats: 10,
       extraStudentMonthlyCents: 500,
       maxActiveInviteCodes: 5,
-      trialMaxStudentSeats: 2,
       trialDurationDays: 14,
       snapshotVersion: 1,
       templateId: "basic",
@@ -693,7 +692,7 @@ describe("billing lock and ADM recovery", () => {
     await assertFails(as(TRAINER_A).doc("platformInvoices/fake").set({ trainerUid: TRAINER_A, status: "paid" }));
   });
 
-  it("allows only ADM to write defaults, denies direct invoice creation, and validates invoice updates", async () => {
+  it("allows only ADM to write plan templates, denies direct invoice creation, and validates invoice updates", async () => {
     const admin = as("adminA");
     await seed(async (db) => {
       await db.doc(`users/${TRAINER_A}`).set({ role: "TRAINER", platformBillingStatus: "current", platformBillingUntil: null }, { merge: true });
@@ -702,7 +701,7 @@ describe("billing lock and ADM recovery", () => {
     const templateRef = admin.doc("platformPlanTemplates/basic");
     const template = {
       name: "Básico", monthlyBaseCents: 10000, includedStudentSeats: 10, extraStudentMonthlyCents: 500,
-      maxActiveInviteCodes: 5, trialMaxStudentSeats: 2, trialDurationDays: 14, version: 1,
+      maxActiveInviteCodes: 5, trialDurationDays: 14, version: 1,
     };
     await assertFails(templateRef.set(template));
     const planCreate = admin.batch();
@@ -721,27 +720,8 @@ describe("billing lock and ADM recovery", () => {
     await assertSucceeds(planUpdate.commit());
     await assertFails(as(TRAINER_A).doc("platformPlanTemplates/trainer-plan").set({
       name: "Falso", monthlyBaseCents: 0, includedStudentSeats: 0, extraStudentMonthlyCents: 0,
-      maxActiveInviteCodes: 0, trialMaxStudentSeats: 0, trialDurationDays: 0, version: 1,
+      maxActiveInviteCodes: 0, trialDurationDays: 0, version: 1,
     }));
-    const defaultsRef = admin.doc("platformBillingConfig/trialDefaults");
-    const defaults = {
-      trialMaxStudentSeats: 2, trialDurationDays: 14, defaultPlanTemplateId: "basic", version: 1,
-    };
-    await assertFails(defaultsRef.set(defaults));
-    const defaultsCreate = admin.batch();
-    defaultsCreate.set(defaultsRef, { ...defaults, lastAuditId: "defaults-create" });
-    defaultsCreate.set(admin.doc("adminAudit/defaults-create"), {
-      at: 1, adminUid: "adminA", action: "platform.defaults.update", targetUid: "platformBillingConfig/trialDefaults",
-      note: "Criar padrões", defaultsVersion: 1, defaultPlanTemplateId: "basic",
-    });
-    await assertSucceeds(defaultsCreate.commit());
-    const defaultsUpdate = admin.batch();
-    defaultsUpdate.update(defaultsRef, { trialDurationDays: 21, version: 2, lastAuditId: "defaults-update" });
-    defaultsUpdate.set(admin.doc("adminAudit/defaults-update"), {
-      at: 2, adminUid: "adminA", action: "platform.defaults.update", targetUid: "platformBillingConfig/trialDefaults",
-      note: "Atualizar padrões", defaultsVersion: 2, defaultPlanTemplateId: "basic",
-    });
-    await assertSucceeds(defaultsUpdate.commit());
     await seed(async (db) => {
       await db.doc("adminAudit/replayed-plan-create").set({
         at: 3, adminUid: "adminA", action: "platform.plan.create", targetUid: "replayed-plan",
@@ -751,10 +731,6 @@ describe("billing lock and ADM recovery", () => {
         at: 3, adminUid: "adminA", action: "platform.plan.update", targetUid: "basic",
         note: "Evento já utilizado", templateId: "basic", templateVersion: 3,
       });
-      await db.doc("adminAudit/replayed-defaults-update").set({
-        at: 3, adminUid: "adminA", action: "platform.defaults.update", targetUid: "platformBillingConfig/trialDefaults",
-        note: "Evento já utilizado", defaultsVersion: 3, defaultPlanTemplateId: "basic",
-      });
     });
     const replayCreate = admin.batch();
     replayCreate.set(admin.doc("platformPlanTemplates/replayed-plan"), { ...template, lastAuditId: "replayed-plan-create" });
@@ -762,9 +738,6 @@ describe("billing lock and ADM recovery", () => {
     const replayUpdate = admin.batch();
     replayUpdate.update(templateRef, { monthlyBaseCents: 12000, version: 3, lastAuditId: "replayed-plan-update" });
     await assertFails(replayUpdate.commit());
-    const replayDefaults = admin.batch();
-    replayDefaults.update(defaultsRef, { version: 3, lastAuditId: "replayed-defaults-update" });
-    await assertFails(replayDefaults.commit());
     const invoice = {
       id: `${TRAINER_A}_2026-10`, trainerUid: TRAINER_A, period: "2026-10", dueDate: "2026-10-31",
       linkedStudentSeats: 3, reservedInviteSeats: 2, billableStudentSeats: 5,
@@ -1633,5 +1606,242 @@ describe("the exercise catalog document (rules v6)", () => {
 
   it.each(malformed)("the ADM cannot publish a malformed document: %s", async (_label, data) => {
     await assertFails(as("adminA").doc(PATH).set(data));
+  });
+});
+
+// GOALS.md §35: the payment ledger. Each case below was written to fail against rules v6 (no platformPayments match,
+// no payment.record / payment.void audit action) — run `RULES_FILE=<copy of v6> npm run test:rules` to see it.
+describe("platform payment ledger", () => {
+  const DAY = 86_400_000;
+  const PAYMENT_ID = "pay1";
+  let now = 0;
+
+  type PaymentOptions = {
+    paymentId?: string;
+    trainerUid?: string;
+    previousStatus?: "pending" | "trial" | "current" | "blocked";
+    previousUntil?: number | null;
+    previousMode?: "trial" | "paid";
+    newUntil?: number;
+    amountCents?: number;
+    userAfterStatus?: string;
+    userAfterUntil?: number;
+    flipMode?: boolean;
+    skipAudit?: boolean;
+    auditId?: string;
+  };
+
+  async function seedTrainer(trainerUid: string, status: "pending" | "trial" | "current" | "blocked", until: number | null, mode: "trial" | "paid") {
+    await seed(async (db) => {
+      await db.doc(`users/${trainerUid}`).set({ role: "TRAINER", platformBillingStatus: status, platformBillingUntil: until });
+      await db.doc(`platformSubscriptions/${trainerUid}`).set({
+        ...platformSubscription(trainerUid, mode, mode === "trial" ? now + 5 * DAY : null),
+        terms: { ...platformSubscription(trainerUid).terms, planName: "Básico" },
+      });
+    });
+  }
+
+  function paymentDoc(options: PaymentOptions, auditId: string) {
+    return {
+      id: options.paymentId ?? PAYMENT_ID,
+      trainerUid: options.trainerUid ?? TRAINER_A,
+      paidAt: now,
+      paidBy: "adminA",
+      amountCents: options.amountCents ?? 10_000,
+      paymentReference: null,
+      newUntil: options.newUntil ?? now + 30 * DAY,
+      paidThroughDate: "2026-11-09",
+      previousUntil: options.previousUntil ?? null,
+      previousStatus: options.previousStatus ?? "pending",
+      previousMode: options.previousMode ?? "paid",
+      planName: "Básico",
+      templateId: "basic",
+      templateVersion: 1,
+      snapshotVersion: 1,
+      voidedAt: null,
+      voidedBy: null,
+      lastAuditId: auditId,
+    };
+  }
+
+  /** What `recordPlatformPayment` writes in its transaction, as one commit the rules see. */
+  function recordBatch(db: Db, options: PaymentOptions = {}) {
+    const trainerUid = options.trainerUid ?? TRAINER_A;
+    const paymentId = options.paymentId ?? PAYMENT_ID;
+    const auditId = options.auditId ?? `audit-${paymentId}`;
+    const previousStatus = options.previousStatus ?? "pending";
+    const previousUntil = options.previousUntil ?? null;
+    const newUntil = options.newUntil ?? now + 30 * DAY;
+    const batch = db.batch();
+    batch.set(db.doc(`platformPayments/${paymentId}`), paymentDoc(options, auditId));
+    if (options.flipMode ?? options.previousMode === "trial") {
+      batch.update(db.doc(`platformSubscriptions/${trainerUid}`), { mode: "paid", updatedAt: now, lastAuditId: auditId });
+    }
+    batch.update(db.doc(`users/${trainerUid}`), {
+      platformBillingStatus: options.userAfterStatus ?? "current",
+      platformBillingUntil: options.userAfterUntil ?? newUntil,
+      lastAuditId: auditId,
+    });
+    if (!options.skipAudit) {
+      batch.set(db.doc(`adminAudit/${auditId}`), {
+        at: now, adminUid: "adminA", action: "payment.record", targetUid: trainerUid, note: "Pagamento da mensalidade registrado",
+        paymentId, amountCents: options.amountCents ?? 10_000, paymentReference: null, paidThroughDate: "2026-11-09",
+        billingFromStatus: previousStatus, billingFromUntil: previousUntil, billingToStatus: "current", billingToUntil: newUntil,
+      });
+    }
+    return batch;
+  }
+
+  beforeEach(() => { now = Date.now(); });
+
+  it("lets the ADM record a payment that opens a locked trainer, tied to its audit entry", async () => {
+    await seedTrainer(TRAINER_A, "pending", null, "paid");
+    await assertSucceeds(recordBatch(as("adminA")).commit());
+    expect((await as("adminA").doc(`users/${TRAINER_A}`).get()).data()).toMatchObject({ platformBillingStatus: "current" });
+  });
+
+  it("turns a trial subscription into a paid one with the first payment, and refuses the payment without that change", async () => {
+    await seedTrainer(TRAINER_A, "trial", now + 5 * DAY, "trial");
+    const trial = { previousStatus: "trial" as const, previousUntil: now + 5 * DAY, previousMode: "trial" as const, newUntil: now + 35 * DAY };
+    await assertFails(recordBatch(as("adminA"), { ...trial, flipMode: false }).commit());
+    await assertSucceeds(recordBatch(as("adminA"), trial).commit());
+    expect((await as("adminA").doc(`platformSubscriptions/${TRAINER_A}`).get()).data()).toMatchObject({ mode: "paid" });
+  });
+
+  it("denies a payment from a trainer, a student, an anonymous caller, or without its audit entry", async () => {
+    await seedTrainer(TRAINER_A, "pending", null, "paid");
+    await assertFails(recordBatch(as(TRAINER_A)).commit());
+    await assertFails(recordBatch(as(STUDENT_A)).commit());
+    await assertFails(recordBatch(anonymous()).commit());
+    await assertFails(recordBatch(as("adminA"), { skipAudit: true }).commit());
+    expect((await as("adminA").doc(`users/${TRAINER_A}`).get()).data()).toMatchObject({ platformBillingStatus: "pending" });
+  });
+
+  it("denies a payment that does not leave the trainer current through the new expiry", async () => {
+    await seedTrainer(TRAINER_A, "pending", null, "paid");
+    await assertFails(recordBatch(as("adminA"), { userAfterUntil: now + 90 * DAY }).commit());
+    await assertFails(recordBatch(as("adminA"), { userAfterStatus: "trial" }).commit());
+    await assertFails(recordBatch(as("adminA"), { newUntil: now - DAY }).commit());
+    await assertFails(recordBatch(as("adminA"), { amountCents: -1 }).commit());
+    await assertFails(recordBatch(as("adminA"), { previousStatus: "blocked" }).commit());
+    await assertFails(recordBatch(as("adminA"), { previousMode: "trial" }).commit());
+  });
+
+  it("denies a payment for a user who is not a trainer or has no subscription", async () => {
+    await seed(async (db) => {
+      await db.doc("users/studentOnly").set({ role: "STUDENT", platformBillingStatus: "pending", platformBillingUntil: null });
+      await db.doc("users/noSubscription").set({ role: "TRAINER", platformBillingStatus: "pending", platformBillingUntil: null });
+    });
+    await assertFails(recordBatch(as("adminA"), { trainerUid: "studentOnly" }).commit());
+    await assertFails(recordBatch(as("adminA"), { trainerUid: "noSubscription" }).commit());
+  });
+
+  it("lets a trainer read only their own payments, and nobody list the ledger", async () => {
+    await seedTrainer(TRAINER_A, "current", now + 30 * DAY, "paid");
+    await seed(async (db) => {
+      await db.doc("platformPayments/mine").set(paymentDoc({ paymentId: "mine" }, "a1"));
+      await db.doc("platformPayments/theirs").set(paymentDoc({ paymentId: "theirs", trainerUid: TRAINER_B }, "a2"));
+    });
+    await assertSucceeds(as(TRAINER_A).doc("platformPayments/mine").get());
+    await assertFails(as(TRAINER_A).doc("platformPayments/theirs").get());
+    await assertSucceeds(as(TRAINER_A).collection("platformPayments").where("trainerUid", "==", TRAINER_A).get());
+    await assertFails(as(TRAINER_A).collection("platformPayments").get());
+    await assertFails(as(STUDENT_A).doc("platformPayments/mine").get());
+    await assertSucceeds(as("adminA").collection("platformPayments").get());
+  });
+
+  it("never lets anyone edit or delete a payment outside a void", async () => {
+    await seedTrainer(TRAINER_A, "current", now + 30 * DAY, "paid");
+    await seed((db) => db.doc(`platformPayments/${PAYMENT_ID}`).set(paymentDoc({ newUntil: now + 30 * DAY }, "a1")));
+    await assertFails(as("adminA").doc(`platformPayments/${PAYMENT_ID}`).update({ amountCents: 1 }));
+    await assertFails(as("adminA").doc(`platformPayments/${PAYMENT_ID}`).delete());
+    await assertFails(as(TRAINER_A).doc(`platformPayments/${PAYMENT_ID}`).update({ amountCents: 1 }));
+  });
+
+  describe("voiding", () => {
+    function voidBatch(db: Db, options: { auditId?: string; previousStatus?: string; previousUntil?: number | null; restoreMode?: boolean; skipAudit?: boolean } = {}) {
+      const auditId = options.auditId ?? "audit-void";
+      const previousStatus = options.previousStatus ?? "pending";
+      const previousUntil = options.previousUntil === undefined ? null : options.previousUntil;
+      const batch = db.batch();
+      batch.update(db.doc(`platformPayments/${PAYMENT_ID}`), { voidedAt: now, voidedBy: "adminA", lastAuditId: auditId });
+      if (options.restoreMode) batch.update(db.doc(`platformSubscriptions/${TRAINER_A}`), { mode: "trial", updatedAt: now, lastAuditId: auditId });
+      batch.update(db.doc(`users/${TRAINER_A}`), { platformBillingStatus: previousStatus, platformBillingUntil: previousUntil, lastAuditId: auditId });
+      if (!options.skipAudit) {
+        batch.set(db.doc(`adminAudit/${auditId}`), {
+          at: now, adminUid: "adminA", action: "payment.void", targetUid: TRAINER_A, note: "Registrado por engano",
+          paymentId: PAYMENT_ID, amountCents: 10_000,
+          billingFromStatus: "current", billingFromUntil: now + 30 * DAY, billingToStatus: previousStatus, billingToUntil: previousUntil,
+        });
+      }
+      return batch;
+    }
+
+    beforeEach(async () => {
+      await seedTrainer(TRAINER_A, "current", now + 30 * DAY, "paid");
+      await seed((db) => db.doc(`platformPayments/${PAYMENT_ID}`).set(paymentDoc({ newUntil: now + 30 * DAY }, "a1")));
+    });
+
+    it("restores the state before the payment, once, and only while its expiry is still the trainer's", async () => {
+      await assertFails(voidBatch(as(TRAINER_A)).commit());
+      await assertFails(voidBatch(as("adminA"), { skipAudit: true }).commit());
+      await assertFails(voidBatch(as("adminA"), { previousStatus: "current" }).commit());
+      await assertSucceeds(voidBatch(as("adminA")).commit());
+      expect((await as("adminA").doc(`users/${TRAINER_A}`).get()).data()).toMatchObject({ platformBillingStatus: "pending", platformBillingUntil: null });
+      // already voided: a second void has nothing to restore
+      await seed((db) => db.doc(`users/${TRAINER_A}`).update({ platformBillingStatus: "current", platformBillingUntil: now + 30 * DAY }));
+      await assertFails(voidBatch(as("adminA"), { auditId: "audit-void-2" }).commit());
+    });
+
+    it("refuses a void once a later change moved the expiry", async () => {
+      await seed((db) => db.doc(`users/${TRAINER_A}`).update({ platformBillingUntil: now + 60 * DAY }));
+      await assertFails(voidBatch(as("adminA")).commit());
+    });
+
+    it("must turn a subscription that this payment made paid back into a trial", async () => {
+      await seed(async (db) => {
+        await db.doc(`platformPayments/${PAYMENT_ID}`).set(paymentDoc({ newUntil: now + 30 * DAY, previousMode: "trial", previousStatus: "trial", previousUntil: now + 5 * DAY }, "a1"));
+      });
+      await assertFails(voidBatch(as("adminA"), { previousStatus: "trial", previousUntil: now + 5 * DAY }).commit());
+      await assertSucceeds(voidBatch(as("adminA"), { previousStatus: "trial", previousUntil: now + 5 * DAY, restoreMode: true }).commit());
+    });
+  });
+});
+
+describe("retired trial defaults and the template shape (GOALS.md §35)", () => {
+  const baseTemplate = {
+    name: "Básico", monthlyBaseCents: 10000, includedStudentSeats: 10, extraStudentMonthlyCents: 500,
+    maxActiveInviteCodes: 5, trialDurationDays: 14, version: 1,
+  };
+
+  function createTemplate(db: Db, data: Record<string, unknown>) {
+    const batch = db.batch();
+    batch.set(db.doc("platformPlanTemplates/shape"), { ...data, lastAuditId: "shape-create" });
+    batch.set(db.doc("adminAudit/shape-create"), {
+      at: 1, adminUid: "adminA", action: "platform.plan.create", targetUid: "shape", note: "Plano criado",
+      templateId: "shape", templateVersion: 1,
+    });
+    return batch.commit();
+  }
+
+  it("accepts a template with exactly the six plan fields and rejects the removed trial student cap", async () => {
+    await assertFails(createTemplate(as("adminA"), { ...baseTemplate, trialMaxStudentSeats: 2 }));
+    await assertFails(createTemplate(as("adminA"), without(baseTemplate, "trialDurationDays")));
+    await assertSucceeds(createTemplate(as("adminA"), baseTemplate));
+  });
+
+  it("denies every read and write of the old default-trial document, even to the ADM", async () => {
+    await seed((db) => db.doc("platformBillingConfig/trialDefaults").set({ trialMaxStudentSeats: 2, trialDurationDays: 14, defaultPlanTemplateId: null, version: 1 }));
+    await assertFails(as("adminA").doc("platformBillingConfig/trialDefaults").get());
+    await assertFails(as("adminA").doc("platformBillingConfig/trialDefaults").update({ version: 2 }));
+    await assertFails(as("adminA").doc("platformBillingConfig/other").set({ version: 1 }));
+    await assertFails(as(TRAINER_A).doc("platformBillingConfig/trialDefaults").get());
+  });
+
+  it("no longer accepts the platform.defaults.update audit action", async () => {
+    await assertFails(as("adminA").doc("adminAudit/defaults-gone").set({
+      at: 1, adminUid: "adminA", action: "platform.defaults.update", targetUid: "platformBillingConfig/trialDefaults",
+      note: "Padrões", defaultsVersion: 1, defaultPlanTemplateId: null,
+    }));
   });
 });

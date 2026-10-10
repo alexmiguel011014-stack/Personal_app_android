@@ -34,6 +34,8 @@ const auditNames: Record<string, string> = {
   "invoice.payment": "Pagamento registrado",
   "invoice.extend": "Vencimento prorrogado",
   "trial.extend": "Teste prorrogado",
+  "payment.record": "Pagamento da mensalidade registrado",
+  "payment.void": "Pagamento estornado",
 };
 const activityLabels: Record<ActivityKind, string> = {
   login: "Entradas",
@@ -150,7 +152,7 @@ export default function TrainerDetail({ trainerId }: { trainerId: string }) {
         {auditWarning && <p role="alert">{auditWarning}</p>}
       </section>
       <section className="panel"><h2>Alunos vinculados</h2><p><strong>{linked ?? "Ainda sem dados"}</strong> ativos vinculados agora · {stats?.students.linked ?? "Ainda sem dados"} informado no último resumo.</p></section>
-      <PlatformSubscriptionPanel trainerUid={trainer.id} adminUid={adminUid} linkedStudentSeats={linked} accessStatus={trainer.accessStatus} billingStatus={trainer.platformBillingStatus ?? null} billingUntil={trainer.platformBillingUntil ?? null} canManage={canManage} />
+      <PlatformSubscriptionPanel trainerUid={trainer.id} trainerName={trainer.name || trainer.email} adminUid={adminUid} accessStatus={trainer.accessStatus} billingStatus={trainer.platformBillingStatus ?? null} billingUntil={trainer.platformBillingUntil ?? null} canManage={canManage} />
       <AdminCreateStudentRecovery trainerUid={trainer.id} trainerName={trainer.name || trainer.email || trainer.id} canManage={canManage} />
       <section className="panel"><h2>Atividade recente</h2>
         {activities.length === 0 ? <Empty>Ainda sem dados de atividade.</Empty> : <>

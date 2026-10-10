@@ -16,7 +16,6 @@ interface TermsSnapshot {
   includedStudentSeats: number;
   extraStudentMonthlyCents: number;
   maxActiveInviteCodes: number;
-  trialMaxStudentSeats: number;
   trialDurationDays: number;
   snapshotVersion: number;
   templateId: string;
@@ -72,7 +71,6 @@ function parseSubscription(trainerUid: string, raw: unknown): SubscriptionSnapsh
     includedStudentSeats: integer(rawTerms.includedStudentSeats, "Alunos incluídos"),
     extraStudentMonthlyCents: integer(rawTerms.extraStudentMonthlyCents, "Adicional por aluno"),
     maxActiveInviteCodes: integer(rawTerms.maxActiveInviteCodes, "Limite de convites"),
-    trialMaxStudentSeats: integer(rawTerms.trialMaxStudentSeats, "Limite de alunos no teste"),
     trialDurationDays: integer(rawTerms.trialDurationDays, "Duração do teste"),
     snapshotVersion: integer(rawTerms.snapshotVersion, "Versão dos termos", false),
     templateId: text(rawTerms.templateId, "Modelo da assinatura"),

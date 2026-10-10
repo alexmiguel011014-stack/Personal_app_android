@@ -5588,6 +5588,8 @@ The web app is static and currently writes invites directly to Firestore. The si
 
 **Invite-expiry decision (2026-10-01):** new Web-created invite codes do not expire automatically (`expiresAt: null`); the trainer cancels them manually, and the ADM can resolve an unused legacy invite. A legacy invite with no `expiresAt` remains active until the ADM resolves it. For compatibility, records that already have a numeric `expiresAt` retain their time-based active/expired behavior, including domain tests; this does not add expiry to new invites. Do not describe the Web-created codes as expiring.
 
+> **Superseded in part by §35 (2026-10-09):** the ADM "defaults" card and `platformBillingConfig/trialDefaults` (30a), the trial student cap, the manual-invoice **UI** and the "charge during trial" checkbox (30b/30c) are replaced by plans with a trial-days field and a payment ledger (`platformPayments`) under "Mensalidades". Everything else here stays.
+
 Suggested: gpt-6-astra · xhigh — plan selection affects financial records, access rules, and concurrent website invitation quotas.
 
 ```mermaid
@@ -6921,6 +6923,228 @@ Suggested: haiku · low — documentation so the new rules are findable and the 
 single screen that starts with the "Prompt de formatação de ficha" card and asks for the ficha's name and each treino's name, creates a third and sees the oldest go after a
 clear confirmation, edits and deletes (with "Esse processo não pode ser desfeito."), and the student sees both fichas under their names — proven by `e2e:fichas`, with
 §33's privacy test still green and Android and the Firestore rules untouched.
+
+## 35. Feature — ADM "Mensalidades": plans built from zero, a one-click "Pago", and who is in day / late (web)
+(2026-10-09, via `/newgoal`)
+
+**The request (owner, Portuguese, with three screenshots of `/admin/planos`):** the ADM screen has no visible way to mark a personal as paid — make it
+obvious. Add a **Mensalidades** section that monitors who has a plan, who has none, who is up to date and who is not. Remove image 1 ("Padrão do teste
+grátis" — *"prefiro cadastrar a modalidade manualmente"*); keep only **Modelos de plano**. Remove the **"Motivo da alteração"** fields (image 2). In the
+new-plan form drop **"Máximo de alunos durante o teste"** (image 3). Build the plan from zero: **name, mensalidade, alunos incluídos, adicional mensal por
+aluno excedente, máximo de códigos de convite ativos ao mesmo tempo, período de teste** (0 = no trial; N days = open trial, *"a cobrança vai para o próximo
+mês"*). Every plan is paid: each personal shows **"plano cadastrado"** with a **Pago** option and **how long is left until it expires**, in the Mensalidades tab.
+
+**Goal type: Feature** — a bounded change to an ADM console that works (§26, §30). Research is done (2026-10-09, reading `origin/main`'s `web/`, `functions/`,
+`firestore.rules`, §26/§30) and recorded below so nothing is looked up twice.
+
+**Supersedes in part §30:** 30a's "ADM defaults" card and `platformBillingConfig/trialDefaults`; the per-trial student cap (`trialMaxStudentSeats`); 30c's
+manual-invoice **UI** (emit invoice, extend due date) and the trial-with-charge checkbox. What §30 built and **stays**: plan templates and versioning, the
+per-trainer snapshot (`platformSubscriptions`), the billing gate (`users/{uid}.platformBillingStatus/Until` + `trainerBillingIsCurrent` + `RequireArea`), the
+active-invite-code cap, ADM student recovery, `adminAudit`, trial extension, invite resolution, and the invoice data/functions/rules (dormant, see 35-D3).
+
+### What the research found (so the plan does not rebuild it, and does not re-discover the traps)
+
+1. **"Marcar como pago" exists but cannot work on the owner's plan.** It is the last block of `/admin/personais/detalhe?id=…`
+   (`PlatformSubscriptionPanel.tsx`, "Registrar pagamento"), shown only for an *unpaid invoice*; invoices are created only by the `issuePlatformInvoice`
+   callable (`functions/src/index.ts`; rules: `platformInvoices` → `allow create: if false`), which needs **Blaze** — and the owner stayed on Spark (§3, §30h
+   "PENDING — needs Blaze"). So in production there is never an invoice, hence never a "Pago". The fix is a payment record the ADM's browser can write under
+   Rules, with no Cloud Function.
+2. **Every item in the screenshots lives in one file**, `web/src/app/admin/planos/page.tsx` ("Padrão do teste grátis" card, two "Motivo da alteração" inputs,
+   "Máximo de alunos durante o teste"). `trialMaxStudentSeats` is also in `domain/platformBilling.ts` (terms, `canCreatePlatformInvite`),
+   `data/platformPlans.ts`, `data/platformSubscriptions.ts` (parse + `TERM_KEYS`), `data/platformInvites.ts:177` (message), `app/app/alunos/detalhe/StudentDetail.tsx:335`,
+   `PlatformSubscriptionPanel.tsx`, `functions/src/index.ts:19,75`, `firestore.rules` `validTemplate` (`hasAll` — so the rules reject a template without it today),
+   and the tests (`platformBilling.test.ts`, `web/rules/firestore.rules.test.ts`, `platformFlows.test.ts`, `e2e/billing.mjs`).
+3. **Name collision to fix:** the ADM overview's "Resumo de mensalidades do mês" (Previsto/Recebido/Em atraso, `trainerStats.billing`) is what *trainers charge their
+   students* (§26). The new "Mensalidades" is what *trainers pay the platform*. The overview block gets renamed (35e) so the two are never confused.
+4. **The access gate is already built and must be fed, not replaced.** `trainerBillingIsCurrent` (rules) and `RequireArea` allow a trainer only when
+   `platformBillingStatus ∈ {trial, current}` and `platformBillingUntil` is null or in the future (`pending` and `blocked` are locked; legacy accounts with both fields
+   absent stay open). Every state below is a value of those two fields, so a time-based expiry needs **no scheduled job** — the rules compare to `request.time`.
+5. **Rules are versioned** (`// Rules version: N` + `firestore-rules/versions/vN.rules`, CLAUDE.md "Security rules"); `adminAudit` has a strict per-action schema, so a new
+   audit action means a rules branch **and** a rules test. ADM reads of `users` (role == TRAINER) and `platformSubscriptions` (whole collection) are already allowed.
+
+### Decisions (S = the owner said it; D = this plan decided it — flip any D before `/execgoals` if it is wrong)
+
+| # | Decision |
+|---|---|
+| S1 | The "Padrão do teste grátis" card goes away entirely; new personais stay without a plan until the ADM assigns one by hand. No "default plan" setting remains. |
+| S2 | No "Motivo da alteração" in the plan form. The audit entry still exists, with a fixed note (`Plano criado` / `Plano atualizado`). |
+| S3 | No student cap during a trial. A plan has exactly: name, monthly base (cents), included students, extra per student above included (cents), max simultaneous active invite codes, trial days. |
+| S4 | Trial days `0` = no trial. `N > 0` = open (uncapped, free) trial of N days; **charging starts after it** — a payment made during the trial is counted from the trial's end, not from today. |
+| D1 | **Payment adds one calendar month.** New expiry = (current expiry date if still in the future, else *today*) + 1 month, month-end clamped (31 Jan → 28/29 Feb), valid through 23:59:59.999 America/Sao_Paulo of that date (same `-03:00` convention as `dueDateDeadline`). Late payers restart from the payment day, not from the missed date. |
+| D2 | **No trial (0 days) ⇒ no access until the first payment.** Status `pending` (already locked by Rules and `RequireArea`). A trainer never gets a second free trial: the trial is granted only when the trainer has no earlier subscription (or one with `trialStartedAt == null`); re-assigning a plan afterwards changes terms only and leaves status and expiry untouched. |
+| D3 | **New append-only ledger `platformPayments`**, ADM-written from the browser (Spark-compatible). The invoice flow (`issuePlatformInvoice`, `getPlatformBillingUsage`, `platformInvoices`) stays in `functions/`/Rules/data layer **dormant** for a future Blaze decision; only its ADM *UI* is removed, and a trainer still reads legacy invoices read-only. |
+| D4 | The amount is what the ADM confirms in the dialog (**pre-filled** with base + extras for *linked* students; reserved invite seats are not readable by the ADM client under the privacy rules, so they are not counted). It is a record of what was received, not a computed invoice. |
+| D5 | A mistaken click is fixable: **Estornar** works on the most recent payment only, and only while the trainer's expiry still equals that payment's new expiry (so nothing later has changed it). It needs a reason (≤200). |
+| D6 | "Vence em breve" = ≤ **5** days left (`DUE_SOON_DAYS`, one constant). |
+| D7 | Reason inputs stay only on the discretionary actions that bend the rules: extend trial, resolve invite, estorno. Plan create/edit, plan assignment and "Marcar como pago" ask for none (fixed audit notes). |
+| D8 | Navigation: add **Mensalidades** (`/admin/mensalidades`); rename "Planos e padrões" → **Modelos de plano** (route `/admin/planos` unchanged). |
+| D9 | Accounts that predate §30 (no billing fields, no subscription) are **not** locked; the list shows them as "Sem plano · acesso liberado (conta anterior)". Nothing is applied retroactively (§30a). |
+
+**Not touched (explicit):** Android and iOS (source, invites); Blaze, Cloud Functions deployment, App Check config; payment gateway/PIX automation; e-mail/WhatsApp
+reminders; a scheduled blocking job; revenue dashboards; trainer-to-student billing (`billingPlans`, `payments`, `trainerStats.billing`, §26); deleting the old
+`platformBillingConfig/trialDefaults` document or any existing template/subscription/invoice data (old documents stay readable; they are rewritten only when edited).
+
+**Where this executes:** `web/` + `firestore.rules`/`firestore-rules/` + `web/rules/` tests + a small tolerance change in `functions/src/index.ts`, on a **new branch from `main`**
+(`feature/admin-mensalidades`). Commit each verified item; every commit leaves `npm test`, `npm run lint`, `npx tsc --noEmit`, `npm run build` green. PR only — never push, merge,
+publish rules or enable Blaze unasked. (This section was written on `main`; the old local `feature/kmp-web` branch carries an unrelated, older `GOALS.md`.)
+
+Suggested (whole plan): opus · high — money records + Rules; the UI-only modules below are marked lower.
+
+```mermaid
+flowchart TD
+  A[35a Pure rules: dates, states, payment maths] --> B[35b Rules + data layer: ledger, plan shape, assign semantics]
+  B --> C[35c Modelos de plano page cleanup]
+  B --> D[35d Mensalidades page + Marcar como pago]
+  D --> E[35e Trainer detail, directory badge, overview]
+  B --> F[35f Trainer side: conta + blocked copy]
+  C --> G[35g Verification: unit, rules, e2e, screenshots]
+  E --> G
+  F --> G
+  G --> H[35h Docs, registration, owner rollout]
+```
+
+**Progress (2026-10-09, via `/execgoals`):** everything the owner can verify without production is done and proven: `npm test` (502), `eslint`, `tsc`, `next build`, `check:leak`, `check:rules-version`, functions build, `npm run test:rules` (227 pass; 15 of them fail on the v6 rules, as they must), `e2e:mensalidades` (32/32), `e2e:admin-focus` (13/13), `e2e:account trainer` (56/56), plus screenshots.
+**Still open — only the two owner steps in 35h:** review and publish rules **v7** (diff v6 → v7 first; do it **before** deploying the site, or the new pages get "permission denied"), then try it with controlled accounts in production. Nothing was published, pushed, committed or deployed.
+**Two things the e2e found and fixed on the way:** a dialog mounted only while open dropped focus to <body> on close (`_shared/useRestoreFocus.ts`), and the trainer detail used the access state read when the page opened, so a second action was refused as "updated elsewhere" (`loadTrainerBilling`).
+
+### 35a. Pure rules first (no Firebase, fully unit-tested)
+
+Suggested: sonnet · high — small pure functions, but every later screen trusts them.
+
+- [x] `web/src/domain/dates.ts`: add `addMonths(date, months)` (month-end clamp; year roll; leap 29 Feb → 28 Feb next year) and `daysBetween(from, to)`; cases in `dates.test.ts`.
+      Done when: 31 Jan+1 → 28 Feb (29 in leap), 31 Dec+1 → 31 Jan next year, `daysBetween` is negative when `to` is earlier.
+      **Done (2026-10-09):** `addMonths` (clamp, year roll, leap day) and `daysBetween` added; `dates.test.ts` now 12 tests, all green.
+- [x] New `web/src/domain/mensalidades.ts` (+ `.test.ts`): `DUE_SOON_DAYS = 5`; `endOfDayDeadline(date)` (`T23:59:59.999-03:00`); `nextPaidThrough(now, currentUntil)` implementing D1;
+      `mensalidadeOf({ hasSubscription, mode, billingStatus, billingUntil, trialEndsAt, accessStatus }, now)` → `{ state, daysLeft | daysLate, expiresOn }` with `state ∈
+      sem_plano | aguardando | teste | em_dia | vence_breve | atrasado` (+ a `sem_vencimento` flag for a legacy `current` with `until == null`) and `sortRank` (atrasado, aguardando,
+      vence_breve, teste, em_dia, sem_plano); `mensalidadeLabel(...)` → "Em dia · vence em 12 dias", "Vence hoje", "Em atraso há 3 dias", "Em teste · 5 dias restantes",
+      "Aguardando pagamento", "Sem plano". Days are **calendar days in São Paulo** (expires today ⇒ "vence hoje", still allowed; the day after ⇒ "atraso há 1 dia").
+      Done when: tests cover each state, the boundaries (1 ms before/after expiry, last day, exactly `DUE_SOON_DAYS`), pending/blocked, a suspended account (state is still billing's; the badge is separate), the
+      legacy accounts of D9, and `nextPaidThrough` for trial-in-progress, current-in-future, expired, null and a month-end date.
+      **Done (2026-10-09):** `domain/mensalidades.ts` + `mensalidades.test.ts` (17 cases: every state, the last-valid-day and 1 ms boundaries, `DUE_SOON_DAYS`, trial-end/expired/null/month-end for `nextPaidThrough`, legacy accounts); `npm test` green.
+- [x] `web/src/domain/platformBilling.ts`: remove `trialMaxStudentSeats` from `PlatformBillingTerms`/`snapshotPlatformTrainerTerms`; add `planName` to the snapshot; `canCreatePlatformInvite` keeps only the
+      active-code cap (drop the `trial_student_seat_limit` reason); update `platformBilling.test.ts`. Done when: a trial trainer with many students can still issue codes up to `maxActiveInviteCodes`, and the old
+      trial-cap test is replaced by that one.
+      **Done (2026-10-09):** `trialMaxStudentSeats` removed from terms/snapshot, `planName` added, `canCreatePlatformInvite` keeps only the active-code cap (its caller in `data/platformInvites.ts` updated); the old trial-cap tests became "no trial student cap" tests.
+
+### 35b. Rules, ledger and data layer
+
+Suggested: opus · xhigh — Firestore Rules + money records; a mistake here is silent and hard to undo.
+
+- [x] **Ledger shape** `platformPayments/{autoId}`: `trainerUid, paidAt, paidBy, amountCents (int ≥ 0), paymentReference (null | ≤120), newUntil (int), paidThroughDate ("YYYY-MM-DD"), previousUntil (int|null),
+      previousStatus, previousMode, planName, templateId, templateVersion, snapshotVersion, voidedAt (null|int), voidedBy (null|string), lastAuditId`. Parser `parsePayment` in `data/platformSubscriptions.ts`.
+      **Done (2026-10-09):** `PlatformPayment` + `parsePayment` in `data/platformSubscriptions.ts`; exercised end to end by `rules/platformFlows.test.ts` (record, renewal, trial→paid, void).
+- [x] **Rules** (bump the version per CLAUDE.md — if v6 is still unpublished when this runs, edit v6 and its archive together; otherwise v7 — and keep `firestore-rules/versions/vN.rules` identical):
+      (1) `validTemplate`: drop `trialMaxStudentSeats` from `hasAll`/`hasOnly`; (2) `platformBillingConfig`: deny every create/update (and the `platform.defaults.update` audit branch goes);
+      (3) `validBillingAuditForUser` actions += `payment.record`, `payment.void`; (4) `validAudit` branches for both, with exact key sets (base + `paymentId, amountCents, paymentReference, paidThroughDate` + billing keys);
+      (5) `match /platformPayments/{id}`: `read` for the ADM or the owning trainer (own `trainerUid`; no unfiltered list for trainers); `create` only by the ADM with the audit linked, the user document ending at
+      `{platformBillingStatus: 'current', platformBillingUntil: newUntil}`, `newUntil > request.time`, and — when the subscription's `mode` was `trial` — that subscription ending as `paid`;
+      `update` only to void (`voidedAt/voidedBy/lastAuditId` from null) and only when `get(user).platformBillingUntil == newUntil` and the user ends at `previousStatus/previousUntil` (and the subscription mode restored if it flipped); `delete: false`.
+      Done when: the file validates in the emulator and `npm run check:rules-version` passes.
+      **Done (2026-10-09):** Rules **v7** (v6 may already be published, so a new number, not an edit): `firestore.rules` + `firestore-rules/versions/v7.rules`, `npm run check:rules-version` OK, and the whole suite runs against the emulator. Added: `platformPayments`, audit actions `payment.record`/`payment.void`, the subscription mode flip; changed: `validTemplate` (no `trialMaxStudentSeats`); retired: `platformBillingConfig` and `platform.defaults.update`.
+- [x] **Rules tests** (`web/rules/firestore.rules.test.ts`, `platformFlows.test.ts`), each "denies" test **seen failing against the previous rules** (`RULES_FILE=<previous copy> npm run test:rules`): ADM records a payment (trial→paid and renewal) and the
+      trainer's gate reopens; trainer, student, anonymous and a forged ADM write without the audit are denied; negative amount, `newUntil` in the past, double void, void after a later payment, and a trainer reading another trainer's payments are denied;
+      a template with `trialMaxStudentSeats` is rejected and one without it accepted; every write to `platformBillingConfig` is denied; a trainer still cannot write its own `platformBillingStatus/Until`.
+      **Done (2026-10-09):** `npm run test:rules` on JDK 21: **6 files, 227 tests pass**. Against the v6 file (`RULES_FILE=firestore-rules/versions/v6.rules`) **15 of them fail** — every positive ledger/template test and the retired-defaults test — proving they discriminate. The pure "denies X" cases (trainer/student/anonymous, missing audit…) pass on v6 too, as `assertFails` always does; they guard the new rules, they do not prove the difference.
+- [x] `data/platformPlans.ts`: delete the trial-defaults API (`loadPlatformTrialDefaults`, `savePlatformTrialDefaults`, their types and `DEFAULTS_DOCUMENT`); `createPlatformPlanTemplate`/`updatePlatformPlanTemplate` lose the reason argument and write the fixed notes;
+      the template parser ignores a leftover `trialMaxStudentSeats` on old documents and the writer always drops it.
+      **Done (2026-10-09):** defaults API and reason arguments removed; the parser ignores the old `trialMaxStudentSeats` and the next save drops it (asserted in `platformFlows.test.ts`).
+- [x] `data/platformSubscriptions.ts`: remove `applyPlatformDefaultsToNewTrainer` and its callers (`data/admin.ts` ×2, `app/admin/personais/novo/page.tsx`; the "new personal" flow now ends with "defina o plano em Mensalidades");
+      remove `trialMaxStudentSeats` from `TERM_KEYS`/parsers (old snapshots still parse); `assignPlatformSubscription` implements D2 (first assignment: trial days > 0 ⇒ `trial` + `trialEndsAt`, else `paid` + status `pending`; later assignments keep status/expiry),
+      never sets `chargeDuringTrial: true` (field kept as `false` so the existing rules shape does not change) and takes no reason; add `loadAllPlatformSubscriptions(db)`, `recordPlatformPayment(db, adminUid, trainerUid, { amountCents, reference })`
+      (one transaction: read user + subscription, **abort if `platformBillingUntil` changed since the screen loaded**, write payment + user + audit [+ subscription mode flip]), `voidPlatformPayment(db, adminUid, paymentId, reason)`,
+      `loadPlatformPayments(db)` (`orderBy paidAt desc`, `limit 500`, single-field order so no composite index) and `loadTrainerPlatformPayments(db, uid)`.
+      **Done (2026-10-09):** callers gone (`data/admin.ts` ×2, the new-personal page and the requests page now say "cadastre o plano em Mensalidades"); `assignPlatformSubscription` implements D2, `recordPlatformPayment`/`voidPlatformPayment` implement D1/D5 incl. the stale-screen guard — all covered by `platformFlows.test.ts` and `e2e/mensalidades.mjs`.
+- [x] `functions/src/index.ts`: `trialMaxStudentSeats` becomes optional in `SubscriptionSnapshot`/`parseSubscription` so a new snapshot does not make the dormant callables throw; `npm --prefix functions run build` stays green.
+      **Done (2026-10-09):** the field is dropped from the snapshot type and parser; `npm --prefix functions run build` is green.
+- [x] `data/platformInvites.ts:177` and `StudentDetail.tsx:335`: remove the trial student-cap message and the "Vagas reservadas no teste" row (the active-code count stays).
+      Done when: a trial trainer's invite form shows only "códigos ativos X/Y".
+      **Done (2026-10-09):** the trial-cap message and the "Vagas reservadas no teste" row are gone; `tsc`, `eslint` and `next build` are green (not yet exercised in a browser — covered by 35g).
+
+### 35c. "Modelos de plano" page (`/admin/planos`)
+
+Suggested: sonnet · medium — mostly deletions and one rewritten form.
+
+- [x] `app/admin/planos/page.tsx`: delete the "Padrão do teste grátis" card and every `trialDraft`/`defaultsReason`/`planReason` state; heading becomes "Modelos de plano" ("Crie os planos que você atribui a cada personal. Valores em reais; cada edição cria uma nova versão.").
+      **Done (2026-10-09):** page rewritten as "Modelos de plano"; `e2e/mensalidades.mjs` asserts the card, the reason box and the trial cap are gone.
+- [x] New/edit form with exactly: **Nome do plano**, **Mensalidade (R$)**, **Alunos incluídos**, **Adicional mensal por aluno excedente (R$)**, **Máximo de códigos de convite ativos ao mesmo tempo**, **Período de teste (dias)** with the hint
+      "0 = sem teste. Com dias, o teste é em aberto (sem limite de alunos) e a cobrança começa depois dele." — no reason field, no trial student cap.
+      **Done (2026-10-09):** six fields + the trial hint; verified by the e2e (labels) and a screenshot.
+- [x] Cards show the six values (trial shown as "Sem teste" or "N dias de teste"); empty state "Nenhum plano cadastrado. Crie o primeiro para poder atribuí-lo a um personal."
+      **Done (2026-10-09):** verified by the e2e ("Sem teste" / "7 dias de teste") and a screenshot.
+- [x] `admin/layout.tsx`: nav = Visão geral · Personais · **Mensalidades** (`wallet`) · **Modelos de plano** (`clipboard`) · Solicitações · Minha conta. Done when: nothing on the page says "padrão", "motivo" or "alunos durante o teste", and an old template (with the removed field) opens, edits and saves clean.
+      **Done (2026-10-09):** nav order and labels done; the old template opening/saving clean is asserted in `platformFlows.test.ts` (the removed field disappears on save).
+
+### 35d. "Mensalidades" page (`/admin/mensalidades`) — the new section
+
+Suggested: sonnet · high — the screen the owner will live in; money action with a confirmation.
+
+- [x] New `app/admin/mensalidades/{layout,page}.tsx`: loads trainers (`loadTrainers`), all subscriptions, templates and recent payments once (parallel), derives each row with `mensalidadeOf`. Header "Mensalidades — Quem tem plano, quem pagou e quando cada acesso expira."
+      **Done (2026-10-09):** `/admin/mensalidades` loads trainers, subscriptions, templates and payments once (`data/mensalidades.ts`); a failing ledger read only drops "último pagamento".
+- [x] Summary figures that double as filters: **Sem plano · Aguardando pagamento · Em teste · Em dia · Vencem em até 5 dias · Em atraso** (counts add up to "Todos"); a search box (name/e-mail); sort by urgency (default), name or expiry date. A suspended account shows an extra "Suspenso" badge.
+      **Done (2026-10-09):** figure buttons with `aria-pressed`, search and the three sorts; counts add up to "Todos" (7 = 1+1+1+4 in the run).
+- [x] Each row (table on wide screens, stacked card at 375 px): name + e-mail (link to the detail), **Plano cadastrado: <name>** or "Sem plano", the state badge, **"Expira em dd/mm/aaaa · faltam N dias"** (or "atrasado há N dias" / "teste termina em N dias" / "aguardando o primeiro pagamento"),
+      mensalidade (R$), last payment date, and the action: **[Marcar como pago]** when a plan exists, **[Cadastrar plano]** when not, plus "Detalhes".
+      **Done (2026-10-09):** table that stacks at phone width (`table.stack`), badge + label, expiry date, plan price, last payment, actions; no horizontal scroll at 390 px (asserted).
+- [x] **Marcar como pago** opens a confirmation panel: trainer + plan, **Valor recebido (R$)** (pre-filled per D4, editable), optional **Referência** (≤120, no card/bank data), and a live line "O acesso passa a valer até dd/mm/aaaa" from `nextPaidThrough`. Confirm calls `recordPlatformPayment`;
+      success notice "Pagamento registrado. Acesso até dd/mm/aaaa." and the row updates. A stale-screen conflict shows "Este personal foi atualizado em outro lugar. Recarregue." and writes nothing. Double-click cannot create two payments.
+      **Done (2026-10-09):** `MarkPaidDialog`: pre-filled amount, reference, the live "acesso até" line; a stale screen is refused with nothing written (asserted).
+- [x] **Cadastrar plano** (for "Sem plano"): choose a template, start date (default today, not in the future), shows the consequence ("Teste grátis de N dias até dd/mm" or "O acesso começa após o primeiro pagamento"), link "Personalizar valores" to the detail; no reason field.
+      No templates ⇒ message with a link to "Modelos de plano".
+      **Done (2026-10-09):** `AssignPlanDialog`: plan, start date, the consequence line ("Teste grátis de 7 dias, até …" / "o acesso só começa depois do primeiro pagamento"); the no-templates case links to Modelos de plano.
+- [x] Accessibility/focus follows `e2e/admin-focus.mjs`'s conventions (`FocusNotice`, labelled inputs, keyboard-operable panel, no color-only state: badges carry text). Done when: the owner can mark a personal as paid in two clicks from the list and see the new expiry without leaving the page.
+      **Done (2026-10-09):** `e2e/admin-focus.mjs` 13/13. It found two real bugs, both fixed: a conditionally mounted dialog lost focus on close (`_shared/useRestoreFocus.ts`) and the detail panel used a stale billing state after the first action (`loadTrainerBilling`).
+
+### 35e. Trainer detail, directory and overview
+
+Suggested: sonnet · medium.
+
+- [x] `PlatformSubscriptionPanel.tsx`: new top block **"Mensalidade"** (plan name, state badge, expiry + countdown, **Marcar como pago**, payment history with **Estornar** on the latest, which asks for a reason); keep the plan-assignment form but **without** modality select, trial student cap, "cobrar durante o teste"
+      and reason (per D2 it shows what will happen); keep "Prorrogar teste" and "Resolver convite" (with their reasons, D7). **Remove the invoice UI** (current invoice, emit, extend due date) per D3. The usage block keeps working when the callable is unavailable (it already degrades to "Ainda sem dados").
+      **Done (2026-10-09):** top "Mensalidade" block, payments list with Estornar on the latest, plan form without modality/trial cap/reason, trial extension and invite resolution kept; invoice UI removed (data/functions/rules dormant).
+- [x] `app/admin/personais/page.tsx`: each card gets a "Plano: <name> · <state>" line from the same derivation (one extra collection read); `domain/adminMetrics.ts` `trainersCsv` gains "Plano" and "Mensalidade" columns (+ test).
+      **Done (2026-10-09):** cards show badge + plan + label; `trainersCsv` gained "Plano da plataforma" and "Mensalidade da plataforma" (unit-tested); directory page checked in the browser.
+- [x] `app/admin/page.tsx`: rename the block "Resumo de mensalidades do mês" → **"Cobranças dos personais aos alunos"** (copy: "O que os personais cobram dos próprios alunos"); add a compact **"Mensalidades da plataforma"** row (em dia · vencem em breve · em atraso · sem plano) linking to `/admin/mensalidades`, and add "Mensalidade em atraso" to the "Precisam de atenção" reasons.
+      Done when: nobody can mistake the two kinds of mensalidade, and the overview's counts equal the Mensalidades page's.
+      **Done (2026-10-09):** block renamed "Cobranças dos personais aos alunos", new "Mensalidades da plataforma" row linking to the tab, late personais join "Precisam de atenção"; audit names for the new actions added (checked on a screenshot).
+
+### 35f. Trainer side
+
+Suggested: sonnet · medium.
+
+- [x] `_shared/TrainerPlatformBilling.tsx` → "Plano e mensalidade": plan name and prices, state + expiry + countdown, own payment history (non-voided), legacy invoices read-only below. Still reachable while blocked (`/app/conta` exception stays).
+      **Done (2026-10-09):** "Plano e mensalidade" panel (plan, state, expiry, own payments, legacy invoices); a locked trainer still reads it (asserted).
+- [x] `RequireArea.tsx` copy: `pending` ⇒ "Seu plano foi cadastrado e aguarda o primeiro pagamento — ou o administrador ainda vai configurá-lo."; expired ⇒ "Sua mensalidade venceu em dd/mm/aaaa. Fale com o administrador para regularizar." Done when: a trainer blocked by expiry sees the date, and paying (ADM side) reopens the area after "Verificar novamente".
+      **Done (2026-10-09):** new copy for `pending` and for an expired expiry (names the date); payment unlocks after the re-check (asserted).
+
+### 35g. Verification
+
+Suggested: sonnet · high — rewrites two e2e scripts whose subject changed.
+
+- [x] Unit/lint/types/build: `npm test`, `npm run lint`, `npx tsc --noEmit`, `npm run build`, `npm run check:rules-version`, `npm run check:leak` — all green; `npm --prefix functions run build` green.
+      **Done (2026-10-09):** `npm test` 502 pass, `eslint` clean, `tsc --noEmit` clean, `next build` OK, `check:leak`, `check:rules-version` and the functions build — all green.
+- [x] `npm run test:rules` (emulators, Java 21) green, with the new ledger cases from 35b and the "seen failing against the old rules" check recorded.
+      **Done (2026-10-09):** `npm run test:rules` on JDK 21: **6 files, 227 tests pass**; run against the v6 file (`RULES_FILE=firestore-rules/versions/v6.rules`) **15 of them fail** — every positive ledger/template test and the retired-defaults test — so they discriminate. The pure "denies X" cases pass on v6 too (`assertFails` accepts any failure); they guard the new rules but do not prove the difference. Java: a portable Temurin 21.0.12 (checksum matched Adoptium's) in the session scratchpad, nothing installed.
+- [x] Rewrite `web/e2e/billing.mjs` for the new model (it asserts trial caps, invoice emission and due-date extension that no longer exist) and update `web/e2e/admin-focus.mjs`; add `web/e2e/mensalidades.mjs` + `"e2e:mensalidades"` in `package.json`:
+      create a 0-day plan and a 7-day plan → assign to three trainers → list shows Sem plano / Aguardando / Em teste with the right countdown → mark paid (trial: expiry = trial end + 1 month; pending: today + 1 month) → "Em dia" → estorno restores the previous state →
+      trainer's `/app` is locked while `pending`/expired and open after payment → a forged second click does not double-pay. Done when: every step passes against the emulators (record the check count in the Done line, as §30g did).
+      **Done (2026-10-09):** `e2e/billing.mjs` deleted (trial caps, invoices and due-date extension no longer exist), `e2e/mensalidades.mjs` added (`npm run e2e:mensalidades`): **32/32**; `e2e/admin-focus.mjs` rewritten: **13/13**; `e2e/account.mjs trainer`: 56/56 still pass.
+- [x] Screenshots at 375 px and 1280 px of Modelos de plano, Mensalidades (every state), the pay confirmation and the trainer-blocked screen; light and dark if the shell supports both.
+      **Done (2026-10-09):** captured at 1440 px and 390 px (the harness viewports) of Modelos de plano, Mensalidades, the pay dialog, the trainer detail and the overview; light theme only. "Every state" is covered by the list shot (Aguardando, Em teste, Em dia, Sem plano, Suspenso) plus the e2e's Em atraso assertion.
+
+### 35h. Docs, registration and owner rollout
+
+Suggested: haiku · low — documentation and checklists; last because it describes what exists.
+
+- [x] `CLAUDE.md` ("ADM console"/"Security rules"): the plan shape, the trial and payment rules (D1/D2), the ledger and its Rules, the dormant invoice flow, the rules version added; `web/README.md`: `e2e:mensalidades`, the owner rollout order.
+      **Done (2026-10-09):** `CLAUDE.md` (platform-subscriptions paragraph, rules-version list: v7) and `web/README.md` (billing paragraph, `e2e:mensalidades`) rewritten.
+- [x] `GOALS.md`: add "Superseded in part by §35" under §30's header (30a defaults, trial cap, 30c invoice UI) and tick this section's items with dates; record deviations in place.
+      **Done (2026-10-09):** the note sits under §30's header; this section's items are ticked with dates and the open ones carry the reason.
+- [ ] **(manual — owner)** Review the rules diff (previous → new) and publish them **before** deploying the site (the new pages need the `platformPayments` rules); never publish automatically; no Blaze needed.
+- [ ] **(manual — owner)** With controlled test accounts in production: create a plan, assign it, mark paid, check the trainer's countdown, estorno one payment. No real card/bank data, no student health data.
+- [x] **Done when (the whole section):** from the ADM menu the owner opens **Mensalidades**, sees every personal as *sem plano / aguardando / em teste / em dia / vence em breve / em atraso* with the days left, registers a payment in two clicks (access moves one month, from the trial's end if still in trial),
+      builds a plan from the six fields with no reason box, no default-trial card and no trial student cap — proven by `e2e:mensalidades`, `npm run test:rules`, and Android/iOS untouched.
+      **Done (2026-10-09):** `e2e:mensalidades` 32/32, `test:rules` 227/227, Android/iOS untouched (the diff touches only `web/`, `functions/src/index.ts`, `firestore.rules`, `firestore-rules/`, `GOALS.md`, `CLAUDE.md`). The two `(manual — owner)` items above remain, so the section stays open.
 
 ## Suggested build order (what blocks what) — revised 2026-08-18
 

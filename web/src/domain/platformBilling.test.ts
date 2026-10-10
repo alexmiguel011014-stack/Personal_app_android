@@ -16,7 +16,6 @@ const template: PlatformBillingPlanTemplate = {
   includedStudentSeats: 5,
   extraStudentMonthlyCents: 700,
   maxActiveInviteCodes: 3,
-  trialMaxStudentSeats: 2,
   trialDurationDays: 21,
 };
 
@@ -39,11 +38,11 @@ describe("snapshotPlatformTrainerTerms", () => {
       includedStudentSeats: 5,
       extraStudentMonthlyCents: 700,
       maxActiveInviteCodes: 1,
-      trialMaxStudentSeats: 2,
       trialDurationDays: 21,
       snapshotVersion: 2,
       templateId: "template-a",
       templateVersion: 4,
+      planName: "Standard",
     });
   });
 
@@ -65,39 +64,21 @@ describe("effectivePlatformMonthlyAmountCents", () => {
 });
 
 describe("canCreatePlatformInvite", () => {
-  const base = {
-    terms: { maxActiveInviteCodes: 3, trialMaxStudentSeats: 2 },
-    linkedStudentSeats: 0,
-    pendingInviteReservations: 0,
-    activeInviteCodes: 0,
-    isTrial: false,
-  } as const;
+  const terms = { maxActiveInviteCodes: 3 };
 
-  it("allows paid trainers to create codes below the active-code limit, even above included seats", () => {
-    expect(canCreatePlatformInvite({ ...base, linkedStudentSeats: 20 })).toEqual({ allowed: true });
+  it("allows a code below the simultaneous active-code limit, whatever the student count", () => {
+    expect(canCreatePlatformInvite({ terms, activeInviteCodes: 2 })).toEqual({ allowed: true });
   });
 
-  it("blocks creation when already at the simultaneous active-code limit", () => {
-    expect(canCreatePlatformInvite({ ...base, activeInviteCodes: 3 })).toEqual({
+  it("blocks creation once the active-code limit is reached", () => {
+    expect(canCreatePlatformInvite({ terms, activeInviteCodes: 3 })).toEqual({ allowed: false, reason: "active_invite_code_limit" });
+    expect(canCreatePlatformInvite({ terms, activeInviteCodes: 9 })).toEqual({ allowed: false, reason: "active_invite_code_limit" });
+  });
+
+  it("has no trial student cap: a limit of zero codes is the only way to refuse", () => {
+    expect(canCreatePlatformInvite({ terms: { maxActiveInviteCodes: 0 }, activeInviteCodes: 0 })).toEqual({
       allowed: false,
       reason: "active_invite_code_limit",
     });
-  });
-
-  it("uses linked students plus pending reservations against the trial cap", () => {
-    expect(canCreatePlatformInvite({ ...base, isTrial: true, linkedStudentSeats: 1, pendingInviteReservations: 1 })).toEqual({
-      allowed: false,
-      reason: "trial_student_seat_limit",
-    });
-    expect(canCreatePlatformInvite({ ...base, isTrial: true, linkedStudentSeats: 1 })).toEqual({ allowed: true });
-  });
-
-  it("checks the active-code limit before trial seats when both are full", () => {
-    expect(canCreatePlatformInvite({
-      ...base,
-      isTrial: true,
-      linkedStudentSeats: 2,
-      activeInviteCodes: 3,
-    })).toEqual({ allowed: false, reason: "active_invite_code_limit" });
   });
 });

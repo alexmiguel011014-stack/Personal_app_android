@@ -6,7 +6,8 @@ import { AppShell, type NavItem } from "../_shared/AppShell";
 const NAV: readonly NavItem[] = [
   { href: "/admin", label: "Visão geral", icon: "shield", exact: true },
   { href: "/admin/personais", label: "Personais", icon: "users" },
-  { href: "/admin/planos", label: "Planos e padrões", icon: "wallet" },
+  { href: "/admin/mensalidades", label: "Mensalidades", icon: "wallet" },
+  { href: "/admin/planos", label: "Modelos de plano", icon: "clipboard" },
   { href: "/admin/solicitacoes", label: "Solicitações", icon: "inbox" },
   { href: "/admin/conta", label: "Minha conta", icon: "account" },
 ];

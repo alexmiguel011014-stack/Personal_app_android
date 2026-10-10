@@ -3,6 +3,10 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { loadActivity, loadTrainerStats, loadTrainers } from "../../../data/admin";
+import { describeMensalidade } from "../../../data/mensalidades";
+import { loadPlatformPlanTemplates } from "../../../data/platformPlans";
+import { loadAllPlatformSubscriptions } from "../../../data/platformSubscriptions";
+import { mensalidadeLabel, mensalidadeStateName } from "../../../domain/mensalidades";
 import { getFirebase } from "../../../data/firebase";
 import { trainersCsv, trainerRow, type TrainerRow } from "../../../domain/adminMetrics";
 import { PageHeading, LoadingOrError, Money, DateTime, Empty } from "../AdminPrimitives";
@@ -27,12 +31,20 @@ export default function TrainersDirectoryPage() {
     (async () => {
       try {
         const db = getFirebase().db;
-        const [trainers, stats] = await Promise.all([loadTrainers(db), loadTrainerStats(db)]);
+        const [trainers, stats, subscriptions, templates] = await Promise.all([
+          loadTrainers(db),
+          loadTrainerStats(db),
+          loadAllPlatformSubscriptions(db).catch(() => new Map()),
+          loadPlatformPlanTemplates(db).catch(() => []),
+        ]);
         const now = Date.now();
         const today = localDate(now, browserTimeZone());
         const months = [yearMonth(today), yearMonth(addDays(today, -31))];
         const activities = (await Promise.all(trainers.map((trainer) => loadActivity(db, trainer.id, months)))).flat();
-        const result = trainers.map((trainer) => trainerRow(trainer, stats.find((item) => item.trainerId === trainer.id) ?? null, activities.filter((item) => item.trainerId === trainer.id), now, browserTimeZone()));
+        const result = trainers.map((trainer) => {
+          const { planName, mensalidade } = describeMensalidade(trainer, subscriptions.get(trainer.id) ?? null, templates, now);
+          return trainerRow(trainer, stats.find((item) => item.trainerId === trainer.id) ?? null, activities.filter((item) => item.trainerId === trainer.id), now, browserTimeZone(), { planName, state: mensalidade.state, label: mensalidadeLabel(mensalidade) });
+        });
         if (!cancelled) { setRows(result); setError(null); }
       } catch { if (!cancelled) setError("Não foi possível carregar o diretório de personais."); }
       finally { if (!cancelled) setLoading(false); }
@@ -78,6 +90,7 @@ export default function TrainersDirectoryPage() {
         <h2><Link className="admin-card-link" href={`/admin/personais/detalhe?id=${encodeURIComponent(row.id)}`}>{row.name || "Sem nome"}</Link></h2>
         <p>{row.email || "Sem e-mail cadastrado"}</p>
         <div className="admin-actions"><span className="admin-status" data-state={row.accessStatus}>{row.accessStatus === "active" ? "Ativo" : "Suspenso"}</span><span className="admin-status">{row.usage}</span></div>
+        {row.billing && <p><span className="admin-status" data-state={row.billing.state}>{mensalidadeStateName(row.billing.state)}</span> {row.billing.planName ? `Plano ${row.billing.planName}` : "Sem plano"}{row.billing.label ? ` · ${row.billing.label}` : ""}</p>}
         <dl><div><dt>Ações · dias ativos (30d)</dt><dd>{row.actions30d} · {row.activeDays30d}</dd></div><div><dt>Alunos · planos ativos</dt><dd>{row.stats?.students.linked ?? "Ainda sem dados"} · {row.stats ? row.activePlans : "Ainda sem dados"}</dd></div><div><dt>Ticket médio · recebimento</dt><dd><Money cents={row.averageTicketCents === null ? null : Math.round(row.averageTicketCents)} /> · {row.collectionRate === null ? "Ainda sem dados" : `${Math.round(row.collectionRate * 100)}%`}</dd></div><div><dt>Previsto · recebido</dt><dd><Money cents={row.stats?.billing.expectedCents ?? null} /> · <Money cents={row.stats?.billing.receivedCents ?? null} /></dd></div><div><dt>Última visita · resumo</dt><dd><DateTime at={row.lastSeenAt} /> · <DateTime at={row.statsUpdatedAt || null} /></dd></div></dl>
         {row.stale && <p className="attention">Resumo sem atualização há mais de 14 dias</p>}
       </article>)}</div>}

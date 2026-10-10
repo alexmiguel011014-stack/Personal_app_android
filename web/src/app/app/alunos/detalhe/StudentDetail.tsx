@@ -332,7 +332,6 @@ function InviteSection({
       {loadingUsage ? <p role="status">Carregando limites de convites…</p> : displayedUsage && <dl>
         <div><dt>Códigos ativos</dt><dd>{displayedUsage.activeInviteCodes}/{displayedUsage.subscription.terms.maxActiveInviteCodes}</dd></div>
         <div><dt>Alunos vinculados</dt><dd>{displayedUsage.linkedStudentSeats} · {displayedUsage.includedSeatsRemaining} vagas incluídas restantes</dd></div>
-        {displayedUsage.subscription.mode === "trial" && <div><dt>Vagas reservadas no teste</dt><dd>{displayedUsage.linkedStudentSeats + displayedUsage.pendingInviteReservations}/{displayedUsage.subscription.terms.trialMaxStudentSeats}</dd></div>}
         {displayedUsage.activeInvitesFromOtherClients > 0 && <div><dt>Convites de outros clientes</dt><dd>{displayedUsage.activeInvitesFromOtherClients} (contados no limite)</dd></div>}
       </dl>}
       {link === null ? (

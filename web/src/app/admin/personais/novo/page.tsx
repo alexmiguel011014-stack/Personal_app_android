@@ -5,7 +5,7 @@ import { useState, type FormEvent } from "react";
 import { authErrorMessage } from "../../../../data/authErrors";
 import { completeTrainerProfile, createInitialPassword, createTrainerAuthUser, sendTrainerPasswordReset } from "../../../../data/adminCreate";
 import { getFirebase } from "../../../../data/firebase";
-import { applyPlatformDefaultsToNewTrainer } from "../../../../data/platformSubscriptions";
+
 import { emailSuggestionToConfirm } from "../../../../domain/adminEmailSuggestion";
 import { validateEmail } from "../../../../domain/emailPolicy";
 import { useSession } from "../../../SessionProvider";
@@ -25,7 +25,7 @@ export default function NewTrainerPage() {
   const [phone, setPhone] = useState("");
   const [pending, setPending] = useState<PendingTrainer | null>(null);
   const [profileSaved, setProfileSaved] = useState(false);
-  const [billingPending, setBillingPending] = useState(false);
+
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -41,14 +41,8 @@ export default function NewTrainerPage() {
     try {
       await completeTrainerProfile(getFirebase().db, adminUid, trainer.uid, trainer);
       setProfileSaved(true);
-      let billingReady = false;
-      try { billingReady = await applyPlatformDefaultsToNewTrainer(getFirebase().db, adminUid, trainer.uid); }
-      catch { billingReady = false; }
-      setBillingPending(!billingReady);
-      setNotice(billingReady
-        ? `Cadastro salvo para ${trainer.email} com o padrão atual de teste.`
-        : `Cadastro salvo para ${trainer.email}; o acesso ficará pendente até o ADM atribuir termos da plataforma.`);
-      await sendReset(trainer.email, billingReady);
+      setNotice(`Cadastro salvo para ${trainer.email}; o acesso fica bloqueado até você cadastrar um plano em Mensalidades.`);
+      await sendReset(trainer.email);
     } catch (err) {
       if (!profileSaved) {
         setError(`Não foi possível salvar o perfil. A conta de acesso já existe (UID: ${trainer.uid}). Tente concluir esta etapa novamente.`);
@@ -60,17 +54,13 @@ export default function NewTrainerPage() {
     }
   }
 
-  async function sendReset(address: string, billingReady = !billingPending) {
+  async function sendReset(address: string) {
     try {
       await sendTrainerPasswordReset(getFirebase().auth, address);
-      setNotice(billingReady
-        ? `Cadastro concluído. Enviamos a ${address} um link para definir a senha.`
-        : `Enviamos a ${address} um link para definir a senha. O acesso ficará pendente até o ADM atribuir termos da plataforma.`);
+      setNotice(`Enviamos a ${address} um link para definir a senha. O acesso fica bloqueado até você cadastrar um plano em Mensalidades.`);
       setError(null);
     } catch (err) {
-      setNotice(billingReady
-        ? `Cadastro concluído para ${address}, mas o link de senha não foi enviado.`
-        : `O perfil foi criado e ficará pendente de termos. O link de senha também não foi enviado para ${address}.`);
+      setNotice(`O perfil foi criado e o acesso fica bloqueado até você cadastrar um plano. O link de senha não foi enviado para ${address}.`);
       setError(`${authErrorMessage(err)} Você pode tentar enviar o link novamente.`);
     }
   }
@@ -159,7 +149,10 @@ export default function NewTrainerPage() {
           {!profileSaved ? (
             <button type="button" aria-disabled={busy} onClick={retryProfile}>{busy ? "Salvando…" : "Concluir cadastro"}</button>
           ) : (
-            <button type="button" aria-disabled={busy} onClick={resendReset}>{busy ? "Enviando…" : "Reenviar link para definir senha"}</button>
+            <>
+              <button type="button" aria-disabled={busy} onClick={resendReset}>{busy ? "Enviando…" : "Reenviar link para definir senha"}</button>
+              <p><Link href="/admin/mensalidades">Cadastrar plano em Mensalidades</Link></p>
+            </>
           )}
         </section>
       )}

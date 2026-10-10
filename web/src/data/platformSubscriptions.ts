@@ -4,6 +4,8 @@ import {
   doc,
   getDoc,
   getDocs,
+  limit,
+  orderBy,
   query,
   runTransaction,
   where,
@@ -11,6 +13,7 @@ import {
 } from "firebase/firestore";
 import { httpsCallable, type Functions } from "firebase/functions";
 import { addDays, isCalendarDate, localDate } from "../domain/dates";
+import { nextPaidThrough, type BillingStatus } from "../domain/mensalidades";
 import {
   isDeadlineExpired,
   snapshotPlatformTrainerTerms,
@@ -88,10 +91,7 @@ export interface PlatformSubscriptionView {
 export interface AssignPlatformSubscriptionInput {
   templateId: string;
   terms: PlatformBillingTerms;
-  mode: PlatformSubscriptionMode;
-  chargeDuringTrial: boolean;
   effectiveAt: number;
-  reason: string;
 }
 
 const SUBSCRIPTIONS = "platformSubscriptions";
@@ -103,11 +103,10 @@ const TERM_KEYS = [
   "includedStudentSeats",
   "extraStudentMonthlyCents",
   "maxActiveInviteCodes",
-  "trialMaxStudentSeats",
   "trialDurationDays",
 ] as const satisfies readonly (keyof PlatformBillingTerms)[];
 
-const RULES_ERROR = "As regras atuais do Firestore ainda não liberam esta ação. Publique regras ADM para platformSubscriptions, platformInvoices e platformAudit, além da leitura de platformPlanTemplates, platformBillingConfig/trialDefaults e users do personal.";
+const RULES_ERROR = "As regras atuais do Firestore ainda não liberam esta ação. Publique regras ADM para platformSubscriptions, platformPayments e adminAudit, além da leitura de platformPlanTemplates e users do personal.";
 
 function withRulesMessage<T>(work: () => Promise<T>): Promise<T> {
   return work().catch((error: unknown) => {
@@ -149,7 +148,6 @@ function parsePlanTemplate(id: string, raw: unknown): PlatformBillingPlanTemplat
     includedStudentSeats: nonNegativeInteger(data.includedStudentSeats, "Alunos incluídos"),
     extraStudentMonthlyCents: nonNegativeInteger(data.extraStudentMonthlyCents, "Adicional por aluno"),
     maxActiveInviteCodes: nonNegativeInteger(data.maxActiveInviteCodes, "Limite de convites"),
-    trialMaxStudentSeats: nonNegativeInteger(data.trialMaxStudentSeats, "Limite de alunos no teste"),
     trialDurationDays: nonNegativeInteger(data.trialDurationDays, "Duração do teste"),
   };
 }
@@ -164,11 +162,11 @@ function parseTerms(raw: unknown): PlatformTrainerTermsSnapshot {
     includedStudentSeats: nonNegativeInteger(data.includedStudentSeats, "Alunos incluídos"),
     extraStudentMonthlyCents: nonNegativeInteger(data.extraStudentMonthlyCents, "Adicional por aluno"),
     maxActiveInviteCodes: nonNegativeInteger(data.maxActiveInviteCodes, "Limite de convites"),
-    trialMaxStudentSeats: nonNegativeInteger(data.trialMaxStudentSeats, "Limite de alunos no teste"),
     trialDurationDays: nonNegativeInteger(data.trialDurationDays, "Duração do teste"),
     snapshotVersion,
     templateId: text(data.templateId, "Modelo da assinatura"),
     templateVersion,
+    ...(typeof data.planName === "string" && data.planName.length > 0 ? { planName: data.planName } : {}),
   };
 }
 
@@ -310,6 +308,15 @@ export async function loadPlatformSubscription(db: Firestore, trainerUid: string
   });
 }
 
+/** A trainer's access state as stored on `users/{uid}` — what the ADM screens show and what a payment is checked against. */
+export async function loadTrainerBilling(db: Firestore, trainerUid: string): Promise<{ status: BillingStatus | null; until: number | null }> {
+  return withRulesMessage(async () => {
+    const snapshot = await getDoc(doc(db, "users", trainerUid));
+    const until = snapshot.get("platformBillingUntil");
+    return { status: billingStatusOf(snapshot.get("platformBillingStatus")), until: typeof until === "number" ? until : null };
+  });
+}
+
 /** Reads only aggregate counts and prices from the ADM-only callable; no invite/student fields reach the browser. */
 export async function loadPlatformBillingUsage(functions: Functions, trainerUid: string): Promise<PlatformBillingUsage> {
   const call = httpsCallable<{ trainerUid: string }, unknown>(functions, "getPlatformBillingUsage");
@@ -323,86 +330,19 @@ export async function loadTrainerPlatformInvoices(db: Firestore, trainerUid: str
     .sort((a, b) => b.period.localeCompare(a.period)));
 }
 
-/** Applies the configured trial snapshot only to a newly provisioned trainer with no terms yet. */
-export async function applyPlatformDefaultsToNewTrainer(
-  db: Firestore,
-  adminUid: string,
-  trainerUid: string,
-): Promise<boolean> {
-  if (!adminUid) throw new Error("Não foi possível identificar o ADM conectado.");
-  const now = Date.now();
-  const subscriptionRef = doc(db, SUBSCRIPTIONS, trainerUid);
-  const userRef = doc(db, "users", trainerUid);
-  const defaultsRef = doc(db, "platformBillingConfig", "trialDefaults");
-  const auditRef = doc(collection(db, AUDIT));
-  return withRulesMessage(() => runTransaction(db, async (transaction) => {
-    const [userSnapshot, existingSubscription, defaultsSnapshot] = await Promise.all([
-      transaction.get(userRef),
-      transaction.get(subscriptionRef),
-      transaction.get(defaultsRef),
-    ]);
-    if (!userSnapshot.exists() || userSnapshot.get("role") !== "TRAINER") throw new Error("O perfil selecionado não é um personal válido.");
-    if (existingSubscription.exists()) return true;
-    if (!defaultsSnapshot.exists()) return false;
-    const defaults = record(defaultsSnapshot.data(), "Padrões de teste");
-    const templateId = defaults.defaultPlanTemplateId;
-    const durationDays = nonNegativeInteger(defaults.trialDurationDays, "Duração padrão do teste");
-    const trialMaxStudentSeats = nonNegativeInteger(defaults.trialMaxStudentSeats, "Limite padrão de alunos no teste");
-    if (typeof templateId !== "string" || !templateId || durationDays < 1) return false;
-    const templateRef = doc(db, "platformPlanTemplates", templateId);
-    const templateSnapshot = await transaction.get(templateRef);
-    if (!templateSnapshot.exists()) return false;
-    const template = parsePlanTemplate(templateSnapshot.id, templateSnapshot.data());
-    const overrides: PlatformBillingTermsOverrides = {
-      trialMaxStudentSeats,
-      trialDurationDays: durationDays,
-    };
-    const terms = snapshotPlatformTrainerTerms(template, overrides, 1);
-    const trialEndsAt = now + durationDays * DAY_MS;
-    if (!Number.isSafeInteger(trialEndsAt)) throw new Error("A duração do teste ultrapassa o limite permitido.");
-    const subscription: PlatformSubscription = {
-      trainerUid,
-      mode: "trial",
-      terms,
-      overrides,
-      chargeDuringTrial: false,
-      effectiveAt: now,
-      trialStartedAt: now,
-      trialEndsAt,
-      currentInvoiceId: null,
-      updatedAt: now,
-      lastAuditId: auditRef.id,
-    };
-    transaction.set(subscriptionRef, subscription);
-    transaction.set(userRef, billingSummary("trial", trialEndsAt, auditRef.id), { merge: true });
-    transaction.set(auditRef, {
-      at: now,
-      adminUid,
-      action: "subscription.assign",
-      targetUid: trainerUid,
-      note: "Aplicação do padrão de teste na criação do personal",
-      subscriptionVersion: terms.snapshotVersion,
-      templateId: terms.templateId,
-      templateVersion: terms.templateVersion,
-      mode: "trial",
-      overrideKeys: Object.keys(overrides),
-      effectiveAt: subscription.effectiveAt,
-      ...previousBillingSummary(userSnapshot),
-      billingToStatus: "trial",
-      billingToUntil: trialEndsAt,
-    });
-    return true;
-  }));
-}
-
-/** Assigns a copied template snapshot; existing trainers never follow later template edits. */
+/**
+ * Assigns a copied template snapshot; existing trainers never follow later template edits.
+ * §35 D2: the first assignment decides how the account starts — a plan with trial days opens a free trial,
+ * a plan without them leaves the account `pending` until the first payment. A later assignment only swaps
+ * the terms: status and expiry are untouched, and an account never gets a second trial.
+ */
 export async function assignPlatformSubscription(
   db: Firestore,
   adminUid: string,
   trainerUid: string,
   input: AssignPlatformSubscriptionInput,
 ): Promise<PlatformSubscription> {
-  const reason = requireActorAndReason(adminUid, input.reason);
+  if (!adminUid) throw new Error("Não foi possível identificar o ADM conectado.");
   const now = Date.now();
   if (!Number.isSafeInteger(input.effectiveAt) || input.effectiveAt > now) throw new Error("A data de vigência deve ser hoje ou anterior.");
   const auditRef = doc(collection(db, AUDIT));
@@ -427,36 +367,60 @@ export async function assignPlatformSubscription(
     }
     const effectiveTerms = { ...input.terms };
     for (const key of TERM_KEYS) nonNegativeInteger(effectiveTerms[key], key);
-    if (input.mode !== "trial" && input.mode !== "paid") throw new Error("Selecione teste grátis ou plano pago.");
-    if (input.mode === "trial" && effectiveTerms.trialDurationDays < 1) throw new Error("A duração do teste precisa ser de ao menos um dia.");
     const overrides: PlatformBillingTermsOverrides = {};
     for (const key of TERM_KEYS) if (effectiveTerms[key] !== template[key]) overrides[key] = effectiveTerms[key];
     const snapshotVersion = nonNegativeInteger((previous?.terms.snapshotVersion ?? 0) + 1, "Versão dos termos");
     const terms = snapshotPlatformTrainerTerms(template, overrides, snapshotVersion);
-    const trialEndsAt = input.mode === "trial" ? input.effectiveAt + terms.trialDurationDays * DAY_MS : null;
-    if (trialEndsAt !== null && !Number.isSafeInteger(trialEndsAt)) throw new Error("A duração do teste ultrapassa o limite permitido.");
+
+    const fromStatus = billingStatusOf(userSnapshot.get("platformBillingStatus"));
+    const fromUntil = (userSnapshot.get("platformBillingUntil") ?? null) as number | null;
+    const startsTrial = terms.trialDurationDays > 0 && (previous === null || (previous.trialStartedAt === null && fromStatus === "pending"));
+    let mode: PlatformSubscriptionMode;
+    let trialStartedAt: number | null;
+    let trialEndsAt: number | null;
+    let billingToStatus: BillingStatus;
+    let billingToUntil: number | null;
+    if (startsTrial) {
+      mode = "trial";
+      trialStartedAt = input.effectiveAt;
+      trialEndsAt = input.effectiveAt + terms.trialDurationDays * DAY_MS;
+      if (!Number.isSafeInteger(trialEndsAt)) throw new Error("A duração do teste ultrapassa o limite permitido.");
+      billingToStatus = "trial";
+      billingToUntil = trialEndsAt;
+    } else if (previous === null) {
+      mode = "paid";
+      trialStartedAt = null;
+      trialEndsAt = null;
+      billingToStatus = "pending";
+      billingToUntil = null;
+    } else {
+      mode = previous.mode;
+      trialStartedAt = previous.trialStartedAt;
+      trialEndsAt = previous.trialEndsAt;
+      billingToStatus = fromStatus ?? "pending";
+      billingToUntil = fromUntil;
+    }
     const subscription: PlatformSubscription = {
       trainerUid,
-      mode: input.mode,
+      mode,
       terms,
       overrides,
-      chargeDuringTrial: input.mode === "trial" && input.chargeDuringTrial,
+      chargeDuringTrial: false,
       effectiveAt: input.effectiveAt,
-      trialStartedAt: input.mode === "trial" ? input.effectiveAt : null,
+      trialStartedAt,
       trialEndsAt,
       currentInvoiceId: previous?.currentInvoiceId ?? null,
       updatedAt: now,
       lastAuditId: auditRef.id,
     };
     transaction.set(subscriptionRef, subscription);
-    const billingToStatus = input.mode === "trial" ? "trial" : "current";
-    transaction.set(userRef, billingSummary(billingToStatus, trialEndsAt, auditRef.id), { merge: true });
+    transaction.set(userRef, billingSummary(billingToStatus, billingToUntil, auditRef.id), { merge: true });
     transaction.set(auditRef, {
       at: now,
       action: "subscription.assign",
       adminUid,
       targetUid: trainerUid,
-      note: reason,
+      note: `Plano atribuído: ${template.name}`,
       subscriptionVersion: terms.snapshotVersion,
       templateId: terms.templateId,
       templateVersion: terms.templateVersion,
@@ -465,7 +429,7 @@ export async function assignPlatformSubscription(
       effectiveAt: subscription.effectiveAt,
       ...previousBillingSummary(userSnapshot),
       billingToStatus,
-      billingToUntil: trialEndsAt,
+      billingToUntil,
     });
     return subscription;
   }));
@@ -621,5 +585,225 @@ export async function extendPlatformTrial(
       billingToUntil,
     });
     return extended;
+  }));
+}
+
+// ---- §35: the payment ledger -------------------------------------------------------------------------------
+
+export interface PlatformPayment {
+  id: string;
+  trainerUid: string;
+  paidAt: number;
+  paidBy: string;
+  amountCents: number;
+  paymentReference: string | null;
+  /** The expiry this payment set (23:59:59.999 São Paulo of `paidThroughDate`). */
+  newUntil: number;
+  paidThroughDate: string;
+  previousUntil: number | null;
+  previousStatus: BillingStatus;
+  previousMode: PlatformSubscriptionMode;
+  planName: string;
+  templateId: string;
+  templateVersion: number;
+  snapshotVersion: number;
+  voidedAt: number | null;
+  voidedBy: string | null;
+  lastAuditId: string | null;
+}
+
+export interface RecordPlatformPaymentInput {
+  amountCents: number;
+  reference: string;
+  /** What the ADM screen showed for this trainer; a mismatch means someone else changed it, and nothing is written. */
+  expected: { status: BillingStatus | null; until: number | null };
+}
+
+const PAYMENTS = "platformPayments";
+const BILLING_STATUSES: readonly BillingStatus[] = ["pending", "trial", "current", "blocked"];
+
+function billingStatusOf(value: unknown): BillingStatus | null {
+  return BILLING_STATUSES.find((status) => status === value) ?? null;
+}
+
+function parsePayment(id: string, raw: unknown): PlatformPayment {
+  const data = record(raw, "Pagamento da plataforma");
+  const previousStatus = billingStatusOf(data.previousStatus);
+  if (previousStatus === null || (data.previousMode !== "trial" && data.previousMode !== "paid") || !isCalendarDate(String(data.paidThroughDate))) {
+    throw new Error("O pagamento da plataforma está inválido no Firestore.");
+  }
+  return {
+    id,
+    trainerUid: text(data.trainerUid, "Personal do pagamento"),
+    paidAt: nonNegativeInteger(data.paidAt, "Data do pagamento"),
+    paidBy: text(data.paidBy, "ADM do pagamento"),
+    amountCents: nonNegativeInteger(data.amountCents, "Valor do pagamento"),
+    paymentReference: data.paymentReference === null ? null : text(data.paymentReference, "Referência do pagamento"),
+    newUntil: nonNegativeInteger(data.newUntil, "Novo vencimento"),
+    paidThroughDate: String(data.paidThroughDate),
+    previousUntil: nullableTimestamp(data.previousUntil, "Vencimento anterior"),
+    previousStatus,
+    previousMode: data.previousMode,
+    planName: text(data.planName, "Plano do pagamento"),
+    templateId: text(data.templateId, "Modelo do pagamento"),
+    templateVersion: nonNegativeInteger(data.templateVersion, "Versão do modelo"),
+    snapshotVersion: nonNegativeInteger(data.snapshotVersion, "Versão dos termos"),
+    voidedAt: nullableTimestamp(data.voidedAt, "Data do estorno"),
+    voidedBy: data.voidedBy === null ? null : text(data.voidedBy, "ADM do estorno"),
+    lastAuditId: data.lastAuditId === undefined || data.lastAuditId === null ? null : text(data.lastAuditId, "ID da auditoria"),
+  };
+}
+
+/** Every subscription, keyed by trainer UID. A malformed document is skipped so one bad record cannot blank the whole list. */
+export async function loadAllPlatformSubscriptions(db: Firestore): Promise<Map<string, PlatformSubscription>> {
+  return withRulesMessage(async () => {
+    const result = new Map<string, PlatformSubscription>();
+    for (const snapshot of (await getDocs(collection(db, SUBSCRIPTIONS))).docs) {
+      try { result.set(snapshot.id, parseSubscription(snapshot.id, snapshot.data())); } catch { /* skipped on purpose */ }
+    }
+    return result;
+  });
+}
+
+/** The ledger, newest first (single-field order, so no composite index). Capped; the list only needs recent payments. */
+export async function loadPlatformPayments(db: Firestore, max = 500): Promise<PlatformPayment[]> {
+  return withRulesMessage(async () => (await getDocs(query(collection(db, PAYMENTS), orderBy("paidAt", "desc"), limit(max)))).docs
+    .flatMap((snapshot) => { try { return [parsePayment(snapshot.id, snapshot.data())]; } catch { return []; } }));
+}
+
+/** One trainer's own payments (the rules allow a trainer to read only these), newest first. */
+export async function loadTrainerPlatformPayments(db: Firestore, trainerUid: string): Promise<PlatformPayment[]> {
+  return withRulesMessage(async () => (await getDocs(query(collection(db, PAYMENTS), where("trainerUid", "==", trainerUid))))
+    .docs.flatMap((snapshot) => { try { return [parsePayment(snapshot.id, snapshot.data())]; } catch { return []; } })
+    .sort((a, b) => b.paidAt - a.paidAt));
+}
+
+/**
+ * Marks the trainer paid: one transaction writes the ledger entry, moves the access to `current` through the
+ * new expiry (§35 D1), flips a trial subscription to `paid`, and appends the audit entry the Rules link them by.
+ */
+export async function recordPlatformPayment(
+  db: Firestore,
+  adminUid: string,
+  trainerUid: string,
+  input: RecordPlatformPaymentInput,
+): Promise<PlatformPayment> {
+  if (!adminUid) throw new Error("Não foi possível identificar o ADM conectado.");
+  if (!Number.isSafeInteger(input.amountCents) || input.amountCents < 0) throw new Error("Informe um valor recebido válido.");
+  const reference = input.reference.trim();
+  if (reference.length > 120) throw new Error("A referência do pagamento pode ter até 120 caracteres.");
+  const now = Date.now();
+  const paymentRef = doc(collection(db, PAYMENTS));
+  const auditRef = doc(collection(db, AUDIT));
+  return withRulesMessage(() => runTransaction(db, async (transaction) => {
+    const userRef = doc(db, "users", trainerUid);
+    const subscriptionRef = doc(db, SUBSCRIPTIONS, trainerUid);
+    const [userSnapshot, subscriptionSnapshot] = await Promise.all([transaction.get(userRef), transaction.get(subscriptionRef)]);
+    if (!userSnapshot.exists() || userSnapshot.get("role") !== "TRAINER") throw new Error("O perfil selecionado não é um personal válido.");
+    if (!subscriptionSnapshot.exists()) throw new Error("Cadastre um plano para este personal antes de registrar o pagamento.");
+    const subscription = parseSubscription(trainerUid, subscriptionSnapshot.data());
+    const previousStatus = billingStatusOf(userSnapshot.get("platformBillingStatus"));
+    const previousUntil = (userSnapshot.get("platformBillingUntil") ?? null) as number | null;
+    if (previousStatus === null) throw new Error("Este personal ainda não tem as regras de cobrança aplicadas. Reatribua o plano antes de registrar o pagamento.");
+    if (previousStatus !== input.expected.status || previousUntil !== input.expected.until) {
+      throw new Error("Este personal foi atualizado em outro lugar. Recarregue a página e confira antes de registrar o pagamento.");
+    }
+    // Only a running trial or a current account carries an expiry worth extending; anything else restarts from today.
+    const base = previousStatus === "trial" || previousStatus === "current" ? previousUntil : null;
+    const next = nextPaidThrough(now, base);
+    let planName = subscription.terms.planName ?? "";
+    if (planName === "") {
+      const templateSnapshot = await transaction.get(doc(db, "platformPlanTemplates", subscription.terms.templateId));
+      planName = templateSnapshot.exists() ? parsePlanTemplate(templateSnapshot.id, templateSnapshot.data()).name : subscription.terms.templateId;
+    }
+    const payment: PlatformPayment = {
+      id: paymentRef.id,
+      trainerUid,
+      paidAt: now,
+      paidBy: adminUid,
+      amountCents: input.amountCents,
+      paymentReference: reference || null,
+      newUntil: next.until,
+      paidThroughDate: next.date,
+      previousUntil,
+      previousStatus,
+      previousMode: subscription.mode,
+      planName,
+      templateId: subscription.terms.templateId,
+      templateVersion: subscription.terms.templateVersion,
+      snapshotVersion: subscription.terms.snapshotVersion,
+      voidedAt: null,
+      voidedBy: null,
+      lastAuditId: auditRef.id,
+    };
+    transaction.set(paymentRef, { ...payment });
+    if (subscription.mode === "trial") {
+      transaction.set(subscriptionRef, { ...subscription, mode: "paid", updatedAt: now, lastAuditId: auditRef.id });
+    }
+    transaction.set(userRef, billingSummary("current", next.until, auditRef.id), { merge: true });
+    transaction.set(auditRef, {
+      at: now,
+      adminUid,
+      action: "payment.record",
+      targetUid: trainerUid,
+      note: "Pagamento da mensalidade registrado",
+      paymentId: paymentRef.id,
+      amountCents: input.amountCents,
+      paymentReference: reference || null,
+      paidThroughDate: next.date,
+      ...previousBillingSummary(userSnapshot),
+      billingToStatus: "current",
+      billingToUntil: next.until,
+    });
+    return payment;
+  }));
+}
+
+/**
+ * Undoes the most recent payment (§35 D5): only while the trainer expiry is still the one this payment set, so a
+ * later payment, plan change or extension makes it refuse instead of guessing. Restores the previous status, expiry and mode.
+ */
+export async function voidPlatformPayment(
+  db: Firestore,
+  adminUid: string,
+  paymentId: string,
+  reasonInput: string,
+): Promise<PlatformPayment> {
+  const reason = requireActorAndReason(adminUid, reasonInput);
+  const now = Date.now();
+  const auditRef = doc(collection(db, AUDIT));
+  return withRulesMessage(() => runTransaction(db, async (transaction) => {
+    const paymentRef = doc(db, PAYMENTS, paymentId);
+    const paymentSnapshot = await transaction.get(paymentRef);
+    if (!paymentSnapshot.exists()) throw new Error("O pagamento não existe mais. Recarregue a página.");
+    const payment = parsePayment(paymentSnapshot.id, paymentSnapshot.data());
+    if (payment.voidedAt !== null) throw new Error("Este pagamento já foi estornado.");
+    const userRef = doc(db, "users", payment.trainerUid);
+    const subscriptionRef = doc(db, SUBSCRIPTIONS, payment.trainerUid);
+    const [userSnapshot, subscriptionSnapshot] = await Promise.all([transaction.get(userRef), transaction.get(subscriptionRef)]);
+    if (!userSnapshot.exists() || !subscriptionSnapshot.exists()) throw new Error("O perfil ou os termos do personal não existem mais.");
+    if (userSnapshot.get("platformBillingStatus") !== "current" || userSnapshot.get("platformBillingUntil") !== payment.newUntil) {
+      throw new Error("Só é possível estornar o último pagamento, enquanto o vencimento ainda for o que ele definiu.");
+    }
+    const subscription = parseSubscription(payment.trainerUid, subscriptionSnapshot.data());
+    const voided: PlatformPayment = { ...payment, voidedAt: now, voidedBy: adminUid, lastAuditId: auditRef.id };
+    transaction.set(paymentRef, { ...voided });
+    if (payment.previousMode === "trial" && subscription.mode === "paid") {
+      transaction.set(subscriptionRef, { ...subscription, mode: "trial", updatedAt: now, lastAuditId: auditRef.id });
+    }
+    transaction.set(userRef, billingSummary(payment.previousStatus, payment.previousUntil, auditRef.id), { merge: true });
+    transaction.set(auditRef, {
+      at: now,
+      adminUid,
+      action: "payment.void",
+      targetUid: payment.trainerUid,
+      note: reason,
+      paymentId,
+      amountCents: payment.amountCents,
+      ...previousBillingSummary(userSnapshot),
+      billingToStatus: payment.previousStatus,
+      billingToUntil: payment.previousUntil,
+    });
+    return voided;
   }));
 }

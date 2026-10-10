@@ -159,9 +159,12 @@ The Storage emulator is configured on port 9199. Production bucket/plan/App Chec
 publishing reviewed rules remain owner-run manual steps; the code does not enable billing or
 publish Firebase configuration.
 
-Platform billing is separate from trainers' own student payment records. `/admin/planos` stores
-ADM-managed defaults; the trainer detail manages that trainer's terms, trial, invoices/payments,
-extensions, and manual invite resolution by code. It intentionally does not list raw invite docs or
+Platform billing is separate from trainers' own student payment records. `/admin/planos` ("Modelos de
+plano") stores the plans; `/admin/mensalidades` shows who has a plan, who paid and when each access expires,
+and is where the ADM marks a personal as paid (a `platformPayments` ledger entry — works on the Spark plan);
+the trainer detail manages that trainer's plan, trial extension, payments (with estorno) and manual invite
+resolution by code (GOALS.md §35). The invoice callables stay dormant until a Blaze decision. The ADM view
+intentionally does not list raw invite docs or
 show an exact active-code count in the ADM view because invite docs contain student contact and
 health fields. The trainer sees their own active-code count and limit. New Web invite codes have no
 expiry and trainers cancel them manually; unresolved legacy codes without `expiresAt` stay active,
@@ -221,7 +224,7 @@ default location); each run re-seeds the emulators first. No dependencies: a sma
 
 ```bash
 npm run e2e:account -- trainer          # or: student, admin;  add "mobile" for 390 px   (GOALS.md §29)
-npm run e2e:billing                     # trial cap, overdue lock, extension, payment   (GOALS.md §30)
+npm run e2e:mensalidades                # plans, Mensalidades list, pay/estorno, lock and unlock   (GOALS.md §35)
 npm run e2e:admin-focus                 # keyboard focus after every ADM action button  (GOALS.md §29e)
 npm run e2e:ficha-privacy [-- mobile]   # the exercise reference stays out of sight       (GOALS.md §33g)
 npm run e2e:fichas [-- mobile]          # fichas as cards: create, third, edit, delete, student  (GOALS.md §34)

@@ -166,16 +166,10 @@ export async function createWebsiteInvite(
     if (!usage) throw new WebsiteInviteLimitError("O ADM ainda precisa atribuir um plano ou teste a esta conta.");
     const decision = canCreatePlatformInvite({
       terms: usage.subscription.terms,
-      linkedStudentSeats: usage.linkedStudentSeats,
-      pendingInviteReservations: usage.pendingInviteReservations,
       activeInviteCodes: usage.activeInviteCodes,
-      isTrial: usage.subscription.mode === "trial",
     });
     if (!decision.allowed) {
-      const message = decision.reason === "active_invite_code_limit"
-        ? `Limite de códigos ativos atingido (${usage.activeInviteCodes}/${usage.subscription.terms.maxActiveInviteCodes}). Cancele um convite ou aguarde um aluno usar o código.`
-        : `Limite de alunos do teste atingido (${usage.linkedStudentSeats + usage.pendingInviteReservations}/${usage.subscription.terms.trialMaxStudentSeats}). Peça ao ADM para ajustar o teste.`;
-      throw new WebsiteInviteLimitError(message);
+      throw new WebsiteInviteLimitError(`Limite de códigos ativos atingido (${usage.activeInviteCodes}/${usage.subscription.terms.maxActiveInviteCodes}). Cancele um convite ou aguarde um aluno usar o código.`);
     }
     if (usage.monthlyExtraChargeIfClaimedCents > acceptedExtraMonthlyCents) {
       throw new WebsiteInvitePriceConfirmation(usage.monthlyExtraChargeIfClaimedCents);

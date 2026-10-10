@@ -38,10 +38,8 @@ export default function RequestsPage() {
       const { kind, request } = decision;
       if (kind === "approve") {
         const name = (names[request.id] ?? request.email.split("@")[0]).trim();
-        const defaultsApplied = await approveRequest(getFirebase().db, adminUid, request.id, request.email, name);
-        setNotice(defaultsApplied
-          ? `${request.email} foi promovido e recebeu os padrões atuais de teste.`
-          : `${request.email} foi promovido, mas continua bloqueado até o ADM atribuir um plano ou teste.`);
+        await approveRequest(getFirebase().db, adminUid, request.id, request.email, name);
+        setNotice(`${request.email} foi promovido, mas continua bloqueado até você cadastrar um plano em Mensalidades.`);
       } else {
         await rejectRequest(getFirebase().db, adminUid, request.id);
         setNotice(`Solicitação de ${request.email} recusada.`);
@@ -56,10 +54,8 @@ export default function RequestsPage() {
     if (!adminUid || !promotionUid.trim() || busy) return;
     setBusy(true); setNotice(null);
     try {
-      const defaultsApplied = await promoteToTrainer(getFirebase().db, adminUid, promotionUid.trim(), promotionName.trim() || "Personal");
-      setNotice(defaultsApplied
-        ? `Conta ${promotionUid.trim()} promovida e configurada com os padrões atuais de teste.`
-        : `Conta ${promotionUid.trim()} promovida, mas continua bloqueada até o ADM atribuir um plano ou teste.`);
+      await promoteToTrainer(getFirebase().db, adminUid, promotionUid.trim(), promotionName.trim() || "Personal");
+      setNotice(`Conta ${promotionUid.trim()} promovida, mas continua bloqueada até você cadastrar um plano em Mensalidades.`);
       setPromotionUid(""); setPromotionName("");
     } catch { setNotice("Não foi possível promover este UID. Confirme se a conta já existe e tente novamente."); }
     finally { setBusy(false); }

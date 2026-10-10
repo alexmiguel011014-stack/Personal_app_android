@@ -56,7 +56,7 @@ export interface TrainerActivity {
 
 export type AuditAction = "trainer.create" | "trainer.suspend" | "trainer.reactivate" | "trainer.promote" | "request.reject" | "trainer.resetEmail" |
   "platform.plan.create" | "platform.plan.update" | "platform.defaults.update" | "subscription.assign" |
-  "invoice.issue" | "invoice.payment" | "invoice.extend" | "trial.extend" | "admin.student.create" |
+  "invoice.issue" | "invoice.payment" | "invoice.extend" | "trial.extend" | "payment.record" | "payment.void" | "admin.student.create" |
   "invite.create" | "invite.claim" | "invite.cancel" | "invite.resolve";
 
 export interface AuditEntry {
@@ -112,7 +112,7 @@ function object(data: Data, key: string): Data | null {
 const AUDIT_ACTIONS: readonly AuditAction[] = [
   "trainer.create", "trainer.suspend", "trainer.reactivate", "trainer.promote", "request.reject", "trainer.resetEmail",
   "platform.plan.create", "platform.plan.update", "platform.defaults.update", "subscription.assign",
-  "invoice.issue", "invoice.payment", "invoice.extend", "trial.extend", "admin.student.create",
+  "invoice.issue", "invoice.payment", "invoice.extend", "trial.extend", "payment.record", "payment.void", "admin.student.create",
   "invite.create", "invite.claim", "invite.cancel", "invite.resolve",
 ];
 

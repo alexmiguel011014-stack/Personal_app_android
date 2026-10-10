@@ -591,3 +591,14 @@ dialog.confirm::backdrop { background: #12161c8c; }
   .admin-days li { height: 18px; }
   .admin-toolbar > button { flex: 1 1 100%; }
 }
+
+/* GOALS.md §35 — the Mensalidades summary figures double as filter buttons, and the new billing states get a colour. */
+.admin-figure-button { width: 100%; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.admin-figure-button[aria-pressed="true"] { outline: 2px solid var(--forest); outline-offset: -2px; }
+.admin-figure-label { display: block; font-size: 12px; font-weight: 650; }
+.admin-figure-value { display: block; margin-top: 3px; color: var(--forest); font-family: var(--font-display); font-size: 32px; font-weight: 600; letter-spacing: 0; }
+.admin-status[data-state="em_dia"] { background: var(--success-bg); color: var(--success); }
+.admin-status[data-state="atrasado"] { background: var(--alert-bg); color: var(--alert); }
+.admin-status[data-state="vence_breve"], .admin-status[data-state="aguardando"] { background: var(--warning-bg); color: var(--warning); }
+.admin-nowrap { white-space: nowrap; }
+@media (max-width: 600px) { .admin-grid-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

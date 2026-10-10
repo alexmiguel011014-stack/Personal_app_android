@@ -3,6 +3,9 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { countAdmins, countLinkedStudents, loadActivity, loadLatestAudit, loadTrainerRequests, loadTrainerStats, loadTrainers, type TrainerRequest } from "../../data/admin";
+import { describeMensalidade } from "../../data/mensalidades";
+import { loadAllPlatformSubscriptions, type PlatformSubscription } from "../../data/platformSubscriptions";
+import { mensalidadeStateName, type MensalidadeState } from "../../domain/mensalidades";
 import { getFirebase } from "../../data/firebase";
 import type { AuditEntry, TrainerActivity, TrainerStats, TrainerUser } from "../../data/converters";
 import { yearMonth } from "../../domain/dates";
@@ -11,9 +14,9 @@ import { PageHeading, LoadingOrError, Money, DateTime, Empty } from "./AdminPrim
 import { browserTimeZone } from "../_shared/browserTimeZone";
 import { localDate } from "../../domain/dates";
 
-type OverviewData = { trainers: TrainerUser[]; stats: TrainerStats[]; requests: TrainerRequest[]; audit: AuditEntry[]; admins: number; linked: number; activities: TrainerActivity[] };
-const zeroData = (): OverviewData => ({ trainers: [], stats: [], requests: [], audit: [], admins: 0, linked: 0, activities: [] });
-const actionName: Record<string, string> = { "trainer.create": "Personal cadastrado", "trainer.suspend": "Acesso suspenso", "trainer.reactivate": "Acesso reativado", "trainer.promote": "Personal promovido", "request.reject": "Solicitação recusada", "trainer.resetEmail": "Redefinição de senha enviada" };
+type OverviewData = { trainers: TrainerUser[]; stats: TrainerStats[]; requests: TrainerRequest[]; audit: AuditEntry[]; admins: number; linked: number; activities: TrainerActivity[]; subscriptions: Map<string, PlatformSubscription> | null };
+const zeroData = (): OverviewData => ({ trainers: [], stats: [], requests: [], audit: [], admins: 0, linked: 0, activities: [], subscriptions: null });
+const actionName: Record<string, string> = { "trainer.create": "Personal cadastrado", "trainer.suspend": "Acesso suspenso", "trainer.reactivate": "Acesso reativado", "trainer.promote": "Personal promovido", "request.reject": "Solicitação recusada", "trainer.resetEmail": "Redefinição de senha enviada", "payment.record": "Pagamento da mensalidade registrado", "payment.void": "Pagamento estornado", "subscription.assign": "Plano atribuído", "platform.plan.create": "Plano criado", "platform.plan.update": "Plano atualizado", "trial.extend": "Teste prorrogado" };
 
 export default function AdminOverviewPage() {
   const [data, setData] = useState<OverviewData>(zeroData);
@@ -26,13 +29,13 @@ export default function AdminOverviewPage() {
     (async () => {
       try {
         const db = getFirebase().db;
-        const [trainers, stats, requests, audit, admins] = await Promise.all([loadTrainers(db), loadTrainerStats(db), loadTrainerRequests(db), loadLatestAudit(db), countAdmins(db)]);
+        const [trainers, stats, requests, audit, admins, subscriptions] = await Promise.all([loadTrainers(db), loadTrainerStats(db), loadTrainerRequests(db), loadLatestAudit(db), countAdmins(db), loadAllPlatformSubscriptions(db).catch(() => null)]);
         const loadedAt = Date.now();
         const linkedCounts = await Promise.all(trainers.map((trainer) => countLinkedStudents(db, trainer.id)));
         const month = yearMonth(localDate(loadedAt, browserTimeZone()));
         const activities = (await Promise.all(trainers.map((trainer) => loadActivity(db, trainer.id, [month])))).flat();
         if (!cancelled) {
-          setData({ trainers, stats, requests, audit, admins, linked: linkedCounts.reduce((sum, value) => sum + value, 0), activities });
+          setData({ trainers, stats, requests, audit, admins, linked: linkedCounts.reduce((sum, value) => sum + value, 0), activities, subscriptions });
           setAsOf(loadedAt);
           setError(null);
         }
@@ -52,9 +55,15 @@ export default function AdminOverviewPage() {
   const received = currentStats.reduce((sum, item) => sum + item.billing.receivedCents, 0);
   const overdue = currentStats.reduce((sum, item) => sum + item.billing.overdueCents, 0);
   const usage = data.activities.reduce((sum, item) => sum + Object.values(item.actions).reduce((n, count) => n + count, 0), 0);
+  const platformState = (trainer: TrainerUser): MensalidadeState | null => data.subscriptions === null ? null : describeMensalidade(trainer, data.subscriptions.get(trainer.id) ?? null, [], asOf).mensalidade.state;
+  const platformCounts = data.subscriptions === null ? null : data.trainers.reduce<Record<MensalidadeState, number>>((counts, trainer) => {
+    const state = platformState(trainer);
+    if (state !== null) counts[state] += 1;
+    return counts;
+  }, { sem_plano: 0, aguardando: 0, teste: 0, em_dia: 0, vence_breve: 0, atrasado: 0 });
   const attention = data.trainers.filter((trainer) => {
     const stats = data.stats.find((item) => item.trainerId === trainer.id);
-    return trainer.accessStatus !== "suspended" && (stats === undefined || asOf - stats.updatedAt > 14 * 86_400_000 || stats.billing.overdueCents > OVERDUE_ALERT_CENTS || stats.lastSeenAt == null || asOf - stats.lastSeenAt > 14 * 86_400_000);
+    return trainer.accessStatus !== "suspended" && (platformState(trainer) === "atrasado" || stats === undefined || asOf - stats.updatedAt > 14 * 86_400_000 || stats.billing.overdueCents > OVERDUE_ALERT_CENTS || stats.lastSeenAt == null || asOf - stats.lastSeenAt > 14 * 86_400_000);
   });
   const topUsage = [...data.activities].sort((a, b) => Object.values(b.actions).reduce((n, count) => n + count, 0) - Object.values(a.actions).reduce((n, count) => n + count, 0));
 
@@ -71,7 +80,16 @@ export default function AdminOverviewPage() {
         <div className="admin-figure"><dt>Solicitações pendentes</dt><dd>{data.requests.length}</dd></div>
       </dl>
       <p className="admin-muted">Resumos atualizados nos últimos 14 dias: {recentSummaries} de {data.trainers.length} personais.</p>
-      <dl className="admin-grid" aria-label="Resumo de mensalidades do mês">
+      {platformCounts && <section aria-labelledby="platform-billing-heading">
+        <h2 id="platform-billing-heading">Mensalidades da plataforma</h2>
+        <p className="admin-muted">O que cada personal paga a você. <Link href="/admin/mensalidades">Abrir Mensalidades</Link></p>
+        <dl className="admin-grid">
+          {(["em_dia", "vence_breve", "atrasado", "aguardando", "teste", "sem_plano"] as const).map((state) => <div className="admin-figure" key={state}><dt>{mensalidadeStateName(state)}</dt><dd>{platformCounts[state]}</dd></div>)}
+        </dl>
+      </section>}
+      <h2>Cobranças dos personais aos alunos</h2>
+      <p className="admin-muted">O que os personais cobram dos próprios alunos neste mês, a partir dos resumos que eles enviam. Não é a mensalidade da plataforma.</p>
+      <dl className="admin-grid" aria-label="Cobranças dos personais aos alunos no mês">
         <div className="admin-figure"><dt>Previsto no mês</dt><dd><Money cents={currentStats.length ? expected : null} /></dd></div>
         <div className="admin-figure"><dt>Recebido</dt><dd><Money cents={currentStats.length ? received : null} /></dd></div>
         <div className="admin-figure"><dt>Em atraso</dt><dd><Money cents={currentStats.length ? overdue : null} /></dd></div>
@@ -81,7 +99,7 @@ export default function AdminOverviewPage() {
           {attention.length === 0 ? <Empty>Nenhum personal ativo precisa de atenção no momento.</Empty> : <ul className="admin-list">{attention.slice(0, 8).map((trainer) => {
             const stats = data.stats.find((item) => item.trainerId === trainer.id);
             const lastSeen = stats?.lastSeenAt ?? null;
-            const labels = [!stats || asOf - stats.updatedAt > 14 * 86_400_000 ? "Resumo desatualizado" : "", (stats?.billing.overdueCents ?? 0) > OVERDUE_ALERT_CENTS ? "Cobrança em atraso" : "", lastSeen === null ? "Nunca entrou" : asOf - lastSeen > 14 * 86_400_000 ? "Sem atividade há 14+ dias" : ""].filter(Boolean);
+            const labels = [platformState(trainer) === "atrasado" ? "Mensalidade da plataforma em atraso" : "", !stats || asOf - stats.updatedAt > 14 * 86_400_000 ? "Resumo desatualizado" : "", (stats?.billing.overdueCents ?? 0) > OVERDUE_ALERT_CENTS ? "Cobrança em atraso" : "", lastSeen === null ? "Nunca entrou" : asOf - lastSeen > 14 * 86_400_000 ? "Sem atividade há 14+ dias" : ""].filter(Boolean);
             return <li key={trainer.id}><span><Link href={`/admin/personais/detalhe?id=${encodeURIComponent(trainer.id)}`}>{trainer.name || trainer.email}</Link><br /><small>{lastSeen === null ? "Nunca entrou" : <>Última visita: <DateTime at={lastSeen} /></>}</small></span><span className="admin-status">{labels.join(" · ")}</span></li>;
           })}</ul>}
         </section>

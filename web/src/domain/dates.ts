@@ -50,6 +50,23 @@ export function addDays(date: string, days: number): string {
   return new Date(utcMidnight(date) + days * DAY_MS).toISOString().slice(0, 10);
 }
 
+/** `date` plus whole calendar months; a day past the target month's end clamps to its last day (31 Jan + 1 = 28/29 Feb). */
+export function addMonths(date: string, months: number): string {
+  const [year, month, day] = date.split("-").map(Number);
+  const index = year * 12 + (month - 1) + months;
+  const targetYear = Math.floor(index / 12);
+  const targetMonth = (index % 12) + 1;
+  const lastDay = new Date(Date.UTC(targetYear, targetMonth, 0)).getUTCDate();
+  const mm = String(targetMonth).padStart(2, "0");
+  const dd = String(Math.min(day, lastDay)).padStart(2, "0");
+  return `${String(targetYear).padStart(4, "0")}-${mm}-${dd}`;
+}
+
+/** Whole calendar days from `from` to `to`; negative when `to` is earlier. */
+export function daysBetween(from: string, to: string): number {
+  return Math.round((utcMidnight(to) - utcMidnight(from)) / DAY_MS);
+}
+
 export function weekdayOf(date: string): Weekday {
   return WEEKDAYS[new Date(utcMidnight(date)).getUTCDay()];
 }

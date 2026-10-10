@@ -3,6 +3,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { destinationFor } from "../data/session";
+import { formatDate, localDate } from "../domain/dates";
 import { SignOutButton } from "./SignOutButton";
 import { useSession } from "./SessionProvider";
 
@@ -49,9 +50,10 @@ export function RequireArea({ area, children }: { area: "/app" | "/admin" | "/al
       <p className="eyebrow">Acesso ao personal</p>
       <h1>Conta temporariamente bloqueada</h1>
       <p>{session.profile.platformBillingStatus === "pending"
-        ? "O administrador ainda precisa configurar o plano ou período de teste desta conta."
-        : "A cobrança da plataforma venceu ou o período de teste terminou. Peça ao administrador para regularizar o acesso."}</p>
-      {billingUntil !== null && <p>Prazo registrado: {new Date(billingUntil).toLocaleString("pt-BR")}.</p>}
+        ? "Seu plano foi cadastrado e aguarda o primeiro pagamento — ou o administrador ainda vai configurá-lo."
+        : billingUntil !== null
+          ? `Sua mensalidade venceu em ${formatDate(localDate(billingUntil))}. Fale com o administrador para regularizar.`
+          : "Sua mensalidade venceu. Fale com o administrador para regularizar."}</p>
       <button type="button" onClick={() => void refresh()}>Verificar novamente</button>
       <SignOutButton />
     </main>;

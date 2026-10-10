@@ -2,7 +2,6 @@ import { FirebaseError } from "firebase/app";
 import {
   collection,
   doc,
-  getDoc,
   getDocs,
   runTransaction,
   type Firestore,
@@ -11,20 +10,9 @@ import type { PlatformBillingPlanTemplate } from "../domain/platformBilling";
 
 export type EditablePlatformPlanTemplate = Omit<PlatformBillingPlanTemplate, "id" | "version">;
 
-export interface PlatformTrialDefaults {
-  trialMaxStudentSeats: number;
-  trialDurationDays: number;
-  /** Current model copied for newly provisioned trainers; null means the ADM assigns manually. */
-  defaultPlanTemplateId: string | null;
-  version: number;
-}
-
-export type EditablePlatformTrialDefaults = Omit<PlatformTrialDefaults, "version">;
-
 const TEMPLATE_COLLECTION = "platformPlanTemplates";
-const DEFAULTS_DOCUMENT = ["platformBillingConfig", "trialDefaults"] as const;
 const AUDIT_COLLECTION = "adminAudit";
-const RULES_ERROR = "As regras atuais do Firestore ainda não permitem ler ou gravar os modelos de planos e padrões de teste. Atualize e publique firestore.rules com acesso somente ADM para platformPlanTemplates e platformBillingConfig/trialDefaults.";
+const RULES_ERROR = "As regras atuais do Firestore ainda não permitem ler ou gravar os modelos de planos. Publique a versão atual de firestore.rules, com acesso somente ADM para platformPlanTemplates.";
 
 function withRulesMessage<T>(work: () => Promise<T>): Promise<T> {
   return work().catch((error: unknown) => {
@@ -60,15 +48,15 @@ function validPlanName(value: unknown): string {
 function validateTemplate(input: EditablePlatformPlanTemplate): EditablePlatformPlanTemplate {
   return {
     name: validPlanName(input.name),
-    monthlyBaseCents: nonNegativeInteger(input.monthlyBaseCents, "A mensalidade base"),
+    monthlyBaseCents: nonNegativeInteger(input.monthlyBaseCents, "A mensalidade"),
     includedStudentSeats: nonNegativeInteger(input.includedStudentSeats, "Os alunos incluídos"),
     extraStudentMonthlyCents: nonNegativeInteger(input.extraStudentMonthlyCents, "O adicional por aluno"),
     maxActiveInviteCodes: nonNegativeInteger(input.maxActiveInviteCodes, "O limite de convites ativos"),
-    trialMaxStudentSeats: nonNegativeInteger(input.trialMaxStudentSeats, "O limite de alunos no teste"),
-    trialDurationDays: nonNegativeInteger(input.trialDurationDays, "A duração do teste"),
+    trialDurationDays: nonNegativeInteger(input.trialDurationDays, "O período de teste"),
   };
 }
 
+/** Old documents may still carry `trialMaxStudentSeats` (removed in §35); it is ignored here and dropped on the next save. */
 function templateFromDocument(id: string, value: unknown): PlatformBillingPlanTemplate {
   if (!isRecord(value)) throw new Error(`O modelo de plano ${id} está inválido no Firestore.`);
   try {
@@ -78,7 +66,6 @@ function templateFromDocument(id: string, value: unknown): PlatformBillingPlanTe
       includedStudentSeats: value.includedStudentSeats as number,
       extraStudentMonthlyCents: value.extraStudentMonthlyCents as number,
       maxActiveInviteCodes: value.maxActiveInviteCodes as number,
-      trialMaxStudentSeats: value.trialMaxStudentSeats as number,
       trialDurationDays: value.trialDurationDays as number,
     });
     return { ...editable, id, version: positiveVersion(value.version, "A versão do plano") };
@@ -87,35 +74,12 @@ function templateFromDocument(id: string, value: unknown): PlatformBillingPlanTe
   }
 }
 
-function trialDefaultsFromDocument(value: unknown): PlatformTrialDefaults {
-  if (!isRecord(value)) throw new Error("Os padrões de teste estão inválidos no Firestore.");
-  try {
-    const defaultPlanTemplateId = value.defaultPlanTemplateId == null || value.defaultPlanTemplateId === ""
-      ? null
-      : value.defaultPlanTemplateId;
-    if (defaultPlanTemplateId !== null && typeof defaultPlanTemplateId !== "string") {
-      throw new Error("O plano padrão está inválido.");
-    }
-    return {
-      trialMaxStudentSeats: nonNegativeInteger(value.trialMaxStudentSeats, "O limite de alunos no teste"),
-      trialDurationDays: nonNegativeInteger(value.trialDurationDays, "A duração do teste"),
-      defaultPlanTemplateId,
-      version: positiveVersion(value.version, "A versão dos padrões de teste"),
-    };
-  } catch {
-    throw new Error("Os padrões de teste estão inválidos no Firestore. Revise os campos antes de editá-los.");
-  }
-}
-
 function templateFields(template: EditablePlatformPlanTemplate, version: number, lastAuditId: string): Record<string, unknown> {
   return { ...validateTemplate(template), version, lastAuditId };
 }
 
-function auditInput(adminUid: string, reason: string): string {
-  const note = reason.trim();
+function requireAdmin(adminUid: string): void {
   if (!adminUid) throw new Error("Não foi possível identificar o ADM conectado.");
-  if (!note || note.length > 200) throw new Error("Informe um motivo com até 200 caracteres.");
-  return note;
 }
 
 export async function loadPlatformPlanTemplates(db: Firestore): Promise<PlatformBillingPlanTemplate[]> {
@@ -124,20 +88,12 @@ export async function loadPlatformPlanTemplates(db: Firestore): Promise<Platform
     .sort((a, b) => a.name.localeCompare(b.name, "pt-BR")));
 }
 
-export async function loadPlatformTrialDefaults(db: Firestore): Promise<PlatformTrialDefaults | null> {
-  return withRulesMessage(async () => {
-    const snapshot = await getDoc(doc(db, ...DEFAULTS_DOCUMENT));
-    return snapshot.exists() ? trialDefaultsFromDocument(snapshot.data()) : null;
-  });
-}
-
 export async function createPlatformPlanTemplate(
   db: Firestore,
   adminUid: string,
   input: EditablePlatformPlanTemplate,
-  reasonInput: string,
 ): Promise<PlatformBillingPlanTemplate> {
-  const note = auditInput(adminUid, reasonInput);
+  requireAdmin(adminUid);
   return withRulesMessage(async () => {
     const validated = validateTemplate(input);
     const reference = doc(collection(db, TEMPLATE_COLLECTION));
@@ -145,7 +101,7 @@ export async function createPlatformPlanTemplate(
     const created: PlatformBillingPlanTemplate = { ...validated, id: reference.id, version: 1 };
     await runTransaction(db, async (transaction) => {
       transaction.set(reference, templateFields(validated, created.version, auditRef.id));
-      transaction.set(auditRef, { at: Date.now(), adminUid, action: "platform.plan.create", targetUid: reference.id, note, templateId: reference.id, templateVersion: created.version });
+      transaction.set(auditRef, { at: Date.now(), adminUid, action: "platform.plan.create", targetUid: reference.id, note: "Plano criado", templateId: reference.id, templateVersion: created.version });
     });
     return created;
   });
@@ -157,9 +113,8 @@ export async function updatePlatformPlanTemplate(
   adminUid: string,
   id: string,
   input: EditablePlatformPlanTemplate,
-  reasonInput: string,
 ): Promise<PlatformBillingPlanTemplate> {
-  const note = auditInput(adminUid, reasonInput);
+  requireAdmin(adminUid);
   return withRulesMessage(() => runTransaction(db, async (transaction) => {
     const reference = doc(db, TEMPLATE_COLLECTION, id);
     const auditRef = doc(collection(db, AUDIT_COLLECTION));
@@ -173,38 +128,7 @@ export async function updatePlatformPlanTemplate(
       version: nonNegativeInteger(current.version + 1, "A versão do plano"),
     };
     transaction.set(reference, templateFields(validated, updated.version, auditRef.id));
-    transaction.set(auditRef, { at: Date.now(), adminUid, action: "platform.plan.update", targetUid: id, note, templateId: id, templateVersion: updated.version });
+    transaction.set(auditRef, { at: Date.now(), adminUid, action: "platform.plan.update", targetUid: id, note: "Plano atualizado", templateId: id, templateVersion: updated.version });
     return updated;
-  }));
-}
-
-export async function savePlatformTrialDefaults(
-  db: Firestore,
-  adminUid: string,
-  input: EditablePlatformTrialDefaults,
-  reasonInput: string,
-): Promise<PlatformTrialDefaults> {
-  const note = auditInput(adminUid, reasonInput);
-  return withRulesMessage(() => runTransaction(db, async (transaction) => {
-    const reference = doc(db, ...DEFAULTS_DOCUMENT);
-    const auditRef = doc(collection(db, AUDIT_COLLECTION));
-    const snapshot = await transaction.get(reference);
-    const current = snapshot.exists() ? trialDefaultsFromDocument(snapshot.data()) : null;
-    const templateId = input.defaultPlanTemplateId?.trim() || null;
-    if (templateId) {
-      const templateReference = doc(db, TEMPLATE_COLLECTION, templateId);
-      const templateSnapshot = await transaction.get(templateReference);
-      if (!templateSnapshot.exists()) throw new Error("O plano escolhido como padrão não existe mais. Recarregue a página e tente novamente.");
-      templateFromDocument(templateSnapshot.id, templateSnapshot.data());
-    }
-    const saved: PlatformTrialDefaults = {
-      trialMaxStudentSeats: nonNegativeInteger(input.trialMaxStudentSeats, "O limite de alunos no teste"),
-      trialDurationDays: nonNegativeInteger(input.trialDurationDays, "A duração do teste"),
-      defaultPlanTemplateId: templateId,
-      version: nonNegativeInteger((current?.version ?? 0) + 1, "A versão dos padrões de teste"),
-    };
-    transaction.set(reference, { ...saved, lastAuditId: auditRef.id });
-    transaction.set(auditRef, { at: Date.now(), adminUid, action: "platform.defaults.update", targetUid: "platformBillingConfig/trialDefaults", note, defaultsVersion: saved.version, defaultPlanTemplateId: saved.defaultPlanTemplateId });
-    return saved;
   }));
 }

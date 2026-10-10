@@ -37,9 +37,13 @@ import {
   issuePlatformInvoice,
   loadPlatformBillingUsage,
   loadPlatformSubscription,
+  loadTrainerPlatformPayments,
   recordPlatformInvoicePayment,
+  recordPlatformPayment,
+  voidPlatformPayment,
 } from "../src/data/platformSubscriptions";
-import { addDays, localDate } from "../src/domain/dates";
+import { addDays, addMonths, localDate } from "../src/domain/dates";
+import { nextPaidThrough } from "../src/domain/mensalidades";
 import { isDeadlineExpired } from "../src/domain/platformBilling";
 import { emptyProfile } from "../src/domain/studentProfile";
 import type { DraftStudentDoc } from "../src/domain/students";
@@ -108,7 +112,6 @@ const template = {
   includedStudentSeats: 1,
   extraStudentMonthlyCents: 500,
   maxActiveInviteCodes: 1,
-  trialMaxStudentSeats: 3,
   trialDurationDays: 14,
 };
 
@@ -121,8 +124,7 @@ function subscription(trainerUid: string, now = Date.now()) {
       includedStudentSeats: 10,
       extraStudentMonthlyCents: 500,
       maxActiveInviteCodes: 1,
-      trialMaxStudentSeats: 3,
-      trialDurationDays: 14,
+          trialDurationDays: 14,
       snapshotVersion: 1,
       templateId: "basic",
       templateVersion: 1,
@@ -154,85 +156,127 @@ function draft(id: string): DraftStudentDoc {
   };
 }
 
-describe("platform billing flows", () => {
-  it("versions templates, snapshots assigned terms, calculates invoices, extends deadlines, and unlocks after payment", async () => {
+describe("platform billing flows (GOALS.md §35)", () => {
+  it("versions templates, snapshots assigned terms and starts the account locked until the first payment", async () => {
     const now = Date.now();
     await seed({
       "users/trainerA": { role: "TRAINER", platformBillingStatus: "pending", platformBillingUntil: null },
-      "users/trainerB": { role: "TRAINER", platformBillingStatus: "pending", platformBillingUntil: null },
-      "users/studentA": { role: "STUDENT", trainerId: "trainerA" },
-      "users/studentB": { role: "STUDENT", trainerId: "trainerA" },
-      "users/studentC": { role: "STUDENT", trainerId: "trainerA" },
     });
     const admin = await signedInIdentity();
-    const adminDb = admin.db;
-    const created = await createPlatformPlanTemplate(adminDb, admin.uid, template, "Criar cenário de teste");
+    const created = await createPlatformPlanTemplate(admin.db, admin.uid, template);
     expect(created.version).toBe(1);
 
-    const assigned = await assignPlatformSubscription(adminDb, admin.uid, "trainerA", {
+    const assigned = await assignPlatformSubscription(admin.db, admin.uid, "trainerA", {
       templateId: created.id,
-      terms: template,
-      mode: "paid",
-      chargeDuringTrial: false,
+      terms: { ...template, trialDurationDays: 0 },
       effectiveAt: now - 1_000,
-      reason: "Atribuir plano no teste",
     });
-    expect(assigned.terms).toMatchObject({ snapshotVersion: 1, templateVersion: 1, monthlyBaseCents: 10_000 });
+    expect(assigned).toMatchObject({ mode: "paid", chargeDuringTrial: false, trialEndsAt: null });
+    expect(assigned.terms).toMatchObject({ snapshotVersion: 1, templateVersion: 1, monthlyBaseCents: 10_000, planName: "Plano de teste" });
+    expect((await getDoc(doc(admin.db, "users", "trainerA"))).data())
+      .toMatchObject({ platformBillingStatus: "pending", platformBillingUntil: null });
 
-    const updatedTemplate = await updatePlatformPlanTemplate(
-      adminDb,
-      admin.uid,
-      created.id,
-      { ...template, monthlyBaseCents: 20_000 },
-      "Alterar somente novos contratos",
-    );
+    const updatedTemplate = await updatePlatformPlanTemplate(admin.db, admin.uid, created.id, { ...template, monthlyBaseCents: 20_000 });
     expect(updatedTemplate.version).toBe(2);
-    expect((await loadPlatformSubscription(adminDb, "trainerA")).subscription?.terms)
+    expect((await loadPlatformSubscription(admin.db, "trainerA")).subscription?.terms)
       .toMatchObject({ templateVersion: 1, monthlyBaseCents: 10_000 });
+    // The old template document may carry the removed field; rewriting it drops it.
+    expect((await getDoc(doc(admin.db, "platformPlanTemplates", created.id))).data()).not.toHaveProperty("trialMaxStudentSeats");
+  });
 
-    const dueDate = addDays(localDate(Date.now()), 1);
-    const invoice = await issuePlatformInvoice(admin.functions, "trainerA", dueDate, "Emitir fatura sintética");
-    expect(invoice).toMatchObject({
-      linkedStudentSeats: 3,
-      reservedInviteSeats: 0,
-      billableStudentSeats: 3,
-      includedStudentSeats: 1,
-      extraStudentSeats: 2,
-      monthlyBaseCents: 10_000,
-      extraAmountCents: 1_000,
-      amountCents: 11_000,
-      templateVersion: 1,
-    });
+  it("records a payment, opens the access for one month and keeps counting from the expiry when paid early", async () => {
+    const now = Date.now();
+    await seed({ "users/trainerA": { role: "TRAINER", platformBillingStatus: "pending", platformBillingUntil: null } });
+    const admin = await signedInIdentity();
+    const created = await createPlatformPlanTemplate(admin.db, admin.uid, template);
+    await assignPlatformSubscription(admin.db, admin.uid, "trainerA", { templateId: created.id, terms: { ...template, trialDurationDays: 0 }, effectiveAt: now - 1_000 });
 
-    const extended = await extendPlatformInvoiceDueDate(
-      adminDb,
-      admin.uid,
-      "trainerA",
-      invoice.id,
-      5,
-      "Prorrogar vencimento",
-    );
-    expect(extended.dueDate).toBe(addDays(dueDate, 5));
-    expect((await getDoc(doc(adminDb, "users", "trainerA"))).data())
-      .toMatchObject({ platformBillingStatus: "current" });
+    const first = await recordPlatformPayment(admin.db, admin.uid, "trainerA", { amountCents: 10_000, reference: "PIX sintético", expected: { status: "pending", until: null } });
+    expect(first.paidThroughDate).toBe(nextPaidThrough(Date.now(), null).date);
+    expect((await getDoc(doc(admin.db, "users", "trainerA"))).data())
+      .toMatchObject({ platformBillingStatus: "current", platformBillingUntil: first.newUntil });
 
-    const paid = await recordPlatformInvoicePayment(adminDb, admin.uid, "trainerA", invoice.id, "PIX sintético");
-    expect(paid).toMatchObject({ status: "paid", paymentReference: "PIX sintético" });
-    expect((await getDoc(doc(adminDb, "users", "trainerA"))).data())
-      .toMatchObject({ platformBillingStatus: "current", platformBillingUntil: null });
+    const second = await recordPlatformPayment(admin.db, admin.uid, "trainerA", { amountCents: 10_000, reference: "", expected: { status: "current", until: first.newUntil } });
+    expect(second.paidThroughDate).toBe(addMonths(first.paidThroughDate, 1));
 
-    const trial = await assignPlatformSubscription(adminDb, admin.uid, "trainerB", {
+    // A screen that is out of date writes nothing.
+    await expect(recordPlatformPayment(admin.db, admin.uid, "trainerA", { amountCents: 10_000, reference: "", expected: { status: "current", until: first.newUntil } }))
+      .rejects.toThrow(/atualizado em outro lugar/i);
+    expect((await loadTrainerPlatformPayments(admin.db, "trainerA")).filter((payment) => payment.voidedAt === null)).toHaveLength(2);
+  });
+
+  it("counts a payment made during the trial from the trial's end, turns the subscription paid, and a void restores the trial", async () => {
+    const now = Date.now();
+    await seed({ "users/trainerB": { role: "TRAINER", platformBillingStatus: "pending", platformBillingUntil: null } });
+    const admin = await signedInIdentity();
+    const created = await createPlatformPlanTemplate(admin.db, admin.uid, template);
+    const trial = await assignPlatformSubscription(admin.db, admin.uid, "trainerB", {
       templateId: created.id,
       terms: { ...template, trialDurationDays: 14 },
-      mode: "trial",
-      chargeDuringTrial: false,
-      effectiveAt: Date.now() - 1_000,
-      reason: "Atribuir teste sintético",
+      effectiveAt: now - 1_000,
     });
-    const extendedTrial = await extendPlatformTrial(adminDb, admin.uid, "trainerB", 4, "Prorrogar teste sintético");
-    expect(extendedTrial.trialEndsAt).toBe((trial.trialEndsAt ?? 0) + 4 * 86_400_000);
-    expect((await getDoc(doc(adminDb, "users", "trainerB"))).data())
-      .toMatchObject({ platformBillingStatus: "trial", platformBillingUntil: extendedTrial.trialEndsAt });
+    expect(trial.mode).toBe("trial");
+    const trialEndsAt = trial.trialEndsAt as number;
+    expect((await getDoc(doc(admin.db, "users", "trainerB"))).data())
+      .toMatchObject({ platformBillingStatus: "trial", platformBillingUntil: trialEndsAt });
+
+    const extended = await extendPlatformTrial(admin.db, admin.uid, "trainerB", 4, "Prorrogar teste sintético");
+    expect(extended.trialEndsAt).toBe(trialEndsAt + 4 * 86_400_000);
+
+    const payment = await recordPlatformPayment(admin.db, admin.uid, "trainerB", { amountCents: 10_000, reference: "", expected: { status: "trial", until: extended.trialEndsAt } });
+    expect(payment.paidThroughDate).toBe(addMonths(localDate(extended.trialEndsAt as number), 1));
+    expect(payment.previousMode).toBe("trial");
+    expect((await loadPlatformSubscription(admin.db, "trainerB")).subscription?.mode).toBe("paid");
+
+    await voidPlatformPayment(admin.db, admin.uid, payment.id, "Registrado por engano");
+    expect((await loadPlatformSubscription(admin.db, "trainerB")).subscription?.mode).toBe("trial");
+    expect((await getDoc(doc(admin.db, "users", "trainerB"))).data())
+      .toMatchObject({ platformBillingStatus: "trial", platformBillingUntil: extended.trialEndsAt });
+    await expect(voidPlatformPayment(admin.db, admin.uid, payment.id, "Outra vez")).rejects.toThrow(/já foi estornado/i);
+  });
+
+  it("never grants a second trial and keeps status and expiry when the plan is swapped", async () => {
+    const now = Date.now();
+    await seed({ "users/trainerC": { role: "TRAINER", platformBillingStatus: "pending", platformBillingUntil: null } });
+    const admin = await signedInIdentity();
+    const created = await createPlatformPlanTemplate(admin.db, admin.uid, template);
+    const first = await assignPlatformSubscription(admin.db, admin.uid, "trainerC", { templateId: created.id, terms: { ...template, trialDurationDays: 7 }, effectiveAt: now - 1_000 });
+    await recordPlatformPayment(admin.db, admin.uid, "trainerC", { amountCents: 10_000, reference: "", expected: { status: "trial", until: first.trialEndsAt } });
+    const before = (await getDoc(doc(admin.db, "users", "trainerC"))).data();
+
+    const second = await assignPlatformSubscription(admin.db, admin.uid, "trainerC", { templateId: created.id, terms: { ...template, monthlyBaseCents: 30_000, trialDurationDays: 30 }, effectiveAt: now - 500 });
+    expect(second.terms).toMatchObject({ snapshotVersion: 2, monthlyBaseCents: 30_000 });
+    expect(second.mode).toBe("paid");
+    expect((await getDoc(doc(admin.db, "users", "trainerC"))).data())
+      .toMatchObject({ platformBillingStatus: "current", platformBillingUntil: before?.platformBillingUntil });
+  });
+
+  it("restores a blocked trainer to current only through a payment, not through a plan swap", async () => {
+    const now = Date.now();
+    const lapsed = now - 2 * 86_400_000;
+    await seed({ "users/trainerD": { role: "TRAINER", platformBillingStatus: "current", platformBillingUntil: lapsed } });
+    const admin = await signedInIdentity();
+    const created = await createPlatformPlanTemplate(admin.db, admin.uid, template);
+    await seed({ "platformSubscriptions/trainerD": { ...subscription("trainerD", now), terms: { ...subscription("trainerD", now).terms, templateId: created.id } } });
+
+    await assignPlatformSubscription(admin.db, admin.uid, "trainerD", { templateId: created.id, terms: { ...template }, effectiveAt: now - 1_000 });
+    expect((await getDoc(doc(admin.db, "users", "trainerD"))).data())
+      .toMatchObject({ platformBillingStatus: "current", platformBillingUntil: lapsed });
+
+    const payment = await recordPlatformPayment(admin.db, admin.uid, "trainerD", { amountCents: 10_000, reference: "", expected: { status: "current", until: lapsed } });
+    expect(payment.paidThroughDate).toBe(nextPaidThrough(Date.now(), null).date);
+    expect((await getDoc(doc(admin.db, "users", "trainerD"))).data()?.platformBillingUntil).toBeGreaterThan(Date.now());
+  });
+
+  it("refuses a void once something later changed the expiry", async () => {
+    const now = Date.now();
+    await seed({ "users/trainerE": { role: "TRAINER", platformBillingStatus: "pending", platformBillingUntil: null } });
+    const admin = await signedInIdentity();
+    const created = await createPlatformPlanTemplate(admin.db, admin.uid, template);
+    await assignPlatformSubscription(admin.db, admin.uid, "trainerE", { templateId: created.id, terms: { ...template, trialDurationDays: 0 }, effectiveAt: now - 1_000 });
+    const first = await recordPlatformPayment(admin.db, admin.uid, "trainerE", { amountCents: 10_000, reference: "", expected: { status: "pending", until: null } });
+    await recordPlatformPayment(admin.db, admin.uid, "trainerE", { amountCents: 10_000, reference: "", expected: { status: "current", until: first.newUntil } });
+    await expect(voidPlatformPayment(admin.db, admin.uid, first.id, "Tentativa fora de ordem")).rejects.toThrow(/último pagamento/i);
   });
 });
 
@@ -386,7 +430,7 @@ describe("privacy-safe platform billing callable", () => {
       "users/trainerExpired": { role: "TRAINER", platformBillingStatus: "trial", platformBillingUntil: trialEndsAt },
       "platformPlanTemplates/basic": {
         name: "Básico", monthlyBaseCents: 10_000, includedStudentSeats: 5, extraStudentMonthlyCents: 500,
-        maxActiveInviteCodes: 5, trialMaxStudentSeats: 2, trialDurationDays: 14, version: 1,
+        maxActiveInviteCodes: 5, trialDurationDays: 14, version: 1,
       },
       "platformSubscriptions/trainerExpired": {
         ...subscription("trainerExpired", now),
@@ -409,15 +453,10 @@ describe("privacy-safe platform billing callable", () => {
 
     const reassignmentTerms = {
       monthlyBaseCents: 10_000, includedStudentSeats: 5, extraStudentMonthlyCents: 500,
-      maxActiveInviteCodes: 5, trialMaxStudentSeats: 2, trialDurationDays: 14,
+      maxActiveInviteCodes: 5, trialDurationDays: 14,
     };
     await expect(assignPlatformSubscription(admin.db, admin.uid, "trainerExpired", {
-      templateId: "basic", terms: reassignmentTerms, mode: "paid", chargeDuringTrial: false,
-      effectiveAt: Date.now() - 1_000, reason: "Atribuição antes de quitar fatura",
-    })).rejects.toThrow(/fatura pendente/i);
-    await expect(assignPlatformSubscription(admin.db, admin.uid, "trainerExpired", {
-      templateId: "basic", terms: reassignmentTerms, mode: "trial", chargeDuringTrial: false,
-      effectiveAt: Date.now() - 1_000, reason: "Teste antes de quitar fatura",
+      templateId: "basic", terms: reassignmentTerms, effectiveAt: Date.now() - 1_000,
     })).rejects.toThrow(/fatura pendente/i);
     expect((await getDoc(doc(admin.db, "users", "trainerExpired"))).data())
       .toMatchObject({ platformBillingStatus: "blocked", platformBillingUntil: trialEndsAt });
@@ -440,13 +479,17 @@ describe("privacy-safe platform billing callable", () => {
     await assignPlatformSubscription(admin.db, admin.uid, "trainerExpired", {
       templateId: "basic",
       terms: reassignmentTerms,
-      mode: "paid",
-      chargeDuringTrial: false,
       effectiveAt: Date.now() - 1_000,
-      reason: "Atribuir plano pago sintético",
+    });
+    // Swapping the plan does not unlock an expired account; a recorded payment does.
+    expect((await getDoc(doc(admin.db, "users", "trainerExpired"))).data())
+      .toMatchObject({ platformBillingStatus: "blocked", platformBillingUntil: trialEndsAt });
+    await recordPlatformPayment(admin.db, admin.uid, "trainerExpired", {
+      amountCents: 10_000, reference: "", expected: { status: "blocked", until: trialEndsAt },
     });
     expect((await getDoc(doc(admin.db, "users", "trainerExpired"))).data())
-      .toMatchObject({ platformBillingStatus: "current", platformBillingUntil: null });
+      .toMatchObject({ platformBillingStatus: "current" });
+    expect((await getDoc(doc(admin.db, "users", "trainerExpired"))).data()?.platformBillingUntil).toBeGreaterThan(Date.now());
   });
 
   it("rejects a signed-in trainer querying another trainer's billing summary", async () => {

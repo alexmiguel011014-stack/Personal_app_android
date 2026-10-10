@@ -39,3 +39,13 @@ describe("admin metrics", () => {
     expect(csv).toContain("'\tbad@example.test");
   });
 });
+
+describe("trainersCsv platform billing columns (GOALS.md §35)", () => {
+  it("adds the platform plan and the mensalidade state, empty when not loaded", () => {
+    const base = { id: "t1", name: "Ana", email: "ana@example.com", accessStatus: "active" as const, lastSeenAt: null, usage: "Nunca entrou" as const, actions30d: 0, activeDays30d: 0, activePlans: 0, averageTicketCents: null, collectionRate: null, statsUpdatedAt: 0, stale: true, stats: null };
+    const lines = trainersCsv([{ ...base, billing: { planName: "Pro", state: "em_dia" } }, base]).split("\r\n");
+    expect(lines[0]).toContain('"Plano da plataforma","Mensalidade da plataforma"');
+    expect(lines[1]).toContain('"Pro","Em dia"');
+    expect(lines[2]).toMatch(/"",""$/);
+  });
+});

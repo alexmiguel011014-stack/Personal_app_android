@@ -13,7 +13,6 @@ import {
   type WriteBatch,
 } from "firebase/firestore";
 import { toAuditEntry, toTrainerActivity, toTrainerStats, toTrainerUser, type AuditAction, type AuditEntry, type TrainerActivity, type TrainerStats, type TrainerUser } from "./converters";
-import { applyPlatformDefaultsToNewTrainer } from "./platformSubscriptions";
 
 export interface TrainerRequest {
   id: string;
@@ -111,7 +110,8 @@ export async function setAccessStatus(
   await batch.commit();
 }
 
-export async function promoteToTrainer(db: Firestore, adminUid: string, uid: string, name: string): Promise<boolean> {
+/** The account is created locked (`pending`); the ADM assigns a plan afterwards in Mensalidades (§35). */
+export async function promoteToTrainer(db: Firestore, adminUid: string, uid: string, name: string): Promise<void> {
   if (adminUid === uid) throw new Error("Não é possível promover a própria conta.");
   const target = await getDoc(doc(db, "users", uid));
   if (!target.exists() || target.data().role === "ADM") throw new Error("Esta conta não pode ser promovida por este fluxo.");
@@ -125,7 +125,6 @@ export async function promoteToTrainer(db: Firestore, adminUid: string, uid: str
   });
   batch.set(doc(db, "users", uid), { role: "TRAINER", name, createdBy: adminUid, platformBillingStatus: "pending", platformBillingUntil: null, lastAuditId: auditRef.id }, { merge: true });
   await batch.commit();
-  return applyPlatformDefaultsToNewTrainer(db, adminUid, uid);
 }
 
 export async function rejectRequest(db: Firestore, adminUid: string, uid: string): Promise<void> {
@@ -135,7 +134,7 @@ export async function rejectRequest(db: Firestore, adminUid: string, uid: string
   await batch.commit();
 }
 
-export async function approveRequest(db: Firestore, adminUid: string, uid: string, email: string, name: string): Promise<boolean> {
+export async function approveRequest(db: Firestore, adminUid: string, uid: string, email: string, name: string): Promise<void> {
   if (adminUid === uid) throw new Error("Não é possível promover a própria conta.");
   const target = await getDoc(doc(db, "users", uid));
   if (target.exists() && target.data().role === "ADM") throw new Error("Uma conta ADM não pode ser promovida por este fluxo.");
@@ -160,5 +159,4 @@ export async function approveRequest(db: Firestore, adminUid: string, uid: strin
   }, { merge: true });
   batch.delete(doc(db, "trainerRequests", uid));
   await batch.commit();
-  return applyPlatformDefaultsToNewTrainer(db, adminUid, uid);
 }

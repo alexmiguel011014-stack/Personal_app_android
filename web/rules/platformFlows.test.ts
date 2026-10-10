@@ -280,6 +280,43 @@ describe("platform billing flows (GOALS.md §35)", () => {
   });
 });
 
+describe("a subscription written before §35 (found on the live site)", () => {
+  // The live documents carry `terms.trialMaxStudentSeats` and `overrides.trialMaxStudentSeats`, which this code no longer
+  // models. A write that rebuilt the whole document dropped them, changed `terms`, and the Rules (which only allow `mode`,
+  // `updatedAt`, `lastAuditId` for a payment and `trialEndsAt` for a trial extension) refused it. Writes must be partial.
+  it("extends the trial, takes the first payment and voids it without touching the legacy keys", async () => {
+    const now = Date.now();
+    const trialEndsAt = now + 5 * 86_400_000;
+    const legacy = {
+      ...subscription("trainerLegacy", now),
+      mode: "trial",
+      trialStartedAt: now - 1_000,
+      trialEndsAt,
+      terms: { ...subscription("trainerLegacy", now).terms, trialMaxStudentSeats: 3, trialDurationDays: 5 },
+      overrides: { trialMaxStudentSeats: 2 },
+    };
+    await seed({
+      "users/trainerLegacy": { role: "TRAINER", platformBillingStatus: "trial", platformBillingUntil: trialEndsAt },
+      "platformPlanTemplates/basic": { name: "Básico", monthlyBaseCents: 10_000, includedStudentSeats: 5, extraStudentMonthlyCents: 500, maxActiveInviteCodes: 5, trialDurationDays: 5, version: 1 },
+      "platformSubscriptions/trainerLegacy": legacy,
+    });
+    const admin = await signedInIdentity();
+    const raw = async () => (await getDoc(doc(admin.db, "platformSubscriptions", "trainerLegacy"))).data();
+
+    const extended = await extendPlatformTrial(admin.db, admin.uid, "trainerLegacy", 2, "Prorrogar teste legado");
+    expect((await raw())?.terms).toMatchObject({ trialMaxStudentSeats: 3 });
+
+    const payment = await recordPlatformPayment(admin.db, admin.uid, "trainerLegacy", {
+      amountCents: 10_000, reference: "", expected: { status: "trial", until: extended.trialEndsAt },
+    });
+    expect(payment.planName).toBe("Básico"); // a legacy snapshot has no planName: read from the template
+    expect(await raw()).toMatchObject({ mode: "paid", terms: { trialMaxStudentSeats: 3 }, overrides: { trialMaxStudentSeats: 2 } });
+
+    await voidPlatformPayment(admin.db, admin.uid, payment.id, "Teste do legado");
+    expect(await raw()).toMatchObject({ mode: "trial", terms: { trialMaxStudentSeats: 3 }, overrides: { trialMaxStudentSeats: 2 } });
+  });
+});
+
 describe("privacy-safe platform billing callable", () => {
   it("counts linked students and active invite reservations without returning invite or health fields", async () => {
     const now = Date.now();

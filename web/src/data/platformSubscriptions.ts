@@ -569,7 +569,8 @@ export async function extendPlatformTrial(
     const wasBlocked = userSnapshot.get("platformBillingStatus") === "blocked" || isDeadlineExpired(subscription.trialEndsAt, now);
     const billingToStatus = wasBlocked ? "blocked" : "trial";
     const billingToUntil = wasBlocked ? userSnapshot.get("platformBillingUntil") ?? subscription.trialEndsAt : nextTrialEndsAt;
-    transaction.set(subscriptionRef, extended);
+    // update(), not set(): see recordPlatformPayment — a legacy snapshot's extra `terms` keys must stay untouched.
+    transaction.update(subscriptionRef, { trialEndsAt: nextTrialEndsAt, updatedAt: now, lastAuditId: auditRef.id });
     transaction.set(userRef, billingSummary(billingToStatus, billingToUntil, auditRef.id), { merge: true });
     transaction.set(auditRef, {
       at: now,
@@ -738,7 +739,9 @@ export async function recordPlatformPayment(
     };
     transaction.set(paymentRef, { ...payment });
     if (subscription.mode === "trial") {
-      transaction.set(subscriptionRef, { ...subscription, mode: "paid", updatedAt: now, lastAuditId: auditRef.id });
+      // update(), not set(): a subscription written before §35 carries `terms.trialMaxStudentSeats`, which the parser drops;
+      // rewriting the whole document would change `terms` and the Rules only allow `mode`, `updatedAt`, `lastAuditId` here.
+      transaction.update(subscriptionRef, { mode: "paid", updatedAt: now, lastAuditId: auditRef.id });
     }
     transaction.set(userRef, billingSummary("current", next.until, auditRef.id), { merge: true });
     transaction.set(auditRef, {
@@ -789,7 +792,7 @@ export async function voidPlatformPayment(
     const voided: PlatformPayment = { ...payment, voidedAt: now, voidedBy: adminUid, lastAuditId: auditRef.id };
     transaction.set(paymentRef, { ...voided });
     if (payment.previousMode === "trial" && subscription.mode === "paid") {
-      transaction.set(subscriptionRef, { ...subscription, mode: "trial", updatedAt: now, lastAuditId: auditRef.id });
+      transaction.update(subscriptionRef, { mode: "trial", updatedAt: now, lastAuditId: auditRef.id });
     }
     transaction.set(userRef, billingSummary(payment.previousStatus, payment.previousUntil, auditRef.id), { merge: true });
     transaction.set(auditRef, {

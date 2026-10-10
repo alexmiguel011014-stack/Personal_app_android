@@ -60,7 +60,7 @@ export default function AdminOverviewPage() {
     const state = platformState(trainer);
     if (state !== null) counts[state] += 1;
     return counts;
-  }, { sem_plano: 0, aguardando: 0, teste: 0, em_dia: 0, vence_breve: 0, atrasado: 0 });
+  }, { sem_plano: 0, aguardando: 0, teste: 0, em_dia: 0, vence_breve: 0, atrasado: 0, pausado: 0 });
   const attention = data.trainers.filter((trainer) => {
     const stats = data.stats.find((item) => item.trainerId === trainer.id);
     return trainer.accessStatus !== "suspended" && (platformState(trainer) === "atrasado" || stats === undefined || asOf - stats.updatedAt > 14 * 86_400_000 || stats.billing.overdueCents > OVERDUE_ALERT_CENTS || stats.lastSeenAt == null || asOf - stats.lastSeenAt > 14 * 86_400_000);

@@ -1,21 +1,29 @@
+import { snapshotTerms, type BillingTerms } from "./billing/terms";
+
 /**
- * Platform billing for trainer accounts. This is separate from billing.ts and its billingPlans /
- * payments, which represent what a trainer charges their students.
+ * Platform billing for trainer accounts: the platform's own limits on top of the shared billing terms
+ * (`billing/terms.ts`, GOALS.md §36). Separate from `billingPlans`/`payments`/`studentPlans`, which are what a
+ * trainer charges their students.
  */
 
 /** All monetary values are integer cents in BRL. */
-export interface PlatformBillingTerms {
-  /** Recurring monthly amount before per-student add-ons. */
-  monthlyBaseCents: number;
+export interface PlatformBillingTerms extends BillingTerms {
   /** Number of linked students included in the base monthly amount. */
   includedStudentSeats: number;
   /** Recurring monthly amount for each linked student above the included seats. */
   extraStudentMonthlyCents: number;
   /** Maximum unused, unrevoked, unexpired invite codes allowed at the same time on the site. */
   maxActiveInviteCodes: number;
-  /** Days of free, uncapped trial a new account gets; 0 means no trial (§35: charging starts after it). */
-  trialDurationDays: number;
 }
+
+/** The fields of a platform plan, in the order they are stored. */
+export const PLATFORM_TERM_KEYS = [
+  "monthlyBaseCents",
+  "includedStudentSeats",
+  "extraStudentMonthlyCents",
+  "maxActiveInviteCodes",
+  "trialDurationDays",
+] as const satisfies readonly (keyof PlatformBillingTerms)[];
 
 /** ADM-managed default copied when assigning a platform plan to a trainer. */
 export interface PlatformBillingPlanTemplate extends PlatformBillingTerms {
@@ -51,17 +59,7 @@ export function snapshotPlatformTrainerTerms(
   overrides: PlatformBillingTermsOverrides,
   snapshotVersion: number,
 ): PlatformTrainerTermsSnapshot {
-  return {
-    monthlyBaseCents: overrides.monthlyBaseCents ?? template.monthlyBaseCents,
-    includedStudentSeats: overrides.includedStudentSeats ?? template.includedStudentSeats,
-    extraStudentMonthlyCents: overrides.extraStudentMonthlyCents ?? template.extraStudentMonthlyCents,
-    maxActiveInviteCodes: overrides.maxActiveInviteCodes ?? template.maxActiveInviteCodes,
-    trialDurationDays: overrides.trialDurationDays ?? template.trialDurationDays,
-    snapshotVersion,
-    templateId: template.id,
-    templateVersion: template.version,
-    planName: template.name,
-  };
+  return snapshotTerms(template, overrides, snapshotVersion, PLATFORM_TERM_KEYS) as PlatformTrainerTermsSnapshot;
 }
 
 /** Expected recurring platform amount based on linked students; pending invites are not billed. */

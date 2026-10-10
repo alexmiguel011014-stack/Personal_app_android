@@ -66,7 +66,7 @@ export function buildMensalidadeRows(data: MensalidadeData, now: number): Mensal
 }
 
 export function mensalidadeCounts(rows: readonly MensalidadeRow[]): Record<MensalidadeState, number> {
-  const counts: Record<MensalidadeState, number> = { sem_plano: 0, aguardando: 0, teste: 0, em_dia: 0, vence_breve: 0, atrasado: 0 };
+  const counts: Record<MensalidadeState, number> = { sem_plano: 0, aguardando: 0, teste: 0, em_dia: 0, vence_breve: 0, atrasado: 0, pausado: 0 };
   for (const row of rows) counts[row.mensalidade.state] += 1;
   return counts;
 }

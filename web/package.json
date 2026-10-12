@@ -17,6 +17,7 @@
     "catalog:publish": "node scripts/publish-exercise-catalog.mjs",
     "check:leak": "node scripts/check-no-reference-leak.mjs",
     "check:rules-version": "node scripts/check-rules-version.mjs",
+    "report:billing-size": "node scripts/billing-size-report.mjs",
     "dev:local": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-local.ps1",
     "e2e:account": "node e2e/account.mjs",
     "e2e:mensalidades": "node e2e/mensalidades.mjs",

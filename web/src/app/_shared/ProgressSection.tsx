@@ -12,7 +12,21 @@ import { formatSets, loadProgression, loggedExercises, recentLogs } from "../../
 // the trainer's page for that student and the student's own evolution, as ExerciseProgressionChart
 // is on the phone. (`_shared` — the underscore keeps the folder out of the routes.)
 
-export function ProgressSection({ logs, timeZone }: { logs: readonly WorkoutLogDoc[]; timeZone: string }) {
+export function ProgressSection({
+  logs: recent,
+  timeZone,
+  windowFrom,
+  loadAll,
+}: {
+  logs: readonly WorkoutLogDoc[];
+  timeZone: string;
+  /** GOALS.md §38b: where `logs` starts when it is a window of recent logs, not the whole history. */
+  windowFrom?: number;
+  /** Reads the whole history — only when the person asks for it ("Ver histórico completo"). */
+  loadAll?: () => Promise<WorkoutLogDoc[]>;
+}) {
+  const [history, setHistory] = useState<WorkoutLogDoc[] | "loading" | "error" | null>(null);
+  const logs = Array.isArray(history) ? history : recent;
   const exercises = loggedExercises(logs);
   const [picked, setPicked] = useState<string | null>(null);
   const exercise = picked !== null && exercises.includes(picked) ? picked : (exercises[0] ?? null);
@@ -85,6 +99,22 @@ export function ProgressSection({ logs, timeZone }: { logs: readonly WorkoutLogD
               ))}
             </tbody>
           </table>
+        )}
+        {loadAll && windowFrom !== undefined && !Array.isArray(history) && (
+          <p className="section-footnote">
+            Mostrando os registros desde {formatDate(localDate(windowFrom, timeZone))}.{" "}
+            <button
+              type="button"
+              disabled={history === "loading"}
+              onClick={() => {
+                setHistory("loading");
+                loadAll().then(setHistory, () => setHistory("error"));
+              }}
+            >
+              {history === "loading" ? "Buscando o histórico…" : "Ver histórico completo"}
+            </button>
+            {history === "error" && <span role="alert"> Não foi possível buscar o histórico. Tente de novo.</span>}
+          </p>
         )}
       </section>
     </>

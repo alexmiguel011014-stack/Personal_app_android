@@ -1,4 +1,5 @@
-import { collection, doc, getDocs, query, setDoc, where, type Firestore } from "firebase/firestore";
+import { collection, doc, query, setDoc, where, type Firestore } from "firebase/firestore";
+import { getDocs } from "./firestoreRead";
 import type { Biometric } from "../domain/biometrics";
 import { biometricToFirestore, toBiometric } from "./converters";
 
@@ -13,6 +14,18 @@ export async function loadStudentBiometrics(db: Firestore, trainerId: string, st
     .map((document) => toBiometric(document.id, document.data()))
     .filter((biometric) => biometric !== null)
     .sort((a, b) => b.date - a.date);
+}
+
+/**
+ * GOALS.md §38b: every measurement of the trainer's alunos dated in [from, to) — "Registros" reads its window with
+ * one query instead of one per aluno. Needs the (trainerId, date) index.
+ */
+export async function loadTrainerBiometrics(db: Firestore, trainerId: string, from: number, to?: number): Promise<Biometric[]> {
+  const range = [where("date", ">=", from), ...(to === undefined ? [] : [where("date", "<", to)])];
+  const snapshot = await getDocs(query(collection(db, "biometrics"), where("trainerId", "==", trainerId), ...range));
+  return snapshot.docs
+    .map((document) => toBiometric(document.id, document.data()))
+    .filter((biometric) => biometric !== null);
 }
 
 /** The signed-in student's own measurements, newest first — StudentRepository.getMyBiometrics. */

@@ -1,4 +1,5 @@
-import { collection, doc, getDocs, query, runTransaction, where, type Firestore } from "firebase/firestore";
+import { collection, doc, query, runTransaction, where, type Firestore } from "firebase/firestore";
+import { getDocs } from "./firestoreRead";
 import { httpsCallable, type Functions } from "firebase/functions";
 import { addDays, isCalendarDate, localDate } from "../domain/dates";
 import { isDeadlineExpired } from "../domain/platformBilling";

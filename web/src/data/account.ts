@@ -1,4 +1,5 @@
-import { doc, getDoc, serverTimestamp, updateDoc, type Firestore } from "firebase/firestore";
+import { doc, serverTimestamp, updateDoc, type Firestore } from "firebase/firestore";
+import { getDoc } from "./firestoreRead";
 import {
   EmailAuthProvider,
   getIdToken,

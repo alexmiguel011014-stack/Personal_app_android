@@ -35,14 +35,18 @@ export interface DashboardFigures {
 
 export interface DashboardInput {
   students: readonly Student[];
+  /** GOALS.md §38b: the recent window of logs the screens read (readWindows.ts), or every log — same figures. */
   logs: readonly WorkoutLogDoc[];
+  /** Each aluno's latest log before the window, when they have none inside it: keeps "último treino" exact. */
+  earlierLogs?: readonly WorkoutLogDoc[];
   payments: readonly Payment[];
 }
 
 export function dashboardFigures(input: DashboardInput, today: string, timeZone: string): DashboardFigures {
   const activeStudents = filterStudentsByPause(input.students);
   const pausedIds = new Set(input.students.filter((student) => student.paused).map((student) => student.id));
-  const trained = trainedDays(input.logs.filter((log) => !pausedIds.has(log.studentId)), timeZone);
+  const logs = input.earlierLogs ? [...input.logs, ...input.earlierLogs] : input.logs;
+  const trained = trainedDays(logs.filter((log) => !pausedIds.has(log.studentId)), timeZone);
   return {
     students: studentCounts(activeStudents),
     sessions: sessionsBetween(trained, addDays(today, -(SESSIONS_WINDOW_DAYS - 1)), today),

@@ -3,14 +3,13 @@ import {
   collection,
   doc,
   getCountFromServer,
-  getDoc,
-  getDocs,
   query,
   runTransaction,
   where,
   writeBatch,
   type Firestore,
 } from "firebase/firestore";
+import { getDoc, getDocs } from "./firestoreRead";
 import {
   countActiveInvitesFromOtherClients,
   countActivePlatformInvites,

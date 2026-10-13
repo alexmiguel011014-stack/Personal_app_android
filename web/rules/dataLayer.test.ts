@@ -30,7 +30,13 @@ import {
 } from "../src/data/students";
 import { emptyProfile } from "../src/domain/studentProfile";
 import { loadMyProfile, resolveProfile } from "../src/data/session";
-import { ensureMonthlyCharges, loadTrainerSnapshot, loadTrainerView } from "../src/data/trainerData";
+import {
+  ensureMonthlyCharges,
+  loadStudentLogs,
+  loadTrainerLogs,
+  loadTrainerSnapshot,
+  loadTrainerView,
+} from "../src/data/trainerData";
 import {
   FichaNotFound,
   FichaTooLarge,
@@ -42,8 +48,14 @@ import {
   saveFicha,
   type FichaDraft,
 } from "../src/data/workouts";
-import { addBiometric, loadMyBiometrics, loadStudentBiometrics, logOwnBiometric } from "../src/data/biometrics";
-import { loadStudentAssessments, submitAssessment } from "../src/data/assessments";
+import {
+  addBiometric,
+  loadMyBiometrics,
+  loadStudentBiometrics,
+  loadTrainerBiometrics,
+  logOwnBiometric,
+} from "../src/data/biometrics";
+import { loadStudentAssessments, loadTrainerAssessments, submitAssessment } from "../src/data/assessments";
 import { loadMyLogs, logSession } from "../src/data/workoutLogs";
 import { PAR_Q } from "../src/domain/assessments";
 import { bookSlot, loadSchedules, removeBooking } from "../src/data/schedules";
@@ -59,6 +71,9 @@ import { dashboardFigures } from "../src/domain/dashboard";
 
 const PROJECT_ID = "demo-personal-tracker";
 const ZONE = "America/Sao_Paulo";
+/** GOALS.md §38b: a "now" just after the fixtures' tiny timestamps, so the 63-day log window covers all of them. */
+const T0 = 10_000;
+const DAY = 86_400_000;
 const RULES_FILE = process.env.RULES_FILE ?? fileURLToPath(new URL("../../firestore.rules", import.meta.url));
 
 let env: RulesTestEnvironment;
@@ -119,7 +134,7 @@ describe("ensureMonthlyCharges", () => {
       "billingPlans/studentB": plan("studentB", { active: false }),
     });
     const db = signedInAs("trainerA");
-    const { plans } = await loadTrainerSnapshot(db, "trainerA");
+    const { plans } = await loadTrainerSnapshot(db, "trainerA", T0);
     expect(plans.map((p) => p.studentId).sort()).toEqual(["studentA", "studentB"]);
 
     // The rules accept exactly the document the converter writes (every field, no `id`).
@@ -168,13 +183,13 @@ describe("a trainer's writes to students (GOALS.md §23g)", () => {
     const id = await createDraftStudent(db, "trainerA", profile, 5);
     expect(await read(`students/${id}`)).toMatchObject({ trainerId: "trainerA", name: "Ana Costa", role: "student", createdAt: 5 });
 
-    const snapshot = await loadTrainerSnapshot(db, "trainerA");
+    const snapshot = await loadTrainerSnapshot(db, "trainerA", T0);
     const code = await generateInvite(db, "trainerA", snapshot.drafts[0], 6);
     expect(await read(`invites/${code}`)).toMatchObject({ trainerId: "trainerA", used: false, draftId: id, name: "Ana Costa" });
 
     // The web's own invite, claimed through the web's own claim: the whole loop without the phone.
     expect(await claimInvite(signedInAs("ana-uid"), "ana-uid", code, 7)).toEqual({ ok: true, trainerId: "trainerA" });
-    const after = await loadTrainerSnapshot(db, "trainerA");
+    const after = await loadTrainerSnapshot(db, "trainerA", T0);
     expect(after.students.map((s) => [s.name, s.linked])).toEqual([["Ana Costa", true]]);
   });
 
@@ -185,7 +200,7 @@ describe("a trainer's writes to students (GOALS.md §23g)", () => {
     });
     const db = signedInAs("trainerA");
     await createDraftStudent(db, "trainerA", profile, 5);
-    const [draft] = (await loadTrainerSnapshot(db, "trainerA")).drafts;
+    const [draft] = (await loadTrainerSnapshot(db, "trainerA", T0)).drafts;
     const codes = ["TAKEN000", "FRESH001"];
     expect(await generateInvite(db, "trainerA", draft, 6, () => codes.shift() ?? "FRESH002")).toBe("FRESH001");
     expect((await read("invites/TAKEN000"))?.trainerId).toBe("trainerB"); // untouched
@@ -207,7 +222,7 @@ describe("a trainer's writes to students (GOALS.md §23g)", () => {
     });
     const db = signedInAs("trainerA");
     const draftId = await createDraftStudent(db, "trainerA", profile, 5);
-    const { drafts, linked } = await loadTrainerSnapshot(db, "trainerA");
+    const { drafts, linked } = await loadTrainerSnapshot(db, "trainerA", T0);
 
     await updateStudentProfile(db, "trainerA", { kind: "draft", doc: drafts[0] }, { ...profile, goal: "Força" });
     expect(await read(`students/${draftId}`)).toMatchObject({ goal: "Força", createdAt: 5 });
@@ -222,6 +237,72 @@ describe("a trainer's writes to students (GOALS.md §23g)", () => {
       canLogBiometrics: true,
       pendingAssessmentRequest: true,
     });
+  });
+});
+
+describe("windowed reads (GOALS.md §38b) pass the Rules and read only what they should", () => {
+  const NOW = 400 * DAY;
+  const log = (id: string, trainerId: string, studentId: string, daysAgo: number) => ({
+    [`workoutLogs/${id}`]: {
+      trainerId,
+      studentId,
+      workoutId: "w1",
+      exerciseName: "Supino",
+      date: NOW - daysAgo * DAY,
+      performedSetsJson: "[]",
+      note: null,
+    },
+  });
+  const fixture = () =>
+    seed({
+      "users/trainerA": { role: "TRAINER" },
+      "users/trainerB": { role: "TRAINER" },
+      "users/recent": { role: "STUDENT", trainerId: "trainerA", name: "Recente", createdAt: 1 },
+      "users/quiet": { role: "STUDENT", trainerId: "trainerA", name: "Sumido", createdAt: 1 },
+      "users/never": { role: "STUDENT", trainerId: "trainerA", name: "Nunca", createdAt: 1 },
+      ...log("r1", "trainerA", "recent", 2),
+      ...log("r2", "trainerA", "recent", 200),
+      ...log("q1", "trainerA", "quiet", 100),
+      ...log("q2", "trainerA", "quiet", 150),
+      ...log("other", "trainerB", "someone", 1),
+      "biometrics/b-new": { trainerId: "trainerA", studentId: "recent", weight: 70, height: 0, bodyFat: 0, date: NOW - 3 * DAY },
+      "biometrics/b-old": { trainerId: "trainerA", studentId: "recent", weight: 71, height: 0, bodyFat: 0, date: NOW - 90 * DAY },
+      "assessments/a-new": { trainerId: "trainerA", studentId: "recent", submittedAt: NOW - 5 * DAY, parQAnswersJson: "{}", goal: "", experienceLevel: "", trainingDays: [] },
+    });
+
+  it("the trainer snapshot holds the window plus each quiet aluno's latest older log", async () => {
+    await fixture();
+    const snapshot = await loadTrainerSnapshot(signedInAs("trainerA"), "trainerA", NOW);
+    expect(snapshot.logs.map((l) => l.id)).toEqual(["r1"]);
+    expect(snapshot.earlierLogs.map((l) => l.id)).toEqual(["q1"]);
+    expect(snapshot.earlierByStudent.get("never")).toBeNull();
+    // A refresh re-reads only the overlap and keeps the rest.
+    await seed(log("r3", "trainerA", "recent", 0));
+    const refreshed = await loadTrainerSnapshot(signedInAs("trainerA"), "trainerA", NOW + 1, snapshot);
+    expect(refreshed.logs.map((l) => l.id).sort()).toEqual(["r1", "r3"]);
+  });
+
+  it("older history, one aluno's history and the Registros windows are readable by their trainer only", async () => {
+    await fixture();
+    const db = signedInAs("trainerA");
+    expect((await loadTrainerLogs(db, "trainerA", NOW - 160 * DAY, NOW - 63 * DAY)).map((l) => l.id).sort()).toEqual(["q1", "q2"]);
+    expect((await loadStudentLogs(db, "trainerA", "recent")).map((l) => l.id).sort()).toEqual(["r1", "r2"]);
+    expect((await loadTrainerBiometrics(db, "trainerA", NOW - 63 * DAY)).map((b) => b.id)).toEqual(["b-new"]);
+    expect((await loadTrainerBiometrics(db, "trainerA", NOW - 126 * DAY, NOW - 63 * DAY)).map((b) => b.id)).toEqual(["b-old"]);
+    expect((await loadTrainerAssessments(db, "trainerA", NOW - 63 * DAY)).map((a) => a.id)).toEqual(["a-new"]);
+    const other = signedInAs("trainerB");
+    await assertFails(loadTrainerLogs(other, "trainerA", 0, NOW));
+    await assertFails(loadStudentLogs(other, "trainerA", "recent"));
+    await assertFails(loadTrainerBiometrics(other, "trainerA", 0));
+    await assertFails(loadTrainerAssessments(other, "trainerA", 0));
+  });
+
+  it("the aluno reads their own window, and not another aluno's", async () => {
+    await fixture();
+    const mine = signedInAs("recent");
+    expect((await loadMyLogs(mine, "recent", NOW - 60 * DAY)).map((l) => l.id)).toEqual(["r1"]);
+    expect((await loadMyLogs(mine, "recent")).map((l) => l.id).sort()).toEqual(["r1", "r2"]);
+    await assertFails(loadMyLogs(mine, "quiet", NOW - 60 * DAY));
   });
 });
 
@@ -367,7 +448,7 @@ describe("loadTrainerSnapshot", () => {
         note: null,
       },
     });
-    const snapshot = await loadTrainerSnapshot(signedInAs("trainerA"), "trainerA");
+    const snapshot = await loadTrainerSnapshot(signedInAs("trainerA"), "trainerA", T0);
     expect(snapshot.students.map((s) => [s.id, s.linked])).toEqual([
       ["draft-joao", false],
       ["maria-uid", true],
@@ -428,7 +509,7 @@ describe("§26e admin data and §26f activity", () => {
   it("writes dashboard summaries and throttles last-seen updates", async () => {
     await seed({ "users/trainerA": { role: "TRAINER" } });
     const db = signedInAs("trainerA");
-    const snapshot = await loadTrainerSnapshot(db, "trainerA");
+    const snapshot = await loadTrainerSnapshot(db, "trainerA", T0);
     const figures = dashboardFigures(snapshot, "2026-10-01", ZONE);
     await writeTrainerStats(db, "trainerA", figures, snapshot, Date.parse("2026-10-01T12:00:00-03:00"));
     const stats = await read("trainerStats/trainerA");
@@ -828,7 +909,7 @@ describe("managing mensalidades (GOALS.md §23g)", () => {
 
     await updatePlan(db, "s1", 16000, 15);
     await setPlanActive(db, "s1", false);
-    const { plans } = await loadTrainerSnapshot(db, "trainerA");
+    const { plans } = await loadTrainerSnapshot(db, "trainerA", T0);
     expect(plans).toEqual([
       { studentId: "s1", trainerId: "trainerA", amountCents: 16000, currency: "BRL", dueDay: 15, active: false, createdAt: 1_000 },
     ]);
@@ -842,7 +923,7 @@ describe("managing mensalidades (GOALS.md §23g)", () => {
       "billingPlans/s1": plan("s1"),
     });
     const db = signedInAs("trainerA");
-    const { plans } = await loadTrainerSnapshot(db, "trainerA");
+    const { plans } = await loadTrainerSnapshot(db, "trainerA", T0);
     await ensureMonthlyCharges(db, plans, "2026-09", 1_700_000_100_000);
     const charge = doc(db, "payments", "s1_2026-09");
 
@@ -907,7 +988,7 @@ describe("the student's own area (GOALS.md §23h)", () => {
       ["Remada", 1_001],
       ["Supino", 1_000],
     ]);
-    const { logs } = await loadTrainerSnapshot(signedInAs("trainerA"), "trainerA");
+    const { logs } = await loadTrainerSnapshot(signedInAs("trainerA"), "trainerA", T0);
     expect(logs).toHaveLength(2);
 
     // Attributed to someone else's trainer: refused, and the batch writes nothing.

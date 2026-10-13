@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { logOwnBiometric } from "../../../data/biometrics";
+import { loadMyLogs } from "../../../data/workoutLogs";
 import { getFirebase } from "../../../data/firebase";
 import { formatBodyFat, formatKg, parseMeasurement } from "../../../domain/biometrics";
 import { formatDate, localDate } from "../../../domain/dates";
@@ -34,7 +35,7 @@ function Evolution({ uid }: { uid: string }) {
     );
   }
 
-  const { profile, biometrics, logs, timeZone } = data;
+  const { profile, biometrics, logs, logsFrom, timeZone } = data;
   return (
     <main>
       <h1>Minha evolução</h1>
@@ -54,7 +55,12 @@ function Evolution({ uid }: { uid: string }) {
           </ol>
         )}
       </section>
-      <ProgressSection logs={logs} timeZone={timeZone} />
+      <ProgressSection
+        logs={logs}
+        timeZone={timeZone}
+        windowFrom={logsFrom}
+        loadAll={() => loadMyLogs(getFirebase().db, uid)}
+      />
     </main>
   );
 }

@@ -1,6 +1,7 @@
 import { FirebaseError } from "firebase/app";
 import { deleteObject, getBytes, getMetadata, ref, uploadBytes, type FirebaseStorage } from "firebase/storage";
-import { doc, getDoc, updateDoc, type Firestore } from "firebase/firestore";
+import { doc, updateDoc, type Firestore } from "firebase/firestore";
+import { getDoc } from "./firestoreRead";
 
 export const MAX_ACCOUNT_AVATAR_BYTES = 2 * 1024 * 1024;
 export const ACCOUNT_AVATAR_CHANGED_EVENT = "account-avatar-changed";

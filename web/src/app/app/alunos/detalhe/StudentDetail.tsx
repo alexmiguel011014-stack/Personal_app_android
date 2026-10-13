@@ -7,6 +7,7 @@ import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { formatCents } from "../../../../domain/payments";
 import { countActiveInvitesFromOtherClients, countActivePlatformInvites, isPlatformInviteActive, type PlatformInviteRecord } from "../../../../domain/platformInvites";
 import { getFirebase } from "../../../../data/firebase";
+import { noteReads } from "../../../../data/firestoreRead";
 import {
   requestAssessment,
   setCanAddSets,
@@ -20,6 +21,7 @@ import { trackActivity } from "../../../../data/activity";
 import type { StudentProfile } from "../../../../domain/studentProfile";
 import { useSession } from "../../../SessionProvider";
 import { useTrainerData } from "../../useTrainerData";
+import { loadStudentLogs } from "../../../../data/trainerData";
 import { StudentForm } from "../StudentForm";
 import { AssessmentsSection } from "./AssessmentsSection";
 import { BillingSection } from "./BillingSection";
@@ -201,8 +203,11 @@ function Detail({ trainerId, studentId }: { trainerId: string; studentId: string
 
       {student.kind === "linked" && (
         <ProgressSection
+          key={`progresso-${student.doc.id}`}
           logs={data.snapshot.logs.filter((log) => log.studentId === student.doc.id)}
           timeZone={data.timeZone}
+          windowFrom={data.snapshot.logsFrom}
+          loadAll={() => loadStudentLogs(getFirebase().db, trainerId, student.doc.id)}
         />
       )}
     </main>
@@ -235,7 +240,10 @@ function InviteSection({
     }).catch((error: unknown) => {
       if (!cancelled) setStatus(error instanceof Error ? error.message : "Não foi possível carregar os limites de convite.");
     }).finally(() => { if (!cancelled) setLoadingUsage(false); });
+    // GOALS.md §38b: live on purpose (the active-code counter), unsubscribed on leave; a listener bills its first
+    // snapshot's documents, then only the ones that change.
     const stopInvites = onSnapshot(query(collection(db, "invites"), where("trainerId", "==", trainerId)), (snapshot) => {
+      noteReads("invites", snapshot.docChanges().length);
       const records = snapshot.docs.map((item) => platformInviteFromDocument(item.id, item.data())).filter((item): item is PlatformInviteRecord => item !== null);
       const now = Date.now();
       setInvites(records.filter((invite) => isPlatformInviteActive(invite, now)));
@@ -247,6 +255,7 @@ function InviteSection({
       ? "As regras do Firestore ainda não liberam a consulta de convites deste personal."
       : "Não foi possível acompanhar os convites ativos."));
     const stopLinked = onSnapshot(query(collection(db, "users"), where("role", "==", "STUDENT"), where("trainerId", "==", trainerId)), (snapshot) => {
+      noteReads("users", snapshot.docChanges().length);
       setLiveLinkedStudentSeats(snapshot.size);
     });
     return () => { cancelled = true; stopInvites(); stopLinked(); };

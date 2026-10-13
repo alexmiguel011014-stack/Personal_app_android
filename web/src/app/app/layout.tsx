@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { RequireArea } from "../RequireArea";
 import { AppShell, type NavItem } from "../_shared/AppShell";
+import { TrainerDataProvider } from "./useTrainerData";
 
 // GOALS.md §23g: the trainer surface. Its own layout, separate from /aluno's, on purpose — the
 // two audiences want opposite things (density on a desktop vs one thing at a time on a phone),
@@ -36,7 +37,8 @@ export default function TrainerLayout({ children }: LayoutProps<"/app">) {
         roleLabel="Treinador"
         nav={NAV}
       >
-        {children}
+        {/* GOALS.md §38b: one load of the trainer's data per session, shared by every page. */}
+        <TrainerDataProvider>{children}</TrainerDataProvider>
       </AppShell>
     </RequireArea>
   );

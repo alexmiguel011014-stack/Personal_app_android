@@ -6,27 +6,29 @@ import { getFirebase } from "../../data/firebase";
 import { trackActivity, writeTrainerStats } from "../../data/activity";
 import { loadSchedules } from "../../data/schedules";
 import { billingOwners } from "../../domain/billing";
-import { dashboardFigures, ADHERENCE_WINDOW_DAYS, QUIET_AFTER_DAYS, SESSIONS_WINDOW_DAYS } from "../../domain/dashboard";
-import { addDays, formatDate, formatYearMonth, localDate, weekdayOf, yearMonth } from "../../domain/dates";
-import { decodePerformedSets } from "../../domain/exercise";
+import { barChartLabel, deltaText, progressLabel, sparklineLabel } from "../../domain/chartText";
+import { dashboardFigures } from "../../domain/dashboard";
+import { addDays, formatDate, formatYearMonth, weekdayOf, yearMonth } from "../../domain/dates";
 import { trainedDays } from "../../domain/metrics";
 import { formatCents } from "../../domain/payments";
-import { formatSets, recentLogs } from "../../domain/progression";
 import { AGENDA_DAYS, bookingsOn, type Schedule } from "../../domain/schedules";
+import { delta } from "../../domain/series";
 import { filterStudentsByPause, type Student } from "../../domain/students";
-import { Avatar } from "../_shared/Avatar";
+import { moneyFromPayments, recentSessions, studentHref, trainerAttention, trainerKpis, ADHERENCE_WINDOW_DAYS, SESSIONS_WINDOW_DAYS, SESSION_WINDOWS } from "../../domain/trainerHome";
 import { agendaHourNumber, hourIn, longDate, shortDate } from "../_shared/dateLabels";
+import { AttentionList } from "../_shared/dashboard/AttentionList";
+import { BarChart, ProgressBar, Sparkline } from "../_shared/dashboard/charts";
+import { KpiCard, KpiGrid } from "../_shared/dashboard/KpiCard";
 import { useSession } from "../SessionProvider";
 import { useTrainerData } from "./useTrainerData";
 
-// GOALS.md §23g/§23k: the trainer's home, laid out as the ALLU template's "Hoje" — the week as a
-// strip, the day's agenda as a timeline, the roster beside it — with §23c's numbers (sessions,
-// adherence, who went quiet, pending assessments, mensalidades) kept and moved below, in the
-// template's quiet lists instead of a wall of metric cards.
+// GOALS.md §37c: the trainer's home. Top to bottom, what a trainer opens it for: four figures with how they moved,
+// who needs them (late mensalidade, gone quiet, assessment waiting, not yet connected), today's agenda, and the
+// week's training as bars. The roster, the numbers list and the Mensalidades table moved out — their figures are in
+// the cards and the overdue rows in "Precisa de você"; their pages are one tap away. The numbers are §23c's own
+// (`dashboardFigures`, `trainerKpis` reuses its definitions), and `writeTrainerStats` still receives exactly what it did.
 
-const ROSTER_SHOWN = 5;
-
-const studentUrl = (id: string) => `/app/alunos/detalhe?id=${encodeURIComponent(id)}`;
+const RECENT_SESSIONS = 3;
 
 export default function TrainerHome() {
   const { session } = useSession();
@@ -81,6 +83,7 @@ function Dashboard({ trainerId }: { trainerId: string }) {
 
   const { today, timeZone, snapshot } = data;
   const figures = dashboardFigures(snapshot, today, timeZone);
+  const kpis = trainerKpis({ students: snapshot.students, logs: snapshot.logs }, today, timeZone);
   const activeStudents = filterStudentsByPause(snapshot.students);
   const pausedStudentIds = new Set(snapshot.students.filter((student) => student.paused).map((student) => student.id));
   const activeSchedules = schedules === null || schedules === "error"
@@ -89,6 +92,12 @@ function Dashboard({ trainerId }: { trainerId: string }) {
   const activeLogs = snapshot.logs.filter((log) => !pausedStudentIds.has(log.studentId));
   // A charge can sit under the id of a draft the student has since claimed (domain/billing.ts).
   const owners = billingOwners(snapshot.students, snapshot.claimedDraftByAccount);
+  const money = moneyFromPayments(figures.payments, owners);
+  const attention = trainerAttention(
+    { students: snapshot.students, money, quiet: figures.quiet, pendingAssessments: figures.pendingAssessments },
+    today,
+    timeZone,
+  );
 
   const todayName = weekdayOf(today);
   const todayBookings =
@@ -105,8 +114,16 @@ function Dashboard({ trainerId }: { trainerId: string }) {
         : `${todayBookings.length} ${todayBookings.length === 1 ? "horário agendado" : "horários agendados"} para hoje.`;
 
   const trained = trainedDays(activeLogs, timeZone);
-  const latest = recentLogs(activeLogs, 1)[0];
-  const latestStudent = latest ? activeStudents.find((s) => s.id === latest.studentId) : undefined;
+  const names = new Map([...snapshot.drafts, ...snapshot.linked].map((s) => [s.id, s.name]));
+
+  const sessionWindows = kpis.sessions.windows;
+  const weeklyValues = sessionWindows.map((window) => window.count);
+  const adherencePercent = kpis.adherence.current === null ? null : Math.round(kpis.adherence.current * 100);
+  const adherenceChange =
+    kpis.adherence.current !== null && kpis.adherence.previous !== null
+      ? delta(adherencePercent ?? 0, Math.round(kpis.adherence.previous * 100))
+      : null;
+  const sessions = recentSessions(activeLogs, timeZone, RECENT_SESSIONS);
 
   return (
     <main>
@@ -124,23 +141,79 @@ function Dashboard({ trainerId }: { trainerId: string }) {
         </div>
       </header>
 
-      {data.chargesCreated > 0 && <p role="status">{data.chargesCreated} cobrança(s) do mês gerada(s) agora.</p>}
+      <KpiGrid label="Resumo da semana">
+        <KpiCard
+          label="Treinos na semana"
+          href="/app/registros"
+          value={kpis.sessions.current}
+          change={{
+            text: deltaText(kpis.sessions.delta, `${SESSIONS_WINDOW_DAYS} dias antes`),
+            tone: kpis.sessions.delta.direction === "up" ? "good" : kpis.sessions.delta.direction === "down" ? "bad" : "neutral",
+          }}
+          sub={`Últimos ${SESSIONS_WINDOW_DAYS} dias`}
+        >
+          <Sparkline label={sparklineLabel(`Treinos a cada ${SESSIONS_WINDOW_DAYS} dias, últimas ${SESSION_WINDOWS} semanas`, weeklyValues)} values={weeklyValues} />
+        </KpiCard>
 
-      <WeekStrip today={today} schedules={activeSchedules} />
+        <KpiCard
+          label="Aderência ao plano"
+          href="/app/alunos"
+          value={adherencePercent === null ? "—" : `${adherencePercent}%`}
+          change={
+            adherenceChange
+              ? { text: deltaText(adherenceChange, `${ADHERENCE_WINDOW_DAYS} dias antes`, " pp"), tone: adherenceChange.direction === "up" ? "good" : adherenceChange.direction === "down" ? "bad" : "neutral" }
+              : undefined
+          }
+          sub={adherencePercent === null ? "Nenhum aluno conectado tem dias de treino definidos." : `Últimos ${ADHERENCE_WINDOW_DAYS} dias`}
+        >
+          {adherencePercent !== null && (
+            <ProgressBar part={adherencePercent} total={100} label={`Aderência: ${adherencePercent}% do plano nos últimos ${ADHERENCE_WINDOW_DAYS} dias.`} />
+          )}
+        </KpiCard>
 
-      <div className="work-grid">
-        <section className="agenda-section" aria-labelledby="agenda-title">
-          <div className="section-heading agenda-heading">
-            <h2 id="agenda-title">Agenda do dia</h2>
+        <KpiCard
+          label="Alunos"
+          href="/app/alunos"
+          value={kpis.students.total}
+          sub={`${kpis.students.linked} conectados · ${kpis.students.pending} aguardando conexão`}
+        />
+
+        <KpiCard
+          label={`Mensalidades — ${formatYearMonth(yearMonth(today))}`}
+          href="/app/mensalidades"
+          value={
+            <>
+              {formatCents(money.receivedCents)}
+              <small>de {formatCents(money.expectedCents)}</small>
+            </>
+          }
+          sub={money.overdueCents > 0 ? `${formatCents(money.overdueCents)} em atraso` : "Nenhuma em atraso"}
+        >
+          <ProgressBar part={money.receivedCents} total={money.expectedCents} label={`Recebido no mês: ${progressLabel(money.receivedCents, money.expectedCents, formatCents)}`} />
+        </KpiCard>
+      </KpiGrid>
+
+      <div className="home-grid">
+        <AttentionList
+          id="attention-title"
+          title="Precisa de você"
+          items={attention}
+          empty={snapshot.students.length === 0 ? "Nenhum aluno ainda. Comece em “Cadastrar aluno”." : "Tudo em dia por aqui."}
+        />
+
+        <section className="panel agenda-section" aria-labelledby="agenda-title">
+          <div className="section-heading">
+            <h2 id="agenda-title">Agenda de hoje</h2>
             <span className="quiet-count">
               {todayBookings.length} {todayBookings.length === 1 ? "horário" : "horários"}
             </span>
           </div>
+          <WeekRow today={today} schedules={activeSchedules} />
           <DayAgenda
             schedules={activeSchedules}
             bookings={todayBookings}
             students={activeStudents}
-            names={new Map([...snapshot.drafts, ...snapshot.linked].map((s) => [s.id, s.name]))}
+            names={names}
             trainedToday={(studentId) => trained.get(studentId)?.has(today) ?? false}
             nowHour={hourIn(data.now, timeZone)}
           />
@@ -148,172 +221,73 @@ function Dashboard({ trainerId }: { trainerId: string }) {
             Horários são agendamentos fixos da semana, não sessões concluídas. <Link href="/app/agenda">Ver agenda completa</Link>
           </p>
         </section>
-
-        <section className="roster-section" aria-labelledby="roster-title">
-          <div className="section-heading roster-heading">
-            <h2 id="roster-title">Seus alunos</h2>
-            <span className="quiet-count">{figures.students.total} no total</span>
-          </div>
-          <Roster students={activeStudents} />
-          {latest && (
-            <section className="record-note" aria-labelledby="record-title">
-              <h3 id="record-title">Último registro{latestStudent ? ` · ${latestStudent.name}` : ""}</h3>
-              <p>
-                {formatDate(localDate(latest.date, timeZone))} · {latest.exerciseName}
-              </p>
-              <p>{formatSets(decodePerformedSets(latest.performedSetsJson)) || "Sem séries anotadas."}</p>
-              <p>
-                <Link href="/app/registros">Abrir livro de registros</Link>
-              </p>
-            </section>
-          )}
-        </section>
       </div>
 
-      <section className="panel" aria-labelledby="attention-title">
-        <h2 id="attention-title">Atenção</h2>
-        <div className="attention-grid">
-          <div>
-            <h3>Sem treinar há {QUIET_AFTER_DAYS} dias ou mais</h3>
-            {figures.quiet.length === 0 ? (
-              <p>Ninguém.</p>
-            ) : (
-              <ul>
-                {figures.quiet.map(({ student, lastTrained }) => (
-                  <li key={student.id}>
-                    <Link href={studentUrl(student.id)}>{student.name}</Link> —{" "}
-                    {lastTrained === null ? "nunca registrou treino" : `último treino em ${formatDate(lastTrained)}`}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-          <div>
-            <h3>Avaliações pendentes</h3>
-            {figures.pendingAssessments.length === 0 ? (
-              <p>Nenhuma.</p>
-            ) : (
-              <ul>
-                {figures.pendingAssessments.map((s) => (
-                  <li key={s.id}>
-                    <Link href={studentUrl(s.id)}>{s.name}</Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+      <section className="panel" aria-labelledby="activity-title">
+        <div className="section-heading">
+          <h2 id="activity-title">Treinos por semana</h2>
+          <span className="quiet-count">Cada barra: 7 dias até a data</span>
         </div>
-      </section>
-
-      <section className="panel" aria-labelledby="numbers-title">
-        <h2 id="numbers-title">A semana em números</h2>
-        <dl className="figures">
-          <div>
-            <dt>Alunos</dt>
-            <dd>
-              {figures.students.total}
-              <small>
-                {figures.students.linked} conectados · {figures.students.pending} aguardando conexão
-              </small>
-            </dd>
-          </div>
-          <div>
-            <dt>Sessões nos últimos {SESSIONS_WINDOW_DAYS} dias</dt>
-            <dd>{figures.sessions}</dd>
-          </div>
-          <div>
-            <dt>Aderência ao plano nos últimos {ADHERENCE_WINDOW_DAYS} dias</dt>
-            <dd>
-              {figures.adherence === null ? "—" : `${Math.round(figures.adherence * 100)}%`}
-              {figures.adherence === null && <small>Nenhum aluno conectado tem dias de treino definidos.</small>}
-            </dd>
-          </div>
-        </dl>
-        <p>
-          <Link href="/app/alunos">Ver todos os alunos</Link>
-        </p>
-      </section>
-
-      <section className="panel" aria-labelledby="payments-title">
-        <h2 id="payments-title">Mensalidades — {formatYearMonth(yearMonth(today))}</h2>
-        <dl className="figures">
-          <div>
-            <dt>Previsto no mês</dt>
-            <dd>{formatCents(figures.payments.expectedCents)}</dd>
-          </div>
-          <div>
-            <dt>Recebido no mês</dt>
-            <dd>{formatCents(figures.payments.receivedCents)}</dd>
-          </div>
-          <div>
-            <dt>Em atraso (todos os meses)</dt>
-            <dd>{formatCents(figures.payments.overdueCents)}</dd>
-          </div>
-        </dl>
-        {figures.payments.overdue.length > 0 && (
-          <table className="stack">
-            <caption>Em atraso</caption>
-            <thead>
-              <tr>
-                <th scope="col">Aluno</th>
-                <th scope="col">Vencimento</th>
-                <th scope="col">Valor</th>
-              </tr>
-            </thead>
-            <tbody>
-              {figures.payments.overdue.map((p) => (
-                <tr key={p.id}>
-                  <td data-label="Aluno">{owners.get(p.studentId)?.name ?? p.studentId}</td>
-                  <td data-label="Vencimento">{formatDate(p.dueDate)}</td>
-                  <td data-label="Valor">{formatCents(p.amountCents)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <BarChart
+          label={barChartLabel(
+            `Treinos a cada ${SESSIONS_WINDOW_DAYS} dias, até a data indicada`,
+            sessionWindows.map((window) => ({ label: shortDate(window.to), value: window.count })),
+          )}
+          bars={sessionWindows.map((window) => ({ key: window.to, label: shortDate(window.to), value: window.count, valueLabel: String(window.count) }))}
+        />
+        <h3 className="records-title">Últimos treinos registrados</h3>
+        {sessions.length === 0 ? (
+          <p className="section-footnote">Nenhum treino registrado ainda.</p>
+        ) : (
+          <ul className="records-list">
+            {sessions.map((session) => (
+              <li key={`${session.studentId}-${session.day}`}>
+                <Link href={studentHref(session.studentId)}>{names.get(session.studentId) ?? "Aluno"}</Link>
+                <span>
+                  {formatDate(session.day)} · {session.exercises} {session.exercises === 1 ? "exercício registrado" : "exercícios registrados"}
+                </span>
+              </li>
+            ))}
+          </ul>
         )}
         <p>
-          <Link href="/app/mensalidades">Gerenciar mensalidades</Link>
+          <Link href="/app/registros">Abrir livro de registros</Link>
         </p>
       </section>
+
+      {data.chargesCreated > 0 && (
+        <p className="section-footnote" role="status">
+          {data.chargesCreated} cobrança(s) do mês gerada(s) agora.
+        </p>
+      )}
     </main>
   );
 }
 
-/** The template's "Ritmo da semana": Monday to Sunday of this week, today highlighted. */
-function WeekStrip({ today, schedules }: { today: string; schedules: Schedule[] | "error" | null }) {
+/** This week, Monday to Sunday, one row: the day, the date and how many fixed horários it has. */
+function WeekRow({ today, schedules }: { today: string; schedules: Schedule[] | "error" | null }) {
   const todayIndex = AGENDA_DAYS.indexOf(weekdayOf(today));
   const monday = addDays(today, -todayIndex);
-  const sunday = addDays(monday, 6);
   return (
-    <section className="week-section" aria-labelledby="week-title">
-      <div className="section-heading week-heading">
-        <div>
-          <h2 id="week-title">Ritmo da semana</h2>
-          <p className="section-footnote">Horários fixos por dia da semana</p>
-        </div>
-        <p className="week-range">
-          {shortDate(monday)} — {shortDate(sunday)}
-        </p>
-      </div>
-      <div className="week-strip" role="list" aria-label="Semana atual">
-        {AGENDA_DAYS.map((day, index) => {
-          const date = addDays(monday, index);
-          const count = Array.isArray(schedules) ? bookingsOn(schedules, day) : null;
-          return (
-            <div
-              key={day}
-              role="listitem"
-              className={`day-cell${index === todayIndex ? " selected" : ""}`}
-              aria-current={index === todayIndex ? "date" : undefined}
-            >
-              <span>{day.slice(0, 3)}</span>
-              <strong>{date.slice(8)}</strong>
-              <small>{count === null ? "—" : count === 0 ? "Livre" : `${count} ${count === 1 ? "horário" : "horários"}`}</small>
-            </div>
-          );
-        })}
-      </div>
-    </section>
+    <div className="week-row" role="list" aria-label="Semana atual">
+      {AGENDA_DAYS.map((day, index) => {
+        const date = addDays(monday, index);
+        const count = Array.isArray(schedules) ? bookingsOn(schedules, day) : null;
+        return (
+          <div
+            key={day}
+            role="listitem"
+            className={`day${index === todayIndex ? " today" : ""}`}
+            aria-current={index === todayIndex ? "date" : undefined}
+            aria-label={`${day}, ${date.slice(8)}: ${count === null ? "horários indisponíveis" : count === 0 ? "livre" : `${count} ${count === 1 ? "horário" : "horários"}`}`}
+          >
+            <span aria-hidden="true">{day.slice(0, 3)}</span>
+            <strong aria-hidden="true">{date.slice(8)}</strong>
+            <small aria-hidden="true">{count === null ? "—" : count === 0 ? "Livre" : count}</small>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -355,7 +329,7 @@ function DayAgenda({
             <div className="session-main">
               {student?.goal && <p className="session-type">{student.goal}</p>}
               <h3>
-                <Link href={studentUrl(booking.studentId)}>{names.get(booking.studentId) ?? "Aluno não encontrado"}</Link>
+                <Link href={studentHref(booking.studentId)}>{names.get(booking.studentId) ?? "Aluno não encontrado"}</Link>
               </h3>
               <p className="session-meta">{student ? (student.linked ? "Conectado" : "Aguardando conexão") : "Cadastro antigo"}</p>
             </div>
@@ -363,47 +337,6 @@ function DayAgenda({
           </article>
         );
       })}
-    </div>
-  );
-}
-
-function Roster({ students }: { students: readonly Student[] }) {
-  if (students.length === 0) {
-    return (
-      <p className="section-footnote">
-        Nenhum aluno ainda. <Link href="/app/alunos/novo">Cadastrar o primeiro aluno</Link>
-      </p>
-    );
-  }
-  const sorted = [...students].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
-  const row = (student: Student) => (
-    <article className="student-row" key={student.id}>
-      <Avatar name={student.name} />
-      <div className="student-main">
-        <h3>
-          <Link href={studentUrl(student.id)}>{student.name}</Link>
-        </h3>
-        <p>
-          {student.goal || "Sem objetivo"} · {student.linked ? "Conectado" : "Aguardando conexão"}
-        </p>
-      </div>
-    </article>
-  );
-  const rest = sorted.slice(ROSTER_SHOWN);
-  return (
-    <div className="roster-list">
-      {sorted.slice(0, ROSTER_SHOWN).map(row)}
-      {rest.length > 0 && (
-        <details className="more-students">
-          <summary>
-            Mais {rest.length} {rest.length === 1 ? "aluno" : "alunos"} <span aria-hidden="true">+</span>
-          </summary>
-          {rest.map(row)}
-        </details>
-      )}
-      <p className="section-footnote">
-        <Link href="/app/alunos">Ver diretório de {students.length} alunos</Link>
-      </p>
     </div>
   );
 }

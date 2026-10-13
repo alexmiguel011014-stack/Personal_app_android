@@ -2,7 +2,7 @@ import { deleteApp, initializeApp } from "firebase/app";
 import { connectAuthEmulator, createUserWithEmailAndPassword, getAuth, sendPasswordResetEmail, signOut, type Auth } from "firebase/auth";
 import { doc, runTransaction, type Firestore } from "firebase/firestore";
 import { EMULATOR_PROJECT_ID, firebaseConfig } from "./firebaseConfig";
-import { usingEmulators } from "./firebase";
+import { AUTH_EMULATOR_URL, usingEmulators } from "./firebase";
 
 const SECONDARY_APP_NAME = "admin-create-trainer";
 const PASSWORD_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
@@ -25,7 +25,7 @@ export async function createTrainerAuthUser(email: string, password: string): Pr
   try {
     auth = getAuth(app);
     auth.languageCode = "pt-BR";
-    if (usingEmulators) connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });
+    if (usingEmulators) connectAuthEmulator(auth, AUTH_EMULATOR_URL, { disableWarnings: true });
     uid = (await createUserWithEmailAndPassword(auth, email, password)).user.uid;
   } finally {
     // Cleanup must never hide a successfully-created UID or the original Auth error.

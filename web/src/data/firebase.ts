@@ -27,6 +27,9 @@ const useEmulators = process.env.NEXT_PUBLIC_FIREBASE_EMULATORS === "true";
 // the same amount — EMULATOR_PORT_SHIFT for the scripts, NEXT_PUBLIC_EMULATOR_PORT_SHIFT for the site. 0 by default.
 const portShift = Number(process.env.NEXT_PUBLIC_EMULATOR_PORT_SHIFT ?? 0) || 0;
 
+/** The Auth emulator's address — shared with data/adminCreate.ts, whose secondary Auth instance must reach the same one. */
+export const AUTH_EMULATOR_URL = `http://127.0.0.1:${9099 + portShift}`;
+
 /** True when the app runs against the local emulators (no App Check there — see getFirebase). */
 export const usingEmulators = useEmulators;
 
@@ -52,7 +55,7 @@ export function getFirebase(): FirebaseClients {
 
   if (useEmulators) {
     connectFirestoreEmulator(db, "127.0.0.1", 8081 + portShift);
-    connectAuthEmulator(auth, `http://127.0.0.1:${9099 + portShift}`, { disableWarnings: true });
+    connectAuthEmulator(auth, AUTH_EMULATOR_URL, { disableWarnings: true });
     connectStorageEmulator(storage, "127.0.0.1", 9199 + portShift);
     connectFunctionsEmulator(functions, "127.0.0.1", 5001 + portShift);
   } else {

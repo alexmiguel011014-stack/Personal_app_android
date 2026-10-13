@@ -1,9 +1,7 @@
 import {
   collection,
   doc,
-  getDoc,
   getCountFromServer,
-  getDocs,
   limit,
   orderBy,
   query,
@@ -12,6 +10,7 @@ import {
   type Firestore,
   type WriteBatch,
 } from "firebase/firestore";
+import { getDoc, getDocs } from "./firestoreRead";
 import { toAuditEntry, toTrainerActivity, toTrainerStats, toTrainerUser, type AuditAction, type AuditEntry, type TrainerActivity, type TrainerStats, type TrainerUser } from "./converters";
 
 export interface TrainerRequest {

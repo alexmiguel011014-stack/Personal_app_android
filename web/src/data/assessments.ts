@@ -1,4 +1,5 @@
-import { collection, doc, getDocs, query, where, writeBatch, type Firestore } from "firebase/firestore";
+import { collection, doc, query, where, writeBatch, type Firestore } from "firebase/firestore";
+import { getDocs } from "./firestoreRead";
 import { encodeParQAnswers, type Assessment } from "../domain/assessments";
 import { toAssessment } from "./converters";
 
@@ -33,6 +34,18 @@ export async function submitAssessment(
   batch.update(doc(db, "users", studentId), { pendingAssessmentRequest: false, lastAssessmentId: id });
   await batch.commit();
   return id;
+}
+
+/**
+ * GOALS.md §38b: the trainer's alunos' self-assessments sent in [from, to) — "Registros" reads its window with one
+ * query instead of one per aluno. Needs the (trainerId, submittedAt) index.
+ */
+export async function loadTrainerAssessments(db: Firestore, trainerId: string, from: number, to?: number): Promise<Assessment[]> {
+  const range = [where("submittedAt", ">=", from), ...(to === undefined ? [] : [where("submittedAt", "<", to)])];
+  const snapshot = await getDocs(query(collection(db, "assessments"), where("trainerId", "==", trainerId), ...range));
+  return snapshot.docs
+    .map((document) => toAssessment(document.id, document.data()))
+    .filter((assessment) => assessment !== null);
 }
 
 /** One student's self-assessments, newest first. */

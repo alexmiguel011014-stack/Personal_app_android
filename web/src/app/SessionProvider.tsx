@@ -5,6 +5,7 @@ import { doc, onSnapshot, type Unsubscribe } from "firebase/firestore";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { clearExerciseCatalogCache } from "../data/exerciseCatalog";
 import { getFirebase } from "../data/firebase";
+import { noteReads } from "../data/firestoreRead";
 import { profileFrom, type Session } from "../data/session";
 
 // GOALS.md §23f: the signed-in person and their role, for every page. Firebase Auth lives in the
@@ -43,6 +44,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
     try {
       profileSubscription.current = onSnapshot(doc(getFirebase().db, "users", user.uid), (snapshot) => {
+        noteReads("users", 1);
         if (ticket !== latestLoad.current) return;
         setError(null);
         setSession({

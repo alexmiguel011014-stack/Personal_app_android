@@ -1,4 +1,5 @@
-import { collection, doc, getDoc, getDocs, limit, orderBy, query, runTransaction, where, type Firestore } from "firebase/firestore";
+import { collection, doc, limit, orderBy, query, runTransaction, where, type Firestore } from "firebase/firestore";
+import { getDoc, getDocs } from "./firestoreRead";
 import type { BillingStatus } from "../domain/mensalidades";
 import type { PlatformBillingTerms } from "../domain/platformBilling";
 import { isDeadlineExpired } from "../domain/platformBilling";

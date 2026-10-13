@@ -9,7 +9,10 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const CHROME = process.env.CHROME_PATH ?? "C:/Program Files/Google/Chrome/Application/chrome.exe";
-export const BASE = "http://localhost:3000";
+// GOALS.md §38b: E2E_BASE and EMULATOR_PORT_SHIFT point the scripts at a second bench (see data/firebase.ts).
+export const BASE = process.env.E2E_BASE ?? "http://localhost:3000";
+const SHIFT = Number(process.env.EMULATOR_PORT_SHIFT ?? 0) || 0;
+const AUTH = `http://127.0.0.1:${9099 + SHIFT}`;
 export const PROJECT = "demo-personal-tracker";
 export const BUCKET = "personalapp-88129.firebasestorage.app";
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -28,7 +31,7 @@ export function summary() {
 }
 
 // ---------- emulator REST ----------
-const FS = `http://127.0.0.1:8081/v1/projects/${PROJECT}/databases/(default)/documents`;
+const FS = `http://127.0.0.1:${8081 + SHIFT}/v1/projects/${PROJECT}/databases/(default)/documents`;
 const OWNER = { Authorization: "Bearer owner" };
 export async function fsGet(path) {
   const r = await fetch(`${FS}/${path}`, { headers: OWNER });
@@ -46,7 +49,7 @@ export async function fsList(collection) {
 }
 export const fieldValue = (f) => (f === undefined ? undefined : f.stringValue ?? f.integerValue ?? f.booleanValue ?? f.doubleValue ?? (f.nullValue === null ? null : f));
 export async function uidByEmail(email, password = "senha123") {
-  const r = await fetch("http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=fake", {
+  const r = await fetch(`${AUTH}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=fake`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password, returnSecureToken: true }),
   });
   return r.ok ? (await r.json()).localId : null;
@@ -57,16 +60,16 @@ export async function fsPatch(path, fields) {
   return r.ok;
 }
 export async function oobCodes() {
-  return (await (await fetch(`http://127.0.0.1:9099/emulator/v1/projects/${PROJECT}/oobCodes`)).json()).oobCodes ?? [];
+  return (await (await fetch(`${AUTH}/emulator/v1/projects/${PROJECT}/oobCodes`)).json()).oobCodes ?? [];
 }
 export async function authSignIn(email, password) {
-  const r = await fetch("http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=fake", {
+  const r = await fetch(`${AUTH}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=fake`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password, returnSecureToken: true }),
   });
   return r.ok;
 }
 export async function avatarObjects(uid) {
-  const r = await fetch(`http://127.0.0.1:9199/v0/b/${BUCKET}/o?prefix=account-avatars%2F${uid}%2F`, { headers: OWNER });
+  const r = await fetch(`http://127.0.0.1:${9199 + SHIFT}/v0/b/${BUCKET}/o?prefix=account-avatars%2F${uid}%2F`, { headers: OWNER });
   if (!r.ok) return [];
   return ((await r.json()).items ?? []).map((i) => i.name);
 }

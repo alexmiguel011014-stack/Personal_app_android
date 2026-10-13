@@ -24,7 +24,7 @@ export function LogSession() {
 }
 
 function Loader({ uid, workoutId }: { uid: string; workoutId: string }) {
-  const { data } = useStudentData(uid);
+  const { data, invalidate } = useStudentData(uid);
   if (data.status === "loading") return <p className="loading">Carregando…</p>;
   if (data.status === "error") return <p role="alert">{data.message}</p>;
   const workout = data.workouts.find((w) => w.id === workoutId);
@@ -39,7 +39,13 @@ function Loader({ uid, workoutId }: { uid: string; workoutId: string }) {
     );
   }
   return (
-    <SessionForm uid={uid} trainerId={data.profile.trainerId} workout={workout} canAddSets={data.profile.canAddSets} />
+    <SessionForm
+      uid={uid}
+      trainerId={data.profile.trainerId}
+      workout={workout}
+      canAddSets={data.profile.canAddSets}
+      onSaved={invalidate}
+    />
   );
 }
 
@@ -58,12 +64,15 @@ function SessionForm({
   trainerId,
   workout,
   canAddSets,
+  onSaved,
 }: {
   uid: string;
   trainerId: string;
   workout: Workout;
   /** Granted by the trainer (users.canAddSets); off by default, so there is no "Adicionar série" at all. */
   canAddSets: boolean;
+  /** GOALS.md §38b: the aluno's data in memory no longer has this session; the next page reads it again. */
+  onSaved: () => void;
 }) {
   const exercises = uniqueByName(workout.exercises);
   // The exercise a "Deseja adicionar uma série extra?" question is open for, if any.
@@ -115,6 +124,7 @@ function SessionForm({
     setError(null);
     try {
       await logSession(getFirebase().db, uid, trainerId, workout.id, entries, Date.now());
+      onSaved();
       setSaved(true);
     } catch {
       setError("Não foi possível salvar o treino. Verifique a conexão e tente de novo.");

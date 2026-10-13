@@ -1,12 +1,12 @@
 import {
   collection,
   doc,
-  getDocs,
   runTransaction,
   type Firestore,
   type Query,
   type Transaction,
 } from "firebase/firestore";
+import { getDocs } from "../firestoreRead";
 import type { BillingTerms } from "../../domain/billing/terms";
 import { isRecord, nonNegativeInteger, withRulesMessage } from "./parse";
 

@@ -1,4 +1,5 @@
-import { arrayUnion, doc, getDoc, increment, setDoc, type Firestore } from "firebase/firestore";
+import { arrayUnion, doc, increment, setDoc, type Firestore } from "firebase/firestore";
+import { getDoc } from "./firestoreRead";
 import { DEFAULT_TIME_ZONE, localDate } from "../domain/dates";
 import { activityDocId, monthOf, shouldWriteLastSeen, type ActivityKind } from "../domain/activity";
 import type { DashboardFigures } from "../domain/dashboard";

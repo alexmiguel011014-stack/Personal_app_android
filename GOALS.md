@@ -7527,6 +7527,435 @@ Suggested: haiku · low — describes what exists; last.
       **Done (2026-10-12):** `CLAUDE.md` (new paragraph "The two dashboards (§37)", the Gemini sentence replaced) and `web/README.md` (`e2e:dashboards`). The "Superseded in part by §37" notes under §23g/§23k/§26 are not added: those sections' text describes history, and §37 states what changed.
 - [ ] **(manual — owner)** Look at the before/after screenshots in the PR and say what to change before merge; after merge, open both dashboards on the live site (the owner's own accounts) and confirm the numbers look right.
 
+## 38. Feature — Aluno ↔ personal: close the training loop (prescription detail, logging, feedback, anamnese, visibility) inside the Firebase free plan, measured against the market (web)
+(2026-10-12, via `/newgoal`; revised the same day after the owner's follow-up — *"temos limitações do plano gratis do firebase, lembre-se disso ao tentar executar isso, inclua no newgoals tambem um relatorio de anaminesia para mandar para o aluno, um relatorio bom e facil de fazer"* — which added **38b Spark budget** and **38g Anamnese**. The research and the screen walkthrough are recorded below so `/execgoals` does not repeat them.)
+
+```mermaid
+flowchart TD
+  A[38a Owner decisions O1-O8] --> H
+  B[38b Spark budget: bounded reads, one load per session, indexes] --> C[38c Fixes]
+  B --> E
+  B --> F
+  C --> D[38d Prescription detail]
+  D --> E[38e Logging UX]
+  C --> G[38g Anamnese + report]
+  C --> F[38f What the aluno sees]
+  E --> H[38h Feedback loop + contact + Rules hardening - Rules vN]
+  F --> H
+  G --> H
+  H --> I[38i Personal side]
+  I --> J[38j Verification]
+  J --> K[38k Docs + owner rollout]
+  X[§37 dashboard kit + trainerAttention] -.-> F
+  X -.-> I
+  R[§36 Rules v8 published] -.-> H
+```
+
+Suggested: sonnet · high — many screens over existing data; **38b** (it changes how every page loads data and protects the whole project's quota) and **38h** (field-level Rules on health-adjacent data) deserve opus · xhigh.
+
+**The request (owner, Portuguese):** *"vamos começar a melhorar a interação do aluno e personal, Faz uma analisa completa de todas as funcionalidade existentes dessa interssão de aluno e personal e veja o que voce acredita que falta? pontue lacunas e falhas e alem disso compare com o que existe no mercado para ver se estamos muito atras ou se estamos num pe bom. Procure tirar prints e entender como o app funciona para saber se o site esta intuitivo e amigavel ao usuario também. Me retorne um relatorio antes de executar o goals."* Follow-up: the free-plan limits must hold, and an **anamnese** the personal sends to the aluno — good and easy to fill — is part of this plan.
+
+**Goal type: Feature**, fed by research done first (inventory, screenshots, market, Spark limits). Web only (`web/`). Android/iOS are being rebuilt later (CLAUDE.md status note): every stored shape below either already exists (`Exercise.weight/restSeconds/notes`, `workoutLogs`, `schedules`, `assessments`) or is web-only (a new collection, or a map field the phone ignores, like `workouts.ficha`).
+
+### The free plan (Spark) — the rules every item below obeys
+
+Checked 2026-10-12 against Firebase's own pages:
+
+| Limit | Value | Consequence for this plan |
+|---|---|---|
+| Firestore reads | **50,000 / day per project** (shared by every personal and aluno), reset ≈ midnight Pacific (≈ 04–05 h in Brasília) | When exhausted, **every** read fails for **everyone** until the reset. Every query is bounded (date window or `limit`); every new screen states its read cost (38b). |
+| Firestore writes / deletes | 20,000 / 20,000 per day | Comfortable (a session is ~6 writes); no write loops, no per-keystroke saves. |
+| Firestore storage / egress | 1 GiB total · 10 GiB / month | Documents stay small; free texts have length caps. |
+| Max document size | 1 MiB | The anamnese is one small document (< 10 KB). |
+| Cloud Functions | **Not on Spark** | No server code: no push sender, no scheduled jobs, no server e-mail, no server-side PDF. |
+| Cloud Storage | **No bucket access on Spark since 2026-02-03** (the project's bucket is `personalapp-88129.firebasestorage.app`) | No progress photos, no uploads, no stored PDFs. Reports are rendered in the browser and saved with the browser's "Imprimir → Salvar como PDF". **Side finding:** §29's avatar upload depends on Storage — verify it in production (38b). |
+| Composite indexes | Free, but **deployed by the owner** (`firestore.indexes.json`, `firebase deploy --only firestore:indexes`) | A bounded query that needs an index fails in production until the owner deploys it — the deploy is a manual gate before the site. |
+| E-mail | Only Firebase Auth's own mails (§32) | Notices go through WhatsApp links the user taps, not e-mail. |
+
+**Found while checking (the reason 38b comes first):** `data/trainerData.ts` `loadTrainerSnapshot` reads **all** of the personal's `workoutLogs` and `payments`, with no window, and **8 trainer pages** call it again on every visit (`useTrainerData`); "Registros" adds one `biometrics` and one `assessments` query **per aluno**. On the aluno side, **4 pages** each re-read the aluno's profile, all workouts, all biometrics and **all logs** (`useStudentData`). Illustration: 20 alunos × 3 sessions/week × 6 exercises = **18,720 log documents after a year**; three trainer page visits that day ≈ 56,000 reads — **over the whole project's daily quota from one personal**. It is invisible today only because the data is young. §38's own features (last performance, sessions, charts) would lean on the same loads, so the budget is fixed before them.
+
+### What exists today (read from `web/src`, exercised on the local bench 2026-10-12)
+
+| Step of the relationship | Personal (`/app`) | Aluno (`/aluno`) |
+|---|---|---|
+| Connect | Draft aluno → "Gerar link de convite" (code, no expiry, capped) → "Conectado" pill | `/convite?c=` → account with a verified e-mail → linked |
+| Prescribe | Ficha = named set of treinos, ≤ 2 per aluno; exercises are **name + sets × reps only** (paste or manual) | Fichas grouped by name; each treino a card with a collapsed exercise list + "Registrar treino de hoje" |
+| Train / log | — | Weight + reps per prescribed set (extra sets only with `canAddSets`); one batch of `workoutLogs` (one doc per exercise); "Treino registrado! Seu personal já pode ver." |
+| See the result | "Registros" (book by day), "Hoje" (last registro, quiet ≥ 7 days, adherence 28 d), aluno page (progression table, recent activity) | "Evolução": measurements list, progression **table**, recent activity (one row per exercise) |
+| Assess | Permissions (`canSelfAssess`, `canLogBiometrics`, `canAddSets`), "Solicitar autoavaliação", PAR-Q+ answers with "sim" flagged | PAR-Q+ (7 questions) + objetivo/nível/dias when requested — **no anamnese** (health history, medication, injuries, habits, consent) |
+| Schedule | Weekly fixed template (`schedules`), trainer-only screen | **Nothing** (the Rules already let the aluno read their own `schedules`) |
+| Talk | Nothing in the site (phone number shown as plain text) | Nothing |
+| Money | Trainer-only by decision (2026-09-22) — stays so | — |
+
+### What the screenshots showed (local bench, seeded data, 390 px ×2 and 1440 px; not committed)
+
+| # | Finding | Severity |
+|---|---|---|
+| U1 | **PAR-Q+ arrives pre-answered "Não" on all 7 questions** (`domain/assessments.ts` `emptyAnswers()` → `false`): one tap on "Enviar" records "nenhuma resposta sim" without reading — a false negative on a health screening the trainer relies on. | high |
+| U2 | **Logging keeps rows only in React state**: a reload, a discarded background tab or a locked phone at the gym loses the whole session. | high |
+| U3 | After saving, "Seu personal já pode ver" — but nothing tells the personal, and **neither side can say anything about the session** (no effort, no comment, no "visto"). The loop is one-way. | high |
+| U4 | Prescription stops at sets × reps: the editor has no carga/descanso/observação although `Exercise` already stores `weight`, `restSeconds`, `notes` (the phone reads them); the aluno screens never show rest or notes. No way to send a technique cue or a video link. | high |
+| U5 | Log form: empty inputs every time (no "last time", no prefill from the prescribed load), "Peso/Reps" labels repeated on every row — **1,573 css px for 3 exercises / 10 sets**; no rest timer. | medium |
+| U6 | "Evolução" is tables only; "Atividade recente" is one row **per exercise** (3 rows per session) — **2,765 css px** on a phone for 9 sessions. Same component on the trainer's aluno page. | medium |
+| U7 | A wrong log can't be fixed or removed by the aluno (the Rules already allow update/delete of one's own logs; the UI offers neither). | medium |
+| U8 | The aluno never sees their own horários, nor "which treino today" (all treinos are equal cards), nor their own consistency. | medium |
+| U9 | Trainer's aluno page: "Pausar aluno" is the **first** control; the sessions are at the bottom of a ≥ 3,000 css px phone scroll; the phone number is not a `tel:`/WhatsApp link. | medium |
+| U10 | Registros' session card does not say which treino was done (the log has `workoutId`). | low |
+| U11 | Aluno with no ficha: the pending-assessment card and the bare "Nenhuma ficha atribuída ainda." touch (no spacing, no expectation set). | low |
+| U12 | `/convite` says "Seu personal convidou você" without the personal's name — the invite is unreadable before sign-in (Rules), so this is deferred, not fixed here. | low |
+
+**What already works well (keep):** login and invite are short and clear; the ALLU visual is consistent; bottom tab bar on phones; big primary actions; Registros grouped by day with "Sessão concluída"; "Atenção" (quiet ≥ 7 days, pending assessments) on Hoje; permissions explained in plain words.
+
+### Market comparison (2026-10-12; ✔ = shown in the source, ~ = partial, ✖ = absent, ? = not verified — never read as "absent")
+
+| Feature | ALLU | MFIT | Tecnofit Personal | Trainerize | TrueCoach | Hevy Coach | Everfit |
+|---|---|---|---|---|---|---|---|
+| Ficha on the aluno's phone | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| Aluno logs load × reps | ✔ | ? | ✔ | ✔ | ✔ | ✔ | ✔ |
+| Last performance while logging | ✖ | ? | ? | ? | ~ (history criticised) | ✔ ("PREVIOUS", tap to copy) | ? |
+| Rest timer | ✖ | ✔ (sound, background) | ~ (separate Timer app) | ? | ✔ | ? | ? |
+| Exercise demo videos | ✖ | ✔ (~1,800) | ✔ (600+) | ✔ (YouTube add-on) | ? | ? | ? |
+| Aluno → personal session feedback | ✖ | ✔ | ✔ | ✔ (check-ins) | ✔ (+ set videos) | ✔ | ✔ (forms) |
+| In-app chat | ✖ | ? | ? | ✔ | ✔ | ✔ | ✔ (voice/video notes) |
+| Push / reminders | ✖ | ✔ | ~ (due dates) | ✔ (workout days) | ✔ (coach notified) | ? | ✔ (automation) |
+| Progress photos | ✖ | ? | ? | ✔ | ? | ✔ | ✔ |
+| Anamnese / physical assessment | ~ (PAR-Q+ 7 q + weight/% fat) | ✔ (anamnese, física, postural, neuromotora, custom) | ✔ (anamnese, antropometria, composição) | ~ (body stats) | ? | ✔ (measurements) | ✔ (forms) |
+| Aluno sees the agenda | ✖ | ? | ? | ✔ (calendar) | ? | ? | ? |
+| Habits / nutrition | ✖ (out of scope) | ? | ? | ✔ | ? | ? | ✔ |
+| Personal's billing of alunos | ✔ (manual record) | ✔ | ✔ | ✔ (Stripe add-on) | ? | ? | ? |
+| Entry price | owner-defined | 10-day trial (price not found) | free app (store) | free 1 client · US$ 9 (2) · Pro 5 US$ 23 | ? | ≈ US$ 25 / 10 clients (third party) | free ≤ 5 clients |
+
+**Verdict:** on the **core loop** (ficha → registro → progressão → "quem sumiu") ALLU is level with the market. On the **interaction layer** it is behind: of the nine interaction features the leaders show (last performance, timer, videos, feedback, chat, push, photos, rich assessment/anamnese, agenda for the aluno) ALLU has none in full. Ahead or distinctive: Smart Paste from any AI, effective volume per muscle, granular permissions, the aluno never sees billing, zero infrastructure cost (Spark). Evidence that apps help training outcomes is real but modest (2025 meta-analysis of 32 RCTs on mHealth-prescribed resistance training: small effect, d = 0.18; adherence data too thin to pool) — so this plan favours cheap features that close the loop over big subsystems, and three of the leaders' features (push, photos, server PDFs) are simply not possible on Spark.
+
+**What a good anamnese holds** (Brazilian personal-trainer templates; no CREF/CONFEF official model found): identification, objective, the PAR-Q readiness questions (use the standard wording, don't rewrite them), history (injuries, surgeries, diseases, medication, smoking), routine (training experience, available days/times, sleep), and a **consent** for the use of the data. A "sim" on PAR-Q+ leads to the follow-up pages and/or a health professional before raising intensity. **LGPD:** health data is sensitive (art. 5º, II); the safe basis for a personal trainer is consent that is **specific and highlighted** for a stated purpose (art. 11, I) — the "tutela da saúde" basis is narrow and its fit for physical-education professionals was not confirmed; sharing health data with third parties for economic advantage is restricted. (Secondary sources; the official law text should be checked by the owner/lawyer — 38k.)
+
+**Sources consulted:**
+- [MFIT Personal – App Store BR](https://apps.apple.com/BR/app/id1283273690) · [MFIT – Reclame Aqui (profissionais)](https://www.reclameaqui.com.br/mfit-personal/insatisfacao-de-profissional-de-educacao-fisica-com-o-sistema-mfit-personal-e-suas-constantes-e-negativas-mudancas_Rg7G1bQAigfP8a_Z/)
+- [Tecnofit para Personal Trainer – App Store](https://apps.apple.com/app/id1456964677) · [Tecnofit (aluno de academia) – App Store](https://apps.apple.com/app/id1109478634)
+- [ABC Trainerize – App Store](https://apps.apple.com/app/id516851502) · [Trainerize pricing 2026 – Coachway](https://coachway.io/articles/trainerize-pricing/)
+- [TrueCoach – personal training tools](https://truecoach.co/?p=3537) · [TrueCoach review 2026](https://www.promealplan.com/en/blog/truecoach-review-2026) · [TrueCoach – Capterra](https://capterra.com/p/155784/truecoach/)
+- [Hevy trainer platform](https://www.hevyapp.com/features/trainer-platform/) · [Hevy – previous workout values](https://help.hevyapp.com/hc/en-us/articles/36011896355479-How-to-Use-Previous-Workout-Values-to-Improve-Performance-in-Hevy) · [Hevy Coach review – Coachway](https://coachway.io/articles/hevy-coach-review)
+- [Everfit (llms.txt)](https://everfit.io/llms.txt) · [Everfit habit coaching](https://blog.everfit.io/how-everfit-helps-you-start-habit-coaching-with-ease) · [Everfit review – Coachway](https://coachway.io/articles/everfit-review/)
+- [mHealth resistance-training prescription: SR/MA of RCTs (2025)](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC12836956/)
+- [Session-RPE method: validity and influencing factors (2017 review)](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5673663/) · [sRPE timing in HIFT (2018)](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6162408/)
+- [PAR-Q+ and ePARmed-X+ – HealthLinkBC](https://www.healthlinkbc.ca/node/11457)
+- [Ficha de anamnese para personal trainer – GeraContratos (modelo)](https://geracontratos.com.br/ficha-de-anamnese/personal-trainer) · [Questionário de anamnese – Jotform (modelo)](https://www.jotform.com/pt/form-templates/questionario-de-anamnese)
+- [LGPD comentada: dados sensíveis – Confidata](https://confidata.com.br/blog/lgpd-comentada-09-dados-sensiveis-anonimizacao) · [Consentimento e bases legais na saúde – Confidata](https://confidata.com.br/blog/consentimento-paciente-lgpd-bases-legais-saude) · [Dados sensíveis de saúde – Unicamp](https://privacidade.unicamp.br/arquivo/uploads/apresentacao-20230809-o-tratamento-de-dados-pessoais-sensiveis-referentes-a-saude) · [LGPD, texto oficial – Planalto](https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2018/lei/l13709.htm)
+- [Firestore usage and limits (free quota, 1 MiB documents)](https://firebase.google.com/docs/firestore/quotas) · [Cloud Storage changes for Spark (Blaze required since 2026-02-03)](https://firebase.google.com/docs/storage/faqs-storage-changes-announced-sept-2024) · [Firebase pricing](https://firebase.google.com/pricing)
+- `REPERTOIRE.md` Part 3 (PWA install and Web Push on iOS — the prerequisite for any push, O2)
+
+### Facts that bind the design (so they are not rediscovered)
+
+1. **A session is student × local day** (`domain/metrics.ts`: the phone stamps each exercise's log with its own clock reading; any other key splits or merges sessions). Feedback keys on it.
+2. `workoutLogs`: the aluno may already `update`/`delete` their own (Rules); `schedules`: the aluno may already `read` their own. Both are UI-only gaps.
+3. An aluno **cannot read** the trainer's `users/{uid}` (self, ADM, owning trainer only) ⇒ showing the personal's name/WhatsApp to the aluno needs a new readable document.
+4. `invites` are readable only when signed in ⇒ no personal's name on `/convite` before sign-up (U12 stays deferred).
+5. `exercisesJson` is decoded by the phone's kotlinx `Json` ⇒ **no new JSON key** in an exercise; use the existing `weight`/`restSeconds`/`notes`.
+6. `parseWorkoutName`/`parseExercises`/`applyPaste` mirror `WorkoutParser.kt` and must not change (CLAUDE.md).
+7. §33: nothing here may name, list, embed or derive from the hidden exercise reference; `check:leak` and `e2e:ficha-privacy` stay green. Videos are trainer-typed URLs, never a catalogue.
+8. Rules versions: v7 is the current file; §36 reserves **v8** (and a later v9 cleanup). This section's Rules take **the next free number when its PR is cut**, never folded into another section's unpublished set without the owner. Limits from §36 fact 5 apply (≤ 10 `get/exists` per write, ≤ 7 function args, ≤ 10 `let`).
+9. Lesson from §35: fixtures shaped like production, and partial `update()`/`set(merge)` of one's own fields only — never a rewrite of a parsed document.
+10. **Spark** (table above): no Function, no Storage, 50k reads/day for the whole project; Rules only see `workoutLogs` queries that filter on `trainerId` (personal) or `studentId` (aluno), so a bounded query keeps that equality and adds the date range ⇒ composite index.
+11. `assessments` create is checked for `studentId`, `trainerId` and `canSelfAssess`, **not** for its keys ⇒ the anamnese fields can be added without a Rules change (38g), and a key/size hardening is added later in 38h. The phone's mapper reads named fields and ignores the rest.
+12. Rules and the request flag: `requestAssessment` sets `users/{uid}.pendingAssessmentRequest = true`; the aluno clears it only in the same batch that creates the assessment named by `lastAssessmentId` — the anamnese reuses that exact flow.
+
+### Decisions (S = the owner said it; D = this plan decided it — flip any D before `/execgoals`; O = only the owner can decide)
+
+| # | Decision |
+|---|---|
+| S1 | Improve the aluno ↔ personal interaction; report first, execute only after the owner says so. |
+| S2 | **Stay inside the Firebase free plan (Spark).** Every item respects the Spark table; anything that needs Blaze is an O-decision, never built. |
+| S3 | An **anamnese** the personal sends to the aluno, with a **good report** for the personal and **easy to fill** for the aluno. |
+| D1 | **Protect the quota first (38b)**, then close the loop cheaply: 38c–38g need no Rules change; the feedback loop, the contact card and the `assessments` hardening (38h–38i) share one Rules version. |
+| D2 | **WhatsApp is the chat** for now: `wa.me` links both ways (personal → aluno from the aluno's phone; aluno → personal from an opt-in contact card, D9). No in-app thread (see O1). Messages never carry health data. |
+| D3 | **Feedback is per session** (fact 1): `sessionFeedback/{studentId}_{YYYY-MM-DD}`, one document holding the aluno's side and the personal's side — not a thread. |
+| D4 | **Effort = session RPE on the CR-10 scale**, stored as an int 0–10 (validated in the literature, best collected within ~20 min of the session), shown as five words: Muito leve (2) · Leve (4) · Moderado (6) · Pesado (8) · Máximo (10). Plus "Senti dor ou desconforto" (boolean) and an optional comment ≤ 500 chars. Asked right after "Salvar sessão", always skippable. |
+| D5 | The personal answers with **"Visto"** (`trainerSeenAt`) and an optional comment ≤ 1,000 chars; the aluno sees "✓ Visto pelo personal" and the comment. Each side edits only its own fields. |
+| D6 | Prescription detail uses `weight` (free text, as the phone), `restSeconds` (0–600), `notes` (≤ 300); an `http(s)` URL inside `notes` renders as "Ver vídeo"/"Abrir link" (`target="_blank" rel="noopener noreferrer"`, no embed ⇒ no CSP change). |
+| D7 | **Form drafts autosave** in `localStorage` (the log form per `uid + treino`, the anamnese per `uid`), discarded after 24 h (log) / 7 days (anamnese) and on send; a per-device convenience, never synced, never a Firestore write per keystroke; every access in try/catch (private mode works without it). |
+| D8 | **Rest timer** is client-only, computed from an end timestamp (background tabs throttle intervals), default 90 s when `restSeconds` is null, ±15 s, sound (Web Audio) + `navigator.vibrate` where supported; no notification permission. |
+| D9 | **Contact card**: `trainerContacts/{trainerId}` = `{ name, whatsapp, updatedAt }`, written only by that personal (opt-in from `/app/conta`, deleted when turned off), readable by that personal and their linked alunos; never by the ADM UI. |
+| D10 | **PAR-Q+**: no preselected answer, all 7 required ("Faltam N respostas"); any "Sim" shows the PAR-Q+ guidance (talk to your personal / a health professional before raising intensity). Stored shape unchanged — a stricter-input web-only difference CLAUDE.md allows; record it in §23's list. |
+| D11 | **"Próximo treino"**: inside the newest ficha, the treino after the one in the latest session (by `ficha.order`, wrapping); nothing logged ⇒ the first. A suggestion, never a lock. |
+| D12 | **Correcting a session**: the aluno may edit or delete their own sessions of the **last 7 days** (older history stays as the personal saw it); edit rewrites the same log documents in one batch. |
+| D13 | **Read windows (38b):** the personal's snapshot reads `workoutLogs` of the last **63 days** (covers §37's 8 weekly bars and two 28-day adherence windows) and `payments` of the last **13 months**; the aluno reads their own logs of the last **120 days**; full history (a progression chart, an old session) is read **on demand** for one aluno / one exercise. "Último treino" for a personal's aluno with nothing in the window comes from one `limit(1)` query each. |
+| D14 | **One load per session per area**: `useTrainerData` and `useStudentData` read through a provider in the area layout (memory only, cleared at sign-out), re-fetched after a write or on "Atualizar" — not on every page. Live listeners (`onSnapshot`) only where a screen truly needs live data, and always unsubscribed on leave. |
+| D15 | **Read budget, measured:** with a "heavy year" fixture (20 alunos × 3 sessions/week × 6 exercises × 52 weeks ≈ 18,720 logs), the first trainer page of a session reads **≤ 1,500 documents** and each further trainer page **≤ 150**; the first aluno page **≤ 300** and each further one **≤ 50**; a modelled day for that personal (15 trainer page views + 20 alunos × 4 page views) stays **≤ 5,000 reads** (10 % of the project quota, so ~10 such personais fit). |
+| D16 | **The anamnese evolves the existing "autoavaliação"** (facts 11–12): same button (renamed "Enviar anamnese"), same `pendingAssessmentRequest` flag, same `canSelfAssess` permission, same append-only `assessments` collection; the new answers go in one web-only map field `anamnesis` (+ `consentVersion`, `consentAt`). Old/phone documents without it read as "Autoavaliação simples (só PAR-Q+)". No new collection, no new flag, no Rules change to ship it. |
+| D17 | **Easy to fill:** one section per screen with "2 de 6" progress, mostly taps (sim/não, chips, checkboxes), follow-up questions only after a "Sim", free text optional and capped, draft saved on the device (D7), a review screen before sending, ≈ 5 minutes. |
+| D18 | **Easy to send:** one button "Enviar anamnese" on the aluno page, then "Avisar no WhatsApp" with a neutral message and the site link (no health data in the message). Connected alunos only; re-sending later (e.g. every 6 months) keeps the history. |
+| D19 | **A good report:** `/app/alunos/anamnese/?aluno=&id=` — "Atenção" first (every flag with a word and colour, PAR-Q+ first), "Mudou desde a anterior", then the sections compactly; "Imprimir / salvar PDF" through the browser (`@media print`, A4, no shell) — no file stored (Spark: no Storage); "Atualizar dados do aluno" copies objetivo/nível/dias/restrições into the profile only when the personal clicks it. The aluno can open and print "Minha anamnese" too. |
+| D20 | **Consent (LGPD art. 11, I):** a separate, unticked, highlighted checkbox — *"Autorizo meu personal a usar estas informações de saúde apenas para avaliar, planejar e acompanhar meus treinos."* — plus *"As informações são verdadeiras."*; both required; the text is versioned (`consentVersion: "anamnese-v1"`) and `consentAt` is the server time. The wording is reviewed by the owner (38k) before release. |
+| D21 | **Order and branch**: 38b first, on its own branch `fix/spark-read-budget` (it protects the project today, independent of the rest); then §37's PR; then 38c–38g (PR 2, `feature/aluno-personal`); then 38h–38i (PR 3, after §36's v8 is published so version numbers stay linear). Separate **worktrees** — other sessions work in the main checkout. PR only; never push, merge or deploy unasked. |
+| O1 | In-app chat (Firestore thread, no push) vs WhatsApp only. Recommendation: WhatsApp now; revisit with O2. |
+| O2 | Push notifications: need an installable PWA (`REPERTOIRE.md` Part 3; iOS only for home-screen apps, 16.4+) **and** a sender (Cloud Function ⇒ **Blaze**). Recommendation: PWA install as its own goal first; push only if Blaze is ever chosen. |
+| O3 | Exercise videos: trainer-typed links (D6, now) vs an own video library (Storage ⇒ **Blaze**; must stay clear of §33). |
+| O4 | Progress photos: Storage ⇒ **Blaze** + LGPD (body images are sensitive). Not possible on Spark. |
+| O5 | The personal logs a session **for** the aluno during an in-person class (Hevy Coach does): needs a `workoutLogs` Rules change (today only the aluno creates). Deferred until asked. |
+| O6 | A recurring check-in form (weekly sleep/energy/pain). Deferred; per-session feedback covers the per-workout part. |
+| O7 | The personal fills the anamnese **for** a draft aluno (in person, before the account exists): needs trainer-created `assessments` (Rules change). Deferred until asked; today the aluno fills it after connecting. |
+| O8 | Custom questions written by the personal (MFIT-style form builder). Deferred; the fixed, well-chosen anamnese comes first. |
+
+**Out of scope (explicit):** habits/nutrition, groups/challenges, badges beyond a weekly consistency strip, billing visible to the aluno (decision of 2026-09-22 stands), the two home dashboards (§37), the `/convite` name (U12), physical-test protocols (postural/neuromotor — the anamnese is the intake, not a lab), anything needing Blaze, Android/iOS.
+
+### 38a. Owner decisions (before 38h)
+
+Suggested: haiku · low — a short confirmation, no code.
+
+- [ ] **(manual — owner)** Confirm or flip D2, D4, D9, D12, D13, D16, D20 and answer O1–O8 (unanswered ⇒ the recommendation). Done when: the answers are written under this item with the date.
+
+### 38b. Spark budget — bounded reads, one load per session, indexes (PR 1, first)
+
+Suggested: opus · xhigh — it changes how every page loads data and protects the whole project's daily quota; a wrong window silently changes numbers the ADM and §37 rely on.
+
+- [x] **Measure first:** `data/readCounter.ts` — a thin wrapper used by every `getDocs`/`getDoc`/`onSnapshot` in `data/` that, only when `NEXT_PUBLIC_FIREBASE_EMULATORS === "true"`, adds the documents returned to `window.__alluReads[label]` (snapshot listeners: the first snapshot plus each changed document). Production code path unchanged. `scripts/seed-emulators.mjs --heavy` adds the D15 "heavy year" fixture (batched, ≤ 500 per batch; normal seeding stays as fast as today). Record the **before** numbers per page under this item.
+      Done 2026-10-13: the wrapper is `web/src/data/firestoreRead.ts` (not `readCounter.ts`): every `getDoc`/`getDocs` in `data/` goes through it and the three `onSnapshot`s call `noteReads`; `npm run seed:emulators -- --heavy` (`scripts/lib/heavyFixture.mjs`) builds the heavy year — 20 alunos × 52 weeks × 3 sessions × 6 exercises = 18,720 logs, 20,261 documents in all. **Before** (production build, the old all-time load): **19,061 reads on every trainer page** (18,720 logs + 341 others; on the emulator the page even gave up and showed an empty roster, "0 alunos", with no error) and **≈ 997 on every aluno page** (936 logs + 52 measurements + 9 others), so the modelled busy day (the personal opens the site twice and visits 14 pages; each of the 20 alunos opens it once and visits 3) cost **≈ 365,000 reads = 730 % of the project's daily quota**.
+- [x] **Windowed snapshot (D13):** `loadTrainerSnapshot` reads `workoutLogs` with `where("trainerId","==",T), where("date",">=", now − 63 d)` and `payments` of the last 13 months; a pure `windowStart(now, days)` in `domain/` (tested). For alunos with no log in the window, one `where("trainerId","==",T), where("studentId","==",S), orderBy("date","desc"), limit(1)` each, so "Sem treinar há…/nunca registrou" stays exact. Done when: `dashboardFigures` and `writeTrainerStats` produce **identical** values with and without the window on the normal seed (a test feeds both inputs), so §37 and the ADM directory see no change.
+      Done 2026-10-13, with deviations: `loadTrainerSnapshot(db, trainerId, now, previous?)` reads the logs of the last 63 days (`domain/readWindows.ts`: `windowStart`, `refreshStart`, `mergeLogWindow`, `studentsNeedingEarlierLog`) and, for each linked aluno with no log in the window, one `limit(1)` query for their latest older log (`TrainerSnapshot.earlierLogs`, which `dashboardFigures` takes as `earlierLogs`). **`payments` stay all-time** — one document per aluno per month (240 in the heavy year) and "Em atraso (todos os meses)" needs every unpaid one; §36 replaces that model. A refresh re-reads only the last 8 days of logs and the small collections. The equivalence is a test: `readWindows.test.ts` gives `dashboardFigures` the full history and the window and expects identical figures (sessions, adherence, the quiet list with each last day, pending assessments), and `rules/dataLayer.test.ts` runs the windowed queries through the Rules. The 63 days cover §37's eight weekly bars and its previous 28-day adherence window (56 days): `e2e:dashboards` passes unmodified on the merged code.
+- [x] **Aluno window:** `loadMyLogs` reads the last 120 days; "Evolução" and the trainer's aluno page load one exercise's full history on demand (`where studentId/trainerId == …, where("exerciseName","==",X)`) when the aluno/personal opens it ("Ver histórico completo").
+      Done 2026-10-13, with deviations: the aluno reads **60 days** (`STUDENT_LOG_WINDOW_DAYS`), not 120; "Ver histórico completo" (Evolução and the personal's aluno page, `ProgressSection`'s `loadAll`) loads that aluno's whole history **on request** — 936 reads for the heavy aluno, one click — instead of a per-exercise query (so there is no per-exercise index to deploy).
+- [x] **One load per session (D14):** a `TrainerDataProvider` in `app/app/layout.tsx` and a `StudentDataProvider` in `app/aluno/layout.tsx` hold the loaded data in memory; `useTrainerData`/`useStudentData` read from it; `reload()` after every write refreshes it; sign-out clears it. Done when: navigating Hoje → Alunos → Registros → Agenda re-reads nothing but what each page adds.
+      Done 2026-10-13: `TrainerDataProvider` (`app/app/layout.tsx`) and `StudentDataProvider` (`app/aluno/layout.tsx`) hold a small store (`useSyncExternalStore`) in memory only; a page reads from it while it is under 5 minutes old and still the same day, `reload()` (every write already calls it) refreshes incrementally, and `invalidate()` marks it stale for writes that leave the page on screen (a session saved, an assessment sent, a new aluno). Measured: Alunos 0 reads, Mensalidades 0, aluno Evolução 0.
+- [x] **Registros:** one `biometrics` and one `assessments` query by `trainerId` with the same day window as the page (instead of one query per aluno), "Carregar dias anteriores" extends the window.
+      Done 2026-10-13: `loadTrainerBiometrics` / `loadTrainerAssessments` (one query each for the whole roster, same window) replace the 2 × N per-aluno queries; "Buscar registros antes de …" goes back one 63-day window at a time (logs, measurements, assessments). 181 reads on the heavy fixture.
+- [x] **Listeners:** review the 14 `onSnapshot` uses; keep each only where live data matters (invite counters on a draft's page), always unsubscribed on unmount; everything else becomes a one-shot read.
+      Done 2026-10-13: there are only **three** `onSnapshot`s (the "14" was a count of the word in a grep): the session's profile listener (1 document) and the two on a draft aluno's page (live invite counter, linked-aluno seats). All three stay — they are live data that screen needs — all unsubscribe on unmount, and all call `noteReads`.
+- [x] **Indexes:** new `firestore.indexes.json` (registered in `firebase.json`) with exactly the composite indexes these queries need — e.g. `workoutLogs (trainerId ASC, date ASC)`, `(studentId ASC, date ASC)`, `(trainerId ASC, studentId ASC, date DESC)`, `(studentId ASC, exerciseName ASC, date ASC)`, `(trainerId ASC, studentId ASC, exerciseName ASC, date ASC)`, `payments (trainerId ASC, …)` as used — and the emulator run proves each query works. Done when: every bounded query passes on the emulators and the file lists no index nothing uses.
+      Done 2026-10-13: `firestore.indexes.json` (registered in `firebase.json`) lists exactly five composite indexes, each used by one query: `workoutLogs (trainerId, date)`, `(studentId, date)`, `(trainerId, studentId, date desc)`, `biometrics (trainerId, date)`, `assessments (trainerId, submittedAt)`. **Not machine-verified:** the Firestore emulator does not enforce composite indexes, so a wrong or missing one only fails in production — the owner's deploy (manual item below) and a first look at the live site are the proof.
+- [x] **Budget assertions (D15):** new `web/e2e/read-budget.mjs` (`npm run e2e:read-budget`) on the heavy fixture asserts the per-page limits and prints the modelled day; the **after** numbers recorded under the first item.
+      Done 2026-10-13: `npm run e2e:read-budget` passes 13/13 on the production build. Measured on the heavy year:
+
+      | | before | after |
+      |---|---|---|
+      | personal — first page of a session | 19,061 | 4,265 (3,600 logs; includes the once-a-month creation of charges and the second read it causes) |
+      | personal — later pages | 19,061 each | 0 (Alunos, Mensalidades) · 60 (Agenda, Hoje again, an aluno's page) · 181 (Registros) |
+      | aluno — first page | 997 | 211 |
+      | aluno — later pages | ≈ 995 each | 0 (Conta: 3) |
+      | modelled busy day (20 alunos) | ≈ 365,000 (730 %) | 13,655 (27 %) |
+
+      ⚠ **These numbers count only the documents the queries returned.** Reads billed for Security Rules lookups, writes, network egress and the App Check / reCAPTCHA Enterprise quota were not measured, and no production usage was read — **the real cost may be higher**. §39 is the follow-up research.
+
+      **D15's targets were not met, and its day target contradicted its own per-page limits** (20 alunos × a first page of up to 300 reads is already 6,000 > 5,000): at this activity (20 alunos × 3 sessions a week × 6 exercises) the 63-day window alone is 3,240 log documents. The ceilings in `e2e/read-budget.mjs` are now the measured values with headroom (first trainer page 5,000, modelled day 15,000). Capacity: about **3 personais this busy per project**; one with 5 alunos costs a fraction. To go lower the choices are a shorter window (35 days — §37's eight weekly bars would then need their own read) or per-session summary documents: an owner/§37 decision, not needed at today's two personais.
+
+      Found while verifying: `e2e:fichas` caught a regression of this change (a duplicated React `key` between two sibling sections of the aluno page left the previous aluno's fichas on screen); fixed. `EMULATOR_PORT_SHIFT` / `E2E_BASE` / `NEXT_PUBLIC_EMULATOR_PORT_SHIFT` let a second local bench run beside the first (the secondary Auth instance of `data/adminCreate.ts` had port 9099 hard-coded and now follows the shift).
+
+      Checks on the final tree, merged with §37 (2026-10-13): `npm test` 599/599, `npm run test:rules` 231/231 (this change adds no rule, so there is no "seen failing against the old rules" run), lint, `tsc --noEmit`, `npm run build`, `check:leak` and `check:rules-version` green; e2e `fichas` 53/53, `account` 56/56, `mensalidades` 32/32, `admin-focus` 13/13, `dashboards` 32/32, `read-budget` 13/13; `ficha-privacy` 38/39 — the same single clipboard check fails on `main` itself (headless Chrome), so it is not from this change.
+- [ ] **Storage on Spark (side finding):** check with the owner (read-only, production) whether the avatar upload of §29 works on the current plan; if Storage is unavailable, the account page hides "Trocar foto" and keeps initials, with no error shown — no Blaze. Done when: the owner's answer and the resulting behaviour are written here.
+      Still open — owner (read-only, in production): not checked from here.
+- [ ] **(manual — owner)** Deploy the indexes **before** the site of this PR: `firebase deploy --only firestore:indexes` (your login; free on Spark), then wait until every index shows *Enabled* in the console. Without them the new queries fail in production. No Rules publish is needed — this PR changes no rule.
+- [ ] **(manual — owner)** After the deploy, sign in on the live site as a personal and as an aluno (controlled test accounts) and check that Hoje, Registros, an aluno's page and Evolução load; the next day, read the Firestore **Usage** tab against the table above.
+
+### 38c. Fixes — no Rules change (PR 2)
+
+Suggested: sonnet · medium — small, well-specified changes over existing data.
+
+- [ ] **PAR-Q+ (U1, D10):** `domain/assessments.ts` gains `AnswerDraft` (`boolean | undefined` per key), `unansweredCount(draft)` and `completeAnswers(draft)` (null while incomplete); the form starts unanswered, keeps "Enviar" disabled with "Faltam N respostas", shows the guidance on any "Sim". Tests: incomplete ⇒ null; all answered "Não" ⇒ exactly today's stored map. Done when: the form cannot be sent with an unanswered question and the stored PAR-Q+ field is identical to today's for the same answers. (38g builds the full anamnese on this.)
+- [ ] **Log draft autosave (U2, D7):** pure `domain/formDraft.ts` (versioned serialize/parse, expiry, key) used by the log form and later by the anamnese; a restore banner in `aluno/treino/LogSession.tsx` ("Você tem um treino não salvo de <hora> — Continuar / Descartar"). Tests: expiry, another treino's draft ignored, corrupt JSON ignored, storage throwing ⇒ the form still works. Done when: two filled sets survive a reload.
+- [ ] **Correct or delete a session (U7, D12):** on "Evolução", each session of the last 7 days has "Corrigir" (the log form pre-filled; one batch updating the same documents, deleting exercises emptied) and "Excluir sessão" (`ConfirmDialog`, "Esse processo não pode ser desfeito."). `data/workoutLogs.ts` `updateSession`/`deleteSession`. Done when: both work on the emulators and a rules test confirms another aluno's session is refused (existing Rules).
+- [ ] **Sessions, not exercise rows (U6, U10):** move the pure session grouping of `app/app/registros/ledger.ts` into `domain/` (tests move with it) and use it in `_shared/ProgressSection.tsx` "Atividade recente" for both areas: one card per session with the treino's name (from `workoutId`; "Treino removido" when gone) and its sets. Registros' cards name the treino too. Done when: seeded Ana's "Evolução" at 390 px is ≤ half of today's 2,765 css px.
+- [ ] **Empty states (U11):** spacing between the pending card and the rest; the no-ficha message says what happens next ("Seu personal ainda não montou sua ficha. Assim que montar, ela aparece aqui.").
+- [ ] **Call / WhatsApp the aluno (U9, D2):** pure `domain/contact.ts` `whatsappLink(phone, text?)` / `telLink(phone)` (BR numbers with or without 55, 10–11 local digits, anything else ⇒ null; the optional text is URL-encoded and never built from health fields; tests), used on the trainer's aluno page next to the phone.
+
+### 38d. Prescription detail — no Rules change
+
+Suggested: sonnet · high — touches the ficha editor (Smart Paste must not change) and the JSON the phone decodes.
+
+- [ ] `app/app/fichas/editar/TreinosEditor.tsx`: each exercise gets a "Detalhes" disclosure with **Carga** (free text), **Descanso (s)** (0–600) and **Observação** (≤ 300, may hold a link); saved through `encodeExercises` (blank ⇒ `null` ⇒ key omitted, kotlinx-compatible). A Smart Paste that replaces exercises says the details of replaced exercises are discarded. `parseExercises`/`applyPaste` untouched.
+- [ ] Pure `domain/exerciseDetails.ts`: rest/notes validation, `formatRest(seconds)` ("1:30"), `linksIn(notes)` (http/https only; `javascript:`/`data:` rejected; trailing punctuation trimmed). Tests, plus an encode → decode round-trip for every field and "a document without them decodes as today".
+- [ ] The aluno sees them: the ficha card line "Supino — 3×12 · 40kg · descanso 1:30", the note under it, "Ver vídeo" for a link; the same under each exercise on the log screen. Done when: a treino saved with all three fields shows them on the aluno's home and log screen, and `npm run check:leak` stays green.
+
+### 38e. Logging UX — no Rules change
+
+Suggested: sonnet · high — the most-used aluno screen; keep the stored log shape byte-for-byte.
+
+- [ ] **"Última vez" (U5):** pure `lastPerformance(logs, exerciseName, beforeDay)` over the windowed logs already in the aluno provider (38b — **no extra read**; older than 120 days ⇒ nothing shown); "Última vez (dd/mm): 31×12 · 33,5×10", the last session's set N (else the prescribed carga) as each row's placeholder, and "Repetir a última" filling the exercise's rows. Tests.
+- [ ] **Compact rows:** one header per exercise (Série · Peso · Reps) instead of labels on every row, accessible names kept, controls ≥ 44 px, 16 px inputs. Done when: seeded "Ficha A" at 390 px is ≤ 60 % of today's 1,573 css px.
+- [ ] **Rest timer (D8):** "Descansar" per exercise starts a sticky chip above "Salvar sessão" (countdown, −15 s / +15 s, Cancelar); end ⇒ beep + vibrate. Pure `domain/restTimer.ts` (remaining time from an end timestamp; tests).
+- [ ] **After saving:** a summary — exercises, sets, and "Recordes" (pure `sessionRecords`: heaviest set above the previous best within the window) — then 38h's feedback step once it exists. Saving still writes one batch of the same `workoutLogs` documents (writes unchanged).
+
+### 38f. What the aluno sees — no Rules change
+
+Suggested: sonnet · medium — reads data the aluno can already read, inside the 38b budget.
+
+- [ ] **"Próximo treino" (U8, D11):** pure `nextTreino(fichas, logs)` (tests: wrap-around, a deleted treino, no logs); a card on top of the home with "Começar"; the other treinos below.
+- [ ] **"Meus horários" (U8):** `data/schedules.ts` `loadMySchedules(db, uid)` (`where("studentId", "==", uid)`, a handful of documents, loaded once into the provider); a line "Seg, Qua, Sex · 07:00" on the home, hidden when empty. A rules test proves the aluno reads their own and not another's (existing Rules).
+- [ ] **"Esta semana":** seven day dots (Seg–Dom) and "N treinos esta semana · N no mês" from `trainedDays` over the windowed logs (pure, tested).
+- [ ] **Charts in "Evolução":** the load progression per exercise and the weight series as charts from §37b's kit (`Sparkline`/`BarChart`, or a `LineChart` added **to that kit** with the same contract: `role="img"`, an `aria-label` stating first/last/best, a visually hidden table); the full history only after "Ver histórico completo" (38b). The tables stay as the accessible alternative.
+- [ ] **"Minhas avaliações":** the aluno's own past anamneses/autoavaliações (date, "sim" count, "Ver" → "Minha anamnese" of 38g), read already allowed.
+
+### 38g. Anamnese — sent by the personal, easy for the aluno, a good report (no Rules change)
+
+Suggested: sonnet · high — health data and a legal consent, but over an existing flow (facts 11–12, D16–D20).
+
+- [ ] **The questionnaire as data:** `domain/anamnesis.ts` — sections, keys, labels, options and "shown only if" rules, `ANAMNESIS_VERSION = 1`, `CONSENT_VERSION = "anamnese-v1"` and the consent text (D20). Six screens + review + consent:
+  1. **Prontidão** — the 7 PAR-Q+ questions (existing keys and wording, D10).
+  2. **Saúde** — condições (chips, multi: Hipertensão · Diabetes · Colesterol alto · Doença cardíaca · Asma/bronquite · Tireoide · Labirintite/tontura · Osteoporose · Hérnia de disco · Ansiedade/depressão · Outra + text ≤ 120); "Usa algum medicamento?" → which (≤ 200); "Já fez cirurgia?" → which/when (≤ 200); "Sente dor ou tem lesão hoje?" → regions (chips: Pescoço · Ombro · Cotovelo/punho · Costas (meio) · Lombar · Quadril · Joelho · Tornozelo/pé) and "piora com movimento?"; "Está gestante ou teve bebê nos últimos 12 meses?" (shown unless the profile's sexo is Masculino).
+  3. **Hábitos** — fuma (Não · Sim · Parei); álcool (Nunca · Às vezes · Toda semana · Quase todo dia); sono (horas: < 5 · 5–6 · 7–8 · > 8; qualidade: Ruim · Regular · Boa); estresse (Baixo · Médio · Alto); trabalho (Sentado · Em pé · Braçal).
+  4. **Experiência e rotina** — tempo de treino (Nunca treinei · < 6 meses · 6 meses a 2 anos · > 2 anos ⇒ maps to the existing nível); atividades atuais (chips, multi); dias disponíveis (the existing `TRAINING_DAYS`); tempo por treino (30 · 45 · 60 · 90 min); onde treina (Academia · Casa · Condomínio · Ao ar livre).
+  5. **Objetivos** — principal (one: Hipertrofia · Emagrecimento · Condicionamento · Saúde e qualidade de vida · Força · Reduzir dores · Performance esportiva ⇒ the existing objetivo); prazo (Sem pressa · 3 meses · 6 meses · 1 ano); "Algum exercício que você não gosta ou não pode fazer?" (≤ 200); "O que mais seu personal deveria saber?" (≤ 500).
+  6. **Medidas (opcional)** — ano de nascimento, peso (kg), altura (cm).
+  Then **Revisar** (every answer, "Editar" per section) and **Consentimento** (D20). Pure helpers with tests: `visibleQuestions(answers, profile)`, `validateAnamnesis` (required taps, caps, no control characters, numbers in plausible ranges), `anamnesisFlags(a)` (ordered: PAR-Q+ "sim" → condições → medicamentos → dor/lesão by region → cirurgia → gestação → fumante → sono < 5 h → estresse alto), `anamnesisDiff(previous, current)`, `profilePatchFrom(a)` (objetivo, nível, dias, restrições = flags summarised in words).
+- [ ] **Stored shape (D16):** `submitAssessment` writes the same PAR-Q+/objetivo/nível/dias fields as today **plus** `anamnesis` (the answers map, `version`), `consentVersion`, `consentAt: serverTimestamp()` — in the same batch that clears `pendingAssessmentRequest` (fact 12). `data/converters.ts` `toAssessment` reads `anamnesis` leniently (missing/garbled ⇒ null ⇒ "Autoavaliação simples"). Size well under 10 KB (test with every cap filled).
+- [ ] **Aluno — easy to fill (D17):** `aluno/avaliacao/` becomes the stepper ("Anamnese" title; "2 de 6"; "Continuar"/"Voltar"; big tap targets; follow-ups appear only after "Sim"); draft on the device (`formDraft`, 7 days, D7) with "Continuar de onde parei"; review; consent; "Enviar para o personal". The home banner reads "Seu personal pediu sua anamnese — leva uns 5 minutos." Done when: a first-time aluno finishes it on a 390 px phone with taps only (text fields optional) and a reload mid-way loses nothing.
+- [ ] **Personal — easy to send (D18):** on the aluno page "Enviar anamnese" (same write as "Solicitar autoavaliação"; enabling `canSelfAssess` from the same place when it is off, with one confirmation) and, after sending, "Avisar no WhatsApp" (`whatsappLink` with *"Oi, <primeiro nome>! Deixei sua anamnese no ALLU para você responder: <site>/aluno/avaliacao/"*). Hoje's "Avaliações pendentes" keeps listing who has not answered. `trackActivity("assessmentRequested")` unchanged (no new activity kind).
+- [ ] **Personal — the report (D19):** `app/app/alunos/anamnese/` (static export: `?aluno=&id=`, routes end in `/`) — header (nome, data, "Anamnese nº N · anterior em dd/mm/aaaa"), **Atenção** (every flag as a word + colour, or "Nenhum ponto de atenção relatado."), **Mudou desde a anterior**, then Saúde · Hábitos · Experiência e rotina · Objetivos · Medidas · "Nas palavras do aluno", and the consent line ("Consentimento dado em … · texto anamnese-v1"). Actions: **Imprimir / salvar PDF** (`window.print()`, print CSS in `globals.css`: no rail/tab bar/buttons, black on white, A4, page breaks between sections), **Atualizar dados do aluno** (`profilePatchFrom` → the existing profile write, after a confirmation listing what changes), **Nova ficha**. The aluno page's "Autoavaliações" section lists the anamneses with "Ver relatório". Reads: one document (+ the previous one for the diff).
+- [ ] **Aluno — "Minha anamnese":** the same report component, read-only, from "Minhas avaliações" (38f), with "Imprimir / salvar PDF".
+- [ ] **No new leak paths:** the anamnese is never put in `trainerStats`, `trainerActivity`, `adminAudit` or any ADM screen; it is not cached in `localStorage` after sending (the draft is deleted on send); the WhatsApp text has no answers in it. Done when: a unit test on `whatsappLink` callers and a grep in `check:leak`-style CI step (or a unit test over the report's actions) prove it.
+
+### 38h. Feedback loop, contact card and `assessments` hardening — Rules vN (PR 3)
+
+Suggested: opus · xhigh — a new collection with field-level write rules on health-adjacent data, plus tightening an existing health collection; an error leaks or locks it.
+
+- [ ] Pure `domain/sessionFeedback.ts`: the type `{ studentId, trainerId, day, effort: 0–10 | null, pain, studentComment, studentAt, studentSeenAt, trainerComment, trainerAt, trainerSeenAt }`, `sessionFeedbackId(studentId, day)`, `EFFORT_CHOICES` (D4), validators (trimmed lengths, no control characters), `isUnseenByTrainer`, `hasUnreadTrainerComment`. Tests.
+- [ ] `data/converters.ts` (the one place a document becomes a type): `toSessionFeedback`/`sessionFeedbackToFirestore`, `toTrainerContact`/`trainerContactToFirestore`, lenient on missing optional fields.
+- [ ] `data/sessionFeedback.ts`: aluno `saveMyFeedback` and `markTrainerCommentSeen`; personal `saveTrainerResponse` (seen and/or comment), `loadTrainerFeedback(trainerId, fromDay)` (**windowed** like 38b: `where trainerId ==`, `where day >=`; index added to `firestore.indexes.json`); aluno `loadMyFeedback(uid, fromDay)`. Each writes only its own fields (`set(..., { merge: true })` with explicit fields). Read cost recorded against D15.
+- [ ] `data/trainerContacts.ts`: personal `saveMyContact`/`removeMyContact`; aluno `loadMyTrainerContact(trainerId)` (one read, cached in the aluno provider).
+- [ ] Rules `match /sessionFeedback/{id}`: `id == studentId + '_' + day`, `day` a `YYYY-MM-DD` string; read by the aluno or the owning trainer; create by the aluno (aluno fields only; `trainerId` equal to their own `users.trainerId`) or by the owning trainer (trainer fields only; `studentIsLinkedToTrainer`); update: the aluno only `effort, pain, studentComment, studentAt, studentSeenAt`, the personal only `trainerComment, trainerAt, trainerSeenAt`; identity fields frozen; `*At == request.time`; types and lengths checked; no delete.
+- [ ] Rules `match /trainerContacts/{trainerId}`: read by that personal or an aluno whose `users/{uid}.trainerId == trainerId`; create/update/delete by that personal only, keys `hasOnly([name, whatsapp, updatedAt])`, `whatsapp` 10–13 digits, `updatedAt == request.time`.
+- [ ] Rules **hardening of `assessments` create** (fact 11): keys `hasOnly` today's fields + `anamnesis`, `consentVersion`, `consentAt`; `anamnesis` a map ≤ the agreed size (string caps on the free-text keys); when `anamnesis` is present, `consentVersion` is a non-empty string and `consentAt == request.time`. Phone-shaped documents (no `anamnesis`) still pass.
+- [ ] Bump `// Rules version: N` (next free number, fact 8), add `firestore-rules/versions/vN.rules` identical, `npm run check:rules-version` green.
+- [ ] Rules tests in `web/rules/firestore.rules.test.ts`, each denial paired with a positive case and **seen failing against the previous version** (`RULES_FILE=firestore-rules/versions/v<N-1>.rules npm run test:rules`): another aluno and another personal can neither read nor write feedback; the aluno cannot write the personal's fields and vice versa; a suspended or unpaid personal is refused (the `isOwningTrainer` gate); the ADM UI path cannot read; a paused aluno keeps access to their own; the contact is readable by linked alunos only; an anamnese without consent, with an unknown key or an oversized text is refused, a phone-shaped assessment still passes.
+- [ ] Aluno UI: after "Salvar sessão", "Como foi o treino?" (D4 words, "Senti dor ou desconforto", comment, "Enviar" / "Pular"); on "Evolução" each session shows its feedback, "✓ Visto pelo personal" and the personal's comment; the home shows "Seu personal comentou seu treino de <dia>" until opened; "Falar com <nome>" (WhatsApp) when the contact card exists.
+- [ ] Personal UI, `/app/conta`: "Mostrar meu WhatsApp para os meus alunos" (opt-in, pre-filled from the account phone, editable).
+
+### 38i. Personal side
+
+Suggested: sonnet · high — three screens, one new data source, and an integration with §37.
+
+- [ ] **Registros:** each session card shows the treino, the effort word, a "Relatou dor" chip (word + danger colour), the aluno's comment, and the actions "Marcar como visto" and "Comentar" (inline, ≤ 1,000); unseen sessions highlighted; a "Só não vistas" filter. Same day window as the page (38b).
+- [ ] **Aluno page (U9):** a summary header (último treino + esforço, treinos na semana, próximo horário, WhatsApp/ligar, "Anamnese: em dia · pendente · nunca enviada"), then Fichas → Treinos (sessions with feedback and the comment box) → Progressão → Medidas → Anamneses → Mensalidade → Permissões → Dados → "Gerenciar aluno" (Pausar moves here). On phones an anchor-chip row under the header. No data change. Done when: at 390 px the header and Fichas are on the first screen.
+- [ ] **Hoje:** §37's `trainerAttention` gains three kinds — "Relatou dor" (last 7 days, unseen; **first** in the list), "Anamnese com ponto de atenção" (submitted, not yet opened by the personal — opened = the report visited, kept in `localStorage` per device, D7-style), and "Comentário do aluno não visto" (after "sem treinar"). If §37 has not landed, wait for it — do not build a parallel block.
+
+### 38j. Verification
+
+Suggested: sonnet · medium — run, compare, screenshot, count reads.
+
+- [ ] Seed (fake data only): Ana's treino gets carga/descanso/observação with a video link, her latest session a feedback (effort 8, comment) answered by the personal, and a full anamnese with one PAR-Q+ "sim" and a knee injury; Bruno an unseen "dor" feedback and an older simple autoavaliação; Diego a pending anamnese request; the personal's contact card on. Accounts and passwords unchanged (the e2e scripts depend on them). The `--heavy` fixture stays opt-in.
+- [ ] `npm test`, `npm run lint`, `npx tsc --noEmit`, `npm run build`, `npm run check:leak`, `npm run check:rules-version` green; `npm run test:rules` (Java 21) green plus the seen-failing run, counts recorded here.
+- [ ] `npm run e2e:read-budget` (38b) green **after each PR** — no page may exceed D15 once the new features are in.
+- [ ] New `web/e2e/interacao.mjs` (`npm run e2e:interacao`, the `e2e/lib.mjs` harness): Ana at 390 px sees "Próximo treino", her horários and "Ver vídeo"; logs with "Repetir a última", reloads mid-way and continues from the draft, saves, answers "Como foi?"; the personal sees effort + comment in Registros, comments, marks seen; Ana then sees the comment and it stops being "novo". Diego cannot send the anamnese with an unanswered PAR-Q+ question or without the consent, can stop and continue after a reload, sends it; the personal opens the report, sees "Atenção" with the right flags in order, prints (the print stylesheet hides the shell — checked via `matchMedia('print')` emulation), and "Atualizar dados do aluno" changes only the listed fields. Existing pins pass **unmodified**: `e2e:fichas`, `e2e:ficha-privacy`, `e2e:account`, `e2e:mensalidades`, `e2e:admin-focus` (+ §37's `e2e:dashboards`).
+- [ ] Screenshots at 390 and 1440 px, before/after: aluno home, registrar treino, evolução, anamnese (one step, review, consent); personal Registros, aluno page, the anamnese report and its print preview — in the PR description, not committed. No horizontal scroll at 375 px, controls ≥ 44 px, every state has a word.
+
+### 38k. Docs and owner rollout
+
+Suggested: haiku · low — describes what exists; last.
+
+- [ ] `CLAUDE.md`: a paragraph "Aluno ↔ personal interaction (§38)" — the Spark read budget (windows, providers, indexes, `e2e:read-budget`, "every new query states its cost"), `sessionFeedback` (key, who writes what), `trainerContacts`, the notes-link convention, the local drafts, "próximo treino", the anamnese (`assessments.anamnesis`, consent version, report route, print); the new Rules version in "Security rules"; the PAR-Q+ stricter input in the web-only differences. `web/README.md`: `e2e:read-budget`, `e2e:interacao`, `seed:emulators -- --heavy`, the index deploy step.
+- [ ] `GOALS.md`: tick items with dates, deviations in place; "Superseded in part by §38" under §17/§23h where the PAR-Q+ default, the autoavaliação and the aluno screens changed, and under §23g where `loadTrainerSnapshot` stopped reading everything.
+- [ ] **(manual — owner)** Read the consent text (D20) and the anamnese questions; adjust wording (a lawyer's look at the LGPD text is advised) before PR 2 merges.
+- [ ] **(manual — owner)** Deploy `firestore.indexes.json` (`firebase deploy --only firestore:indexes` with the owner's login) **before** PR 1's site deploys — the bounded queries fail without them. Free on Spark.
+- [ ] **(manual — owner)** Review the Rules diff (previous → vN) and publish it **before** PR 3's site deploys; never automatic; **no Blaze**.
+- [ ] **(manual — owner)** With controlled test accounts in production (one personal, one aluno): send the anamnese, answer it, open and print the report; log a session, send feedback, comment, open the WhatsApp links; check the Firestore console's **Usage** tab the next day against D15. No real health data.
+- [ ] **Done when (the whole section):** an aluno opens the site, answers the anamnese in about five minutes by tapping, sees which treino is next with its carga, descanso and cues, logs it with last time's numbers and a rest timer without losing anything to a reload, and says how it went; the personal sends the anamnese with one click, reads a clear report with the warnings first and can print it, sees each session in Registros and on Hoje (pain first), answers, and the aluno sees the answer — all on the Spark plan, with each page inside the measured read budget, no new cost, the phone's data unchanged, and every new read and write limited to that aluno and their personal.
+
+## 39. Research + Feature — Find out what the site really costs on Firebase, then cut the reads that matter (web)
+(2026-10-13, at the owner's request right after §38b; builds on §38b)
+
+```mermaid
+flowchart TD
+  A[39a Cost research: every billed meter, real numbers] --> B[39b Decision: which cuts, in what order]
+  B --> C[39c Summary document per aluno]
+  B --> D[39d Cheap trims]
+  C --> E[39e Verification]
+  D --> E
+  E --> F[39f Docs + owner steps]
+```
+
+Suggested: sonnet · high — the research needs care and honesty about what is unknown; only 39c (a client-written aggregate with new Rules) deserves opus · high.
+
+> ⚠ **WARNING — the cost research behind this section is a first, shallow pass, and the real spend may be higher.** It was a quick estimate, not an audit. The owner said so on 2026-10-13 ("parece muito trivial essa pesquisa… talvez o gasto seja mais") and is right. **Do not treat any figure in §38b or in the conversation that produced this section as the project's cost.** Improving it is the first job of this section (39a), before any cut is built.
+
+**The request (owner, Portuguese):** *"guarda esses itens como goals, e deixa um aviso de melhorar essas pesquisa de gastos, parece muito trivial essa pesquisa que vc fez agora, talvez o gasto seja mais."* Context: *"Esta gastando muito, precisamos cortar o maximo possivel"*; and, earlier, that the Firebase limits will not be a long-term problem because a paid plan will cover the costs, but the product has to be good and working before anyone is charged.
+
+**Goal type: Research, feeding a Feature.** The research (39a) comes first because it may change which cut is worth building; the feature (39c–39d) is only a draft until the owner picks in 39b.
+
+### What the first pass did — and did not — look at
+
+Looked at: the documents returned by every `getDoc`/`getDocs`/listener on the local emulator, for one synthetic "heavy year" (20 alunos, each training 3×/week with 6 exercises, ~20,000 documents), production build; plus a modelled day (the personal opens the site twice and visits 14 pages, each aluno opens it once and visits 3).
+
+**Not measured, not researched, or unverified:**
+
+| # | Gap | Why it may matter |
+|---|---|---|
+| 1 | **Reads billed for Security Rules lookups** — `get()`/`exists()`/`getAfter()` in `firestore.rules` (e.g. `isOwningTrainer` reads `users/{uid}`; `studentIsLinkedToTrainer` reads more) are billed as document reads, with identical lookups inside one request cached. `data/firestoreRead.ts` does not see them. | Every query and every write may carry 1–3 extra reads, so the real total is higher than the table in §38b — by an unknown factor. |
+| 2 | **Writes and deletes** per user action (a session is one write per exercise; opening "Hoje" also writes `trainerStats`/`trainerActivity`, may create charges in a transaction; plus the Rules lookups on every write). Spark gives 20,000 writes and 20,000 deletes a day per project. | A second quota and a second meter, never counted. |
+| 3 | **Network egress** (Spark: 10 GiB a month). Bytes per page were not measured; the old all-time load moved several MB per page. | A third meter. |
+| 4 | **App Check with reCAPTCHA Enterprise** — `data/firebase.ts` uses `ReCaptchaEnterpriseProvider` in production, so each visit exchanges a token (and refreshes it while a tab stays open). reCAPTCHA Enterprise has its own free quota and then bills per assessment (unverified). | Could be the first real bill, and it is outside Firestore. |
+| 5 | **Listener billing** (reconnects; the 30-minute rule; offline persistence), SDK retries, and the dev-versus-production double run of effects. | The measurements used a production build for that reason, but listeners were only counted by their change events. |
+| 6 | **No real traffic was read.** The visit pattern (two personal visits and one per aluno a day) is a guess; the Firebase console's usage was not consulted. | The honest answer to "how much do we spend" is in the console, not in a model. |
+| 7 | **Prices were not verified.** The Google Cloud and Firebase pricing pages did not load in the research tool; one search hinted at about US$ 0.05 per 100,000 reads (an Enterprise-edition table, unconfirmed), and whether the free quota also applies on Blaze was not confirmed. | Any money figure quoted so far is a guess. |
+| 8 | The "heavy year" is one shape. Real rosters differ (fewer sessions, fewer exercises, more drafts). | The per-aluno estimates (≈ 180 reads per aluno on the first screen, ≈ 50–210 for an aluno's entry) are extrapolations. |
+
+### Decisions (S = the owner said it; D = this plan decided it)
+
+| # | Decision |
+|---|---|
+| S1 | Save the cost-cutting ideas as goals and warn that the research is too shallow. |
+| S2 | The owner wants the reads cut as far as is sensible; the paid plan later does not make waste acceptable. |
+| D1 | Research first (39a). If it shows Rules lookups, writes or App Check dominate, the cuts below are re-ranked — 39c only attacks the logs. |
+| D2 | The summary document is **web-only**: the Android/iOS apps are being rebuilt (CLAUDE.md status note), so nothing the phone reads or writes is touched. |
+| D3 | No Cloud Functions (not on Spark), so the summary is written by the client that saves the session, with a "recompute" safety net instead of trusting it blindly. |
+
+**Out of scope:** the product features of §38c–§38i (they are the other half of what the owner wants right now); moving to Blaze (an owner decision, not a cut); any change to what the Android app reads or writes.
+
+### 39a. Cost research — every billed meter, with real numbers (research)
+
+Suggested: sonnet · high — breadth over depth; the deliverable is a document, not code.
+
+- [ ] **Question, stated first:** what does one real day of this site cost, meter by meter — Firestore reads (documents returned, the one-read minimum per query, Rules lookups), writes, deletes, network egress, App Check / reCAPTCHA Enterprise — today and at 5, 10 and 20 alunos per personal, against Spark's quotas and Blaze's prices? Done when: the question and the meter list (the table above, corrected) open the deliverable.
+- [ ] **Real numbers, read-only (manual — owner):** from the Firebase console (Firestore → Usage) and Google Cloud Monitoring (`firestore.googleapis.com/document/read_count`, `write_count`, `delete_count`, network egress, and the reCAPTCHA Enterprise / App Check usage page): daily totals for the last 7–30 days, as screenshots or CSV. No credentials, no user data. Done when they are pasted into the deliverable.
+- [ ] **Rules-lookup reads:** list, per `match` block in `firestore.rules`, the access calls each query and write triggers (which of `isOwningTrainer`, `studentIsLinkedToTrainer`, `hasVerifiedEmail`, … and which are cached within one request); check Firebase's documentation of how Rules reads are billed; extend the read tally or the Rules tests so the extra reads per page and per write are a number. Done when it is a measured number, not a guess.
+- [ ] **Writes and deletes per action:** a table from the code, checked on the emulator, of what each user action writes — log a session, open "Hoje" (`trackActivity`, `writeTrainerStats`, `ensureMonthlyCharges`), book a slot, mark a payment, change an avatar — including the Rules lookups on those writes.
+- [ ] **Egress:** bytes transferred per page on the heavy fixture (the browser's network events, `encodedDataLength`), before and after §38b.
+- [ ] **App Check / reCAPTCHA Enterprise:** how many assessments one visit creates (token lifetime, refresh while a tab stays open), the free quota and the price.
+- [ ] **Prices (manual — owner pastes, or the console's pricing calculator):** per-100,000 reads, writes and deletes and per-GiB egress for the project's Firestore location (the console shows it), the Blaze free quota, and reCAPTCHA Enterprise pricing — each with its URL and the date it was read.
+- [ ] **Cost model v2:** `docs/firebase-cost-model.md` (and a small script if useful) that takes alunos per personal and visits per day and prints reads, writes, egress and assessments per day and the money — calibrated against the real numbers; it replaces the table in §38b.
+- [ ] **Deliverable and recommendation:** the same file states the answer, ranks the real cost drivers, says which of 39c/39d to build (or something the research found), cites its sources and names what is still unknown. Done when: it exists and the ranking is justified by measured or quoted numbers.
+
+### 39b. Decision (after 39a)
+
+Suggested: haiku · low — a short confirmation, no code.
+
+- [ ] **(manual — owner)** Read the deliverable and choose which cuts to build and in what order. Unanswered ⇒ the ranking in the deliverable.
+
+### 39c. A summary document per aluno — the biggest cut for the personal's screens (feature)
+
+Suggested: opus · high — a client-written aggregate that dashboards trust, with new Rules; drift is the risk.
+
+Design rationale: the personal's first screen downloads every exercise document of the last 63 days — about 180 reads per aluno at 3 sessions a week × 6 exercises — only to count trained days. One small document per aluno holds what the dashboards need, so that screen reads about one document per aluno. Expected: from ≈ 3,600 to a few dozen on the heavy year (≈ −95 % of that screen's log reads). Out of scope: Android/iOS; changing how sessions themselves are stored.
+
+- [ ] **Design, written down before code:** `studentStats/{studentId}` (web-only) = `{ studentId, trainerId, trainedDays: ["YYYY-MM-DD", …] (the last ≈ 70 local days), lastTrainedDay, updatedAt }`, under 2 KB; who writes (the aluno's client, in the same batch as the session), who reads (the aluno and the owning trainer); what happens when it drifts — a "Recalcular" that rebuilds it from the aluno's logs, run on demand and when the stats are older than a log the personal can see; how legacy alunos get one (backfill below). Done when the design is in this section with its failure cases.
+- [ ] **Pure `domain/studentStats.ts` with tests:** `applySession`, `removeSession`, `recompute(logs, today)`, and `trainedDaysOf(stats)` shaped like today's `trainedDays` so `dashboardFigures` and `trainerKpis` do not change. Test: the figures from the stats equal the figures from the full logs — the same kind of proof as `readWindows.test.ts` — including a session corrected or deleted, a day at midnight in São Paulo, and an aluno with no stats yet.
+- [ ] **Data layer:** converters; `logSession`/`updateSession`/`deleteSession` write the stats in the same batch (a session stays all-or-nothing); `loadTrainerSnapshot` reads `studentStats` instead of the 63-day logs; logs are read on demand only (Registros window, an aluno's page, "Ver histórico completo").
+- [ ] **Rules (the next free version — never folded into an unpublished set without the owner):** create and update only by the aluno for their own id, `trainerId` equal to their `users.trainerId`, keys `hasOnly`, array length and day format checked; read by the aluno and the owning trainer; no delete. Each denial paired with a positive case and seen failing against the previous version (CLAUDE.md "Security rules"); mind the access-call limits (§36 fact 5) and that lookups are billed (39a).
+- [ ] **Backfill and drift:** the personal's first load after release builds the missing stats from each aluno's logs (bounded, idempotent, create-if-absent), plus the "Recalcular" action; fixtures shaped like production (the §35 lesson).
+- [ ] **Budget:** tighten the ceilings in `e2e/read-budget.mjs` (the first trainer page should fall well under 1,000 on the heavy year) and record before and after next to §38b's table.
+
+### 39d. Cheap trims (feature)
+
+Suggested: sonnet · medium — small changes with a clear measure.
+
+- [ ] **Aluno side:** measurements read for the last 180 days and logs for 30 (the rest behind "Ver histórico completo"); expected ≈ −25 % on an aluno's first page.
+- [ ] **Month start:** after creating the month's charges, add the created ones to the snapshot instead of reading everything again (≈ 700 reads once a month on the heavy year). Skip if §36f removes the charge generator first.
+- [ ] **If 39c is dropped:** shorten `TRAINER_LOG_WINDOW_DAYS` to 35 and give §37's eight-bar chart its own read — only then.
+- [ ] **Recorded as "not doing":** a persistent browser cache for repeat visits — it only helps a return within about 30 minutes and adds complexity; do not re-propose it without new evidence.
+
+### 39e. Verification
+
+Suggested: sonnet · medium — run, compare, record.
+
+- [ ] `npm test`, `npm run lint`, `npx tsc --noEmit`, `npm run build`, `npm run check:leak`, `npm run check:rules-version` green; `npm run test:rules` (Java 21) green, plus the run against the previous Rules version showing the new denials fail there.
+- [ ] `e2e:read-budget` passes with the new ceilings; `e2e:dashboards`, `e2e:fichas`, `e2e:account`, `e2e:mensalidades` and `e2e:admin-focus` pass **unmodified**.
+- [ ] A test or script proves the dashboards' figures from the stats equal the all-time figures on the heavy year.
+
+### 39f. Docs and owner steps
+
+Suggested: haiku · low — describes what exists; last.
+
+- [ ] `CLAUDE.md` "The free plan's read quota" and `web/README.md`: what 39a found (Rules lookups are billed, the writes and egress numbers), the summary document and its "Recalcular"; `GOALS.md`: tick items with dates and record deviations in place.
+- [ ] **(manual — owner)** Review the Rules diff (previous → new) and publish it **before** the site that needs it; deploy any new index first; never automatic.
+- [ ] **Done when (the whole section):** the cost model exists with real numbers and the money per day; the personal's first screen reads a small fraction of what it did after §38b; every dashboard figure equals its all-time value; all of it on Spark, no Cloud Function, and the owner knows what one session costs.
+
 ## Suggested build order (what blocks what) — revised 2026-08-18
 
 **Done** (§0, §1 CLAUDE.md, §2 git, §4a Firestore migration, §5d UI debt + AI button wiring, §7

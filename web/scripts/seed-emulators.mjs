@@ -36,10 +36,13 @@
 
 import { initializeTestEnvironment } from "@firebase/rules-unit-testing";
 import { buildCatalog } from "./lib/catalogSource.mjs";
+import { HEAVY_STUDENT_EMAIL, HEAVY_TRAINER_EMAIL, heavyDocuments, writeInBatches } from "./lib/heavyFixture.mjs";
 
 const PROJECT_ID = "demo-personal-tracker";
-const AUTH = "http://127.0.0.1:9099";
-const FIRESTORE = { host: "127.0.0.1", port: 8081 };
+// GOALS.md §38b: EMULATOR_PORT_SHIFT seeds a second bench (see src/data/firebase.ts).
+const PORT_SHIFT = Number(process.env.EMULATOR_PORT_SHIFT ?? 0) || 0;
+const AUTH = `http://127.0.0.1:${9099 + PORT_SHIFT}`;
+const FIRESTORE = { host: "127.0.0.1", port: 8081 + PORT_SHIFT };
 const TIME_ZONE = "America/Sao_Paulo"; // UTC-3 all year since 2019
 const PASSWORD = "senha123";
 
@@ -458,6 +461,15 @@ try {
     const db = context.firestore();
     await Promise.all(Object.entries({ ...documents, ...logs, ...demo, ...reference }).map(([path, data]) => db.doc(path).set(data)));
   });
+
+  // GOALS.md §38b: `--heavy` adds a personal with a year of data, for `npm run e2e:read-budget`.
+  if (process.argv.includes("--heavy")) {
+    const heavyTrainerId = await createAccount(HEAVY_TRAINER_EMAIL);
+    const heavyStudentId = await createAccount(HEAVY_STUDENT_EMAIL);
+    const heavy = heavyDocuments({ trainerId: heavyTrainerId, firstStudentId: heavyStudentId, adminId, morningOf, localDate });
+    await env.withSecurityRulesDisabled((context) => writeInBatches(context.firestore(), heavy));
+    console.log(`  heavy:    ${HEAVY_TRAINER_EMAIL} / ${HEAVY_STUDENT_EMAIL} (${heavy.length} documents)`);
+  }
 
   console.log("Emulators seeded.");
   console.log(`  trainer:  ${TRAINER_EMAIL} / ${PASSWORD}`);

@@ -25,6 +25,7 @@
     "e2e:dashboards": "node e2e/dashboards.mjs",
     "e2e:ficha-privacy": "node e2e/ficha-privacy.mjs",
     "e2e:fichas": "node e2e/fichas.mjs",
+    "e2e:read-budget": "node e2e/read-budget.mjs",
     "test:rules": "npm --prefix ../functions run build && firebase emulators:exec --config ../firebase.json --project demo-personal-tracker --only auth,firestore,functions,storage \"vitest run --dir rules --testTimeout=30000 --no-file-parallelism\""
   },
   "dependencies": {

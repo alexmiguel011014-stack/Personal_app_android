@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { RequireArea } from "../RequireArea";
 import { AppShell, type NavItem } from "../_shared/AppShell";
+import { StudentDataProvider } from "./useStudentData";
 
 // GOALS.md §23h: the student surface. Mobile-first from the first line of markup — a student is on
 // a phone browser essentially always, so this layout never inherits the trainer dashboard's: one
@@ -26,7 +27,8 @@ export default function StudentLayout({ children }: LayoutProps<"/aluno">) {
         roleLabel="Aluno"
         nav={NAV}
       >
-        {children}
+        {/* GOALS.md §38b: one load of the aluno's data per session, shared by every page. */}
+        <StudentDataProvider>{children}</StudentDataProvider>
       </AppShell>
     </RequireArea>
   );

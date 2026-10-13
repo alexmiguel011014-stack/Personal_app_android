@@ -1,4 +1,5 @@
-import { doc, getDoc, type Firestore } from "firebase/firestore";
+import { doc, type Firestore } from "firebase/firestore";
+import { getDoc } from "./firestoreRead";
 import type { LinkedStudentDoc } from "../domain/students";
 import { toLinkedStudent } from "./converters";
 

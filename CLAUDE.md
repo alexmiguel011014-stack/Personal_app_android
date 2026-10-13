@@ -353,6 +353,30 @@ provider or key in the browser needs its own decision. Direct generation with BY
 Android; a server-side proxy would be its own item (a Cloud Function, which needs the Blaze plan). The ADM overview
 no longer shows the old `geminiGenerated` counter (§37; the key stays in `domain/activity.ts` because old documents carry it).
 
+**The free plan's read quota (GOALS.md §38b).** The Firebase **Spark** plan gives the *whole project* 50,000
+document reads a day (and no Cloud Functions, no Cloud Storage), so a screen's reads are a budget, not a detail.
+Rules for every new query in `web/src/data/`:
+- Read through `data/firestoreRead.ts` (`getDoc`/`getDocs`; a listener calls `noteReads`) — against the emulators
+  it tallies documents per page in `window.__alluReads`, which `npm run e2e:read-budget` asserts on a "heavy year"
+  (`npm run seed:emulators -- --heavy`: 20 alunos, ~20,000 documents). The ceilings in that script are the budget;
+  a feature that raises them says so in its PR.
+- Never read a collection that grows with time without a bound. `workoutLogs` is one document **per exercise per
+  session** (~18,700 a year for a personal with 20 alunos): the trainer reads `TRAINER_LOG_WINDOW_DAYS` (63) of it,
+  the aluno `STUDENT_LOG_WINDOW_DAYS` (60) — `domain/readWindows.ts` — and older history only on request
+  ("Ver histórico completo", "Buscar registros antes de…"). `dashboardFigures` gets each quiet aluno's latest older
+  log as `earlierLogs`, so the windowed figures equal the all-time ones (a test proves it).
+- Trainer and aluno data are loaded **once per session** and shared by every page through `TrainerDataProvider` /
+  `StudentDataProvider` (memory only, 5-minute freshness, incremental refresh). A page calls `reload()` after a
+  write, or `invalidate()` when it writes and stays on screen. Do not call `loadTrainerSnapshot` from a page.
+- A range or ordered query needs a composite index in `firestore.indexes.json`. The emulator does **not** enforce
+  them, so a missing one fails only in production: add it with the query, and the owner deploys the file
+  (`firebase deploy --only firestore:indexes`) **before** the site that uses it.
+- A second local bench can run beside the first: `EMULATOR_PORT_SHIFT` (scripts, `E2E_BASE`) and
+  `NEXT_PUBLIC_EMULATOR_PORT_SHIFT` (site) move every emulator port by the same amount.
+- **The tally is a lower bound.** It counts only the documents queries return. Reads billed for Rules lookups
+  (`get()`/`exists()`), writes, network egress and the App Check / reCAPTCHA Enterprise quota are not measured yet and
+  no production usage was read (GOALS.md §39) — do not quote the budget's numbers as the project's cost.
+
 Checks, from `web/`: `npm test`, `npm run lint`, `npx tsc --noEmit` (run `npx next typegen` first
 on a fresh checkout), `npm run build`, and `npm run test:rules` (emulators, Java 21).
 

@@ -6,6 +6,7 @@ import { createDraftStudent } from "../../../../data/students";
 import { trackActivity } from "../../../../data/activity";
 import { emptyProfile } from "../../../../domain/studentProfile";
 import { useSession } from "../../../SessionProvider";
+import { useTrainerDataInvalidation } from "../../useTrainerData";
 import { StudentForm } from "../StudentForm";
 
 // GOALS.md §23g: registering a student creates a draft (students/{id}), as on Android; the invite
@@ -13,6 +14,7 @@ import { StudentForm } from "../StudentForm";
 export default function NewStudentPage() {
   const { session } = useSession();
   const router = useRouter();
+  const invalidate = useTrainerDataInvalidation();
   if (session.status !== "signedIn") return null;
   const trainerId = session.uid;
 
@@ -27,6 +29,8 @@ export default function NewStudentPage() {
           const now = Date.now();
           const id = await createDraftStudent(db, trainerId, profile, now);
           await trackActivity(db, trainerId, "studentCreated", now, Intl.DateTimeFormat().resolvedOptions().timeZone);
+          // GOALS.md §38b: the data in memory predates the new aluno; their page must read it again.
+          invalidate();
           router.push(`/app/alunos/detalhe?id=${encodeURIComponent(id)}`);
         }}
       />

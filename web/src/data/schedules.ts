@@ -1,4 +1,5 @@
-import { collection, deleteDoc, doc, getDocs, query, setDoc, where, type Firestore } from "firebase/firestore";
+import { collection, deleteDoc, doc, query, setDoc, where, type Firestore } from "firebase/firestore";
+import { getDocs } from "./firestoreRead";
 import type { Schedule } from "../domain/schedules";
 import { scheduleToFirestore, toSchedule } from "./converters";
 

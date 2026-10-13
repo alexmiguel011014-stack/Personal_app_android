@@ -1,4 +1,5 @@
-import { collection, doc, getDocs, query, where, writeBatch, type Firestore } from "firebase/firestore";
+import { collection, doc, query, where, writeBatch, type Firestore } from "firebase/firestore";
+import { getDocs } from "./firestoreRead";
 import { encodePerformedSets, type PerformedSet } from "../domain/exercise";
 import type { WorkoutLogDoc } from "../domain/metrics";
 import { toWorkoutLog, workoutLogToFirestore } from "./converters";
@@ -6,9 +7,17 @@ import { toWorkoutLog, workoutLogToFirestore } from "./converters";
 // GOALS.md §23h: the student's training sessions — one workoutLogs document per exercise, as
 // StudentViewModel.logSession writes them (see domain/metrics.ts for why that matters).
 
-/** The signed-in student's own logs — StudentRepository.getMyWorkoutLogs. */
-export async function loadMyLogs(db: Firestore, studentId: string): Promise<WorkoutLogDoc[]> {
-  const snapshot = await getDocs(query(collection(db, "workoutLogs"), where("studentId", "==", studentId)));
+/**
+ * The signed-in student's own logs — StudentRepository.getMyWorkoutLogs. GOALS.md §38b: with `from`, only those
+ * dated from then on (the (studentId, date) index); without it, the whole history, read when the aluno asks.
+ */
+export async function loadMyLogs(db: Firestore, studentId: string, from?: number): Promise<WorkoutLogDoc[]> {
+  const mine = where("studentId", "==", studentId);
+  const snapshot = await getDocs(
+    from === undefined
+      ? query(collection(db, "workoutLogs"), mine)
+      : query(collection(db, "workoutLogs"), mine, where("date", ">=", from)),
+  );
   return snapshot.docs.map((document) => toWorkoutLog(document.id, document.data())).filter((log) => log !== null);
 }
 

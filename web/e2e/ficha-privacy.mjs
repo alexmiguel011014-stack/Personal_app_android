@@ -9,6 +9,9 @@ import { buildCatalog } from "../scripts/lib/catalogSource.mjs";
 import { findLeaks, isLeak, loadSentinels } from "../scripts/lib/referenceSentinels.mjs";
 import { browser, check, summary, reseed, uidByEmail, fsList, fieldValue } from "./lib.mjs";
 
+// GOALS.md §38b: EMULATOR_PORT_SHIFT points the script at a second bench (see src/data/firebase.ts).
+const SHIFT = Number(process.env.EMULATOR_PORT_SHIFT ?? 0) || 0;
+
 const viewport = process.argv.includes("mobile") ? "mobile" : "desktop";
 await reseed();
 
@@ -29,13 +32,13 @@ check("the seeded student exists", !!ana);
 
 // ---------- who may read the gated document (Firestore REST with real ID tokens) ----------
 const idToken = async (email) => {
-  const r = await fetch("http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=fake", {
+  const r = await fetch(`http://127.0.0.1:${9099 + SHIFT}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=fake`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password: "senha123", returnSecureToken: true }),
   });
   return r.ok ? (await r.json()).idToken : null;
 };
 const readDoc = async (token) =>
-  (await fetch("http://127.0.0.1:8081/v1/projects/demo-personal-tracker/databases/(default)/documents/appData/exerciseCatalog", { headers: token ? { Authorization: `Bearer ${token}` } : {} })).status;
+  (await fetch(`http://127.0.0.1:${8081 + SHIFT}/v1/projects/demo-personal-tracker/databases/(default)/documents/appData/exerciseCatalog`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })).status;
 check("an approved trainer can read the document", (await readDoc(await idToken("treinador@teste.dev"))) === 200);
 check("the ADM can read it", (await readDoc(await idToken("admin@teste.dev"))) === 200);
 check("a student cannot", (await readDoc(await idToken("ana@teste.dev"))) === 403);

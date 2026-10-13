@@ -1,4 +1,5 @@
-import { doc, getDoc, type Firestore } from "firebase/firestore";
+import { doc, type Firestore } from "firebase/firestore";
+import { getDoc } from "./firestoreRead";
 import type { ExerciseCatalog, ExerciseCatalogEntry } from "../domain/exerciseCatalog";
 
 // GOALS.md §33 — the trainer's exercise reference reaches the editor through ONE Firestore document,

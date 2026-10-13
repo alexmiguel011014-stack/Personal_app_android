@@ -1,4 +1,5 @@
-import { collection, doc, getDocs, query, where, writeBatch, type Firestore } from "firebase/firestore";
+import { collection, doc, query, where, writeBatch, type Firestore } from "firebase/firestore";
+import { getDocs } from "./firestoreRead";
 import type { Exercise } from "../domain/exercise";
 import { fichaSaveErrors, groupFichas, planNewFicha, type Ficha } from "../domain/fichas";
 import { kotlinTrim } from "../domain/kotlin";

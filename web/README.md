@@ -229,7 +229,18 @@ npm run e2e:admin-focus                 # keyboard focus after every ADM action 
 npm run e2e:dashboards                  # the trainer's "Hoje" and the ADM's "Visão geral", figures recomputed from the demo seed  (GOALS.md §37)
 npm run e2e:ficha-privacy [-- mobile]   # the exercise reference stays out of sight       (GOALS.md §33g)
 npm run e2e:fichas [-- mobile]          # fichas as cards: create, third, edit, delete, student  (GOALS.md §34)
+npm run e2e:read-budget                 # Firestore reads per page on a year of data, against the Spark quota  (GOALS.md §38b)
 ```
+
+`e2e:read-budget` reseeds with `--heavy` (a personal with 20 alunos and ~20,000 documents) and wants a **production
+build** of the site (`npm run build`, then any static server) so that React's development double-run does not inflate
+the tally; `--report` prints the table without failing. To run a second bench beside the first (another worktree),
+start the emulators on ports shifted by 1000 and use `EMULATOR_PORT_SHIFT=1000 E2E_BASE=http://127.0.0.1:3100`, with
+the site built using `NEXT_PUBLIC_EMULATOR_PORT_SHIFT=1000`.
+
+The queries the site makes against the real project need the composite indexes in `../firestore.indexes.json`. The
+emulator does not check them. Deploy them (`firebase deploy --only firestore:indexes`, free) **before** publishing a
+site version that uses a new one.
 
 Local-only artefact worth knowing: the emulators speak HTTP/1.1, so a single Chrome profile that
 reloads many pages in a row can wait tens of seconds for Firestore's first answer (open connections

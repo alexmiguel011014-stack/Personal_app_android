@@ -21,7 +21,7 @@ export default function AssessmentPage() {
 }
 
 function Assessment({ uid }: { uid: string }) {
-  const { data } = useStudentData(uid);
+  const { data, invalidate } = useStudentData(uid);
   if (data.status === "loading") return <p className="loading">Carregando…</p>;
   if (data.status === "error") return <p role="alert">{data.message}</p>;
   if (!data.profile.pendingAssessmentRequest || !data.profile.canSelfAssess) {
@@ -35,10 +35,11 @@ function Assessment({ uid }: { uid: string }) {
       </main>
     );
   }
-  return <AssessmentForm uid={uid} profile={data.profile} />;
+  return <AssessmentForm uid={uid} profile={data.profile} onSent={invalidate} />;
 }
 
-function AssessmentForm({ uid, profile }: { uid: string; profile: LinkedStudentDoc }) {
+/** `onSent`: GOALS.md §38b — the pending request in memory is answered; the next page reads the profile again. */
+function AssessmentForm({ uid, profile, onSent }: { uid: string; profile: LinkedStudentDoc; onSent: () => void }) {
   const [answers, setAnswers] = useState<Record<string, boolean>>(emptyAnswers);
   const [goal, setGoal] = useState(profile.goal);
   const [level, setLevel] = useState(profile.experienceLevel);
@@ -68,6 +69,7 @@ function AssessmentForm({ uid, profile }: { uid: string; profile: LinkedStudentD
         },
         Date.now(),
       );
+      onSent();
       setSent(true);
     } catch {
       setError("Não foi possível enviar. Verifique a conexão e tente de novo.");

@@ -20,6 +20,8 @@ export interface NavItem {
   icon: IconName;
   /** Current only on this exact path, not on the paths beneath it (the area's home). */
   exact?: boolean;
+  /** What the phone's bottom bar writes when the full label does not fit (≤ 430 px); the link keeps the full name. */
+  shortLabel?: string;
 }
 
 function isCurrent(pathname: string, item: NavItem): boolean {
@@ -66,9 +68,19 @@ export function AppShell({
                 className="nav-link"
                 href={item.href}
                 aria-current={isCurrent(pathname, item) ? "page" : undefined}
+                aria-label={item.shortLabel ? item.label : undefined}
               >
                 <NavIcon name={item.icon} />
-                <span>{item.label}</span>
+                {item.shortLabel ? (
+                  <span>
+                    <span className="nav-full">{item.label}</span>
+                    <span className="nav-short" aria-hidden="true">
+                      {item.shortLabel}
+                    </span>
+                  </span>
+                ) : (
+                  <span>{item.label}</span>
+                )}
               </Link>
             ))}
           </nav>

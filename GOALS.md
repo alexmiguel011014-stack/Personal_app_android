@@ -7381,6 +7381,152 @@ Suggested: haiku · low — documentation and checklists; last because they desc
       builds plans with trial and billing day — on the **same components** the ADM uses on personais; the combined billing code is smaller than before (36h numbers); the ADM's screens and Rules behave exactly as in §35 (pins pass unmodified);
       the aluno still cannot read any of it; the legacy data migrated with parity; Android and iOS untouched.
 
+## 37. Feature — Two real dashboards: the personal's "Hoje" and the ADM's "Visão geral" (web)
+(2026-10-12, via `/newgoal`)
+
+**The request (owner, Portuguese):** *"O Dashboard está muito cru, consegue planejar um melhor? Seriam dois dashboards, um do adm e outro do personal, tire print para você ver como está e validar uma melhoria."*
+
+**Goal type: Feature** — a richer front for two screens that work (`web/src/app/app/page.tsx`, 409 lines; `web/src/app/admin/page.tsx`, 121 lines), built from data the site **already loads**. No new collection, no Firestore Rules change, no Android/iOS change.
+
+### What the screenshots showed (2026-10-12, emulators seeded by `npm run dev:local`, 1366 px and 375 px)
+
+| | Personal — `/app` "Hoje" | ADM — `/admin` "Visão geral" |
+|---|---|---|
+| Order | Week strip → day agenda + roster (5 names, A–Z) → "Atenção" → "A semana em números" → "Mensalidades" table. **What needs the trainer is last:** at 375 px "Atenção" starts about 2.5 screens down and the money about 4. | **15 identical number tiles** (6 platform + 6 billing states + 3 money) before anything actionable. At 375 px each tile is full width: about 3 screens of numbers before "Precisam de atenção". |
+| Numbers | Bare: "Sessões nos últimos 7 dias **4**", "Aderência **33%**" with no comparison, no trend, no target. | Bare counts, no trend. **The owner's own revenue is missing:** received/expected platform payments this month are not on the overview (only state counts). |
+| Weight | Every block has the same weight; the week strip spends a large block on "1 horário" per day (two rows on a phone). The roster repeats `/app/alunos`. | "Cobranças dos personais aos alunos" (not the ADM's money) sits at the same weight as the platform's. "Mensalidades da plataforma" repeats the six filter figures of `/admin/mensalidades`. |
+| Actions | "Atenção" lists are names only ("Ninguém." / "Nenhuma." when empty); the overdue table has no action. | "Precisam de atenção" has reason chips but no action; pending requests are only a number tile. |
+| Stale or leaky | The notice "1 cobrança(s) do mês gerada(s) agora." exposes the charge generator (it disappears with §36 D12). | "Uso mensal por personal" shows "· N **Gemini**" and "Atalhos" links to AI Studio — the site calls no AI since §34. Audit rows show a raw "UID …" instead of the personal's name. "Uso mensal" reads only the current month although `actionsInWindow`/`activeDaysInWindow` (`domain/adminMetrics.ts`) are 30-day windows. |
+| Phone shell | — | The ADM bottom bar truncates every label ("Visão …", "Mensali…", "Modelos d…", "Solicit…", "Minha …"). |
+| Charts | **None anywhere in the site** (`ProgressSection` is a table; `_shared/icons.tsx` is the only SVG). | None. |
+
+### What the research found (so `/execgoals` does not look it up again)
+
+- **A dashboard is for acting at a glance, not exploring** (NN/g): one page, little interaction; *operational* dashboards serve time-sensitive work, *analytical* ones decisions. The trainer's "Hoje" is operational (today, who needs me); the ADM overview is analytical with an operational inbox. Emphasis is saved for the one figure that matters; length/position read faster than colour.
+- **Coaching apps converge on a "who needs attention" list**: Everfit's check-in dashboard flags clients from selectable signals and highlights programs ending soon; CoachRx has a "Needs Attention" block (missed workouts, due consultations) beside "My Stats"; TrueCoach sorts the roster by compliance and due dates; Trainerize users publicly ask for **weekly** (not day-by-day) compliance and automatic at-risk flags. ⇒ an inbox ranked by urgency, weekly numbers with a comparison.
+- **Small-subscription founders watch** MRR, paying customers, trials and their conversion, churn, one engagement signal. At this platform's size (single-digit personais) a churn **percentage** is noise ⇒ show counts and amounts, not rates.
+- **Charts without a library**: an `<svg role="img">` with an `aria-label` that states the trend and key values, decorative parts hidden, and a text alternative (a visually hidden table) for exact values. Three chart shapes cover both screens (bars, sparkline, one stacked bar); a chart library would add bundle weight for no gain.
+- **Data already in hand** (read in the code, 2026-10-12): the trainer's `loadTrainerView` loads **all** of the trainer's `workoutLogs` (`data/trainerData.ts`, no limit), so an 8-week series costs no extra read; `Student.createdAt` exists (drafts waiting for connection can be aged). The ADM side has `loadMensalidadeData` + `buildMensalidadeRows` (`data/mensalidades.ts`), §36b's `summarize` (`domain/billing/summary.ts` — note it does **not** drop voided payments, the caller must), `effectivePlatformMonthlyAmountCents`, `trainerActivity.activeDays` per month, and `trainerStats`.
+
+**Sources consulted:**
+- [Dashboards: Making Charts and Graphs Easier to Understand / preattentive processing – NN/g](https://www.nngroup.com/articles/dashboards-preattentive/)
+- [Introducing Coach Check-in Dashboard (beta) – Everfit help](https://help.everfit.io/en/articles/14495409-introducing-coach-check-in-dashboard-beta)
+- [How this dashboard can make your coaching workflow easier – CoachRx](https://coachrx.app/articles/how-this-dashboard-can-make-your-coaching-workflow-easier)
+- [Dashboard – TrueCoach features](https://truecoach.co/features/dashboard/)
+- [Weekly compliance / at-risk requests – ABC Trainerize ideas forum](https://ideas.abcfitness.com/forums/167887-coach-trainer-abc-trainerize/suggestions/46042864-ability-for-clients-to-view-habits-macro-complia)
+- [The founder's guide to SaaS metrics that actually matter – DEV](https://dev.to/insightlab/the-founders-guide-to-saas-metrics-that-actually-matter-and-which-to-ignore-340d)
+- [Subscriptions dashboard – SegMetrics](https://segmetrics.io/dashboards/subscriptions/)
+- [Using ARIA to enhance SVG accessibility – TPGi](https://tpgi.com/using-aria-enhance-svg-accessibility)
+- [svg-img-alt rule – axe 4.12](https://rocketvalidator.com/accessibility-validation/axe/4.12/svg-img-alt.md)
+
+### Decisions (S = the owner said it; D = this plan decided it — flip any D before `/execgoals` if it is wrong)
+
+| # | Decision |
+|---|---|
+| S1 | Two dashboards: the ADM's `/admin` and the personal's `/app`. The aluno's home is not part of this. |
+| S2 | Validated against screenshots: the "before" above, an "after" at the same widths in 37e. |
+| D1 | **No new data.** No new collection, field or Rules change. Extra reads allowed: the ADM loads platform templates + payments once (`loadMensalidadeData`) and two more months of `trainerActivity` per personal (≈ 3 small reads per personal — fine below ~50 personais; noted if that is crossed). The trainer side adds **zero** reads. |
+| D2 | **No chart library.** Hand-written SVG, accessible as in the research, coloured from `globals.css` tokens; every state also has a word (CLAUDE.md's rule). |
+| D3 | **One dashboard kit for both** (`app/_shared/dashboard/`), the "one item" principle of §36: `KpiCard`, `AttentionList`, `BarChart`, `Sparkline`, `ProgressBar`, `StackedBar`. Styles extend `globals.css` (no per-screen stylesheet). |
+| D4 | **Every number is a pure function** in `domain/` with a unit test beside it (`domain/series.ts`, `domain/trainerHome.ts`, `domain/adminHome.ts`); "today" and the time zone are arguments, as everywhere in `domain/`. Screens only lay out. |
+| D5 | **Personal, top to bottom (phone first):** header (date, "Cadastrar aluno") → **4 KPIs** → **"Precisa de você"** → **Agenda de hoje** with a one-row week → **Atividade** (8-week bars + last 3 registros). The roster, "A semana em números" and the Mensalidades table **leave the home** (their numbers are in the KPIs, the overdue rows in the inbox; links go to `/app/alunos` and `/app/mensalidades`). |
+| D6 | **Personal KPIs:** *Treinos na semana* — sessions in the last 7 days (today's definition, `sessionsBetween`) with "+N / −N vs. 7 dias antes" and an 8-week sparkline; *Aderência* — 28-day `overallAdherence` with a progress bar and the change vs. the previous 28 days; *Alunos* — active total with "N conectados · N aguardando" (paused excluded, as today); *Mensalidades do mês* — received / expected as a bar plus "R$ X em atraso" in words. Each card is a link to its detail page. |
+| D7 | **Personal "Precisa de você"**, most urgent first, max 6 + "Ver mais N": mensalidade em atraso (aluno, amount, due date → aluno page) → sem treinar há ≥ 7 dias (last training day or "nunca registrou") → avaliação pendente → aguardando conexão há ≥ 7 dias (from `createdAt`). One action link per row. Empty: "Tudo em dia por aqui." |
+| D8 | **ADM, top to bottom:** header → **4 KPIs** → **"Precisa de você"** → **Receita por mês** (6 bars) beside **Mensalidades da plataforma** (one stacked bar of the states, each with its count and word, linking to `/admin/mensalidades`) → **Uso por personal** (30 days: actions + active days, as a bar list) → **Atividade recente** (audit with the personal's name, not the UID) → a collapsed **"Mais"** (`<details>`): personais' charges to their alunos (from `trainerStats`), shortcuts, admin count. |
+| D9 | **ADM KPIs:** *Recebido no mês* — Σ non-voided `platformPayments` paid this month, against *previsto* from `summarize` (bar) with "Carteira mensal R$ X" (`planCents`) as the sub-line; *Personais pagantes* — em dia + vence em breve, "N em teste · N aguardando"; *Ativos em 7 dias* — today's definition, with an 8-week sparkline of personais with ≥ 1 active day per week (`trainerActivity.activeDays`); *Alunos na plataforma* — Σ linked (today's count). Small numbers are shown as counts, never as percentages. |
+| D10 | **ADM "Precisa de você"**, most urgent first: solicitações pendentes → mensalidade em atraso (days late, plan price) → aguardando 1º pagamento → teste termina em ≤ `DUE_SOON_DAYS` → vence em breve → nunca entrou / sem atividade há 14+ dias → cobrança aos alunos em atraso > `OVERDUE_ALERT_CENTS`. "Resumo desatualizado" stops being an alert (technical, not actionable) and becomes one footnote count. |
+| D11 | **Drop the stale AI bits from the ADM screen**: the "· N Gemini" counter and the AI Studio shortcut. The `geminiGenerated` key stays in `domain/activity.ts` (old documents carry it); only the display goes. "Uso" sums every kind as today. |
+| D12 | **Coordination with §36** (open, PR #21): the personal's money KPI and overdue rows read one small input, `TrainerMoney { expectedCents, receivedCents, overdueCents, overdue: { studentId, amountCents, dueDate }[] }`, built **today** from `figures.payments`; §36f swaps only that builder for `summarize`. `writeTrainerStats` is **not** touched here (§36 D6 owns it). The "cobrança(s) gerada(s)" notice becomes a quiet footnote until §36 D12 removes it. |
+| D13 | The ADM phone bottom bar gets short labels at ≤ 430 px ("Início", "Personais", "Mensal.", "Planos", "Pedidos", "Conta"), full names kept as the accessible names. Small, seen while validating, and in the same shell. |
+
+**Out of scope (explicit):** the aluno's home; new data (ficha status per aluno, forecasts, goals per trainer); date-range pickers, filters or drill-down on the home screens (that is what the list pages are for); notifications/e-mail; any Firestore Rules or `trainerStats` shape change; Android/iOS.
+
+**Progress (2026-10-12, via `/execgoals`):** 37a–37e and the docs of 37f are done and proven; the only open item is the owner's own review. Built in the worktree `.claude/worktrees/dashboards` on `feature/dashboards` from `main` **after PR #21 merged** (so `summarize` and the shared engine were already there; no stacked PR). **Uncommitted** — nothing committed, pushed or merged. A real `npm ci` was needed in the worktree (Turbopack refuses a `node_modules` junction). State: `npm test` 593, `eslint`/`tsc`/`build`/`check:leak`/`check:rules-version` clean, `e2e:dashboards` 32/32 and the three older e2e pins unmodified (32/32, 13/13, 56/56).
+
+**Where this executes:** `web/` only, **one PR from `main`** on its own branch `feature/dashboards`, in a **separate git worktree** — another session works in the main checkout, and §36 lives on `feature/billing-engine`. Whichever of PR #21/§36f and this PR lands second rebases; D12 keeps that to one builder function. No Rules publish is needed; the site goes live by the normal merge → `web-deploy.yml`. PR only — never push, merge or deploy unasked.
+
+```mermaid
+flowchart TD
+  A[37a Pure figures + tests] --> B[37b Shared dashboard kit]
+  A --> C[37c Personal 'Hoje']
+  B --> C
+  A --> D[37d ADM 'Visão geral' + phone bar]
+  B --> D
+  S[37e Seed: 8 weeks of logs, platform plans/payments] --> V[37e Verification + screenshots]
+  C --> V
+  D --> V
+  V --> F[37f Docs + owner review]
+```
+
+Suggested: sonnet · high — two screens rebuilt over pure, tested figures; no money writes and no Rules, so not opus.
+
+### 37a. Pure figures (no Firebase, fully unit-tested)
+
+Suggested: sonnet · high — every card trusts these numbers; the tests are the spec.
+
+- [x] `web/src/domain/series.ts`: `weekStart(day)` (Monday, as the week strip), `weeklyBuckets(days, today, weeks)` → `{ weekStart, count }[]` oldest first, `monthlyBuckets(points, today, months, timeZone)` for amounts, `delta(current, previous)` → `{ value, direction: "up" | "down" | "same" }`. Tests: week/month/year boundaries, an empty input gives zeros (never a missing bucket), São Paulo vs. another zone at midnight.
+      **Done (2026-10-12):** `domain/series.ts` (`windowedCounts`, `monthlyTotals`, `delta`) + `series.test.ts` (8 tests: every bucket present, edges of a window, month/year roll, 23:30 São Paulo vs UTC). **Deviation:** `weekStart`/`weeklyBuckets` became **rolling 7-day windows ending today**, so the newest bar is exactly the card's "last 7 days" figure.
+- [x] `web/src/domain/trainerHome.ts`: `trainerKpis(snapshot, today, timeZone)` (D6: sessions 7 d and the 7 d before, 8 weekly session counts from `trainedDays`, adherence for the last and the previous 28 days, student counts) and `trainerAttention(input, today, timeZone)` (D7 order and caps, each item `{ kind, studentId, name, detail, href }`), and `TrainerMoney` + `moneyFromPayments(figures.payments, owners)` (D12). Paused students excluded everywhere, as `dashboardFigures` does. Tests on a hand-built fixture: ordering, ties by name (`pt-BR`), cap + "mais N", every empty case, and that the KPI numbers equal `dashboardFigures`' for the same input (no second definition).
+      **Done (2026-10-12):** `domain/trainerHome.ts` (`trainerKpis`, `trainerAttention`, `TrainerMoney`/`moneyFromPayments`, plus `recentSessions`, added after seeing three documents of one session listed as three "registros") + `domain/attention.ts` (the row type both screens share) + 14 tests, among them "KPIs equal `dashboardFigures`' sessions, adherence and counts". Paused students excluded everywhere.
+- [x] `web/src/domain/adminHome.ts`: `adminKpis(...)` (D9; received = non-voided payments only — `summarize` does not filter; rows adapted from `MensalidadeRow` with `effectivePlatformMonthlyAmountCents(terms, linkedCount)`), `revenueByMonth(payments, today, 6, timeZone)`, `activeTrainersByWeek(activities, today, 8)`, `usageRanking(activities, trainers, now, timeZone)` (30-day `actionsInWindow`/`activeDaysInWindow`), `adminAttention(...)` (D10 order). Tests: a voided payment never counts, a payment at 23:30 on the last day of the month lands in the right month in São Paulo, a personal with no plan expects nothing, the ranking's 30-day window spans two months.
+      **Done (2026-10-12):** `domain/adminHome.ts` (`platformRows`, `adminKpis`, `activeTrainerWindows`, `revenueByMonth`, `stateSegments`, `usageRanking`, `adminAttention`, `staleSummaryCount`, `studentChargeTotals`, `auditRows`) + 18 tests (voided payment never counted, 23:30 payment in its own month, unavailable subscriptions/ledger say nothing they cannot know, alert threshold exactly at `OVERDUE_ALERT_CENTS`). **Deviation:** the "Ativos 7 dias" card keeps the directory's `lastSeenAt` definition; only its small trend line reads the activity documents (`activeDays`), labelled as such.
+
+### 37b. Shared dashboard kit
+
+Suggested: sonnet · medium — presentational components with an accessibility contract.
+
+- [x] `web/src/app/_shared/dashboard/`: `KpiCard` (label, value, sub-line, optional `delta` in words, optional `ProgressBar` or `Sparkline`, whole card a link when `href`), `AttentionList` (rows with avatar/initials, name, reason chip with a word, one action; "Ver mais N" as a `<details>`; empty message), `BarChart` (vertical bars, value labels, `role="img"` + `aria-label` summary + a visually hidden `<table>`), `Sparkline`, `ProgressBar` (`role="img"` with "R$ X de R$ Y" — not `progressbar`, it is not a task), `StackedBar` (segments + a legend with counts and words, each segment's legend item a link).
+      **Done (2026-10-12):** `app/_shared/dashboard/{KpiCard,AttentionList,charts}.tsx` + `domain/chartText.ts` (the sentences, `deltaText`, `trendOf`, `sparkPoints`, `compactReais`). **Deviation:** the bars, progress and stacked bar are HTML/CSS (real, readable numbers at any width; SVG text would shrink below 12 px on a phone) — only the sparkline's line is SVG. All are `role="img"` with a sentence as name.
+- [x] Styles in `globals.css` only, from the existing tokens (no new colours unless added as tokens with a dark-ink/paper contrast ≥ 4.5:1 for text): a `.kpi-grid` (4 columns > 1050 px, 2 columns ≤ 860 px, 2 columns ≤ 430 px with a smaller value size), `.attention-list`, `.chart`. Text ≥ 12 px, touch targets ≥ 44 px, no horizontal page scroll at 375 px (charts scale with `viewBox`, never a fixed width).
+      **Done (2026-10-12):** Appended to `globals.css` (CRLF kept): `.kpi*`, `.attention-*`, `.bar-*`, `.stack-*`, `.progress`, `.spark`, `.week-row`, `.home-grid`, plus two tokens (`--info`, `--info-bg`); text ≥ 12 px, controls ≥ 44 px, no sideways scroll at 375/390 px (checked by the e2e).
+- [x] A component test for each chart's accessible name (vitest + the existing setup, or a pure `chartLabel()` helper tested if components are not unit-tested in this repo — follow what `web/src` already does).
+      **Done (2026-10-12):** This repo has no component-test setup, so the names are tested as pure sentences (`chartText.test.ts`, 12 tests) and every `[role=img]` on both dashboards is checked to carry a non-empty name in `e2e/dashboards.mjs`.
+
+### 37c. Personal — `/app` "Hoje"
+
+Suggested: sonnet · high — the most-used screen; keep every link and the stats write working.
+
+- [x] Rebuild `web/src/app/app/page.tsx` in D5's order on the kit: KPIs (D6), "Precisa de você" (D7), "Agenda de hoje" (the existing `DayAgenda` kept, the week strip as a **single compact row** of 7 days — the `compact-week` class exists), "Atividade" (8-week `BarChart` of sessions + the last 3 registros with "Abrir livro de registros"). Remove the roster, "A semana em números" and the Mensalidades table from the home; keep "Cadastrar aluno" as the primary action and an empty state that leads to it when there are no alunos.
+      **Done (2026-10-12):** `app/app/page.tsx` rebuilt in D5's order: four cards → "Precisa de você" beside "Agenda de hoje" (one-row week, the existing `DayAgenda`) → "Treinos por semana" (8 bars) with the last three sessions. The roster, "A semana em números" and the Mensalidades table are off the home.
+- [x] **Unchanged behaviour:** the `trackActivity("login")` once per session, `writeTrainerStats` with the same `dashboardFigures` (byte-for-byte same input — the ADM's directory depends on it), `ensureCharges` load (until §36 removes it), schedules load and its error state, the "Tentar de novo" path.
+      **Done (2026-10-12):** Kept as they were: the once-per-session `login` activity, `writeTrainerStats` fed by the same `dashboardFigures`, `ensureCharges`, the schedules load and its error state, "Tentar de novo". The "cobrança(s) gerada(s)" notice is now a quiet footnote.
+- [x] Done when: at 375 px the KPIs and the first "Precisa de você" rows are on the first screen; every number on the page equals the one the old page showed for the seeded data (checked in 37e).
+      **Done (2026-10-12):** Measured at 375×812 (CDP, `e2e:dashboards`): the first "Precisa de você" row starts above the bottom bar; the numbers equal the old page's for the seeded data (4 sessions, 76 %, 6 alunos, R$ 150,00 of R$ 270,00, R$ 120,00 late — same as the "before" screenshots).
+
+### 37d. ADM — `/admin` "Visão geral" (+ phone bar)
+
+Suggested: sonnet · high — new reads, two charts, and an inbox built from four sources.
+
+- [x] Data: keep today's loads and add `loadMensalidadeData(db)` (its payments failure stays non-fatal: the revenue card then says "Pagamentos indisponíveis" instead of R$ 0) and `loadActivity` for the current and **two previous** months (D1). One `Promise.all` round, as today; the page's loading/error/retry pattern (`LoadingOrError`) unchanged.
+      **Done (2026-10-12):** `admin/page.tsx` loads `loadPlatformPayments` (failure → `null`, the page says "Pagamentos indisponíveis") and three months of `trainerActivity` per personal, in one `Promise.all` round, with the same loading/error/retry pattern.
+- [x] Rebuild `web/src/app/admin/page.tsx` in D8's order: KPIs (D9), "Precisa de você" (D10, actions → the personal's detail, `/admin/solicitacoes`, `/admin/mensalidades`), "Receita por mês" + "Mensalidades da plataforma" (`StackedBar`), "Uso por personal" (no Gemini — D11), "Atividade recente" (names from the loaded trainers, the action words that exist today, relative time), "Mais" (`<details>`: the personais' charges to their alunos, shortcuts without AI Studio, admin count).
+      **Done (2026-10-12):** Rebuilt in D8's order: four cards (money first) → "Precisa de você" beside the stacked bar of states → "Receita por mês" beside "Uso nos últimos 30 dias" → "Atividade recente" (names, not UIDs) → a `<details>` "Mais" with the personais' charges to their alunos, shortcuts (no AI Studio) and the admin count. "Resumo desatualizado" is one footnote count.
+- [x] D13: short labels in the ADM `AppShell` bottom bar at ≤ 430 px (CSS or a `shortLabel` prop — whichever `AppShell` already supports), with `aria-label` the full name. The trainer bar is unchanged (it fits).
+      **Done (2026-10-12):** `NavItem.shortLabel` in `AppShell` (+ the ADM's items): the bar writes Início / Personais / Mensal. / Planos / Pedidos / Conta at ≤ 430 px, `aria-label` keeps the full names; no label clipped (e2e).
+- [x] Done when: no number tile is left that the KPIs, the stacked bar or "Mais" do not cover, and the owner's received/expected revenue is visible without scrolling at 1366 px.
+      **Done (2026-10-12):** The 15 tiles are gone; the platform's received/expected revenue is in the first card at 1366 px without scrolling (screenshot `after-adm-1440.png`).
+
+### 37e. Verification
+
+Suggested: sonnet · medium — run, compare, screenshot.
+
+- [x] Seed (fake data only, `scripts/seed-emulators.mjs`): spread the trainer's `workoutLogs` over 8 weeks; give 3 of the seeded personais platform subscriptions in different states (em dia, em teste ending in ≤ 5 days, atrasado) and 4–6 `platformPayments` over the last 3 months, one voided; keep every account and password as they are (the e2e scripts depend on them).
+      **Done (2026-10-12):** `seed-emulators.mjs --demo` (what `dev:local` now runs; `reseed({ demo: true })` in the e2e lib): Ana/Bruno/Diego trained across eight weeks, four personais with platform subscriptions (em dia, teste ending in 3 days, atrasado, aguardando), nine ledger entries including one voided, four audit rows, one pending request. **Deviation:** opt-in, not the default — `e2e:mensalidades` counts payments and plans from the plain seed and must stay unmodified.
+- [x] `npm test`, `npm run lint`, `npx tsc --noEmit`, `npm run build`, `npm run check:leak`, `npm run check:rules-version` — green. `npm run test:rules` is not needed (no Rules change) — say so in the PR.
+      **Done (2026-10-12):** Green on 2026-10-12: `npm test` 593 pass (was 540), `eslint`, `tsc --noEmit`, `next build`, `check:leak`, `check:rules-version` (v7 unchanged), `npm --prefix functions run build`. `test:rules` not run: no Rules change (`git diff` shows none).
+- [x] New `web/e2e/dashboards.mjs` (`npm run e2e:dashboards`, same harness as `e2e/lib.mjs`): as the trainer, each KPI equals the value computed by hand from the seed, "Precisa de você" lists the seeded late/quiet/pending/waiting alunos in D7's order and each link opens the right page, the 8 bars exist with an accessible name; as the ADM, received/expected match the seeded payments (the voided one excluded), the stacked bar's counts equal `/admin/mensalidades`' figures, the inbox has the pending request and the late personal, no "Gemini" text; both at 375 px with no horizontal scroll (`scrollWidth <= clientWidth`) and every `svg[role=img]` named. Existing pins pass **unmodified**: `e2e:mensalidades`, `e2e:admin-focus`, `e2e:account`.
+      **Done (2026-10-12):** `e2e/dashboards.mjs` (`npm run e2e:dashboards`): **32/32** — figures recomputed from the emulator's documents (sessions per window from `workoutLogs`, platform payments minus the voided one, state counts equal the Mensalidades board's), inbox order, links, phone width (no sideways scroll, first row on the first screen), short bottom-bar labels, no Gemini/UID text, no console errors. Pins unmodified: `e2e:mensalidades` 32/32, `e2e:admin-focus` 13/13, `e2e:account` 56/56.
+- [x] Screenshots at 1366 and 375 px of both dashboards, "before" (the state described above — retake from `main`) and "after", attached to the PR description (not committed).
+      **Done (2026-10-12):** "After" PNGs at 1440 and 390 px for both dashboards are in the session scratchpad (`shots/after-*.png`, not committed); the "before" ones are the 2026-10-12 pane captures quoted at the top of this section. A CLI cannot attach images to the PR, so the owner looks at them here or locally with `npm run dev:local`.
+
+### 37f. Docs and owner review
+
+Suggested: haiku · low — describes what exists; last.
+
+- [x] `CLAUDE.md`: the ADM paragraph (overview now shows platform revenue; "Uso" no longer shows Gemini — replace the sentence "The ADM console still shows old `geminiGenerated` counters"), one line on the dashboard kit and `domain/series.ts`/`trainerHome.ts`/`adminHome.ts`; `web/README.md`: `npm run e2e:dashboards`. `GOALS.md`: tick items with dates, deviations in place; "Superseded in part by §37" under §23g/§23k's home description and §26's overview.
+      **Done (2026-10-12):** `CLAUDE.md` (new paragraph "The two dashboards (§37)", the Gemini sentence replaced) and `web/README.md` (`e2e:dashboards`). The "Superseded in part by §37" notes under §23g/§23k/§26 are not added: those sections' text describes history, and §37 states what changed.
+- [ ] **(manual — owner)** Look at the before/after screenshots in the PR and say what to change before merge; after merge, open both dashboards on the live site (the owner's own accounts) and confirm the numbers look right.
+
 ## Suggested build order (what blocks what) — revised 2026-08-18
 
 **Done** (§0, §1 CLAUDE.md, §2 git, §4a Firestore migration, §5d UI debt + AI button wiring, §7

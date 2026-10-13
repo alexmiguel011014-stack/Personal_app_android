@@ -136,6 +136,16 @@ queries, and `adminAudit`; they do not fetch student documents. An ADM can techn
 `users` document under the existing Firestore rules, so this UI boundary is not a claim that the
 underlying role lacks that permission.
 
+**The two dashboards (§37).** The trainer's `/app` ("Hoje") and the ADM's `/admin` ("Visão geral") share one small kit,
+`app/_shared/dashboard/` (`KpiCard`/`KpiGrid`, `AttentionList` — "Precisa de você", most urgent first with one action per
+row — and `charts.tsx`: `BarChart`, `Sparkline`, `ProgressBar`, `StackedBar`, hand-drawn, no chart library, each
+`role="img"` named by a sentence from `domain/chartText.ts`). Every figure is a pure function with a test beside it:
+`domain/series.ts` (rolling 7-day windows whose newest one is the "last 7 days" card, monthly totals), `domain/trainerHome.ts`
+(reuses §23c's definitions; `TrainerMoney` is the one input §36f swaps) and `domain/adminHome.ts` (the platform's money is
+§36b's `summarize` over the Mensalidades rows with voided payments removed first). No new collection or rule. `npm run seed:emulators -- --demo`
+(what `dev:local` runs) adds eight weeks of training and the platform's own plans/payments; the plain seed stays as it was
+because the e2e scripts count from it. The ADM bottom bar writes `shortLabel`s at ≤ 430 px and keeps the full names as `aria-label`s.
+
 `trainerStats/{trainerId}` is written by the trainer's web `/app` visit from the existing dashboard
 figures and snapshot, with `lastSeenAt` throttled by `shouldWriteLastSeen`. It contains counts and
 billing totals, not student records. `trainerActivity/{trainerId}_{YYYY-MM}` is written by the
@@ -340,8 +350,8 @@ into the Importador Inteligente (`parseWorkouts` splits "Treino A / B / C…" in
 typed by the trainer, never read from the answer. The in-site Gemini tab (§25i, Firebase AI Logic) and the request
 shortcuts were removed with the "Pedir à IA" card (§34); no AI provider key or call reaches the browser, and any
 provider or key in the browser needs its own decision. Direct generation with BYO keys (`GenerativeAiService`) stays on
-Android; a server-side proxy would be its own item (a Cloud Function, which needs the Blaze plan). The ADM console
-still shows old `geminiGenerated` counters (the key stays in `domain/activity.ts`).
+Android; a server-side proxy would be its own item (a Cloud Function, which needs the Blaze plan). The ADM overview
+no longer shows the old `geminiGenerated` counter (§37; the key stays in `domain/activity.ts` because old documents carry it).
 
 Checks, from `web/`: `npm test`, `npm run lint`, `npx tsc --noEmit` (run `npx next typegen` first
 on a fresh checkout), `npm run build`, and `npm run test:rules` (emulators, Java 21).

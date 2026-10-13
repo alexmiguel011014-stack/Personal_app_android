@@ -34,6 +34,11 @@ export function shortDate(date: string): string {
   return `${day} ${MONTHS_SHORT[Number(month) - 1]}`;
 }
 
+/** "2026-10" as "out". */
+export function shortMonth(yearMonth: string): string {
+  return MONTHS_SHORT[Number(yearMonth.split("-")[1]) - 1];
+}
+
 /** The wall-clock hour (0-23) of the instant `ms` in `timeZone`. */
 export function hourIn(ms: number, timeZone: string): number {
   const parts = new Intl.DateTimeFormat("en-US", { timeZone, hour: "2-digit", hourCycle: "h23" }).formatToParts(ms);

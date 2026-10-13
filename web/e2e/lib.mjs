@@ -185,7 +185,7 @@ export async function browser(label = "b", vp = "desktop") {
   return api;
 }
 
-/** Wipes the emulators and plants the fake accounts again, so every test starts from the same state. */
-export async function reseed() {
-  execSync("npm run seed:emulators", { cwd: fileURLToPath(new URL("..", import.meta.url)), stdio: "ignore" });
+/** Wipes the emulators and plants the fake accounts again, so every test starts from the same state. `demo` adds eight weeks of training and the platform's own billing (GOALS.md §37). */
+export async function reseed({ demo = false } = {}) {
+  execSync(`npm run seed:emulators${demo ? " -- --demo" : ""}`, { cwd: fileURLToPath(new URL("..", import.meta.url)), stdio: "ignore" });
 }

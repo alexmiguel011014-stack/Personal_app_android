@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agendaHourNumber, dayMonthLong, hourIn, longDate, shortDate } from "./dateLabels";
+import { agendaHourNumber, dayMonthLong, hourIn, longDate, shortDate, shortMonth } from "./dateLabels";
 
 describe("dateLabels", () => {
   it("writes the long date the way the template's heading does", () => {
@@ -11,6 +11,11 @@ describe("dateLabels", () => {
     expect(shortDate("2026-09-28")).toBe("28 set");
     expect(shortDate("2026-10-04")).toBe("04 out");
     expect(shortDate("2027-01-01")).toBe("01 jan");
+  });
+
+  it("abbreviates a month", () => {
+    expect(shortMonth("2026-10")).toBe("out");
+    expect(shortMonth("2027-01")).toBe("jan");
   });
 
   it("reads the hour in the trainer's zone, not the machine's", () => {

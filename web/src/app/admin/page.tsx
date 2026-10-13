@@ -3,20 +3,39 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { countAdmins, countLinkedStudents, loadActivity, loadLatestAudit, loadTrainerRequests, loadTrainerStats, loadTrainers, type TrainerRequest } from "../../data/admin";
-import { describeMensalidade } from "../../data/mensalidades";
-import { loadAllPlatformSubscriptions, type PlatformSubscription } from "../../data/platformSubscriptions";
-import { mensalidadeStateName, type MensalidadeState } from "../../domain/mensalidades";
+import { loadAllPlatformSubscriptions, loadPlatformPayments, type PlatformPayment, type PlatformSubscription } from "../../data/platformSubscriptions";
 import { getFirebase } from "../../data/firebase";
 import type { AuditEntry, TrainerActivity, TrainerStats, TrainerUser } from "../../data/converters";
-import { yearMonth } from "../../domain/dates";
-import { OVERDUE_ALERT_CENTS } from "../../domain/adminMetrics";
+import { adminAttention, adminKpis, auditRows, platformRows, revenueByMonth, staleSummaryCount, stateSegments, studentChargeTotals, usageRanking, ACTIVE_WINDOWS, REVENUE_MONTHS, type AdminHomeInput } from "../../domain/adminHome";
+import { addMonths, localDate, yearMonth } from "../../domain/dates";
+import { barChartLabel, compactReais, progressLabel, sparklineLabel, stackedBarLabel } from "../../domain/chartText";
+import { formatCents } from "../../domain/payments";
 import { PageHeading, LoadingOrError, Money, DateTime, Empty } from "./AdminPrimitives";
 import { browserTimeZone } from "../_shared/browserTimeZone";
-import { localDate } from "../../domain/dates";
+import { shortMonth } from "../_shared/dateLabels";
+import { AttentionList } from "../_shared/dashboard/AttentionList";
+import { BarChart, ProgressBar, Sparkline, StackedBar, type SegmentTone } from "../_shared/dashboard/charts";
+import { KpiCard, KpiGrid } from "../_shared/dashboard/KpiCard";
 
-type OverviewData = { trainers: TrainerUser[]; stats: TrainerStats[]; requests: TrainerRequest[]; audit: AuditEntry[]; admins: number; linked: number; activities: TrainerActivity[]; subscriptions: Map<string, PlatformSubscription> | null };
-const zeroData = (): OverviewData => ({ trainers: [], stats: [], requests: [], audit: [], admins: 0, linked: 0, activities: [], subscriptions: null });
-const actionName: Record<string, string> = { "trainer.create": "Personal cadastrado", "trainer.suspend": "Acesso suspenso", "trainer.reactivate": "Acesso reativado", "trainer.promote": "Personal promovido", "request.reject": "Solicitação recusada", "trainer.resetEmail": "Redefinição de senha enviada", "payment.record": "Pagamento da mensalidade registrado", "payment.void": "Pagamento estornado", "subscription.assign": "Plano atribuído", "platform.plan.create": "Plano criado", "platform.plan.update": "Plano atualizado", "trial.extend": "Teste prorrogado" };
+// GOALS.md §37d: the ADM's overview. Four figures (the money first), who needs the ADM, the platform's receivables
+// beside the personais' states, usage, and the audit trail; the personais' own charges to their alunos — which are not
+// the ADM's money — fold into "Mais". Every number comes from `domain/adminHome.ts`.
+
+type OverviewData = {
+  trainers: TrainerUser[];
+  stats: TrainerStats[];
+  requests: TrainerRequest[];
+  audit: AuditEntry[];
+  admins: number;
+  linkedByTrainer: Map<string, number>;
+  activities: TrainerActivity[];
+  subscriptions: Map<string, PlatformSubscription> | null;
+  payments: PlatformPayment[] | null;
+};
+
+const zeroData = (): OverviewData => ({ trainers: [], stats: [], requests: [], audit: [], admins: 0, linkedByTrainer: new Map(), activities: [], subscriptions: null, payments: null });
+
+const STATE_TONES: Record<string, SegmentTone> = { atrasado: "alert", vence_breve: "warning", aguardando: "warning", teste: "info", em_dia: "success", sem_plano: "muted" };
 
 export default function AdminOverviewPage() {
   const [data, setData] = useState<OverviewData>(zeroData);
@@ -29,13 +48,29 @@ export default function AdminOverviewPage() {
     (async () => {
       try {
         const db = getFirebase().db;
-        const [trainers, stats, requests, audit, admins, subscriptions] = await Promise.all([loadTrainers(db), loadTrainerStats(db), loadTrainerRequests(db), loadLatestAudit(db), countAdmins(db), loadAllPlatformSubscriptions(db).catch(() => null)]);
+        const [trainers, stats, requests, audit, admins, subscriptions, payments] = await Promise.all([
+          loadTrainers(db),
+          loadTrainerStats(db),
+          loadTrainerRequests(db),
+          loadLatestAudit(db),
+          countAdmins(db),
+          loadAllPlatformSubscriptions(db).catch(() => null),
+          loadPlatformPayments(db).catch(() => null),
+        ]);
         const loadedAt = Date.now();
-        const linkedCounts = await Promise.all(trainers.map((trainer) => countLinkedStudents(db, trainer.id)));
-        const month = yearMonth(localDate(loadedAt, browserTimeZone()));
-        const activities = (await Promise.all(trainers.map((trainer) => loadActivity(db, trainer.id, [month])))).flat();
+        const thisMonth = yearMonth(localDate(loadedAt, browserTimeZone()));
+        const months = [thisMonth, yearMonth(addMonths(`${thisMonth}-01`, -1)), yearMonth(addMonths(`${thisMonth}-01`, -2))];
+        const perTrainer = await Promise.all(trainers.map(async (trainer) => ({
+          id: trainer.id,
+          linked: await countLinkedStudents(db, trainer.id),
+          activities: await loadActivity(db, trainer.id, months),
+        })));
         if (!cancelled) {
-          setData({ trainers, stats, requests, audit, admins, linked: linkedCounts.reduce((sum, value) => sum + value, 0), activities, subscriptions });
+          setData({
+            trainers, stats, requests, audit, admins, subscriptions, payments,
+            linkedByTrainer: new Map(perTrainer.map((entry) => [entry.id, entry.linked])),
+            activities: perTrainer.flatMap((entry) => entry.activities),
+          });
           setAsOf(loadedAt);
           setError(null);
         }
@@ -45,77 +80,121 @@ export default function AdminOverviewPage() {
     return () => { cancelled = true; };
   }, [version]);
 
-  const month = yearMonth(localDate(asOf, browserTimeZone()));
-  const currentStats = data.stats.filter((item) => item.billing.month === month);
-  const accessActive = data.trainers.filter((trainer) => trainer.accessStatus !== "suspended").length;
-  const active7d = data.trainers.filter((trainer) => trainer.accessStatus !== "suspended" && data.stats.some((item) => item.trainerId === trainer.id && item.lastSeenAt !== null && asOf - item.lastSeenAt <= 7 * 86_400_000)).length;
-  const recentSummaries = data.trainers.filter((trainer) => data.stats.some((item) => item.trainerId === trainer.id && asOf - item.updatedAt <= 14 * 86_400_000)).length;
-  const suspended = data.trainers.length - accessActive;
-  const expected = currentStats.reduce((sum, item) => sum + item.billing.expectedCents, 0);
-  const received = currentStats.reduce((sum, item) => sum + item.billing.receivedCents, 0);
-  const overdue = currentStats.reduce((sum, item) => sum + item.billing.overdueCents, 0);
-  const usage = data.activities.reduce((sum, item) => sum + Object.values(item.actions).reduce((n, count) => n + count, 0), 0);
-  const platformState = (trainer: TrainerUser): MensalidadeState | null => data.subscriptions === null ? null : describeMensalidade(trainer, data.subscriptions.get(trainer.id) ?? null, [], asOf).mensalidade.state;
-  const platformCounts = data.subscriptions === null ? null : data.trainers.reduce<Record<MensalidadeState, number>>((counts, trainer) => {
-    const state = platformState(trainer);
-    if (state !== null) counts[state] += 1;
-    return counts;
-  }, { sem_plano: 0, aguardando: 0, teste: 0, em_dia: 0, vence_breve: 0, atrasado: 0, pausado: 0 });
-  const attention = data.trainers.filter((trainer) => {
-    const stats = data.stats.find((item) => item.trainerId === trainer.id);
-    return trainer.accessStatus !== "suspended" && (platformState(trainer) === "atrasado" || stats === undefined || asOf - stats.updatedAt > 14 * 86_400_000 || stats.billing.overdueCents > OVERDUE_ALERT_CENTS || stats.lastSeenAt == null || asOf - stats.lastSeenAt > 14 * 86_400_000);
-  });
-  const topUsage = [...data.activities].sort((a, b) => Object.values(b.actions).reduce((n, count) => n + count, 0) - Object.values(a.actions).reduce((n, count) => n + count, 0));
+  const timeZone = browserTimeZone();
+  const today = localDate(asOf, timeZone);
+  const input: AdminHomeInput = {
+    trainers: data.trainers,
+    stats: data.stats,
+    subscriptions: data.subscriptions,
+    payments: data.payments,
+    linkedByTrainer: data.linkedByTrainer,
+    activities: data.activities,
+    requests: data.requests.length,
+  };
+  const ready = !loading && !error;
+  const kpis = ready ? adminKpis(input, asOf, timeZone) : null;
+  const rows = ready ? platformRows(input, asOf, timeZone) : null;
+  const attention = ready ? adminAttention(input, asOf, timeZone) : [];
+  const usage = ready ? usageRanking(input, asOf, timeZone) : { rows: [], idle: 0 };
+  const segments = rows ? stateSegments(rows) : [];
+  const revenue = ready && data.payments ? revenueByMonth(data.payments, today, timeZone) : null;
+  const studentCharges = ready ? studentChargeTotals(data.stats, yearMonth(today)) : null;
+  const withAccess = data.trainers.filter((trainer) => trainer.accessStatus !== "suspended").length;
 
   return <main>
     <PageHeading title="Visão geral">Acompanhamento da plataforma e da rede de personais.</PageHeading>
     <LoadingOrError loading={loading} error={error} retry={() => { setLoading(true); setVersion((n) => n + 1); }} />
-    {!loading && !error && <>
-      <dl className="admin-grid">
-        <div className="admin-figure"><dt>Com acesso ativo</dt><dd>{accessActive}</dd></div>
-        <div className="admin-figure"><dt>Suspensos</dt><dd>{suspended}</dd></div>
-        <div className="admin-figure"><dt>Ativos nos últimos 7 dias</dt><dd>{active7d}</dd></div>
-        <div className="admin-figure"><dt>Alunos vinculados</dt><dd>{data.linked}</dd></div>
-        <div className="admin-figure"><dt>Atividade neste mês</dt><dd>{usage}</dd></div>
-        <div className="admin-figure"><dt>Solicitações pendentes</dt><dd>{data.requests.length}</dd></div>
-      </dl>
-      <p className="admin-muted">Resumos atualizados nos últimos 14 dias: {recentSummaries} de {data.trainers.length} personais.</p>
-      {platformCounts && <section aria-labelledby="platform-billing-heading">
-        <h2 id="platform-billing-heading">Mensalidades da plataforma</h2>
-        <p className="admin-muted">O que cada personal paga a você. <Link href="/admin/mensalidades">Abrir Mensalidades</Link></p>
-        <dl className="admin-grid">
-          {(["em_dia", "vence_breve", "atrasado", "aguardando", "teste", "sem_plano"] as const).map((state) => <div className="admin-figure" key={state}><dt>{mensalidadeStateName(state)}</dt><dd>{platformCounts[state]}</dd></div>)}
-        </dl>
-      </section>}
-      <h2>Cobranças dos personais aos alunos</h2>
-      <p className="admin-muted">O que os personais cobram dos próprios alunos neste mês, a partir dos resumos que eles enviam. Não é a mensalidade da plataforma.</p>
-      <dl className="admin-grid" aria-label="Cobranças dos personais aos alunos no mês">
-        <div className="admin-figure"><dt>Previsto no mês</dt><dd><Money cents={currentStats.length ? expected : null} /></dd></div>
-        <div className="admin-figure"><dt>Recebido</dt><dd><Money cents={currentStats.length ? received : null} /></dd></div>
-        <div className="admin-figure"><dt>Em atraso</dt><dd><Money cents={currentStats.length ? overdue : null} /></dd></div>
-      </dl>
-      <div className="admin-columns">
-        <section className="panel"><h2>Precisam de atenção</h2>
-          {attention.length === 0 ? <Empty>Nenhum personal ativo precisa de atenção no momento.</Empty> : <ul className="admin-list">{attention.slice(0, 8).map((trainer) => {
-            const stats = data.stats.find((item) => item.trainerId === trainer.id);
-            const lastSeen = stats?.lastSeenAt ?? null;
-            const labels = [platformState(trainer) === "atrasado" ? "Mensalidade da plataforma em atraso" : "", !stats || asOf - stats.updatedAt > 14 * 86_400_000 ? "Resumo desatualizado" : "", (stats?.billing.overdueCents ?? 0) > OVERDUE_ALERT_CENTS ? "Cobrança em atraso" : "", lastSeen === null ? "Nunca entrou" : asOf - lastSeen > 14 * 86_400_000 ? "Sem atividade há 14+ dias" : ""].filter(Boolean);
-            return <li key={trainer.id}><span><Link href={`/admin/personais/detalhe?id=${encodeURIComponent(trainer.id)}`}>{trainer.name || trainer.email}</Link><br /><small>{lastSeen === null ? "Nunca entrou" : <>Última visita: <DateTime at={lastSeen} /></>}</small></span><span className="admin-status">{labels.join(" · ")}</span></li>;
-          })}</ul>}
-        </section>
-        <section className="panel"><h2>Uso mensal por personal</h2>
-          {topUsage.length === 0 ? <Empty>Ainda sem dados de uso deste mês.</Empty> : <ol className="admin-list">{topUsage.map((item) => {
-            const trainer = data.trainers.find((entry) => entry.id === item.trainerId);
-            const count = Object.values(item.actions).reduce((sum, n) => sum + n, 0);
-            return <li key={item.trainerId}><span><Link href={`/admin/personais/detalhe?id=${encodeURIComponent(item.trainerId)}`}>{trainer?.name || trainer?.email || item.trainerId}</Link></span><strong>{count} ações · {item.actions.geminiGenerated} Gemini</strong></li>;
-          })}</ol>}
-          <p className="section-footnote">São contagens agregadas de ações, sem conteúdo ou dados de alunos.</p>
+    {kpis && <>
+      <KpiGrid label="Resumo da plataforma">
+        <KpiCard
+          label={`Recebido no mês`}
+          href="/admin/mensalidades"
+          value={kpis.revenue === null || kpis.revenue.receivedCents === null ? "—" : <>{formatCents(kpis.revenue.receivedCents)}<small>de {formatCents(kpis.revenue.expectedCents)}</small></>}
+          sub={kpis.revenue === null ? "Planos indisponíveis: confira as regras do Firestore." : `${kpis.revenue.receivedCents === null ? "Pagamentos indisponíveis · " : ""}Carteira mensal ${formatCents(kpis.revenue.planCents)}`}
+        >
+          {kpis.revenue?.receivedCents != null && <ProgressBar part={kpis.revenue.receivedCents} total={kpis.revenue.expectedCents} label={`Recebido no mês: ${progressLabel(kpis.revenue.receivedCents, kpis.revenue.expectedCents, formatCents)}`} />}
+        </KpiCard>
+        <KpiCard
+          label="Personais pagantes"
+          href="/admin/mensalidades"
+          value={kpis.payers === null ? "—" : kpis.payers.paying}
+          sub={kpis.payers === null ? "Planos indisponíveis." : `${kpis.payers.trial} em teste · ${kpis.payers.waiting} aguardando · ${kpis.payers.late} em atraso`}
+        />
+        <KpiCard
+          label="Ativos nos últimos 7 dias"
+          href="/admin/personais"
+          value={<>{kpis.active.current}<small>de {kpis.active.withAccess}</small></>}
+          sub="Personais com acesso liberado"
+        >
+          <Sparkline label={sparklineLabel(`Personais com atividade a cada 7 dias, últimas ${ACTIVE_WINDOWS} semanas`, kpis.active.windows.map((window) => window.count))} values={kpis.active.windows.map((window) => window.count)} />
+        </KpiCard>
+        <KpiCard
+          label="Alunos na plataforma"
+          href="/admin/personais"
+          value={kpis.students}
+          sub={`${withAccess} ${withAccess === 1 ? "personal com acesso" : "personais com acesso"}`}
+        />
+      </KpiGrid>
+
+      <div className="home-grid">
+        <div className="home-stack">
+          <AttentionList id="admin-attention-title" title="Precisa de você" items={attention} empty="Nenhum personal ativo precisa de atenção no momento." />
+          {staleSummaryCount(input, asOf) > 0 && <p className="admin-muted">Resumo de uso desatualizado (14+ dias) ou ausente em {staleSummaryCount(input, asOf)} de {withAccess} personais com acesso.</p>}
+        </div>
+        <section className="panel" aria-labelledby="platform-billing-heading">
+          <div className="section-heading"><h2 id="platform-billing-heading">Mensalidades da plataforma</h2></div>
+          <p className="admin-muted">O que cada personal paga a você. <Link href="/admin/mensalidades">Abrir Mensalidades</Link></p>
+          {rows === null ? <Empty>Planos indisponíveis.</Empty> : segments.length === 0 ? <Empty>Nenhum personal cadastrado.</Empty> : (
+            <StackedBar
+              label={stackedBarLabel("Mensalidades da plataforma", segments)}
+              segments={segments.map((segment) => ({ key: segment.state, name: segment.name, count: segment.count, tone: STATE_TONES[segment.state] ?? "muted", href: "/admin/mensalidades" }))}
+            />
+          )}
         </section>
       </div>
-      <section className="panel"><h2>Auditoria recente</h2>
-        {data.audit.length === 0 ? <Empty>Ainda sem registros de auditoria.</Empty> : <ul className="admin-list">{data.audit.map((entry) => <li key={entry.id}><span><strong>{actionName[entry.action] ?? entry.action}</strong><br /><small>{entry.note || entry.targetUid} · UID {entry.targetUid}</small></span><small><DateTime at={entry.at} /></small></li>)}</ul>}
+
+      <div className="home-grid">
+        <section className="panel" aria-labelledby="revenue-heading">
+          <div className="section-heading"><h2 id="revenue-heading">Receita por mês</h2><span className="quiet-count">R$ recebidos</span></div>
+          {revenue === null ? <Empty>Pagamentos indisponíveis. Confira se as regras foram publicadas.</Empty> : (
+            <BarChart
+              label={barChartLabel(`Recebido por mês, últimos ${REVENUE_MONTHS} meses`, revenue.map((bar) => ({ label: shortMonth(bar.month), value: bar.cents })), formatCents)}
+              bars={revenue.map((bar) => ({ key: bar.month, label: shortMonth(bar.month), value: bar.cents, valueLabel: compactReais(bar.cents) }))}
+            />
+          )}
+        </section>
+        <section className="panel" aria-labelledby="usage-heading">
+          <div className="section-heading"><h2 id="usage-heading">Uso nos últimos 30 dias</h2></div>
+          {usage.rows.length === 0 ? <Empty>Ainda sem dados de uso no período.</Empty> : <ol className="admin-list">{usage.rows.map((row) => (
+            <li key={row.trainerId}><span><Link href={`/admin/personais/detalhe?id=${encodeURIComponent(row.trainerId)}`}>{row.name}</Link></span><strong>{row.actions} ações · {row.activeDays} {row.activeDays === 1 ? "dia ativo" : "dias ativos"}</strong></li>
+          ))}</ol>}
+          <p className="section-footnote">{usage.idle > 0 ? `${usage.idle} ${usage.idle === 1 ? "personal sem uso" : "personais sem uso"} no período. ` : ""}São contagens agregadas de ações, sem conteúdo ou dados de alunos.</p>
+        </section>
+      </div>
+
+      <section className="panel" aria-labelledby="audit-heading">
+        <div className="section-heading"><h2 id="audit-heading">Atividade recente</h2></div>
+        {data.audit.length === 0 ? <Empty>Ainda sem registros de auditoria.</Empty> : <ul className="admin-list">{auditRows(data.audit, data.trainers).map((row) => (
+          <li key={row.id}><span><strong>{row.title}</strong><br /><small>{row.subject}{row.note ? ` · ${row.note}` : ""}</small></span><small><DateTime at={row.at} /></small></li>
+        ))}</ul>}
       </section>
-      <section className="panel"><h2>Atalhos úteis</h2><ul><li><a href="https://console.firebase.google.com/" target="_blank" rel="noreferrer">Console do Firebase</a></li><li><a href="https://aistudio.google.com/rate-limit" target="_blank" rel="noreferrer">Limites e uso do Gemini no AI Studio</a></li><li><a href="https://alexmiguel011014-stack.github.io/Personal_app_android/" target="_blank" rel="noreferrer">Site publicado</a></li></ul><p className="admin-muted">Administradores cadastrados: {data.admins}</p></section>
+
+      <details className="panel more-panel">
+        <summary>Mais: cobranças dos personais aos alunos e atalhos</summary>
+        <h3>Cobranças dos personais aos alunos</h3>
+        <p className="admin-muted">O que os personais cobram dos próprios alunos neste mês, a partir dos resumos que eles enviam. Não é a mensalidade da plataforma.</p>
+        <dl className="admin-grid" aria-label="Cobranças dos personais aos alunos no mês">
+          <div className="admin-figure"><dt>Previsto no mês</dt><dd><Money cents={studentCharges ? studentCharges.expectedCents : null} /></dd></div>
+          <div className="admin-figure"><dt>Recebido</dt><dd><Money cents={studentCharges ? studentCharges.receivedCents : null} /></dd></div>
+          <div className="admin-figure"><dt>Em atraso</dt><dd><Money cents={studentCharges ? studentCharges.overdueCents : null} /></dd></div>
+        </dl>
+        <h3>Atalhos úteis</h3>
+        <ul>
+          <li><a href="https://console.firebase.google.com/" target="_blank" rel="noreferrer">Console do Firebase</a></li>
+          <li><a href="https://alexmiguel011014-stack.github.io/Personal_app_android/" target="_blank" rel="noreferrer">Site publicado</a></li>
+        </ul>
+        <p className="admin-muted">Administradores cadastrados: {data.admins}</p>
+      </details>
     </>}
   </main>;
 }

@@ -49,7 +49,7 @@ try {
       Start-Sleep -Seconds 2
     }
   }
-  npm run seed:emulators
+  npm run seed:emulators -- --demo
   $env:NEXT_PUBLIC_FIREBASE_EMULATORS = 'true'
   Write-Host "`nOpen http://localhost:3000/entrar/  (Ctrl+C stops everything)`n"
   npm run dev

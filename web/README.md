@@ -226,6 +226,7 @@ default location); each run re-seeds the emulators first. No dependencies: a sma
 npm run e2e:account -- trainer          # or: student, admin;  add "mobile" for 390 px   (GOALS.md §29)
 npm run e2e:mensalidades                # plans, Mensalidades list, pay/estorno, lock and unlock   (GOALS.md §35)
 npm run e2e:admin-focus                 # keyboard focus after every ADM action button  (GOALS.md §29e)
+npm run e2e:dashboards                  # the trainer's "Hoje" and the ADM's "Visão geral", figures recomputed from the demo seed  (GOALS.md §37)
 npm run e2e:ficha-privacy [-- mobile]   # the exercise reference stays out of sight       (GOALS.md §33g)
 npm run e2e:fichas [-- mobile]          # fichas as cards: create, third, edit, delete, student  (GOALS.md §34)
 ```

@@ -374,6 +374,81 @@ try {
     ...session(diego, 2),
   ]);
 
+  // `--demo` (GOALS.md §37): eight weeks of training and the platform's own billing, so the two dashboards have something
+  // to draw. Off by default — the e2e scripts count payments and plans from the plain seed. Everything is fake.
+  const demo = {};
+  if (process.argv.includes("--demo")) {
+    const demoSession = (studentId, daysAgo) =>
+      ["Supino", "Remada", "Agachamento"].map((exerciseName, i) => [
+        `workoutLogs/${studentId}-${daysAgo}-${i}`,
+        {
+          trainerId,
+          studentId,
+          workoutId: "ficha-a",
+          exerciseName,
+          date: morningOf(daysAgo) + i * 4,
+          performedSetsJson: JSON.stringify([{ setNumber: 1, weight: String(30 + Math.round((60 - daysAgo) / 4)), reps: 12 }]),
+          note: null,
+        },
+      ]);
+    // Bruno stays quiet for 12+ days; Carla (two days in) has no log yet.
+    for (const [studentId, daysAgoList] of [[ana, [15, 17, 19, 22, 24, 26, 29, 31, 33, 36, 38, 40, 43, 45, 47, 50]], [bruno, [14, 19, 26, 33, 40, 47]], [diego, [9, 16, 30, 44]]]) {
+      for (const daysAgo of daysAgoList) Object.assign(demo, Object.fromEntries(demoSession(studentId, daysAgo)));
+    }
+
+    // The platform side: plan "Plano Base" (R$ 120, 5 alunos included, R$ 10 each extra, 14 days of trial).
+    const BASE = 12000;
+    const terms = { monthlyBaseCents: BASE, includedStudentSeats: 5, extraStudentMonthlyCents: 1000, maxActiveInviteCodes: 10, trialDurationDays: 14, snapshotVersion: 1, templateId: "plano-base", templateVersion: 1, planName: "Plano Base" };
+    const subscription = (uid, mode, trialStartedAt, trialEndsAt) => [
+      `platformSubscriptions/${uid}`,
+      { trainerUid: uid, mode, terms, overrides: {}, chargeDuringTrial: false, effectiveAt: morningOf(75), trialStartedAt, trialEndsAt, currentInvoiceId: null, updatedAt: morningOf(2) },
+    ];
+    const billing = (uid, status, daysAhead) => {
+      const key = `users/${uid}`;
+      demo[key] = { ...documents[key], platformBillingStatus: status, platformBillingUntil: morningOf(-daysAhead) };
+    };
+    billing(trainerId, "current", 18); // em dia
+    billing(quietTrainerId, "trial", 3); // teste, termina em 3 dias
+    billing(awayTrainerId, "current", -6); // atrasado há 6 dias
+    billing(neverTrainerId, "pending", 0); // aguardando o primeiro pagamento
+    for (const [path, data] of [
+      subscription(trainerId, "paid", null, null),
+      subscription(quietTrainerId, "trial", morningOf(11), morningOf(-3)),
+      subscription(awayTrainerId, "paid", null, null),
+      subscription(neverTrainerId, "paid", null, null),
+    ]) demo[path] = data;
+
+    const monthDay = Number(today.slice(8));
+    const thisMonthDaysAgo = Math.min(3, monthDay - 1); // always inside the current month
+    const payment = (id, uid, daysAgo, amountCents, { voided = false } = {}) => {
+      const paidAt = morningOf(daysAgo);
+      const newUntil = morningOf(daysAgo - 30);
+      demo[`platformPayments/${id}`] = {
+        trainerUid: uid, paidAt, paidBy: adminId, amountCents, paymentReference: null, newUntil, paidThroughDate: localDate(newUntil),
+        previousUntil: null, previousStatus: "current", previousMode: "paid", planName: "Plano Base", templateId: "plano-base", templateVersion: 1, snapshotVersion: 1,
+        voidedAt: voided ? paidAt + 3_600_000 : null, voidedBy: voided ? adminId : null, lastAuditId: null,
+      };
+    };
+    payment("demo-p1", trainerId, 160, 12000);
+    payment("demo-p2", trainerId, 130, 12000);
+    payment("demo-p3", trainerId, 100, 13000);
+    payment("demo-p4", trainerId, 70, 13000);
+    payment("demo-p5", trainerId, 40, 14000);
+    payment("demo-p6", trainerId, thisMonthDaysAgo, 14000);
+    payment("demo-p7", awayTrainerId, 100, 12000);
+    payment("demo-p8", awayTrainerId, 70, 12000);
+    payment("demo-p9", awayTrainerId, thisMonthDaysAgo, 12000, { voided: true }); // an estorno: never counts
+
+    const audit = (id, action, targetUid, daysAgo, note) => {
+      demo[`adminAudit/${id}`] = { at: morningOf(daysAgo), adminUid: adminId, actorUid: adminId, actorRole: "ADM", action, targetUid, note };
+    };
+    audit("demo-a1", "payment.record", trainerId, thisMonthDaysAgo, "Pagamento de R$ 140,00");
+    audit("demo-a2", "subscription.assign", quietTrainerId, 11, "Plano Base com teste de 14 dias");
+    audit("demo-a3", "trainer.suspend", suspendedTrainerId, 2, "Conta suspensa para teste");
+    audit("demo-a4", "trainer.create", neverTrainerId, 5, "");
+    demo["trainerRequests/demo-request"] = { email: "pedido@teste.dev", createdAt: morningOf(1) };
+  }
+
   // GOALS.md §33: the exercise reference lives in one gated document; without it the editor reads "no muscles".
   let reference = {};
   try {
@@ -384,7 +459,7 @@ try {
 
   await env.withSecurityRulesDisabled(async (context) => {
     const db = context.firestore();
-    await Promise.all(Object.entries({ ...documents, ...logs, ...reference }).map(([path, data]) => db.doc(path).set(data)));
+    await Promise.all(Object.entries({ ...documents, ...logs, ...demo, ...reference }).map(([path, data]) => db.doc(path).set(data)));
   });
 
   // GOALS.md §38b: `--heavy` adds a personal with a year of data, for `npm run e2e:read-budget`.

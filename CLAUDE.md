@@ -373,6 +373,9 @@ Rules for every new query in `web/src/data/`:
   (`firebase deploy --only firestore:indexes`) **before** the site that uses it.
 - A second local bench can run beside the first: `EMULATOR_PORT_SHIFT` (scripts, `E2E_BASE`) and
   `NEXT_PUBLIC_EMULATOR_PORT_SHIFT` (site) move every emulator port by the same amount.
+- **The tally is a lower bound.** It counts only the documents queries return. Reads billed for Rules lookups
+  (`get()`/`exists()`), writes, network egress and the App Check / reCAPTCHA Enterprise quota are not measured yet and
+  no production usage was read (GOALS.md §39) — do not quote the budget's numbers as the project's cost.
 
 Checks, from `web/`: `npm test`, `npm run lint`, `npx tsc --noEmit` (run `npx next typegen` first
 on a fresh checkout), `npm run build`, and `npm run test:rules` (emulators, Java 21).

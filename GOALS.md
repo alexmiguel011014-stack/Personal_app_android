@@ -7733,6 +7733,8 @@ Suggested: opus · xhigh — it changes how every page loads data and protects t
       | aluno — later pages | ≈ 995 each | 0 (Conta: 3) |
       | modelled busy day (20 alunos) | ≈ 365,000 (730 %) | 13,655 (27 %) |
 
+      ⚠ **These numbers count only the documents the queries returned.** Reads billed for Security Rules lookups, writes, network egress and the App Check / reCAPTCHA Enterprise quota were not measured, and no production usage was read — **the real cost may be higher**. §39 is the follow-up research.
+
       **D15's targets were not met, and its day target contradicted its own per-page limits** (20 alunos × a first page of up to 300 reads is already 6,000 > 5,000): at this activity (20 alunos × 3 sessions a week × 6 exercises) the 63-day window alone is 3,240 log documents. The ceilings in `e2e/read-budget.mjs` are now the measured values with headroom (first trainer page 5,000, modelled day 15,000). Capacity: about **3 personais this busy per project**; one with 5 alunos costs a fraction. To go lower the choices are a shorter window (35 days — §37's eight weekly bars would then need their own read) or per-session summary documents: an owner/§37 decision, not needed at today's two personais.
 
       Found while verifying: `e2e:fichas` caught a regression of this change (a duplicated React `key` between two sibling sections of the aluno page left the previous aluno's fichas on screen); fixed. `EMULATOR_PORT_SHIFT` / `E2E_BASE` / `NEXT_PUBLIC_EMULATOR_PORT_SHIFT` let a second local bench run beside the first (the secondary Auth instance of `data/adminCreate.ts` had port 9099 hard-coded and now follows the shift).
@@ -7845,6 +7847,114 @@ Suggested: haiku · low — describes what exists; last.
 - [ ] **(manual — owner)** Review the Rules diff (previous → vN) and publish it **before** PR 3's site deploys; never automatic; **no Blaze**.
 - [ ] **(manual — owner)** With controlled test accounts in production (one personal, one aluno): send the anamnese, answer it, open and print the report; log a session, send feedback, comment, open the WhatsApp links; check the Firestore console's **Usage** tab the next day against D15. No real health data.
 - [ ] **Done when (the whole section):** an aluno opens the site, answers the anamnese in about five minutes by tapping, sees which treino is next with its carga, descanso and cues, logs it with last time's numbers and a rest timer without losing anything to a reload, and says how it went; the personal sends the anamnese with one click, reads a clear report with the warnings first and can print it, sees each session in Registros and on Hoje (pain first), answers, and the aluno sees the answer — all on the Spark plan, with each page inside the measured read budget, no new cost, the phone's data unchanged, and every new read and write limited to that aluno and their personal.
+
+## 39. Research + Feature — Find out what the site really costs on Firebase, then cut the reads that matter (web)
+(2026-10-13, at the owner's request right after §38b; builds on §38b)
+
+```mermaid
+flowchart TD
+  A[39a Cost research: every billed meter, real numbers] --> B[39b Decision: which cuts, in what order]
+  B --> C[39c Summary document per aluno]
+  B --> D[39d Cheap trims]
+  C --> E[39e Verification]
+  D --> E
+  E --> F[39f Docs + owner steps]
+```
+
+Suggested: sonnet · high — the research needs care and honesty about what is unknown; only 39c (a client-written aggregate with new Rules) deserves opus · high.
+
+> ⚠ **WARNING — the cost research behind this section is a first, shallow pass, and the real spend may be higher.** It was a quick estimate, not an audit. The owner said so on 2026-10-13 ("parece muito trivial essa pesquisa… talvez o gasto seja mais") and is right. **Do not treat any figure in §38b or in the conversation that produced this section as the project's cost.** Improving it is the first job of this section (39a), before any cut is built.
+
+**The request (owner, Portuguese):** *"guarda esses itens como goals, e deixa um aviso de melhorar essas pesquisa de gastos, parece muito trivial essa pesquisa que vc fez agora, talvez o gasto seja mais."* Context: *"Esta gastando muito, precisamos cortar o maximo possivel"*; and, earlier, that the Firebase limits will not be a long-term problem because a paid plan will cover the costs, but the product has to be good and working before anyone is charged.
+
+**Goal type: Research, feeding a Feature.** The research (39a) comes first because it may change which cut is worth building; the feature (39c–39d) is only a draft until the owner picks in 39b.
+
+### What the first pass did — and did not — look at
+
+Looked at: the documents returned by every `getDoc`/`getDocs`/listener on the local emulator, for one synthetic "heavy year" (20 alunos, each training 3×/week with 6 exercises, ~20,000 documents), production build; plus a modelled day (the personal opens the site twice and visits 14 pages, each aluno opens it once and visits 3).
+
+**Not measured, not researched, or unverified:**
+
+| # | Gap | Why it may matter |
+|---|---|---|
+| 1 | **Reads billed for Security Rules lookups** — `get()`/`exists()`/`getAfter()` in `firestore.rules` (e.g. `isOwningTrainer` reads `users/{uid}`; `studentIsLinkedToTrainer` reads more) are billed as document reads, with identical lookups inside one request cached. `data/firestoreRead.ts` does not see them. | Every query and every write may carry 1–3 extra reads, so the real total is higher than the table in §38b — by an unknown factor. |
+| 2 | **Writes and deletes** per user action (a session is one write per exercise; opening "Hoje" also writes `trainerStats`/`trainerActivity`, may create charges in a transaction; plus the Rules lookups on every write). Spark gives 20,000 writes and 20,000 deletes a day per project. | A second quota and a second meter, never counted. |
+| 3 | **Network egress** (Spark: 10 GiB a month). Bytes per page were not measured; the old all-time load moved several MB per page. | A third meter. |
+| 4 | **App Check with reCAPTCHA Enterprise** — `data/firebase.ts` uses `ReCaptchaEnterpriseProvider` in production, so each visit exchanges a token (and refreshes it while a tab stays open). reCAPTCHA Enterprise has its own free quota and then bills per assessment (unverified). | Could be the first real bill, and it is outside Firestore. |
+| 5 | **Listener billing** (reconnects; the 30-minute rule; offline persistence), SDK retries, and the dev-versus-production double run of effects. | The measurements used a production build for that reason, but listeners were only counted by their change events. |
+| 6 | **No real traffic was read.** The visit pattern (two personal visits and one per aluno a day) is a guess; the Firebase console's usage was not consulted. | The honest answer to "how much do we spend" is in the console, not in a model. |
+| 7 | **Prices were not verified.** The Google Cloud and Firebase pricing pages did not load in the research tool; one search hinted at about US$ 0.05 per 100,000 reads (an Enterprise-edition table, unconfirmed), and whether the free quota also applies on Blaze was not confirmed. | Any money figure quoted so far is a guess. |
+| 8 | The "heavy year" is one shape. Real rosters differ (fewer sessions, fewer exercises, more drafts). | The per-aluno estimates (≈ 180 reads per aluno on the first screen, ≈ 50–210 for an aluno's entry) are extrapolations. |
+
+### Decisions (S = the owner said it; D = this plan decided it)
+
+| # | Decision |
+|---|---|
+| S1 | Save the cost-cutting ideas as goals and warn that the research is too shallow. |
+| S2 | The owner wants the reads cut as far as is sensible; the paid plan later does not make waste acceptable. |
+| D1 | Research first (39a). If it shows Rules lookups, writes or App Check dominate, the cuts below are re-ranked — 39c only attacks the logs. |
+| D2 | The summary document is **web-only**: the Android/iOS apps are being rebuilt (CLAUDE.md status note), so nothing the phone reads or writes is touched. |
+| D3 | No Cloud Functions (not on Spark), so the summary is written by the client that saves the session, with a "recompute" safety net instead of trusting it blindly. |
+
+**Out of scope:** the product features of §38c–§38i (they are the other half of what the owner wants right now); moving to Blaze (an owner decision, not a cut); any change to what the Android app reads or writes.
+
+### 39a. Cost research — every billed meter, with real numbers (research)
+
+Suggested: sonnet · high — breadth over depth; the deliverable is a document, not code.
+
+- [ ] **Question, stated first:** what does one real day of this site cost, meter by meter — Firestore reads (documents returned, the one-read minimum per query, Rules lookups), writes, deletes, network egress, App Check / reCAPTCHA Enterprise — today and at 5, 10 and 20 alunos per personal, against Spark's quotas and Blaze's prices? Done when: the question and the meter list (the table above, corrected) open the deliverable.
+- [ ] **Real numbers, read-only (manual — owner):** from the Firebase console (Firestore → Usage) and Google Cloud Monitoring (`firestore.googleapis.com/document/read_count`, `write_count`, `delete_count`, network egress, and the reCAPTCHA Enterprise / App Check usage page): daily totals for the last 7–30 days, as screenshots or CSV. No credentials, no user data. Done when they are pasted into the deliverable.
+- [ ] **Rules-lookup reads:** list, per `match` block in `firestore.rules`, the access calls each query and write triggers (which of `isOwningTrainer`, `studentIsLinkedToTrainer`, `hasVerifiedEmail`, … and which are cached within one request); check Firebase's documentation of how Rules reads are billed; extend the read tally or the Rules tests so the extra reads per page and per write are a number. Done when it is a measured number, not a guess.
+- [ ] **Writes and deletes per action:** a table from the code, checked on the emulator, of what each user action writes — log a session, open "Hoje" (`trackActivity`, `writeTrainerStats`, `ensureMonthlyCharges`), book a slot, mark a payment, change an avatar — including the Rules lookups on those writes.
+- [ ] **Egress:** bytes transferred per page on the heavy fixture (the browser's network events, `encodedDataLength`), before and after §38b.
+- [ ] **App Check / reCAPTCHA Enterprise:** how many assessments one visit creates (token lifetime, refresh while a tab stays open), the free quota and the price.
+- [ ] **Prices (manual — owner pastes, or the console's pricing calculator):** per-100,000 reads, writes and deletes and per-GiB egress for the project's Firestore location (the console shows it), the Blaze free quota, and reCAPTCHA Enterprise pricing — each with its URL and the date it was read.
+- [ ] **Cost model v2:** `docs/firebase-cost-model.md` (and a small script if useful) that takes alunos per personal and visits per day and prints reads, writes, egress and assessments per day and the money — calibrated against the real numbers; it replaces the table in §38b.
+- [ ] **Deliverable and recommendation:** the same file states the answer, ranks the real cost drivers, says which of 39c/39d to build (or something the research found), cites its sources and names what is still unknown. Done when: it exists and the ranking is justified by measured or quoted numbers.
+
+### 39b. Decision (after 39a)
+
+Suggested: haiku · low — a short confirmation, no code.
+
+- [ ] **(manual — owner)** Read the deliverable and choose which cuts to build and in what order. Unanswered ⇒ the ranking in the deliverable.
+
+### 39c. A summary document per aluno — the biggest cut for the personal's screens (feature)
+
+Suggested: opus · high — a client-written aggregate that dashboards trust, with new Rules; drift is the risk.
+
+Design rationale: the personal's first screen downloads every exercise document of the last 63 days — about 180 reads per aluno at 3 sessions a week × 6 exercises — only to count trained days. One small document per aluno holds what the dashboards need, so that screen reads about one document per aluno. Expected: from ≈ 3,600 to a few dozen on the heavy year (≈ −95 % of that screen's log reads). Out of scope: Android/iOS; changing how sessions themselves are stored.
+
+- [ ] **Design, written down before code:** `studentStats/{studentId}` (web-only) = `{ studentId, trainerId, trainedDays: ["YYYY-MM-DD", …] (the last ≈ 70 local days), lastTrainedDay, updatedAt }`, under 2 KB; who writes (the aluno's client, in the same batch as the session), who reads (the aluno and the owning trainer); what happens when it drifts — a "Recalcular" that rebuilds it from the aluno's logs, run on demand and when the stats are older than a log the personal can see; how legacy alunos get one (backfill below). Done when the design is in this section with its failure cases.
+- [ ] **Pure `domain/studentStats.ts` with tests:** `applySession`, `removeSession`, `recompute(logs, today)`, and `trainedDaysOf(stats)` shaped like today's `trainedDays` so `dashboardFigures` and `trainerKpis` do not change. Test: the figures from the stats equal the figures from the full logs — the same kind of proof as `readWindows.test.ts` — including a session corrected or deleted, a day at midnight in São Paulo, and an aluno with no stats yet.
+- [ ] **Data layer:** converters; `logSession`/`updateSession`/`deleteSession` write the stats in the same batch (a session stays all-or-nothing); `loadTrainerSnapshot` reads `studentStats` instead of the 63-day logs; logs are read on demand only (Registros window, an aluno's page, "Ver histórico completo").
+- [ ] **Rules (the next free version — never folded into an unpublished set without the owner):** create and update only by the aluno for their own id, `trainerId` equal to their `users.trainerId`, keys `hasOnly`, array length and day format checked; read by the aluno and the owning trainer; no delete. Each denial paired with a positive case and seen failing against the previous version (CLAUDE.md "Security rules"); mind the access-call limits (§36 fact 5) and that lookups are billed (39a).
+- [ ] **Backfill and drift:** the personal's first load after release builds the missing stats from each aluno's logs (bounded, idempotent, create-if-absent), plus the "Recalcular" action; fixtures shaped like production (the §35 lesson).
+- [ ] **Budget:** tighten the ceilings in `e2e/read-budget.mjs` (the first trainer page should fall well under 1,000 on the heavy year) and record before and after next to §38b's table.
+
+### 39d. Cheap trims (feature)
+
+Suggested: sonnet · medium — small changes with a clear measure.
+
+- [ ] **Aluno side:** measurements read for the last 180 days and logs for 30 (the rest behind "Ver histórico completo"); expected ≈ −25 % on an aluno's first page.
+- [ ] **Month start:** after creating the month's charges, add the created ones to the snapshot instead of reading everything again (≈ 700 reads once a month on the heavy year). Skip if §36f removes the charge generator first.
+- [ ] **If 39c is dropped:** shorten `TRAINER_LOG_WINDOW_DAYS` to 35 and give §37's eight-bar chart its own read — only then.
+- [ ] **Recorded as "not doing":** a persistent browser cache for repeat visits — it only helps a return within about 30 minutes and adds complexity; do not re-propose it without new evidence.
+
+### 39e. Verification
+
+Suggested: sonnet · medium — run, compare, record.
+
+- [ ] `npm test`, `npm run lint`, `npx tsc --noEmit`, `npm run build`, `npm run check:leak`, `npm run check:rules-version` green; `npm run test:rules` (Java 21) green, plus the run against the previous Rules version showing the new denials fail there.
+- [ ] `e2e:read-budget` passes with the new ceilings; `e2e:dashboards`, `e2e:fichas`, `e2e:account`, `e2e:mensalidades` and `e2e:admin-focus` pass **unmodified**.
+- [ ] A test or script proves the dashboards' figures from the stats equal the all-time figures on the heavy year.
+
+### 39f. Docs and owner steps
+
+Suggested: haiku · low — describes what exists; last.
+
+- [ ] `CLAUDE.md` "The free plan's read quota" and `web/README.md`: what 39a found (Rules lookups are billed, the writes and egress numbers), the summary document and its "Recalcular"; `GOALS.md`: tick items with dates and record deviations in place.
+- [ ] **(manual — owner)** Review the Rules diff (previous → new) and publish it **before** the site that needs it; deploy any new index first; never automatic.
+- [ ] **Done when (the whole section):** the cost model exists with real numbers and the money per day; the personal's first screen reads a small fraction of what it did after §38b; every dashboard figure equals its all-time value; all of it on Spark, no Cloud Function, and the owner knows what one session costs.
 
 ## Suggested build order (what blocks what) — revised 2026-08-18
 

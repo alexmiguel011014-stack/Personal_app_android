@@ -262,7 +262,7 @@ try {
 
     // Ana's treinos predate fichas (no `ficha` map, GOALS.md §34): the active one is her logs' treino and reads as the
     // one virtual card "Ficha atual"; the inactive one she must not see is hidden from the list and never counted.
-    ["workouts/ficha-a", ficha(ana, "Ficha A", true)],
+    ["workouts/ficha-a", ficha(ana, "Ficha A", true, true)],
     ["workouts/ficha-b", ficha(ana, "Ficha B — em revisão", false)],
 
     // Bruno has the most the site keeps — two real fichas of two treinos each (§34): saving a third deletes the older.
@@ -279,6 +279,58 @@ try {
     // with a height — and Bruno's self-assessment.
     ["biometrics/ana-1", { trainerId, studentId: ana, weight: 74.2, height: 1.65, bodyFat: 24.5, date: morningOf(59) }],
     ["biometrics/ana-2", { trainerId, studentId: ana, weight: 73.1, height: 0, bodyFat: 0, date: morningOf(20) }],
+    [
+      "assessments/ana-anamnese-1",
+      {
+        trainerId,
+        studentId: ana,
+        submittedAt: morningOf(8),
+        parQAnswersJson: JSON.stringify({
+          heart_condition: false,
+          chest_pain_activity: false,
+          chest_pain_rest: false,
+          dizziness: false,
+          bone_joint: true,
+          medication: false,
+          other_reason: false,
+        }),
+        goal: "Hipertrofia",
+        experienceLevel: "Interm.",
+        trainingDays: ["Segunda", "Quarta", "Sexta"],
+        anamnesis: {
+          version: 1,
+          answers: {
+            conditions: ["Nenhuma"],
+            medication: false,
+            surgery: false,
+            pain: true,
+            pain_regions: ["Joelho"],
+            pain_worse: true,
+            pregnancy: false,
+            smoking: "Não",
+            alcohol: "Às vezes",
+            sleep_hours: "5 a 6 h",
+            sleep_quality: "Regular",
+            stress: "Médio",
+            work: "Sentado",
+            experience: "6 meses a 2 anos",
+            activities: ["Caminhada"],
+            days: ["Segunda", "Quarta", "Sexta"],
+            session_minutes: "60 min",
+            place: "Academia",
+            goal: "Hipertrofia",
+            horizon: "6 meses",
+            dislikes: "Agachamento búlgaro",
+            notes: "Dor no joelho direito ao descer escada.",
+            birth_year: 1990,
+            weight_kg: 73.1,
+            height_cm: 165,
+          },
+        },
+        consentVersion: "anamnese-v1",
+        consentAt: morningOf(8),
+      },
+    ],
     [
       "assessments/bruno-1",
       {
@@ -302,17 +354,25 @@ try {
   ]);
 
   // As SqlDelightTrainerRepository saves a ficha: status and assignedAt follow isActive.
-  function ficha(studentId, name, isActive) {
+  function ficha(studentId, name, isActive, withDetails = false) {
     return {
       trainerId,
       studentId,
       name,
       isActive,
-      exercisesJson: JSON.stringify([
-        { name: "Supino", sets: 3, reps: "12" },
-        { name: "Remada", sets: 3, reps: "12" },
-        { name: "Agachamento", sets: 4, reps: "10", weight: "40kg" },
-      ]),
+      exercisesJson: JSON.stringify(
+        withDetails
+          ? [
+              { name: "Supino", sets: 3, reps: "12", weight: "30kg", restSeconds: 90, notes: "Desça em 3 segundos e empurre forte. Vídeo: https://youtu.be/exemplo." },
+              { name: "Remada", sets: 3, reps: "12", restSeconds: 75 },
+              { name: "Agachamento", sets: 4, reps: "10", weight: "40kg" },
+            ]
+          : [
+              { name: "Supino", sets: 3, reps: "12" },
+              { name: "Remada", sets: 3, reps: "12" },
+              { name: "Agachamento", sets: 4, reps: "10", weight: "40kg" },
+            ],
+      ),
       createdAt: morningOf(30),
       status: isActive ? "assigned" : "draft",
       assignedAt: isActive ? morningOf(30) : null,

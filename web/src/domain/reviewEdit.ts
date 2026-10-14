@@ -1,4 +1,5 @@
 import type { Exercise } from "./exercise";
+import { detailErrors, tidiedDetails } from "./exerciseDetails";
 import { isKotlinBlank, kotlinTrim } from "./kotlin";
 
 // GOALS.md §25e — editing a treino in the review screen before it is saved. The pasted text is read
@@ -31,15 +32,18 @@ export function exerciseErrors(exercises: readonly Exercise[]): string[] {
   const errors: string[] = [];
   exercises.forEach((exercise, index) => {
     if (isKotlinBlank(exercise.name)) errors.push(`o exercício ${index + 1} está sem nome`);
+    for (const problem of detailErrors(exercise)) errors.push(`o exercício ${index + 1}: ${problem}`);
   });
   return errors;
 }
 
-/** The exercises as they are stored: names and reps trimmed. */
+/** The exercises as they are stored: names and reps trimmed; a blank carga or observação stored as "not set" (§38d). */
 export function tidied(exercises: readonly Exercise[]): Exercise[] {
-  return exercises.map((exercise) => ({
-    ...exercise,
-    name: kotlinTrim(exercise.name),
-    reps: kotlinTrim(exercise.reps),
-  }));
+  return exercises.map((exercise) =>
+    tidiedDetails({
+      ...exercise,
+      name: kotlinTrim(exercise.name),
+      reps: kotlinTrim(exercise.reps),
+    }),
+  );
 }

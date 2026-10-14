@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   PAR_Q,
+  completeAnswers,
   decodeParQAnswers,
-  emptyAnswers,
   encodeParQAnswers,
   flaggedQuestions,
+  unansweredCount,
   type Assessment,
 } from "./assessments";
 
@@ -18,6 +19,9 @@ function assessment(parQAnswers: Record<string, boolean>): Assessment {
     goal: "",
     experienceLevel: "",
     trainingDays: [],
+    anamnesis: null,
+    consentVersion: null,
+    consentAt: null,
   };
 }
 
@@ -44,11 +48,31 @@ describe("flaggedQuestions", () => {
   });
 });
 
-describe("emptyAnswers / encodeParQAnswers — what the phone writes", () => {
-  it("starts with every question answered 'Não'", () => {
-    expect(Object.values(emptyAnswers())).toEqual([false, false, false, false, false, false, false]);
+describe("a PAR-Q+ being filled in (GOALS.md §38c, D10) — nothing is answered until it is tapped", () => {
+  const allNo = Object.fromEntries(PAR_Q.map((question) => [question.key, false]));
+
+  it("counts the questions still unanswered", () => {
+    expect(unansweredCount({})).toBe(7);
+    expect(unansweredCount({ heart_condition: false, medication: true })).toBe(5);
+    expect(unansweredCount(allNo)).toBe(0);
   });
 
+  it("gives no answers while any question is unanswered, so the form cannot be sent", () => {
+    expect(completeAnswers({})).toBeNull();
+    expect(completeAnswers({ ...allNo, dizziness: undefined })).toBeNull();
+  });
+
+  it("stores exactly what the phone stores for the same answers: every question, in order, 'sim' as true", () => {
+    expect(completeAnswers(allNo)).toEqual(allNo);
+    const mixed = { ...allNo, bone_joint: true, medication: true };
+    const stored = completeAnswers(mixed);
+    expect(stored).toEqual(mixed);
+    expect(encodeParQAnswers(stored!)).toBe(encodeParQAnswers(mixed));
+    expect(Object.keys(stored!)).toEqual(PAR_Q.map((question) => question.key));
+  });
+});
+
+describe("encodeParQAnswers — what the phone writes", () => {
   it("writes every question, in the questionnaire's order, and nothing else", () => {
     const json = encodeParQAnswers({ medication: true, heart_condition: false, stray: true });
     expect(Object.keys(JSON.parse(json))).toEqual(PAR_Q.map((question) => question.key));

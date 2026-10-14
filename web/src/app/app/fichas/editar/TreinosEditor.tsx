@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import type { Exercise } from "../../../../domain/exercise";
+import { hasDetails, notesError, parseRestText, weightError } from "../../../../domain/exerciseDetails";
 import { parseSetsText, renamedExercise } from "../../../../domain/reviewEdit";
 import { EDITOR_COPY } from "../../../../domain/editorCopy";
 import { catalogActivation, lookupExercise, offeredSuggestions, type ExerciseCatalog } from "../../../../domain/exerciseCatalog";
@@ -54,6 +55,13 @@ function ExerciseRow({
   // allowed) and the committed value otherwise; only a valid number reaches the exercise.
   const [setsDraft, setSetsDraft] = useState<string | null>(null);
   const setsText = setsDraft ?? String(exercise.sets);
+  // Same idea for the rest: what is being typed is shown; only a valid value (or a blank) reaches the exercise.
+  const [restDraft, setRestDraft] = useState<string | null>(null);
+  const restText = restDraft ?? (exercise.restSeconds === null ? "" : String(exercise.restSeconds));
+  const restParsed = restDraft === null ? null : parseRestText(restDraft);
+  const restProblem = restParsed !== null && "error" in restParsed ? restParsed.error : null;
+  const weightProblem = exercise.weight === null ? null : weightError(exercise.weight);
+  const notesProblem = exercise.notes === null ? null : notesError(exercise.notes);
   const where = `${treino || "treino"}, exercício ${index + 1}`;
   const match = typeof catalog === "object" ? lookupExercise(catalog, exercise.name) : null;
   const tableActivation = match ? catalogActivation(match.entry) : null;
@@ -122,6 +130,51 @@ function ExerciseRow({
       <button type="button" aria-label={`Remover ${exercise.name || "exercício"} (${where})`} onClick={onRemove}>
         Remover
       </button>
+      <details className="review-details">
+        <summary>Detalhes{hasDetails(exercise) ? " (preenchidos)" : ""}</summary>
+        <div className="review-details-fields">
+          <label>
+            Carga
+            <input
+              aria-label={`Carga (${where})`}
+              placeholder="Ex: 40kg"
+              value={exercise.weight ?? ""}
+              aria-invalid={weightProblem !== null}
+              onChange={(e) => onChange({ ...exercise, weight: e.target.value === "" ? null : e.target.value })}
+            />
+            {weightProblem !== null && <small role="alert">{weightProblem}</small>}
+          </label>
+          <label>
+            Descanso (s)
+            <input
+              aria-label={`Descanso em segundos (${where})`}
+              inputMode="numeric"
+              placeholder="Ex: 90"
+              value={restText}
+              aria-invalid={restProblem !== null}
+              onChange={(e) => {
+                setRestDraft(e.target.value);
+                const parsed = parseRestText(e.target.value);
+                if ("seconds" in parsed) onChange({ ...exercise, restSeconds: parsed.seconds });
+              }}
+              onBlur={() => setRestDraft(null)}
+            />
+            {restProblem !== null && <small role="alert">{restProblem}</small>}
+          </label>
+          <label className="wide">
+            Observação
+            <textarea
+              aria-label={`Observação (${where})`}
+              rows={2}
+              placeholder="Ex: Desça devagar. Vídeo: https://…"
+              value={exercise.notes ?? ""}
+              aria-invalid={notesProblem !== null}
+              onChange={(e) => onChange({ ...exercise, notes: e.target.value === "" ? null : e.target.value })}
+            />
+            <small>{notesProblem ?? "Se tiver um link (https://…), o aluno vê “Ver vídeo”."}</small>
+          </label>
+        </div>
+      </details>
     </li>
   );
 }

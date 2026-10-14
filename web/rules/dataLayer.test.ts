@@ -56,9 +56,10 @@ import {
   logOwnBiometric,
 } from "../src/data/biometrics";
 import { loadStudentAssessments, loadTrainerAssessments, submitAssessment } from "../src/data/assessments";
-import { loadMyLogs, logSession } from "../src/data/workoutLogs";
+import { deleteSession, loadMyLogs, logSession, updateSession } from "../src/data/workoutLogs";
+import { groupSessions } from "../src/domain/sessions";
 import { PAR_Q } from "../src/domain/assessments";
-import { bookSlot, loadSchedules, removeBooking } from "../src/data/schedules";
+import { bookSlot, loadMySchedules, loadSchedules, removeBooking } from "../src/data/schedules";
 import { adjustCharge, createPlan, markPaid, setPlanActive, undoPayment, updatePlan } from "../src/data/billing";
 import { countLinkedStudents, loadTrainers, setAccessStatus } from "../src/data/admin";
 import { loadActivity } from "../src/data/admin";
@@ -895,6 +896,25 @@ describe("the agenda (GOALS.md §23g)", () => {
     await removeBooking(trainer, booked.id);
     expect(await loadSchedules(trainer, "trainerA")).toEqual([]);
   });
+
+  it("the aluno reads their own appointments with one query, and not another aluno's (GOALS.md §38f)", async () => {
+    await seed({
+      "users/trainerA": { role: "TRAINER" },
+      "users/s1": { role: "STUDENT", trainerId: "trainerA", inviteCode: "X", name: "Ana", createdAt: 1 },
+      "users/s2": { role: "STUDENT", trainerId: "trainerA", inviteCode: "Y", name: "Bruno", createdAt: 1 },
+    });
+    const trainer = signedInAs("trainerA");
+    await bookSlot(trainer, "trainerA", "s1", "Segunda", "07h");
+    await bookSlot(trainer, "trainerA", "s1", "Quarta", "07h");
+    await bookSlot(trainer, "trainerA", "s2", "Terça", "18h");
+
+    const ana = signedInAs("s1");
+    const mine = await loadMySchedules(ana, "s1");
+    expect(mine.map((slot) => `${slot.dayOfWeek} ${slot.hour}`).sort()).toEqual(["Quarta 07h", "Segunda 07h"]);
+    await assertFails(loadMySchedules(ana, "s2"));
+    await assertFails(loadSchedules(ana, "trainerA"));
+    expect(await loadMySchedules(signedInAs("s2"), "s2")).toHaveLength(1);
+  });
 });
 
 describe("managing mensalidades (GOALS.md §23g)", () => {
@@ -974,6 +994,49 @@ describe("the student's own area (GOALS.md §23h)", () => {
     const db = signedInAs("s1");
     expect(await loadMyProfile(db, "s1")).toMatchObject({ name: "Ana Costa", trainerId: "trainerA" });
     expect((await loadMyWorkouts(db, "s1")).map((w) => w.name)).toEqual(["Ficha A", "Ficha B"]);
+  });
+
+  it("corrects and deletes their own session in one batch — and nobody else's (GOALS.md §38c, U7)", async () => {
+    await seed({ "users/trainerA": { role: "TRAINER" }, "users/s1": student(), "users/s2": student({ name: "Bia" }) });
+    const mine = signedInAs("s1");
+    const entries: [string, { setNumber: number; weight: string; reps: number }[]][] = [
+      ["Supino", [{ setNumber: 1, weight: "20", reps: 12 }]],
+      ["Remada", [{ setNumber: 1, weight: "30", reps: 10 }]],
+    ];
+    await logSession(mine, "s1", "trainerA", "w1", entries, 5_000);
+    await logSession(signedInAs("s2"), "s2", "trainerA", "w1", entries, 5_000);
+    const original = (await loadMyLogs(mine, "s1")).slice();
+    const ZONE = "America/Sao_Paulo";
+    const [session] = groupSessions(original, ZONE, "s1");
+    expect(session.logs).toHaveLength(2);
+
+    // Correct: Supino gets new sets (same document, same time), Remada is emptied (deleted), Rosca is new.
+    await updateSession(mine, "s1", "trainerA", "w1", session.logs, [
+      ["Supino", [{ setNumber: 1, weight: "22", reps: 12 }, { setNumber: 2, weight: "22", reps: 10 }]],
+      ["Rosca", [{ setNumber: 1, weight: "9", reps: 15 }]],
+    ]);
+    const after = await loadMyLogs(mine, "s1");
+    expect(after.map((l) => l.exerciseName).sort()).toEqual(["Rosca", "Supino"]);
+    const supino = after.find((l) => l.exerciseName === "Supino")!;
+    expect(supino.id).toBe(original.find((l) => l.exerciseName === "Supino")!.id);
+    expect(supino.date).toBe(original.find((l) => l.exerciseName === "Supino")!.date);
+    expect(JSON.parse(supino.performedSetsJson)).toHaveLength(2);
+    expect(after.find((l) => l.exerciseName === "Rosca")!.date).toBeGreaterThan(Math.max(...original.map((l) => l.date)));
+    // the trainer sees the corrected session, not the old one
+    const seen = (await loadTrainerSnapshot(signedInAs("trainerA"), "trainerA", T0)).logs.filter((l) => l.studentId === "s1");
+    expect(seen.map((l) => l.exerciseName).sort()).toEqual(["Rosca", "Supino"]);
+
+    // Another aluno cannot correct or delete it; the trainer cannot either (the log is the aluno's own record).
+    const [corrected] = groupSessions(after, ZONE, "s1");
+    await assertFails(updateSession(signedInAs("s2"), "s2", "trainerA", "w1", corrected.logs, [["Supino", [{ setNumber: 1, weight: "1", reps: 1 }]]]));
+    await assertFails(deleteSession(signedInAs("s2"), corrected.logs));
+    await assertFails(deleteSession(signedInAs("trainerA"), corrected.logs));
+    expect(await loadMyLogs(mine, "s1")).toHaveLength(2);
+
+    // The aluno deletes it whole; the other aluno's session is untouched.
+    await deleteSession(mine, corrected.logs);
+    expect(await loadMyLogs(mine, "s1")).toHaveLength(0);
+    expect(await loadMyLogs(signedInAs("s2"), "s2")).toHaveLength(2);
   });
 
   it("logs a session — one document per exercise, for their own trainer — which the trainer sees", async () => {

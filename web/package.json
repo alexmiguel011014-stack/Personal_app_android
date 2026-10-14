@@ -26,6 +26,10 @@
     "e2e:ficha-privacy": "node e2e/ficha-privacy.mjs",
     "e2e:fichas": "node e2e/fichas.mjs",
     "e2e:read-budget": "node e2e/read-budget.mjs",
+    "e2e:interacao": "node e2e/interacao.mjs",
+    "e2e:detalhes": "node e2e/detalhes.mjs",
+    "e2e:registro": "node e2e/registro.mjs",
+    "e2e:aluno-home": "node e2e/aluno-home.mjs",
     "test:rules": "npm --prefix ../functions run build && firebase emulators:exec --config ../firebase.json --project demo-personal-tracker --only auth,firestore,functions,storage \"vitest run --dir rules --testTimeout=30000 --no-file-parallelism\""
   },
   "dependencies": {

@@ -90,6 +90,12 @@ export function formatDate(date: string): string {
   return `${day}/${month}/${year}`;
 }
 
+/** "2026-10-08" as "08/10" — a chart's axis, a "last time" line. */
+export function formatDayMonth(date: string): string {
+  const [, month, day] = date.split("-");
+  return `${day}/${month}`;
+}
+
 const timeFormatters = new Map<string, Intl.DateTimeFormat>();
 
 /** The instant `ms` as "30/09/2026 22:30" in `timeZone` — the phone's formatDateTime. */

@@ -230,6 +230,10 @@ npm run e2e:dashboards                  # the trainer's "Hoje" and the ADM's "Vi
 npm run e2e:ficha-privacy [-- mobile]   # the exercise reference stays out of sight       (GOALS.md §33g)
 npm run e2e:fichas [-- mobile]          # fichas as cards: create, third, edit, delete, student  (GOALS.md §34)
 npm run e2e:read-budget                 # Firestore reads per page on a year of data, against the Spark quota  (GOALS.md §38b)
+npm run e2e:interacao                   # the anamnese end to end (send, fill on a phone, report, print), log draft, correct/delete a session  (GOALS.md §38c, §38g)
+npm run e2e:detalhes                    # carga, descanso and observação from the editor to the aluno's screens  (GOALS.md §38d)
+npm run e2e:registro                    # the log screen: compact rows, "Última vez", repeat, rest timer, summary and records  (GOALS.md §38e)
+npm run e2e:aluno-home                  # próximo treino, esta semana, meus horários, the charts in Evolução  (GOALS.md §38f)
 ```
 
 `e2e:read-budget` reseeds with `--heavy` (a personal with 20 alunos and ~20,000 documents) and wants a **production

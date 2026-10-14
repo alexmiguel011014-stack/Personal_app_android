@@ -1,7 +1,13 @@
+import type { AnamnesisRecord } from "./anamnesis";
+
 // GOALS.md §23g: a PAR-Q+ self-assessment — Firestore `assessments/{id}`, mirroring AssessmentEntity
 // and FirestoreMappers. Written by the student (§23h), append-only, read by their trainer. Goal,
 // level and training days are a snapshot of the student's answers when they sent it, not a live
 // copy of the profile.
+//
+// GOALS.md §38g: the web grew it into an anamnese — the same document, with the PAR-Q+ answers where they always
+// were and the rest in one web-only map field (`anamnesis`, see domain/anamnesis.ts) plus the consent that came with
+// it. A document the phone wrote, or a plain PAR-Q+, has none of those and reads as before.
 
 export interface ParQQuestion {
   key: string;
@@ -36,6 +42,12 @@ export interface Assessment {
   goal: string;
   experienceLevel: string;
   trainingDays: string[];
+  /** GOALS.md §38g: null on a plain PAR-Q+ (the phone's, or one sent before the anamnese existed). */
+  anamnesis: AnamnesisRecord | null;
+  /** Which wording of the consent the aluno agreed to ("anamnese-v1"); null without an anamnese. */
+  consentVersion: string | null;
+  /** Epoch ms of the server time they agreed; null without an anamnese. */
+  consentAt: number | null;
 }
 
 /** The questions answered "sim" — AssessmentEntity.flaggedQuestions. */
@@ -43,9 +55,22 @@ export function flaggedQuestions(assessment: Assessment): ParQQuestion[] {
   return PAR_Q.filter((question) => assessment.parQAnswers[question.key] === true);
 }
 
-/** Every question answered "Não" — how the phone's form starts. */
-export function emptyAnswers(): Record<string, boolean> {
-  return Object.fromEntries(PAR_Q.map((question) => [question.key, false]));
+/**
+ * A PAR-Q+ being filled in: a question stays unanswered until the person taps "Sim" or "Não". (The phone's form
+ * starts with every answer on "Não"; the web does not — one tap on "Enviar" would otherwise record a health screening
+ * nobody read. GOALS.md §38c, D10: a stricter-input difference, the stored shape is unchanged.)
+ */
+export type AnswerDraft = Partial<Record<string, boolean>>;
+
+/** How many of the seven questions still have no answer. */
+export function unansweredCount(draft: AnswerDraft): number {
+  return PAR_Q.filter((question) => draft[question.key] === undefined).length;
+}
+
+/** The answers as they are stored — every question, "sim" as true — or null while any is unanswered. */
+export function completeAnswers(draft: AnswerDraft): Record<string, boolean> | null {
+  if (unansweredCount(draft) > 0) return null;
+  return Object.fromEntries(PAR_Q.map((question) => [question.key, draft[question.key] === true]));
 }
 
 /** `parQAnswersJson` as the phone writes it: every question, in the questionnaire's order. */

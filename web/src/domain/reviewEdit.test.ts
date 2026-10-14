@@ -53,6 +53,27 @@ describe("exerciseErrors and tidied", () => {
     expect(exerciseErrors([supino])).toEqual([]);
   });
 
+  it("names the exercises whose details do not fit, after the exercise", () => {
+    expect(
+      exerciseErrors([
+        { ...supino, notes: "x".repeat(301) },
+        { ...supino, weight: "y".repeat(41), restSeconds: 601 },
+        { ...supino, weight: "40kg", restSeconds: 90, notes: "devagar" },
+      ]),
+    ).toEqual([
+      "o exercício 1: a observação aceita até 300 caracteres.",
+      "o exercício 2: a carga aceita até 40 caracteres.",
+      "o exercício 2: o descanso vai de 0 a 600 segundos.",
+    ]);
+  });
+
+  it("stores a blank carga or observação as not set and trims the others (GOALS.md 38d)", () => {
+    expect(tidied([{ ...supino, weight: "  ", notes: "\n", restSeconds: 0 }])).toEqual([{ ...supino, restSeconds: 0 }]);
+    expect(tidied([{ ...supino, weight: " 40kg ", notes: " devagar " }])).toEqual([
+      { ...supino, weight: "40kg", notes: "devagar" },
+    ]);
+  });
+
   it("trims names and reps for storage and leaves the rest alone", () => {
     expect(tidied([{ ...supino, name: "  Supino reto ", reps: " 10-12 " }])).toEqual([
       { ...supino, name: "Supino reto", reps: "10-12" },

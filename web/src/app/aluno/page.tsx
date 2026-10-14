@@ -1,7 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { summarizeExercise } from "../../domain/exerciseDetails";
 import { groupFichas } from "../../domain/fichas";
+import { trainedDays } from "../../domain/metrics";
+import { nextTreino } from "../../domain/nextTreino";
+import { scheduleLines } from "../../domain/schedules";
+import { weekSummary, weekSummaryText } from "../../domain/weekSummary";
+import { ExerciseNote } from "../_shared/ExerciseNote";
 import { useSession } from "../SessionProvider";
 import { useStudentData } from "./useStudentData";
 
@@ -30,7 +36,12 @@ function Home({ uid }: { uid: string }) {
     );
   }
 
-  const { profile, workouts } = data;
+  const { profile, workouts, logs, schedules, timeZone, today } = data;
+  const fichas = groupFichas(workouts);
+  // GOALS.md §38f: all three come from what is already in memory (the logs of the last 60 days and the aluno's appointments).
+  const next = nextTreino(fichas, logs);
+  const week = weekSummary(trainedDays(logs, timeZone).get(uid) ?? new Set<string>(), today);
+  const appointments = scheduleLines(schedules);
   return (
     <main>
       <h1>Minhas fichas</h1>
@@ -38,18 +49,61 @@ function Home({ uid }: { uid: string }) {
 
       {profile.pendingAssessmentRequest && profile.canSelfAssess && (
         <section>
-          <h2>Autoavaliação pendente</h2>
-          <p>Seu personal pediu que você responda uma autoavaliação rápida.</p>
+          <h2>Anamnese pendente</h2>
+          <p>Seu personal pediu sua anamnese — leva uns 5 minutos, em toques.</p>
           <p>
             <Link href="/aluno/avaliacao">Responder agora</Link>
           </p>
         </section>
       )}
 
+      {next && (
+        <section className="next-treino">
+          <h2>Próximo treino</h2>
+          <h3>{next.treino.name}</h3>
+          <p>
+            {next.ficha.name} · {next.treino.exercises.length} {next.treino.exercises.length === 1 ? "exercício" : "exercícios"}
+            {next.after !== null && next.after.id !== next.treino.id && ` · depois do ${next.after.name}`}
+          </p>
+          <Link className="button button-primary" href={`/aluno/treino?ficha=${encodeURIComponent(next.treino.id)}`}>
+            Começar
+          </Link>
+        </section>
+      )}
+
+      {workouts.length > 0 && (
+        <section className="week">
+          <h2>Esta semana</h2>
+          <ol className="week-dots">
+            {week.days.map((day) => (
+              <li key={day.date} data-state={day.state}>
+                <span className="dot" aria-hidden="true">
+                  {day.state === "done" ? "✓" : ""}
+                </span>
+                <span className="day-label">{day.label}</span>
+                <span className="visually-hidden">
+                  {day.state === "done" ? ": treinou" : day.state === "today" ? ": hoje" : day.state === "missed" ? ": não treinou" : ""}
+                </span>
+              </li>
+            ))}
+          </ol>
+          <p>{weekSummaryText(week)}</p>
+        </section>
+      )}
+
+      {appointments.length > 0 && (
+        <section className="appointments">
+          <h2>Meus horários</h2>
+          {appointments.map((line) => (
+            <p key={line}>{line}</p>
+          ))}
+        </section>
+      )}
+
       {workouts.length === 0 ? (
-        <p>Nenhuma ficha atribuída ainda. Fale com seu personal.</p>
+        <p className="empty-note">Seu personal ainda não montou sua ficha. Assim que montar, ela aparece aqui.</p>
       ) : (
-        groupFichas(workouts).map((ficha) => (
+        fichas.map((ficha) => (
           <section className="ficha-group" key={ficha.id}>
             <h2>{ficha.name}</h2>
             {ficha.treinos.map((workout) => (
@@ -60,8 +114,8 @@ function Home({ uid }: { uid: string }) {
                   <ol>
                     {workout.exercises.map((exercise, index) => (
                       <li key={index}>
-                        {exercise.name} — {exercise.sets}x{exercise.reps}
-                        {exercise.weight ? ` · ${exercise.weight}` : ""}
+                        {exercise.name} — {summarizeExercise(exercise).line}
+                        <ExerciseNote exercise={exercise} />
                       </li>
                     ))}
                   </ol>

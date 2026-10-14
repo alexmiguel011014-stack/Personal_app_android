@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { loadStudentAssessments } from "../../../../data/assessments";
 import { getFirebase } from "../../../../data/firebase";
+import { anamnesisFlags } from "../../../../domain/anamnesis";
 import { flaggedQuestions, type Assessment } from "../../../../domain/assessments";
 import { formatDateTime } from "../../../../domain/dates";
 
@@ -35,16 +37,29 @@ export function AssessmentsSection({
 
   return (
     <section>
-      <h2>Autoavaliações</h2>
+      <h2>Anamneses e autoavaliações</h2>
       {state.status === "loading" && <p className="loading">Carregando…</p>}
-      {state.status === "error" && <p role="alert">Não foi possível carregar as autoavaliações.</p>}
-      {state.status === "ready" && state.assessments.length === 0 && <p>Nenhuma autoavaliação enviada ainda.</p>}
+      {state.status === "error" && <p role="alert">Não foi possível carregar as anamneses.</p>}
+      {state.status === "ready" && state.assessments.length === 0 && <p>Nenhuma anamnese ou autoavaliação enviada ainda.</p>}
       {state.status === "ready" &&
         state.assessments.map((assessment) => {
           const flagged = flaggedQuestions(assessment);
           return (
             <article key={assessment.id}>
-              <h3>{formatDateTime(assessment.submittedAt, timeZone)}</h3>
+              <h3>
+                {assessment.anamnesis ? "Anamnese" : "Autoavaliação"} · {formatDateTime(assessment.submittedAt, timeZone)}
+              </h3>
+              {assessment.anamnesis && (
+                <p>
+                  {(() => {
+                    const points = anamnesisFlags(assessment.parQAnswers, assessment.anamnesis).length;
+                    return points === 0 ? "Nenhum ponto de atenção." : `${points} ponto(s) de atenção.`;
+                  })()}{" "}
+                  <Link className="button" href={`/app/alunos/anamnese?aluno=${encodeURIComponent(studentId)}&id=${encodeURIComponent(assessment.id)}`}>
+                    Ver relatório
+                  </Link>
+                </p>
+              )}
               <p>
                 Objetivo: {assessment.goal || "—"} · Nível: {assessment.experienceLevel || "—"}
               </p>

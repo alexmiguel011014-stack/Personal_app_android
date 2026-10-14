@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { barChartLabel, compactReais, deltaText, progressLabel, progressRatio, sparkPoints, sparklineLabel, stackedBarLabel, trendOf } from "./chartText";
+import { barChartLabel, compactReais, deltaText, lineChartLabel, linePlot, progressLabel, progressRatio, sparkPoints, sparklineLabel, stackedBarLabel, trendOf } from "./chartText";
 
 describe("deltaText", () => {
   it("writes the sign, the amount and what it is compared with", () => {
@@ -80,5 +80,44 @@ describe("progressRatio / sparkPoints", () => {
     expect(sparkPoints([3, 3, 3], 28)).toBe("0,14 50,14 100,14");
     expect(sparkPoints([4], 28)).toBe("50,14");
     expect(sparkPoints([])).toBe("");
+  });
+});
+
+describe("lineChartLabel / linePlot (GOALS.md 38f)", () => {
+  const kg = (value: number) => `${String(value).replace(".", ",")} kg`;
+  const points = [
+    { label: "12/10", value: 31 },
+    { label: "13/10", value: 33.5 },
+    { label: "14/10", value: 35 },
+  ];
+
+  it("states the trend, first, last, best and how many records", () => {
+    expect(lineChartLabel("Carga máxima de Supino", points, kg)).toBe(
+      "Carga máxima de Supino: subindo, de 31 kg (12/10) a 35 kg (14/10); melhor 35 kg em 14/10; 3 registros.",
+    );
+  });
+
+  it("names the best even when it is not the last", () => {
+    const down = [{ label: "01/10", value: 40 }, { label: "08/10", value: 30 }];
+    expect(lineChartLabel("Peso", down, kg)).toBe("Peso: caindo, de 40 kg (01/10) a 30 kg (08/10); melhor 40 kg em 01/10; 2 registros.");
+  });
+
+  it("says so for one point and for none", () => {
+    expect(lineChartLabel("Peso", [{ label: "12/10", value: 70 }], kg)).toBe("Peso: 70 kg em 12/10; 1 registro.");
+    expect(lineChartLabel("Peso", [], kg)).toBe("Peso: sem dados.");
+  });
+
+  it("plots the first point at the left and the last at the right, the highest value at the top", () => {
+    const plot = linePlot([1, 3, 2], 320, 120, 8, 10);
+    expect(plot).toHaveLength(3);
+    expect(plot[0]).toEqual({ x: 8, y: 110 });
+    expect(plot[2]?.x).toBe(312);
+    expect(plot[1]).toEqual({ x: 160, y: 10 });
+  });
+
+  it("runs a flat series through the middle and a single point at the centre", () => {
+    expect(linePlot([5, 5, 5], 320, 120).map((point) => point.y)).toEqual([60, 60, 60]);
+    expect(linePlot([5], 320, 120)).toEqual([{ x: 160, y: 60 }]);
+    expect(linePlot([])).toEqual([]);
   });
 });

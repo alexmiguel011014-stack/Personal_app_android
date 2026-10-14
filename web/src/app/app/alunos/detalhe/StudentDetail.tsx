@@ -3,11 +3,16 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { collection, onSnapshot, query, where } from "firebase/firestore";
+import { collection, doc, onSnapshot, query, where } from "firebase/firestore";
 import { formatCents } from "../../../../domain/payments";
 import { countActiveInvitesFromOtherClients, countActivePlatformInvites, isPlatformInviteActive, type PlatformInviteRecord } from "../../../../domain/platformInvites";
 import { getFirebase } from "../../../../data/firebase";
-import { noteReads } from "../../../../data/firestoreRead";
+import { toLinkedStudent } from "../../../../data/converters";
+import { getDoc, noteReads } from "../../../../data/firestoreRead";
+import { loadStudentWorkouts } from "../../../../data/workouts";
+import type { LinkedStudentDoc } from "../../../../domain/students";
+import { telLink, whatsappLink } from "../../../../domain/contact";
+import { ConfirmDialog } from "../../../_shared/ConfirmDialog";
 import {
   requestAssessment,
   setCanAddSets,
@@ -42,8 +47,58 @@ export function StudentDetail() {
   return <Detail trainerId={session.uid} studentId={id} />;
 }
 
+/**
+ * GOALS.md §38b/§38g: the trainer's data is shared between pages and up to five minutes old, but this page shows
+ * state the aluno changes on their own — a request they have just answered, a permission — so a connected aluno's own
+ * document is read once when the page opens (one read, and again after every reload) and wins over the shared copy.
+ */
+function useFreshLinkedStudent(studentId: string, linked: boolean, loadedAt: number): LinkedStudentDoc | null {
+  const [fresh, setFresh] = useState<{ id: string; student: LinkedStudentDoc } | null>(null);
+  useEffect(() => {
+    if (!linked) return;
+    let cancelled = false;
+    getDoc(doc(getFirebase().db, "users", studentId)).then(
+      (snapshot) => {
+        if (cancelled || !snapshot.exists()) return;
+        const student = toLinkedStudent(snapshot.id, snapshot.data());
+        if (student !== null) setFresh({ id: studentId, student });
+      },
+      () => {
+        // The shared copy is still good enough to show.
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [studentId, linked, loadedAt]);
+  return fresh !== null && fresh.id === studentId ? fresh.student : null;
+}
+
+/** GOALS.md §38c (U10): the aluno's treinos by id, to title each session in "Atividade recente"; undefined until read (or if it fails). */
+function useWorkoutNames(trainerId: string, studentId: string, enabled: boolean): ReadonlyMap<string, string> | undefined {
+  const [state, setState] = useState<{ id: string; names: ReadonlyMap<string, string> } | null>(null);
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    loadStudentWorkouts(getFirebase().db, trainerId, studentId).then(
+      (workouts) => !cancelled && setState({ id: studentId, names: new Map(workouts.map((workout) => [workout.id, workout.name])) }),
+      () => {},
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [trainerId, studentId, enabled]);
+  return state !== null && state.id === studentId ? state.names : undefined;
+}
+
 function Detail({ trainerId, studentId }: { trainerId: string; studentId: string }) {
   const { data, reload } = useTrainerData(trainerId, { ensureCharges: true });
+  const workoutNames = useWorkoutNames(trainerId, studentId, data.status === "ready" && data.snapshot.linked.some((l) => l.id === studentId));
+  const fresh = useFreshLinkedStudent(
+    studentId,
+    data.status === "ready" && data.snapshot.linked.some((l) => l.id === studentId),
+    data.status === "ready" ? data.snapshot.loadedAt : 0,
+  );
   const [editing, setEditing] = useState(false);
   const [pauseBusy, setPauseBusy] = useState(false);
   const [pauseStatus, setPauseStatus] = useState<string | null>(null);
@@ -61,7 +116,7 @@ function Detail({ trainerId, studentId }: { trainerId: string; studentId: string
   }
 
   const draft = data.snapshot.drafts.find((d) => d.id === studentId);
-  const account = data.snapshot.linked.find((l) => l.id === studentId);
+  const account = fresh ?? data.snapshot.linked.find((l) => l.id === studentId);
   const student: TrainerStudent | null = account
     ? { kind: "linked", doc: account }
     : draft
@@ -149,7 +204,20 @@ function Detail({ trainerId, studentId }: { trainerId: string; studentId: string
               <dt>Sexo</dt>
               <dd>{profile.gender}</dd>
               <dt>Telefone</dt>
-              <dd>{profile.phone || "—"}</dd>
+              <dd>
+                {profile.phone || "—"}
+                {/* GOALS.md §38c, D2: WhatsApp is the chat for now — a link, only when the number reads as a Brazilian one. */}
+                {whatsappLink(profile.phone) !== null && (
+                  <>
+                    {" · "}
+                    <a href={whatsappLink(profile.phone) ?? undefined} target="_blank" rel="noopener noreferrer">
+                      WhatsApp
+                    </a>
+                    {" · "}
+                    <a href={telLink(profile.phone) ?? undefined}>Ligar</a>
+                  </>
+                )}
+              </dd>
               <dt>Objetivo</dt>
               <dd>{profile.goal || "—"}</dd>
               <dt>Nível</dt>
@@ -204,6 +272,7 @@ function Detail({ trainerId, studentId }: { trainerId: string; studentId: string
       {student.kind === "linked" && (
         <ProgressSection
           key={`progresso-${student.doc.id}`}
+          workoutNames={workoutNames}
           logs={data.snapshot.logs.filter((log) => log.studentId === student.doc.id)}
           timeZone={data.timeZone}
           windowFrom={data.snapshot.logsFrom}
@@ -382,6 +451,7 @@ function PermissionsSection({
   onChanged: () => void;
 }) {
   const [error, setError] = useState<string | null>(null);
+  const [confirmingGrant, setConfirmingGrant] = useState(false);
 
   async function run(write: () => Promise<void>) {
     setError(null);
@@ -394,6 +464,24 @@ function PermissionsSection({
   }
 
   const db = () => getFirebase().db;
+
+  /** GOALS.md §38g (D18): "Enviar anamnese" is the old "Solicitar autoavaliação" write — one click, after letting the aluno answer when that was off. */
+  function sendAnamnesis(grant: boolean) {
+    void run(async () => {
+      const now = Date.now();
+      if (grant) await setStudentPermissions(db(), studentId, true, account.canLogBiometrics);
+      await requestAssessment(db(), studentId);
+      await trackActivity(db(), trainerId, "assessmentRequested", now, timeZone);
+    });
+  }
+
+  // The message names no health information: a first name and the address of the page, nothing else.
+  const site = `${window.location.origin}${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}`;
+  const reminder = whatsappLink(
+    account.phone,
+    `Oi, ${account.name.trim().split(/\s+/)[0] ?? ""}! Deixei sua anamnese no ALLU para você responder: ${site}/aluno/avaliacao/`,
+  );
+
   return (
     <section>
       <h2>Permissões do aluno</h2>
@@ -406,7 +494,7 @@ function PermissionsSection({
               void run(() => setStudentPermissions(db(), studentId, e.target.checked, account.canLogBiometrics))
             }
           />{" "}
-          Pode fazer autoavaliação (PAR-Q+)
+          Pode responder a anamnese e a autoavaliação (PAR-Q+)
         </label>
       </p>
       <p>
@@ -436,23 +524,36 @@ function PermissionsSection({
         confirmação) e remover só as que ele mesmo acrescentou — as séries da ficha nunca saem.
       </p>
       {account.pendingAssessmentRequest ? (
-        <p>Autoavaliação solicitada — aguardando o aluno.</p>
+        <>
+          <p>Anamnese enviada — aguardando o aluno responder.</p>
+          {reminder !== null && (
+            <p>
+              <a className="button" href={reminder} target="_blank" rel="noopener noreferrer">
+                Avisar no WhatsApp
+              </a>
+            </p>
+          )}
+        </>
       ) : (
         <p>
-          <button
-            type="button"
-            disabled={!account.canSelfAssess}
-            onClick={() => void run(async () => {
-              const now = Date.now();
-              await requestAssessment(db(), studentId);
-              await trackActivity(db(), trainerId, "assessmentRequested", now, timeZone);
-            })}
-          >
-            Solicitar autoavaliação
+          <button type="button" onClick={() => (account.canSelfAssess ? sendAnamnesis(false) : setConfirmingGrant(true))}>
+            Enviar anamnese
           </button>
-          {!account.canSelfAssess && " (libere a autoavaliação antes)"}
         </p>
       )}
+      <ConfirmDialog
+        open={confirmingGrant}
+        title="Liberar e enviar a anamnese?"
+        yesLabel="Liberar e enviar"
+        noLabel="Cancelar"
+        onNo={() => setConfirmingGrant(false)}
+        onYes={() => {
+          setConfirmingGrant(false);
+          sendAnamnesis(true);
+        }}
+      >
+        <p>Para responder, o aluno precisa poder fazer a anamnese e a autoavaliação. Ao confirmar, a permissão é liberada e o pedido é enviado.</p>
+      </ConfirmDialog>
       {error && <p role="alert">{error}</p>}
     </section>
   );

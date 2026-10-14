@@ -46,6 +46,39 @@ export function sparklineLabel(title: string, values: readonly number[], format:
   return `${title}: ${trendOf(values)}, de ${format(values[0])} a ${format(values[values.length - 1])} (mínimo ${format(min)}, máximo ${format(max)}).`;
 }
 
+/**
+ * The sentence of a line chart (GOALS.md §38f): the series, its trend, first, last and best — "Carga máxima de Supino: subindo,
+ * de 31 kg (12/10) a 35 kg (14/10); melhor 35 kg em 14/10; 3 registros." `best` is the highest value; `format` writes a value.
+ */
+export function lineChartLabel(title: string, points: readonly ChartPoint[], format: (value: number) => string = String): string {
+  if (points.length === 0) return `${title}: sem dados.`;
+  const first = points[0];
+  const last = points[points.length - 1];
+  const best = points.reduce((top, point) => (point.value > top.value ? point : top), points[0]);
+  const count = `${points.length} ${points.length === 1 ? "registro" : "registros"}`;
+  if (points.length === 1) return `${title}: ${format(first.value)} em ${first.label}; ${count}.`;
+  const trend = trendOf(points.map((point) => point.value));
+  return `${title}: ${trend}, de ${format(first.value)} (${first.label}) a ${format(last.value)} (${last.label}); melhor ${format(best.value)} em ${best.label}; ${count}.`;
+}
+
+export interface PlotPoint {
+  x: number;
+  y: number;
+}
+
+/**
+ * Where a line chart's points go in a `width` × `height` box: the first at the left and the last at the right, `padX`/`padY`
+ * kept clear; a flat series runs through the middle. Equal spacing, not time spacing (the dates are labelled).
+ */
+export function linePlot(values: readonly number[], width = 320, height = 120, padX = 8, padY = 10): PlotPoint[] {
+  if (values.length === 0) return [];
+  const min = Math.min(...values);
+  const range = Math.max(...values) - min;
+  const x = (index: number) => (values.length === 1 ? width / 2 : padX + (index / (values.length - 1)) * (width - 2 * padX));
+  const y = (value: number) => (range === 0 ? height / 2 : height - padY - ((value - min) / range) * (height - 2 * padY));
+  return values.map((value, index) => ({ x: round(x(index)), y: round(y(value)) }));
+}
+
 /** "R$ 150,00 de R$ 270,00 (56%)". The caller formats the amounts. */
 export function progressLabel(part: number, total: number, format: (value: number) => string): string {
   if (total <= 0) return `${format(part)} de ${format(total)}`;

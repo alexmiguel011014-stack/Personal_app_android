@@ -68,6 +68,9 @@ describe("buildLedger", () => {
       goal: "",
       experienceLevel: "",
       trainingDays: [],
+      anamnesis: null,
+      consentVersion: null,
+      consentAt: null,
     };
     const days = buildLedger({ logs: [log("1", "ana", at(25), "A")], biometrics: [measurement], assessments: [assessment], timeZone: ZONE });
     expect(days.map((d) => d.date)).toEqual(["2026-09-26", "2026-09-25", "2026-09-20"]);

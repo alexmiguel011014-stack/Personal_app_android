@@ -132,13 +132,13 @@ try {
   const question = await dialogText();
   check("it says the oldest goes, for ever, and that it cannot be undone", /Você já tem 2 fichas/.test(question) && /Hipertrofia — setembro/.test(question) && /para sempre/.test(question) && /Esse processo não pode ser desfeito/.test(question), question);
   const before = await docsOf(bruno);
-  const clicked = await clickIn("dialog.confirm button", "^Cancelar$");
+  const clicked = await clickIn("dialog.confirm[open] button", "^Cancelar$");
   await sleep(600);
   check("Cancelar closes the question", clicked && !(await dialogOpen()));
   check("nothing was written and we are still on the editor", (await docsOf(bruno)).length === before.length && (await b.url()).startsWith("/app/fichas/editar"), String((await docsOf(bruno)).length));
   await clickIn("main button", "^Salvar ficha$");
   await b.waitFor(`!!document.querySelector('dialog.confirm[open]')`, 8000);
-  check("confirming is 'Excluir a mais antiga e salvar'", await clickIn("dialog.confirm button", "^Excluir a mais antiga e salvar$"));
+  check("confirming is 'Excluir a mais antiga e salvar'", await clickIn("dialog.confirm[open] button", "^Excluir a mais antiga e salvar$"));
   await b.waitFor(`location.pathname.startsWith('/app/alunos')`, 15000);
   await b.waitFor(`!!(${SECTION}) && (${SECTION}).querySelectorAll('article').length === 2`, 15000);
   check("two cards remain: the new one on top, the newer old one under it", (await cards()).map((c) => c.name).join("|") === "Terceira|Definição — outubro", (await cards()).map((c) => c.name).join("|"));
@@ -202,7 +202,7 @@ try {
   check("Escape keeps the ficha", !(await dialogOpen()) && (await docsOf(bruno)).length === treinosBefore);
   await clickCard("Definição — outubro", "Excluir");
   await b.waitFor(`!!document.querySelector('dialog.confirm[open]')`, 5000);
-  await clickIn("dialog.confirm button", "^Cancelar$");
+  await clickIn("dialog.confirm[open] button", "^Cancelar$");
   await sleep(500);
   check("Cancelar keeps the ficha", !(await dialogOpen()) && (await docsOf(bruno)).length === treinosBefore);
   if (viewport === "mobile") {
@@ -212,7 +212,7 @@ try {
   }
   await clickCard("Definição — outubro", "Excluir");
   await b.waitFor(`!!document.querySelector('dialog.confirm[open]')`, 5000);
-  check("confirming deletes it", await clickIn("dialog.confirm button", "^Excluir$"));
+  check("confirming deletes it", await clickIn("dialog.confirm[open] button", "^Excluir$"));
   await b.waitFor(`(${SECTION}).querySelectorAll('article').length === 1`, 15000);
   check("one card left", (await cards()).map((c) => c.name).join("|") === "Terceira (editada)", (await cards()).map((c) => c.name).join("|"));
   const left = await fichaNames(bruno);

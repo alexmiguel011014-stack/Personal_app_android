@@ -31,3 +31,29 @@ export function bookingsAt(schedules: readonly Schedule[], day: string, hour: st
 export function bookingsOn(schedules: readonly Schedule[], day: string): number {
   return schedules.filter((schedule) => schedule.dayOfWeek === day).length;
 }
+
+/** "07h" → "07:00"; anything not in that shape is shown as stored. */
+export function hourClock(hour: string): string {
+  const match = /^(\d{2})h$/.exec(hour);
+  return match ? `${match[1]}:00` : hour;
+}
+
+/**
+ * The aluno's own weekly appointments as lines, earliest hour first, the days of one hour grouped in week order:
+ * "Seg, Qua, Sex · 07:00" (GOALS.md §38f). Empty when they have none.
+ */
+export function scheduleLines(schedules: readonly Schedule[]): string[] {
+  const byHour = new Map<string, Set<string>>();
+  for (const schedule of schedules) {
+    const days = byHour.get(schedule.hour) ?? new Set<string>();
+    days.add(schedule.dayOfWeek);
+    byHour.set(schedule.hour, days);
+  }
+  const rank = (day: string) => {
+    const index = AGENDA_DAYS.indexOf(day);
+    return index === -1 ? AGENDA_DAYS.length : index;
+  };
+  return [...byHour.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([hour, days]) => `${[...days].sort((a, b) => rank(a) - rank(b)).map((day) => day.slice(0, 3)).join(", ")} · ${hourClock(hour)}`);
+}

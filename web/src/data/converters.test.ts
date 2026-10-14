@@ -279,7 +279,27 @@ describe("toAssessment — FirestoreMappers.toAssessmentEntity", () => {
       goal: "Hipertrofia",
       experienceLevel: "Interm.",
       trainingDays: ["Terça"],
+      // GOALS.md §38g: a document without the web-only anamnese reads as a plain PAR-Q+
+      anamnesis: null,
+      consentVersion: null,
+      consentAt: null,
     });
+  });
+
+  it("reads the web-only anamnese and its consent (GOALS.md §38g), the instant as a number or a Firestore Timestamp", () => {
+    const base = { studentId: "s1", trainerId: "t1", submittedAt: 9, parQAnswersJson: "{}" };
+    const withNumber = toAssessment("a1", { ...base, anamnesis: { version: 1, answers: { goal: "Força", stray: "x" } }, consentVersion: "anamnese-v1", consentAt: 1234 });
+    expect(withNumber).toMatchObject({ anamnesis: { version: 1, answers: { goal: "Força" } }, consentVersion: "anamnese-v1", consentAt: 1234 });
+    const withTimestamp = toAssessment("a1", { ...base, anamnesis: { version: 1, answers: {} }, consentVersion: "anamnese-v1", consentAt: { toMillis: () => 5678 } });
+    expect(withTimestamp?.consentAt).toBe(5678);
+  });
+
+  it("treats a garbled anamnese as no anamnese — the assessment still reads, as a plain PAR-Q+", () => {
+    const base = { studentId: "s1", trainerId: "t1", parQAnswersJson: '{"medication":true}' };
+    for (const anamnesis of ["texto", 7, [], { version: "1", answers: {} }, { version: 1 }]) {
+      expect(toAssessment("a1", { ...base, anamnesis })).toMatchObject({ anamnesis: null, parQAnswers: { medication: true } });
+    }
+    expect(toAssessment("a1", { ...base, consentAt: "ontem", consentVersion: 3 })).toMatchObject({ consentAt: null, consentVersion: null });
   });
 
   it("needs both the student and the trainer, and defaults the rest", () => {

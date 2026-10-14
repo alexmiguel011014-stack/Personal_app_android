@@ -342,12 +342,53 @@ button.day-cell.selected:hover { background: var(--leaf); }
 .main-content .workout-card h3 { margin-bottom: 10px; color: var(--forest); font-size: 25px; letter-spacing: 0; line-height: 1.2; }
 .workout-card .button { width: 100%; }
 .workout-card ol { padding-left: 20px; }
-.set-row { display: grid; grid-template-columns: 64px minmax(0, 1fr) minmax(0, 1fr); align-items: end; gap: 10px; }
-.main-content p.set-row { display: grid; }
-.set-number { padding-bottom: 14px; color: var(--muted); font-size: 13px; font-weight: 650; }
-.set-row input { min-height: 52px; font-size: 18px; font-variant-numeric: tabular-nums; text-align: center; }
+/* GOALS.md §38e: compact set rows — one header per exercise instead of labels on every row; inputs stay >= 44px and 16px+. */
+.set-table { display: grid; gap: 4px; margin-top: 6px; }
+.set-head, .set-row { display: grid; grid-template-columns: 44px minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: 8px; }
+.set-head { color: var(--muted); font-size: 12px; font-weight: 650; text-align: center; }
+.set-head span:first-child { text-align: left; }
+.set-number { color: var(--muted); font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.set-row input { min-height: 44px; padding-block: 4px; font-size: 18px; font-variant-numeric: tabular-nums; text-align: center; }
+fieldset > .exercise-info, fieldset > .exercise-tools, fieldset > .set-table, fieldset > .exercise-note { flex: 1 1 100%; }
+.main-content .exercise-info p { margin: 0; }
+.exercise-info .exercise-last { color: var(--muted); font-size: 14px; }
+.exercise-tools { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 8px; margin-top: 6px; }
+.exercise-tools button { min-height: 44px; padding-inline: 8px; font-size: 14px; }
+.rest-chip { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; padding: 4px 8px 4px 14px; border: 1px solid var(--forest); border-radius: var(--radius); background: var(--forest); color: var(--white); box-shadow: 0 4px 14px #12161c33; }
+.rest-chip.is-over { border-color: var(--primary); background: var(--primary); }
+.rest-chip-text { display: grid; flex: 1 1 auto; min-width: 0; }
+.rest-chip-text strong { font-family: var(--font-display); font-size: 26px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.rest-chip-text small { overflow: hidden; color: #e5e1da; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.sticky-actions .rest-chip button { width: auto; min-height: 44px; padding-inline: 12px; border-color: #ffffff80; background: transparent; color: var(--white); font-size: 14px; }
+.records { margin: 0 0 12px; padding-left: 20px; }
+/* GOALS.md §38f: the aluno's home — the next treino, the week's dots, the weekly appointments. */
+.next-treino { margin: 18px 0; padding: 16px 18px 18px; border: 2px solid var(--primary); border-radius: var(--radius); background: var(--white); }
+.main-content .next-treino h2 { margin: 0 0 2px; color: var(--primary); font-size: 14px; letter-spacing: .05em; text-transform: uppercase; }
+.main-content .next-treino h3 { margin: 0 0 4px; color: var(--forest); font-size: 26px; line-height: 1.2; }
+.next-treino p { color: var(--muted); }
+.next-treino .button { width: 100%; }
+.week, .appointments { margin: 18px 0; }
+.week-dots { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; margin: 8px 0 10px; padding: 0; list-style: none; text-align: center; }
+.week-dots li { display: grid; justify-items: center; gap: 4px; }
+.week-dots .dot { display: grid; place-items: center; width: 34px; height: 34px; border: 2px solid var(--field); border-radius: 50%; color: var(--white); font-size: 16px; font-weight: 700; }
+.week-dots [data-state="done"] .dot { border-color: var(--success); background: var(--success); }
+.week-dots [data-state="today"] .dot { border-color: var(--primary); box-shadow: 0 0 0 3px var(--warning-bg); }
+.week-dots [data-state="future"] .dot { border-style: dashed; border-color: var(--line); }
+.week-dots .day-label { color: var(--muted); font-size: 12px; font-weight: 650; }
+.week-dots [data-state="today"] .day-label { color: var(--primary); }
+.appointments p { margin: 0 0 4px; font-variant-numeric: tabular-nums; }
+/* A line chart (_shared/dashboard/charts.tsx LineChart). */
+.line-chart { margin: 8px 0 12px; padding: 0; }
+.line-chart svg { display: block; width: 100%; height: auto; color: var(--leaf-dark); overflow: visible; }
+.line-chart polyline { fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.line-chart circle { fill: var(--white); stroke: currentColor; stroke-width: 2; }
+.line-chart circle.last { fill: currentColor; }
+.line-chart .grid { stroke: var(--line); stroke-width: 1; }
+.line-chart-axis { display: flex; justify-content: space-between; margin-top: 4px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.line-chart figcaption { margin-top: 6px; color: var(--muted); font-size: 13px; }
+details.chart-table > summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--primary); font-weight: 650; }
 .sticky-actions { position: sticky; bottom: 0; z-index: 1; margin: 18px -4px 0; padding: 12px 4px max(12px, env(safe-area-inset-bottom)); background: linear-gradient(to top, var(--paper) 72%, transparent); }
-.sticky-actions button { width: 100%; min-height: 52px; font-size: 16px; }
+.sticky-actions > button { width: 100%; min-height: 52px; font-size: 16px; }
 /* A set the student added (only possible when the trainer allowed it): marked, and the only kind removable. */
 .set-number small { display: block; color: var(--leaf-dark); font-size: 11px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; }
 .set-row.is-extra > button { grid-column: 2 / -1; justify-self: start; min-height: 40px; }
@@ -378,7 +419,15 @@ dialog.confirm::backdrop { background: #12161c8c; }
 .review-name { min-width: 0; }
 .review-name small { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; }
 .review-sets, .review-reps { text-align: center; font-variant-numeric: tabular-nums; }
-.review-exercise input[aria-invalid="true"] { border-color: var(--alert); background: var(--alert-bg); }
+.review-exercise input[aria-invalid="true"], .review-exercise textarea[aria-invalid="true"] { border-color: var(--alert); background: var(--alert-bg); }
+.review-details { grid-column: 1 / -1; }
+.review-details summary { cursor: pointer; min-height: 32px; color: var(--muted); font-size: 13px; font-weight: 650; }
+.review-details-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 8px 12px; max-width: 560px; padding: 4px 0 8px; }
+@media (max-width: 430px) { .review-details-fields { grid-template-columns: minmax(0, 1fr); } }
+.review-details-fields .wide { grid-column: 1 / -1; }
+.review-details-fields small { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; }
+.review-details-fields small[role="alert"] { color: var(--alert); }
+.exercise-note { display: block; margin-top: 2px; color: var(--muted); font-size: 13px; }
 .review-add { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 12px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 .review-add > label:first-child { flex: 1 1 220px; max-width: 360px; }
 .review-add > label:not(:first-child) { flex: 0 0 96px; }
@@ -533,7 +582,7 @@ dialog.confirm::backdrop { background: #12161c8c; }
   .nav-link { font-size: 12px; }
   .wordmark { font-size: 25px; padding-block: 10px; }
   .rail { padding-left: 14px; padding-right: 14px; }
-  .set-row { grid-template-columns: 52px minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+  .set-head, .set-row { grid-template-columns: 36px minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
   .session-meta { font-size: 12px; }
   .session-status { padding: 4px 5px; }
   .figures dd { font-size: 21px; }
@@ -720,3 +769,93 @@ dialog.confirm::backdrop { background: #12161c8c; }
 .attention-reason { grid-column: 2; grid-row: 2; justify-self: start; margin-top: 2px; }
 .attention-action { grid-column: 3; grid-row: 1 / span 2; justify-self: end; }
 .main-content .records-title { margin: 30px 0 6px; }
+
+/* ---------- Anamnese: the aluno's step-by-step form (GOALS.md §38g) ---------- */
+
+.step-progress { margin: 18px 0 8px; }
+.step-progress p { margin: 0 0 6px; color: var(--muted); font-size: 13px; font-weight: 650; }
+.step-bar { height: 6px; overflow: hidden; border-radius: 99px; background: var(--tint); }
+.step-bar > span { display: block; height: 100%; border-radius: inherit; background: var(--primary); transition: width .2s ease; }
+.step-intro { margin: 0 0 16px; color: var(--muted); }
+.main-content h2:focus { outline: none; }
+/* A question: its words on top, its answers as large pills to tap below. */
+fieldset.q, label.q { display: block; margin: 0 0 14px; padding: 14px 16px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--white); }
+/* The legend floats so it sits inside the card instead of straddling its top border (a long question would be cut by the line). */
+fieldset.q > legend { float: left; width: 100%; max-width: 100%; margin: 0 0 4px; padding: 0; color: var(--ink); font-size: 16px; font-weight: 650; line-height: 1.35; }
+fieldset.q > legend + * { clear: both; }
+label.q.field { display: grid; gap: 8px; }
+label.q.field > span { color: var(--ink); font-size: 15px; font-weight: 650; line-height: 1.35; }
+.q .hint { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
+.opt { color: var(--muted); font-size: 13px; font-weight: 500; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.chips label.chip { position: relative; display: inline-flex; min-height: 44px; align-items: center; padding: 0 16px; border: 1px solid var(--field); border-radius: 99px; background: var(--white); color: var(--ink); font-size: 15px; font-weight: 600; cursor: pointer; user-select: none; }
+.chips label.chip:hover { background: var(--tint); }
+.chips label.chip > input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.chips label.chip:has(> input:checked) { border-color: var(--primary); background: var(--primary); color: #fff; }
+.chips label.chip:has(> input:focus-visible) { outline: 3px solid var(--leaf); outline-offset: 2px; }
+.step-actions { position: sticky; bottom: 0; z-index: 1; margin: 18px -4px 0; padding: 10px 4px max(12px, env(safe-area-inset-bottom)); background: linear-gradient(to top, var(--paper) 72%, transparent); }
+.step-actions > div { display: flex; gap: 10px; }
+.step-actions > div > button { min-height: 52px; font-size: 16px; }
+.step-actions > div > button.button-primary, .step-actions > div > button[type="submit"] { flex: 1; }
+.remaining { margin: 0 0 8px; color: var(--warning); font-size: 13px; font-weight: 650; }
+.resume-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+.review-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.main-content .review-head h3 { margin: 0; }
+dl.answers { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; margin: 0; }
+dl.answers > div { display: grid; gap: 2px; }
+dl.answers dt { color: var(--muted); font-size: 13px; }
+dl.answers dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+fieldset.consent { display: block; margin: 20px 0 0; padding: 14px 16px; border: 2px solid var(--primary); background: var(--white); }
+fieldset.consent > legend { color: var(--primary); font-size: 15px; }
+fieldset.consent label.check { display: flex; align-items: flex-start; gap: 12px; min-height: 44px; padding: 8px 0; font-size: 15px; font-weight: 500; line-height: 1.4; }
+fieldset.consent label.check > input { margin-top: 2px; }
+@media (max-width: 860px) {
+  .step-actions { bottom: calc(64px + env(safe-area-inset-bottom)); }
+}
+
+/* ---------- Anamnese: the report, and its printout (GOALS.md §38g) ---------- */
+
+.report section { margin: 22px 0; }
+.report h2 { margin: 0 0 10px; }
+.report-head h1 { margin-bottom: 4px; }
+.report-note { margin: 8px 0 0; color: var(--muted); }
+.report-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0 6px; }
+.flags { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.flag { display: grid; gap: 2px; padding: 10px 14px; border: 1px solid var(--line); border-left-width: 5px; border-radius: var(--radius); background: var(--white); }
+.flag > strong { font-size: 15px; }
+.flag > span { font-size: 14px; }
+.flag-alert { border-color: var(--alert-line); border-left-color: var(--alert); background: var(--alert-bg); }
+.flag-alert > strong { color: var(--alert); }
+.flag-warn { border-color: var(--warning-line); border-left-color: var(--warning); background: var(--warning-bg); }
+.flag-warn > strong { color: var(--warning); }
+.flag-info { border-left-color: #8a857d; background: var(--tint); }
+.changes { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.changes li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.changes li > span:first-child { color: var(--muted); }
+.report dl.answers.words dd { font-weight: 400; white-space: pre-wrap; }
+.report-consent { margin: 22px 0 0; color: var(--muted); font-size: 13px; }
+/* "Atividade recente": one card per session, its exercises as short lines (GOALS.md §38c). */
+.session-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.session-list > li { padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--white); }
+.main-content .session-list h3 { margin: 0 0 6px; font-size: 16px; }
+.session-list ul { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; font-size: 14px; }
+.main-content p.session-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 0; }
+.main-content p.empty-note { margin: 18px 0 0; color: var(--muted); }
+@media (min-width: 700px) {
+  .report dl.answers > div { grid-template-columns: minmax(200px, 40%) 1fr; align-items: baseline; gap: 16px; }
+}
+/* On paper: no navigation, no buttons, black on white, and every point of attention still says what it is in words. */
+@media print {
+  @page { size: A4; margin: 14mm; }
+  html, body { background: #fff; color: #000; }
+  body { font-size: 11pt; }
+  .skip-link, .rail, .page-footer, .no-print, .sticky-actions, .step-actions { display: none !important; }
+  .app-shell { padding: 0 !important; }
+  .main-content { margin: 0 !important; padding: 0 !important; }
+  .content-column { max-width: none !important; }
+  .report, .report h1, .report h2 { color: #000; }
+  .report section { break-inside: avoid; }
+  .flag, .flag-alert, .flag-warn, .flag-info { border: 1px solid #000; border-left-width: 5px; background: #fff; }
+  .flag > strong, .flag-alert > strong, .flag-warn > strong { color: #000; }
+  a { color: #000; text-decoration: none; }
+}

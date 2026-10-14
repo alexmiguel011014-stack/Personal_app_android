@@ -77,6 +77,21 @@ export function initialRows(targetSets: number): SetRow[] {
 }
 
 /**
+ * The rows of an exercise already logged, to correct it (GOALS.md §38c, D12): each set back in its own row — the set
+ * number is the row's position, and a skipped row left a gap — with blank rows where a set was skipped, at least the
+ * prescribed number of rows, and any extra sets the student had added.
+ */
+export function rowsFromSets(sets: readonly PerformedSet[], targetSets: number): SetRow[] {
+  const highest = sets.reduce((max, set) => Math.max(max, set.setNumber), 0);
+  const count = Math.min(Math.max(plannedRowCount(targetSets), highest), MAX_PLANNED_ROWS + MAX_EXTRA_ROWS);
+  const rows: SetRow[] = Array.from({ length: count }, () => ({ weight: "", reps: "" }));
+  for (const set of sets) {
+    if (set.setNumber >= 1 && set.setNumber <= count) rows[set.setNumber - 1] = { weight: set.weight, reps: String(set.reps) };
+  }
+  return rows;
+}
+
+/**
  * Rows past the prescribed ones are the student's own additions. Only those can be removed and
  * only those can be added past a limit; the prescribed rows are never removable.
  */

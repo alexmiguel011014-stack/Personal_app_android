@@ -3,6 +3,7 @@
 import { createContext, createElement, useCallback, useContext, useEffect, useMemo, useSyncExternalStore, type ReactNode } from "react";
 import { loadMyBiometrics } from "../../data/biometrics";
 import { getFirebase } from "../../data/firebase";
+import { loadMySchedules } from "../../data/schedules";
 import { loadMyProfile } from "../../data/session";
 import { loadMyLogs } from "../../data/workoutLogs";
 import { loadMyWorkouts } from "../../data/workouts";
@@ -10,6 +11,7 @@ import type { Biometric } from "../../domain/biometrics";
 import { localDate } from "../../domain/dates";
 import type { WorkoutLogDoc } from "../../domain/metrics";
 import { CACHE_TTL_MS, STUDENT_LOG_WINDOW_DAYS, windowStart } from "../../domain/readWindows";
+import type { Schedule } from "../../domain/schedules";
 import type { LinkedStudentDoc } from "../../domain/students";
 import type { Workout } from "../../domain/workouts";
 import { browserTimeZone } from "../_shared/browserTimeZone";
@@ -30,6 +32,8 @@ export type StudentData =
       profile: LinkedStudentDoc;
       workouts: Workout[];
       biometrics: Biometric[];
+      /** GOALS.md §38f: the aluno's own weekly appointments (a handful of documents). */
+      schedules: Schedule[];
       /** The aluno's logs dated from `logsFrom` on, not all time. */
       logs: WorkoutLogDoc[];
       /** Epoch ms where `logs` starts. */
@@ -105,10 +109,11 @@ class StudentDataStore {
       const timeZone = browserTimeZone();
       const today = localDate(now, timeZone);
       const logsFrom = windowStart(now, STUDENT_LOG_WINDOW_DAYS);
-      const [profile, workouts, biometrics, logs] = await Promise.all([
+      const [profile, workouts, biometrics, schedules, logs] = await Promise.all([
         loadMyProfile(db, uid),
         loadMyWorkouts(db, uid),
         loadMyBiometrics(db, uid),
+        loadMySchedules(db, uid),
         loadMyLogs(db, uid, logsFrom),
       ]);
       if (ticket !== this.ticket) return;
@@ -116,7 +121,7 @@ class StudentDataStore {
         this.set({ status: "error", message: "Não foi possível carregar seu perfil." });
         return;
       }
-      this.set({ status: "ready", profile, workouts, biometrics, logs, logsFrom, loadedAt: now, today, timeZone });
+      this.set({ status: "ready", profile, workouts, biometrics, schedules, logs, logsFrom, loadedAt: now, today, timeZone });
     } catch {
       if (ticket === this.ticket) this.set({ status: "error", message: "Não foi possível carregar seus dados. Verifique a conexão." });
     } finally {

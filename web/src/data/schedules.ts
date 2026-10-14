@@ -27,3 +27,12 @@ export async function bookSlot(
 export async function removeBooking(db: Firestore, scheduleId: string): Promise<void> {
   await deleteDoc(doc(db, "schedules", scheduleId));
 }
+
+/**
+ * GOALS.md §38f: the aluno's own weekly appointments — what the trainer booked for them, a handful of documents. The
+ * Rules let a student read the schedules whose `studentId` is theirs, and the query says so.
+ */
+export async function loadMySchedules(db: Firestore, uid: string): Promise<Schedule[]> {
+  const snapshot = await getDocs(query(collection(db, "schedules"), where("studentId", "==", uid)));
+  return snapshot.docs.map((document) => toSchedule(document.id, document.data())).filter((schedule) => schedule !== null);
+}

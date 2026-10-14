@@ -16,6 +16,7 @@ import { applyCatalogActivations, type ExerciseCatalog } from "../../../../domai
 import { LEGACY_FICHA_NAME, MAX_FICHAS, fichaSaveErrors, type Ficha } from "../../../../domain/fichas";
 import { kotlinTrim } from "../../../../domain/kotlin";
 import { tidied } from "../../../../domain/reviewEdit";
+import { DETAILS_DISCARDED_NOTE, exercisesHaveDetails } from "../../../../domain/exerciseDetails";
 import { parseWorkouts } from "../../../../domain/workoutParser";
 import { ConfirmDialog } from "../../../_shared/ConfirmDialog";
 import { useSession } from "../../../SessionProvider";
@@ -120,6 +121,8 @@ function FichaForm({
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const [pasted, setPasted] = useState("");
   const [warnings, setWarnings] = useState<string[]>([]);
+  // Set when a paste replaced exercises that carried carga / descanso / observação; cleared with the pasted text.
+  const [detailsDiscarded, setDetailsDiscarded] = useState(false);
   const [name, setName] = useState(existing ? (existing.legacy ? LEGACY_FICHA_NAME : existing.name) : "");
   const [items, setItems] = useState<TreinoItem[]>(
     () => existing?.treinos.map((t) => ({ key: t.id, id: t.id, name: t.name, exercises: t.exercises })) ?? [],
@@ -157,6 +160,7 @@ function FichaForm({
   /** The AI's answer replaces the treinos below (a text with no exercise changes nothing). Saving is separate. */
   function paste(text: string) {
     setPasted(text);
+    if (text.trim() === "") setDetailsDiscarded(false);
     const parsed = parseWorkouts(text);
     if (parsed.workouts.length === 0) {
       setWarnings(
@@ -165,6 +169,7 @@ function FichaForm({
       return;
     }
     setWarnings(parsed.warnings);
+    if (items.some((item) => exercisesHaveDetails(item.exercises))) setDetailsDiscarded(true);
     setItems(parsed.workouts.map((w) => ({ key: crypto.randomUUID(), id: null, name: w.name, exercises: w.exercises })));
   }
 
@@ -293,6 +298,7 @@ function FichaForm({
             ))}
           </ul>
         )}
+        {detailsDiscarded && <p role="status">{DETAILS_DISCARDED_NOTE}</p>}
       </section>
 
       <section>

@@ -2,9 +2,8 @@ import type { Assessment } from "../../../domain/assessments";
 import { flaggedQuestions } from "../../../domain/assessments";
 import type { Biometric } from "../../../domain/biometrics";
 import { localDate } from "../../../domain/dates";
-import { decodePerformedSets } from "../../../domain/exercise";
 import type { WorkoutLogDoc } from "../../../domain/metrics";
-import { formatSets } from "../../../domain/progression";
+import { groupSessions } from "../../../domain/sessions";
 
 // GOALS.md §23k: the ALLU template's "Registros" — a chronological book of what was actually done
 // (sessions, measurements, self-assessments), newest day first. Future bookings are not here; they
@@ -16,10 +15,12 @@ export type LedgerEntry =
       id: string;
       studentId: string;
       ms: number;
+      /** The treinos the session was done under — Registros names them when it can (GOALS.md §38c, U10). */
+      workoutIds: string[];
       exercises: { name: string; sets: string; note: string | null }[];
     }
   | { kind: "measurement"; id: string; studentId: string; ms: number; weight: number; bodyFat: number }
-  | { kind: "assessment"; id: string; studentId: string; ms: number; flagged: number };
+  | { kind: "assessment"; id: string; studentId: string; ms: number; flagged: number; anamnesis: boolean };
 
 export interface LedgerDay {
   /** "YYYY-MM-DD" in the trainer's zone. */
@@ -55,26 +56,15 @@ export function buildLedger({
     else byDay.set(date, [entry]);
   };
 
-  const sessions = new Map<string, { date: string; logs: WorkoutLogDoc[] }>();
-  for (const log of mine(logs)) {
-    const date = localDate(log.date, timeZone);
-    const key = `${log.studentId}|${date}`;
-    const session = sessions.get(key);
-    if (session) session.logs.push(log);
-    else sessions.set(key, { date, logs: [log] });
-  }
-  for (const { date, logs: sessionLogs } of sessions.values()) {
-    const ordered = [...sessionLogs].sort((a, b) => a.date - b.date);
-    add(date, {
+  // GOALS.md §38c: the grouping itself lives in domain/sessions.ts, shared with the "Atividade recente" lists.
+  for (const session of groupSessions(logs, timeZone, studentId)) {
+    add(session.day, {
       kind: "session",
-      id: `sessao-${ordered[0].studentId}-${date}`,
-      studentId: ordered[0].studentId,
-      ms: ordered[ordered.length - 1].date,
-      exercises: ordered.map((log) => ({
-        name: log.exerciseName,
-        sets: formatSets(decodePerformedSets(log.performedSetsJson)),
-        note: log.note && log.note.trim() !== "" ? log.note : null,
-      })),
+      id: `sessao-${session.studentId}-${session.day}`,
+      studentId: session.studentId,
+      ms: session.ms,
+      workoutIds: session.workoutIds,
+      exercises: session.exercises,
     });
   }
   for (const biometric of mine(biometrics)) {
@@ -94,6 +84,7 @@ export function buildLedger({
       studentId: assessment.studentId,
       ms: assessment.submittedAt,
       flagged: flaggedQuestions(assessment).length,
+      anamnesis: assessment.anamnesis !== null,
     });
   }
 

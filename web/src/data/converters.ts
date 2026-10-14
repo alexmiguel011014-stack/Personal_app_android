@@ -1,3 +1,4 @@
+import { parseAnamnesis } from "../domain/anamnesis";
 import { decodeParQAnswers, type Assessment } from "../domain/assessments";
 import type { Biometric } from "../domain/biometrics";
 import { decodeExercises, encodeExercises } from "../domain/exercise";
@@ -368,7 +369,21 @@ export function toAssessment(id: string, data: Data): Assessment | null {
     goal: str(data, "goal") ?? "",
     experienceLevel: str(data, "experienceLevel") ?? "",
     trainingDays: stringList(data, "trainingDays") ?? [],
+    // GOALS.md §38g: web-only, read leniently — missing or garbled reads as a plain PAR-Q+.
+    anamnesis: parseAnamnesis(data.anamnesis),
+    consentVersion: str(data, "consentVersion"),
+    consentAt: millisOrNull(data.consentAt),
   };
+}
+
+/** A stored instant as epoch ms: a plain number, or a Firestore Timestamp (what `serverTimestamp()` becomes). */
+function millisOrNull(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "object" && value !== null && "toMillis" in value && typeof (value as { toMillis: unknown }).toMillis === "function") {
+    const millis = (value as { toMillis: () => number }).toMillis();
+    return Number.isFinite(millis) ? millis : null;
+  }
+  return null;
 }
 
 const METHODS: readonly PaymentMethod[] = ["pix", "cash", "card", "transfer", "other"];

@@ -377,6 +377,42 @@ Rules for every new query in `web/src/data/`:
   (`get()`/`exists()`), writes, network egress and the App Check / reCAPTCHA Enterprise quota are not measured yet and
   no production usage was read (GOALS.md §39) — do not quote the budget's numbers as the project's cost.
 
+**Aluno ↔ personal interaction (GOALS.md §38c–§38g, 2026-10-14).** Every new aluno/personal screen reads
+what `StudentDataProvider` / `TrainerDataProvider` already hold (no extra query unless a section says so) and every
+sentence a person reads is in Portuguese, with a word for every state (never colour alone). What exists:
+- **The anamnese.** `assessments/{id}` keeps the PAR-Q+ in `parQAnswersJson` (the phone reads it) and adds the web-only
+  map `anamnesis` `{ version, answers }`, `consentVersion` (`"anamnese-v1"`) and `consentAt` (server time, stamped in the same
+  batch that clears `pendingAssessmentRequest`). `domain/anamnesis.ts` is the questionnaire as data — questions, the
+  "shown only if" rules, the flags and their order, the diff against the previous one, the report blocks, both consent
+  texts; change a question there, and bump `ANAMNESIS_VERSION` / `CONSENT_VERSION` when its meaning changes (a stored
+  record keeps the version it was answered with; `parseAnamnesis` reads leniently). The aluno fills it in
+  `aluno/avaliacao/` (six steps + review + consent; the draft lives in `localStorage` for seven days and is deleted when
+  sent); the personal sends it from the aluno's page ("Enviar anamnese", with an optional WhatsApp link whose text holds
+  only the first name and the site), reads `/app/alunos/anamnese?aluno=&id=` (warnings first, "Mudou desde a anterior",
+  "Imprimir / salvar PDF" through `window.print()` and a print stylesheet; "Atualizar dados do aluno" lists the changes and
+  asks before writing) and the aluno re-reads theirs from "Minhas avaliações" (`/aluno/anamnese?id=`). Health answers
+  never reach `trainerStats`, `trainerActivity`, `adminAudit`, an ADM screen or a WhatsApp text (`anamnesisLeak.test.ts`
+  reads the sources). The PAR-Q+ now starts unanswered (`AnswerDraft`/`completeAnswers`) — stricter than the phone, same
+  stored map. **The Rules do not check the new keys yet** (§38h, PR 3); `assessments` create still only checks the owner
+  and the permission.
+- **Prescription detail.** `Exercise.weight` (carga, ≤ 40 characters), `restSeconds` (0–600) and `notes` (≤ 300) already
+  existed in the JSON the phone decodes; the ficha editor fills them behind "Detalhes" and the aluno sees them
+  ("Supino — 3x12 · 40kg · descanso 1:30", the note, "Ver vídeo"). `domain/exerciseDetails.ts` owns the rules; `linksIn`
+  accepts only `http(s)` links; a blank carga/observação is stored as "not set" (`tidied`); a paste that replaces exercises
+  says their details are discarded. `parseWorkouts`/`applyPaste` are untouched.
+- **The log screen.** What is typed is kept on the device (`domain/formDraft.ts`, per uid + treino, 24 h, never more rows
+  than the permission allows); a session of the last seven days can be corrected (`updateSession`: a partial `update()` of
+  the same documents, one batch) or deleted (`deleteSession`); "Última vez" / "Repetir a última" come from the logs already in
+  memory (`domain/lastPerformance.ts`, the 60-day window); the rest timer is an end instant (`domain/restTimer.ts`); the
+  saved screen shows the summary and "Recordes" (`domain/sessionSummary.ts`). Saving still writes the same
+  `workoutLogs` documents.
+- **The aluno's home and "Evolução".** "Próximo treino" (`domain/nextTreino.ts`: the newest ficha's treino after the one
+  trained last), "Esta semana" (`domain/weekSummary.ts`), "Meus horários" (`loadMySchedules`: one more query of a handful of
+  documents in the provider; `domain/schedules.ts` `scheduleLines`) and the lines in "Evolução" (`LineChart` in §37b's kit,
+  with its sentence from `domain/chartText.ts`; the tables stay behind "Ver em tabela").
+- **Not built yet** (GOALS.md §38h–§38i, PR 3, after §36's Rules v8 so the version numbers stay linear): `sessionFeedback`,
+  `trainerContacts`, the feedback step after saving, and the personal's Registros / aluno page / "Hoje" additions.
+
 Checks, from `web/`: `npm test`, `npm run lint`, `npx tsc --noEmit` (run `npx next typegen` first
 on a fresh checkout), `npm run build`, and `npm run test:rules` (emulators, Java 21).
 

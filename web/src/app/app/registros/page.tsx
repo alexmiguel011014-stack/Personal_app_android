@@ -6,11 +6,13 @@ import { loadTrainerAssessments } from "../../../data/assessments";
 import { loadTrainerBiometrics } from "../../../data/biometrics";
 import { getFirebase } from "../../../data/firebase";
 import { loadTrainerLogs } from "../../../data/trainerData";
+import { loadTrainerWorkouts } from "../../../data/workouts";
 import type { Assessment } from "../../../domain/assessments";
 import { formatBodyFat, formatKg, type Biometric } from "../../../domain/biometrics";
 import { formatDate, formatDateTime, localDate } from "../../../domain/dates";
 import type { WorkoutLogDoc } from "../../../domain/metrics";
 import { DAY_MS, TRAINER_LOG_WINDOW_DAYS } from "../../../domain/readWindows";
+import { sessionTitle } from "../../../domain/sessions";
 import { dayMonthLong } from "../../_shared/dateLabels";
 import { useSession } from "../../SessionProvider";
 import { useTrainerData, type TrainerData } from "../useTrainerData";
@@ -63,6 +65,19 @@ function Book({ trainerId, data }: { trainerId: string; data: Extract<TrainerDat
   const [visibleDays, setVisibleDays] = useState(DAYS_PER_PAGE);
   const [older, setOlder] = useState<Older>({ from: snapshot.logsFrom, logs: [], biometrics: [], assessments: [] });
   const [olderStatus, setOlderStatus] = useState<"idle" | "loading" | "error">("idle");
+  // GOALS.md §38c (U10): the treino a session was done under, by name. A failed read just leaves the names out.
+  const [workoutNames, setWorkoutNames] = useState<ReadonlyMap<string, string> | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadTrainerWorkouts(getFirebase().db, trainerId).then(
+      (workouts) => !cancelled && setWorkoutNames(new Map(workouts.map((workout) => [workout.id, workout.name]))),
+      () => {},
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [trainerId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -176,7 +191,7 @@ function Book({ trainerId, data }: { trainerId: string; data: Extract<TrainerDat
             <section className="ledger-day" key={day.date} aria-labelledby={`dia-${day.date}`}>
               <h2 id={`dia-${day.date}`}>{dayMonthLong(day.date)}</h2>
               {day.entries.map((entry) => (
-                <Entry key={entry.id} entry={entry} name={names.get(entry.studentId) ?? "Aluno não encontrado"} timeZone={timeZone} />
+                <Entry key={entry.id} entry={entry} name={names.get(entry.studentId) ?? "Aluno não encontrado"} timeZone={timeZone} workoutNames={workoutNames} />
               ))}
             </section>
           ))}
@@ -194,7 +209,7 @@ function Book({ trainerId, data }: { trainerId: string; data: Extract<TrainerDat
   );
 }
 
-function Entry({ entry, name, timeZone }: { entry: LedgerEntry; name: string; timeZone: string }) {
+function Entry({ entry, name, timeZone, workoutNames }: { entry: LedgerEntry; name: string; timeZone: string; workoutNames: ReadonlyMap<string, string> | null }) {
   const student = (
     <Link href={`/app/alunos/detalhe?id=${encodeURIComponent(entry.studentId)}`}>{name}</Link>
   );
@@ -204,6 +219,7 @@ function Entry({ entry, name, timeZone }: { entry: LedgerEntry; name: string; ti
       <article id={entry.id} className="ledger-entry">
         <p>
           <span className="entry-type">Sessão concluída</span> · {student}
+          {workoutNames !== null && ` · ${sessionTitle(entry, workoutNames)}`}
         </p>
         <ul>
           {entry.exercises.map((exercise, index) => (
@@ -242,7 +258,7 @@ function Entry({ entry, name, timeZone }: { entry: LedgerEntry; name: string; ti
   return (
     <article id={entry.id} className="ledger-entry">
       <p>
-        <span className="entry-type">Autoavaliação enviada</span> · {student}
+        <span className="entry-type">{entry.anamnesis ? "Anamnese enviada" : "Autoavaliação enviada"}</span> · {student}
       </p>
       <p>
         {formatDateTime(entry.ms, timeZone)} ·{" "}

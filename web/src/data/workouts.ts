@@ -20,6 +20,12 @@ export async function loadStudentWorkouts(db: Firestore, trainerId: string, stud
     .sort((a, b) => b.createdAt - a.createdAt);
 }
 
+/** Every treino of the trainer's — only used to put names to the treino a session was done under (GOALS.md §38c, U10). */
+export async function loadTrainerWorkouts(db: Firestore, trainerId: string): Promise<Workout[]> {
+  const snapshot = await getDocs(query(collection(db, "workouts"), where("trainerId", "==", trainerId)));
+  return snapshot.docs.map((document) => toWorkout(document.id, document.data())).filter((workout) => workout !== null);
+}
+
 /**
  * The signed-in student's own treinos — StudentRepository.getMyWorkouts' query exactly: assigned
  * ones only, which is also all firestore.rules let them read. The page groups them with `groupFichas`.

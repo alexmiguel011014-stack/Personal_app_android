@@ -118,7 +118,7 @@ export async function browser(label = "b", vp = "desktop") {
   await send("Emulation.setDeviceMetricsOverride", { ...v, screenOrientation: { type: "portraitPrimary", angle: 0 } });
 
   const api = {
-    logs, dialog, net,
+    logs, dialog, net, cdp: send,
     async go(path, wait = 2500) { await send("Page.navigate", { url: path.startsWith("http") ? path : BASE + path }); await sleep(wait); },
     async eval(expr) {
       const r = await send("Runtime.evaluate", { expression: expr, awaitPromise: true, returnByValue: true });

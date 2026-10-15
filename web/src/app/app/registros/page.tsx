@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { loadTrainerAssessments } from "../../../data/assessments";
 import { loadTrainerBiometrics } from "../../../data/biometrics";
+import { loadTrainerFeedback } from "../../../data/sessionFeedback";
 import { getFirebase } from "../../../data/firebase";
 import { loadTrainerLogs } from "../../../data/trainerData";
 import { loadTrainerWorkouts } from "../../../data/workouts";
@@ -12,10 +13,12 @@ import { formatBodyFat, formatKg, type Biometric } from "../../../domain/biometr
 import { formatDate, formatDateTime, localDate } from "../../../domain/dates";
 import type { WorkoutLogDoc } from "../../../domain/metrics";
 import { DAY_MS, TRAINER_LOG_WINDOW_DAYS } from "../../../domain/readWindows";
+import { feedbackKey, indexFeedback, isUnseenByTrainer, type SessionFeedback } from "../../../domain/sessionFeedback";
 import { sessionTitle } from "../../../domain/sessions";
 import { dayMonthLong } from "../../_shared/dateLabels";
 import { useSession } from "../../SessionProvider";
-import { useTrainerData, type TrainerData } from "../useTrainerData";
+import { FeedbackPanel } from "../FeedbackPanel";
+import { useTrainerData, useTrainerDataInvalidation, type TrainerData } from "../useTrainerData";
 import { buildLedger, type LedgerEntry } from "./ledger";
 
 // GOALS.md §23k: the ALLU template's "Registros" — the book of what was actually done, by day:
@@ -26,7 +29,7 @@ import { buildLedger, type LedgerEntry } from "./ledger";
 
 const DAYS_PER_PAGE = 15;
 
-type Extras = { status: "loading" } | { status: "error" } | { status: "ready"; biometrics: Biometric[]; assessments: Assessment[] };
+type Extras = { status: "loading" } | { status: "error" } | { status: "ready"; biometrics: Biometric[]; assessments: Assessment[]; feedback: SessionFeedback[] };
 
 /** What "Buscar registros antes de…" has added, from `from` up to the snapshot's window. */
 interface Older {
@@ -34,6 +37,7 @@ interface Older {
   logs: WorkoutLogDoc[];
   biometrics: Biometric[];
   assessments: Assessment[];
+  feedback: SessionFeedback[];
 }
 
 export default function LedgerPage() {
@@ -63,7 +67,11 @@ function Book({ trainerId, data }: { trainerId: string; data: Extract<TrainerDat
   const [extras, setExtras] = useState<Extras>({ status: "loading" });
   const [studentId, setStudentId] = useState("");
   const [visibleDays, setVisibleDays] = useState(DAYS_PER_PAGE);
-  const [older, setOlder] = useState<Older>({ from: snapshot.logsFrom, logs: [], biometrics: [], assessments: [] });
+  const [older, setOlder] = useState<Older>({ from: snapshot.logsFrom, logs: [], biometrics: [], assessments: [], feedback: [] });
+  // GOALS.md §38h/§38i: what the personal has just written (marked seen, commented), over what was read; and the filter.
+  const [edits, setEdits] = useState<ReadonlyMap<string, SessionFeedback>>(new Map());
+  const [onlyUnseen, setOnlyUnseen] = useState(false);
+  const invalidate = useTrainerDataInvalidation();
   const [olderStatus, setOlderStatus] = useState<"idle" | "loading" | "error">("idle");
   // GOALS.md §38c (U10): the treino a session was done under, by name. A failed read just leaves the names out.
   const [workoutNames, setWorkoutNames] = useState<ReadonlyMap<string, string> | null>(null);
@@ -82,14 +90,19 @@ function Book({ trainerId, data }: { trainerId: string; data: Extract<TrainerDat
   useEffect(() => {
     let cancelled = false;
     const { db } = getFirebase();
-    Promise.all([loadTrainerBiometrics(db, trainerId, snapshot.logsFrom), loadTrainerAssessments(db, trainerId, snapshot.logsFrom)]).then(
-      ([biometrics, assessments]) => !cancelled && setExtras({ status: "ready", biometrics, assessments }),
+    // The feedback is an extra: where the Rules that carry it are not published yet, the rest of the book still opens.
+    Promise.all([
+      loadTrainerBiometrics(db, trainerId, snapshot.logsFrom),
+      loadTrainerAssessments(db, trainerId, snapshot.logsFrom),
+      loadTrainerFeedback(db, trainerId, localDate(snapshot.logsFrom, timeZone)).catch(() => []),
+    ]).then(
+      ([biometrics, assessments, feedback]) => !cancelled && setExtras({ status: "ready", biometrics, assessments, feedback }),
       () => !cancelled && setExtras({ status: "error" }),
     );
     return () => {
       cancelled = true;
     };
-  }, [trainerId, snapshot]);
+  }, [trainerId, snapshot, timeZone]);
 
   // Nobody has anything from before the first aluno joined: no need to look further back than that.
   const earliest = Math.min(...snapshot.students.map((s) => s.createdAt));
@@ -101,16 +114,18 @@ function Book({ trainerId, data }: { trainerId: string; data: Extract<TrainerDat
     setOlderStatus("loading");
     try {
       const { db } = getFirebase();
-      const [logs, biometrics, assessments] = await Promise.all([
+      const [logs, biometrics, assessments, feedback] = await Promise.all([
         loadTrainerLogs(db, trainerId, from, to),
         loadTrainerBiometrics(db, trainerId, from, to),
         loadTrainerAssessments(db, trainerId, from, to),
+        loadTrainerFeedback(db, trainerId, localDate(from, timeZone), localDate(to, timeZone)).catch(() => []),
       ]);
       setOlder((previous) => ({
         from,
         logs: [...previous.logs, ...logs],
         biometrics: [...previous.biometrics, ...biometrics],
         assessments: [...previous.assessments, ...assessments],
+        feedback: [...previous.feedback, ...feedback],
       }));
       setVisibleDays((n) => n + DAYS_PER_PAGE);
       setOlderStatus("idle");
@@ -124,13 +139,28 @@ function Book({ trainerId, data }: { trainerId: string; data: Extract<TrainerDat
   // also return those of alunos no longer there, which stay out.
   const listed = new Set(snapshot.students.map((s) => s.id));
   // Sessions alone are enough to show something while the rest loads — or if it fails.
-  const days = buildLedger({
+  const feedbackByKey = indexFeedback(extras.status === "ready" ? [...extras.feedback, ...older.feedback] : []);
+  for (const [key, edited] of edits) feedbackByKey.set(key, edited);
+  const allDays = buildLedger({
     logs: [...snapshot.logs, ...older.logs],
     biometrics: extras.status === "ready" ? [...extras.biometrics, ...older.biometrics].filter((b) => listed.has(b.studentId)) : [],
     assessments: extras.status === "ready" ? [...extras.assessments, ...older.assessments].filter((a) => listed.has(a.studentId)) : [],
     timeZone,
     studentId: studentId === "" ? undefined : studentId,
   });
+  // "Só não vistas": the sessions the aluno said something about that the personal has not marked as seen.
+  const days = onlyUnseen
+    ? allDays
+        .map((day) => ({
+          ...day,
+          entries: day.entries.filter((entry) => {
+            if (entry.kind !== "session") return false;
+            const item = feedbackByKey.get(feedbackKey(entry.studentId, entry.day));
+            return item !== undefined && isUnseenByTrainer(item);
+          }),
+        }))
+        .filter((day) => day.entries.length > 0)
+    : allDays;
   const loadOlderButton = canLoadOlder && (
     <p>
       <button type="button" disabled={olderStatus === "loading"} onClick={() => void loadOlder()}>
@@ -173,6 +203,10 @@ function Book({ trainerId, data }: { trainerId: string; data: Extract<TrainerDat
             ))}
           </select>
         </label>
+        <label className="check-line">
+          <input type="checkbox" checked={onlyUnseen} onChange={(event) => { setOnlyUnseen(event.target.checked); setVisibleDays(DAYS_PER_PAGE); }} />
+          Só não vistas
+        </label>
       </div>
 
       {extras.status === "loading" && <p role="status">Carregando medidas e autoavaliações…</p>}
@@ -191,7 +225,19 @@ function Book({ trainerId, data }: { trainerId: string; data: Extract<TrainerDat
             <section className="ledger-day" key={day.date} aria-labelledby={`dia-${day.date}`}>
               <h2 id={`dia-${day.date}`}>{dayMonthLong(day.date)}</h2>
               {day.entries.map((entry) => (
-                <Entry key={entry.id} entry={entry} name={names.get(entry.studentId) ?? "Aluno não encontrado"} timeZone={timeZone} workoutNames={workoutNames} />
+                <Entry
+                  key={entry.id}
+                  entry={entry}
+                  name={names.get(entry.studentId) ?? "Aluno não encontrado"}
+                  timeZone={timeZone}
+                  workoutNames={workoutNames}
+                  trainerId={trainerId}
+                  feedback={entry.kind === "session" ? feedbackByKey.get(feedbackKey(entry.studentId, entry.day)) : undefined}
+                  onFeedback={(next) => {
+                    setEdits((previous) => new Map(previous).set(feedbackKey(next.studentId, next.day), next));
+                    invalidate();
+                  }}
+                />
               ))}
             </section>
           ))}
@@ -209,7 +255,23 @@ function Book({ trainerId, data }: { trainerId: string; data: Extract<TrainerDat
   );
 }
 
-function Entry({ entry, name, timeZone, workoutNames }: { entry: LedgerEntry; name: string; timeZone: string; workoutNames: ReadonlyMap<string, string> | null }) {
+function Entry({
+  entry,
+  name,
+  timeZone,
+  workoutNames,
+  trainerId,
+  feedback,
+  onFeedback,
+}: {
+  entry: LedgerEntry;
+  name: string;
+  timeZone: string;
+  workoutNames: ReadonlyMap<string, string> | null;
+  trainerId: string;
+  feedback: SessionFeedback | undefined;
+  onFeedback: (next: SessionFeedback) => void;
+}) {
   const student = (
     <Link href={`/app/alunos/detalhe?id=${encodeURIComponent(entry.studentId)}`}>{name}</Link>
   );
@@ -239,6 +301,7 @@ function Entry({ entry, name, timeZone, workoutNames }: { entry: LedgerEntry; na
             ))}
           </details>
         )}
+        <FeedbackPanel trainerId={trainerId} studentId={entry.studentId} day={entry.day} feedback={feedback} onChange={onFeedback} />
       </article>
     );
   }

@@ -51,7 +51,8 @@ try {
   check("every figure is a link to its page", kpis.every((k) => k.href?.startsWith("/app/") || k.href?.startsWith("/Personal_app_android/app/")), kpis.map((k) => k.href).join(" "));
 
   const inbox = await T.eval(`[...document.querySelectorAll('.attention-row')].map(r=>({name:r.querySelector('.attention-name').innerText.trim(), reason:r.querySelector('.attention-reason').innerText.trim(), href:r.querySelector('a')?.getAttribute('href')}))`);
-  check("'Precisa de você' lists late → quiet → assessment, in that order", inbox.map((i) => i.reason).join(" > ") === "Mensalidade em atraso > Sem treinar > Avaliação pendente", inbox.map((i) => `${i.name}: ${i.reason}`).join(" | "));
+  // GOALS.md §38i added "Anamnese com ponto de atenção": Ana's seeded anamnese (a PAR-Q+ "sim" and a knee injury, 8 days ago) is one this device has not opened.
+  check("'Precisa de você' lists late → quiet → assessment → anamnese with a flag, in that order", inbox.map((i) => i.reason).join(" > ") === "Mensalidade em atraso > Sem treinar > Avaliação pendente > Anamnese com ponto de atenção", inbox.map((i) => `${i.name}: ${i.reason}`).join(" | "));
   check("Carla (two days in) and the fresh drafts are not nagged about", !inbox.some((i) => /Carla|Maria|Pedro/.test(i.name)));
   check("the roster and the numbers list left the home", !/Seus alunos|A semana em números|Ver diretório/.test(await T.text()));
   check("every chart on the home has a name", (await unnamedCharts(T)) === 0 && (await chartCount(T)) >= 4, String(await chartCount(T)));

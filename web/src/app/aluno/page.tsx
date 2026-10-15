@@ -1,11 +1,15 @@
 "use client";
 
 import Link from "next/link";
+import { whatsappLink } from "../../domain/contact";
+import { formatDayMonth } from "../../domain/dates";
 import { summarizeExercise } from "../../domain/exerciseDetails";
 import { groupFichas } from "../../domain/fichas";
 import { trainedDays } from "../../domain/metrics";
 import { nextTreino } from "../../domain/nextTreino";
 import { scheduleLines } from "../../domain/schedules";
+import { hasUnreadTrainerComment } from "../../domain/sessionFeedback";
+import { contactFirstName } from "../../domain/trainerContact";
 import { weekSummary, weekSummaryText } from "../../domain/weekSummary";
 import { ExerciseNote } from "../_shared/ExerciseNote";
 import { useSession } from "../SessionProvider";
@@ -36,12 +40,15 @@ function Home({ uid }: { uid: string }) {
     );
   }
 
-  const { profile, workouts, logs, schedules, timeZone, today } = data;
+  const { profile, workouts, logs, schedules, timeZone, today, feedback, contact } = data;
   const fichas = groupFichas(workouts);
   // GOALS.md §38f: all three come from what is already in memory (the logs of the last 60 days and the aluno's appointments).
   const next = nextTreino(fichas, logs);
   const week = weekSummary(trainedDays(logs, timeZone).get(uid) ?? new Set<string>(), today);
   const appointments = scheduleLines(schedules);
+  // GOALS.md §38h: the newest personal's comment the aluno has not opened, and the WhatsApp card when the personal turned it on.
+  const unread = feedback.filter(hasUnreadTrainerComment).sort((a, b) => (a.day < b.day ? 1 : -1))[0];
+  const contactLink = contact === null ? null : whatsappLink(contact.whatsapp);
   return (
     <main>
       <h1>Minhas fichas</h1>
@@ -53,6 +60,16 @@ function Home({ uid }: { uid: string }) {
           <p>Seu personal pediu sua anamnese — leva uns 5 minutos, em toques.</p>
           <p>
             <Link href="/aluno/avaliacao">Responder agora</Link>
+          </p>
+        </section>
+      )}
+
+      {unread !== undefined && (
+        <section>
+          <h2>Comentário do seu personal</h2>
+          <p>Seu personal comentou seu treino de {formatDayMonth(unread.day)}.</p>
+          <p>
+            <Link href="/aluno/evolucao">Ver o comentário</Link>
           </p>
         </section>
       )}
@@ -98,6 +115,14 @@ function Home({ uid }: { uid: string }) {
             <p key={line}>{line}</p>
           ))}
         </section>
+      )}
+
+      {contact !== null && contactLink !== null && (
+        <p>
+          <a className="button" href={contactLink} target="_blank" rel="noopener noreferrer">
+            Falar com {contactFirstName(contact)} no WhatsApp
+          </a>
+        </p>
       )}
 
       {workouts.length === 0 ? (

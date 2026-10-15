@@ -6,6 +6,7 @@ import { Avatar } from "../Avatar";
 // the rest fold into a <details>. The reason is always a word (the chip's colour only echoes it).
 
 const TONES: Record<string, "alert" | "warning" | "info"> = {
+  dor: "alert",
   atraso: "alert",
   cobranca: "alert",
   solicitacao: "info",

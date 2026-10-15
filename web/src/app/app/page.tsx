@@ -4,7 +4,9 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { getFirebase } from "../../data/firebase";
 import { trackActivity, writeTrainerStats } from "../../data/activity";
+import { loadTrainerAssessments } from "../../data/assessments";
 import { loadSchedules } from "../../data/schedules";
+import { ALERT_WINDOW_DAYS, parseOpened, unopenedFlaggedAnamneses, type AnamnesisAlert } from "../../domain/anamnesisAlerts";
 import { billingOwners } from "../../domain/billing";
 import { barChartLabel, deltaText, progressLabel, sparklineLabel } from "../../domain/chartText";
 import { dashboardFigures } from "../../domain/dashboard";
@@ -16,6 +18,7 @@ import { delta } from "../../domain/series";
 import { filterStudentsByPause, type Student } from "../../domain/students";
 import { moneyFromPayments, recentSessions, studentHref, trainerAttention, trainerKpis, ADHERENCE_WINDOW_DAYS, SESSIONS_WINDOW_DAYS, SESSION_WINDOWS } from "../../domain/trainerHome";
 import { agendaHourNumber, hourIn, longDate, shortDate } from "../_shared/dateLabels";
+import { browserStorage } from "../_shared/browserStorage";
 import { AttentionList } from "../_shared/dashboard/AttentionList";
 import { BarChart, ProgressBar, Sparkline } from "../_shared/dashboard/charts";
 import { KpiCard, KpiGrid } from "../_shared/dashboard/KpiCard";
@@ -40,6 +43,9 @@ export default function TrainerHome() {
 function Dashboard({ trainerId }: { trainerId: string }) {
   const { data, reload } = useTrainerData(trainerId, { ensureCharges: true });
   const [schedules, setSchedules] = useState<Schedule[] | "error" | null>(null);
+  // GOALS.md §38i: anamneses with a flag the personal has not opened on this device (one small query: the last 30 days).
+  const [anamneses, setAnamneses] = useState<AnamnesisAlert[]>([]);
+  const loadedAt = data.status === "ready" ? data.now : null;
 
   useEffect(() => {
     if (data.status !== "ready") return;
@@ -69,6 +75,29 @@ function Dashboard({ trainerId }: { trainerId: string }) {
     };
   }, [trainerId]);
 
+  useEffect(() => {
+    if (loadedAt === null) return;
+    let cancelled = false;
+    loadTrainerAssessments(getFirebase().db, trainerId, loadedAt - ALERT_WINDOW_DAYS * 86_400_000).then(
+      (assessments) => {
+        if (cancelled) return;
+        let raw: string | null = null;
+        try {
+          raw = browserStorage()?.getItem(`anamnesis-opened:${trainerId}`) ?? null;
+        } catch {
+          raw = null;
+        }
+        setAnamneses(unopenedFlaggedAnamneses(assessments, new Set(parseOpened(raw)), loadedAt));
+      },
+      () => {
+        // An extra: "Hoje" opens without it.
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [loadedAt, trainerId]);
+
   if (data.status === "loading") return <p className="loading">Carregando…</p>;
   if (data.status === "error") {
     return (
@@ -94,7 +123,14 @@ function Dashboard({ trainerId }: { trainerId: string }) {
   const owners = billingOwners(snapshot.students, snapshot.claimedDraftByAccount);
   const money = moneyFromPayments(figures.payments, owners);
   const attention = trainerAttention(
-    { students: snapshot.students, money, quiet: figures.quiet, pendingAssessments: figures.pendingAssessments },
+    {
+      students: snapshot.students,
+      money,
+      quiet: figures.quiet,
+      pendingAssessments: figures.pendingAssessments,
+      feedback: snapshot.feedback,
+      anamneses: anamneses.filter((alert) => snapshot.linked.some((linked) => linked.id === alert.studentId)),
+    },
     today,
     timeZone,
   );

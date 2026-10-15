@@ -6,6 +6,8 @@ import {
   paymentToFirestore,
   scheduleToFirestore,
   toAssessment,
+  toSessionFeedback,
+  toTrainerContact,
   toBiometric,
   toBillingPlan,
   toDraftStudent,
@@ -357,5 +359,33 @@ describe("payments and billingPlans", () => {
   it("reads a plan's studentId from its document id", () => {
     const { trainerId, amountCents, currency, dueDay, active, createdAt } = plan;
     expect(toBillingPlan("s1", { trainerId, amountCents, currency, dueDay, active, createdAt })).toEqual(plan);
+  });
+});
+
+describe("sessionFeedback and trainerContacts (GOALS.md §38h)", () => {
+  const stamp = (ms: number) => ({ toMillis: () => ms });
+  it("reads a feedback with both sides, server timestamps included", () => {
+    expect(
+      toSessionFeedback("s1_2026-10-14", {
+        studentId: "s1", trainerId: "t1", day: "2026-10-14", effort: 8, pain: true, studentComment: "Joelho",
+        studentAt: stamp(10), studentSeenAt: stamp(40), trainerComment: "Vamos ver", trainerAt: stamp(30), trainerSeenAt: stamp(20),
+      }),
+    ).toEqual({
+      studentId: "s1", trainerId: "t1", day: "2026-10-14", effort: 8, pain: true, studentComment: "Joelho",
+      studentAt: 10, studentSeenAt: 40, trainerComment: "Vamos ver", trainerAt: 30, trainerSeenAt: 20,
+    });
+  });
+  it("reads a personal-only document leniently, and an effort off the scale as skipped", () => {
+    expect(toSessionFeedback("x", { studentId: "s1", trainerId: "t1", day: "2026-10-14", trainerSeenAt: stamp(5), effort: 11, pain: "sim" })).toEqual({
+      studentId: "s1", trainerId: "t1", day: "2026-10-14", effort: null, pain: false, studentComment: "", studentAt: null,
+      studentSeenAt: null, trainerComment: "", trainerAt: null, trainerSeenAt: 5,
+    });
+  });
+  it("skips a feedback without its identity, and a contact without a name or number", () => {
+    expect(toSessionFeedback("x", { studentId: "s1", day: "2026-10-14" })).toBeNull();
+    expect(toTrainerContact("t1", { name: "Ana" })).toBeNull();
+    expect(toTrainerContact("t1", { name: "Ana Paula", whatsapp: "5511999990000", updatedAt: stamp(7) })).toEqual({
+      trainerId: "t1", name: "Ana Paula", whatsapp: "5511999990000", updatedAt: 7,
+    });
   });
 });

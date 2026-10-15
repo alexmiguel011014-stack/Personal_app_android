@@ -9,8 +9,17 @@ import { countActiveInvitesFromOtherClients, countActivePlatformInvites, isPlatf
 import { getFirebase } from "../../../../data/firebase";
 import { toLinkedStudent } from "../../../../data/converters";
 import { getDoc, noteReads } from "../../../../data/firestoreRead";
+import { loadStudentAssessments } from "../../../../data/assessments";
+import { loadStudentSchedules } from "../../../../data/schedules";
+import { loadStudentFeedback } from "../../../../data/sessionFeedback";
 import { loadStudentWorkouts } from "../../../../data/workouts";
 import type { LinkedStudentDoc } from "../../../../domain/students";
+import { localDate, formatDate } from "../../../../domain/dates";
+import { trainedDays } from "../../../../domain/metrics";
+import { scheduleLines, type Schedule } from "../../../../domain/schedules";
+import { feedbackKey, indexFeedback, type SessionFeedback } from "../../../../domain/sessionFeedback";
+import { anamnesisStatus, lastSession } from "../../../../domain/studentSummary";
+import { weekSummary, weekSummaryText } from "../../../../domain/weekSummary";
 import { telLink, whatsappLink } from "../../../../domain/contact";
 import { ConfirmDialog } from "../../../_shared/ConfirmDialog";
 import {
@@ -25,10 +34,11 @@ import { cancelWebsiteInvite, createWebsiteInvite, loadWebsiteInviteUsage, Websi
 import { trackActivity } from "../../../../data/activity";
 import type { StudentProfile } from "../../../../domain/studentProfile";
 import { useSession } from "../../../SessionProvider";
-import { useTrainerData } from "../../useTrainerData";
+import { FeedbackPanel } from "../../FeedbackPanel";
+import { useTrainerData, useTrainerDataInvalidation } from "../../useTrainerData";
 import { loadStudentLogs } from "../../../../data/trainerData";
 import { StudentForm } from "../StudentForm";
-import { AssessmentsSection } from "./AssessmentsSection";
+import { AssessmentsSection, type AssessmentsState } from "./AssessmentsSection";
 import { BillingSection } from "./BillingSection";
 import { MeasurementsSection } from "./MeasurementsSection";
 import { Avatar } from "../../../_shared/Avatar";
@@ -91,6 +101,41 @@ function useWorkoutNames(trainerId: string, studentId: string, enabled: boolean)
   return state !== null && state.id === studentId ? state.names : undefined;
 }
 
+/**
+ * GOALS.md §38h/§38i: what the header and the "Treinos" list need beyond the shared snapshot - this aluno's feedback
+ * (the snapshot's window of days), their appointments and their assessments (the anamnese status) - read together once
+ * when the page opens and again after each reload. Each is small: a handful of documents.
+ */
+function useStudentExtras(
+  trainerId: string,
+  studentId: string,
+  enabled: boolean,
+  logsFrom: number,
+  timeZone: string,
+  loadedAt: number,
+): { feedback: SessionFeedback[]; schedules: Schedule[]; assessments: AssessmentsState } {
+  const [state, setState] = useState<{ id: string; feedback: SessionFeedback[]; schedules: Schedule[]; assessments: AssessmentsState } | null>(null);
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    const { db } = getFirebase();
+    Promise.all([
+      loadStudentFeedback(db, trainerId, studentId, localDate(logsFrom, timeZone)).catch(() => []),
+      loadStudentSchedules(db, trainerId, studentId).catch(() => []),
+      loadStudentAssessments(db, trainerId, studentId).then(
+        (assessments): AssessmentsState => ({ status: "ready", assessments }),
+        (): AssessmentsState => ({ status: "error" }),
+      ),
+    ]).then(([feedback, schedules, assessments]) => {
+      if (!cancelled) setState({ id: studentId, feedback, schedules, assessments });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [trainerId, studentId, enabled, logsFrom, timeZone, loadedAt]);
+  return state !== null && state.id === studentId ? state : { feedback: [], schedules: [], assessments: { status: "loading" } };
+}
+
 function Detail({ trainerId, studentId }: { trainerId: string; studentId: string }) {
   const { data, reload } = useTrainerData(trainerId, { ensureCharges: true });
   const workoutNames = useWorkoutNames(trainerId, studentId, data.status === "ready" && data.snapshot.linked.some((l) => l.id === studentId));
@@ -99,6 +144,17 @@ function Detail({ trainerId, studentId }: { trainerId: string; studentId: string
     data.status === "ready" && data.snapshot.linked.some((l) => l.id === studentId),
     data.status === "ready" ? data.snapshot.loadedAt : 0,
   );
+  const linkedNow = data.status === "ready" && data.snapshot.linked.some((l) => l.id === studentId);
+  const extras = useStudentExtras(
+    trainerId,
+    studentId,
+    linkedNow,
+    data.status === "ready" ? data.snapshot.logsFrom : 0,
+    data.status === "ready" ? data.timeZone : "America/Sao_Paulo",
+    data.status === "ready" ? data.snapshot.loadedAt : 0,
+  );
+  const [edits, setEdits] = useState<ReadonlyMap<string, SessionFeedback>>(new Map());
+  const invalidate = useTrainerDataInvalidation();
   const [editing, setEditing] = useState(false);
   const [pauseBusy, setPauseBusy] = useState(false);
   const [pauseStatus, setPauseStatus] = useState<string | null>(null);
@@ -144,6 +200,22 @@ function Detail({ trainerId, studentId }: { trainerId: string; studentId: string
     trainingDays: student.doc.trainingDays,
   };
 
+  const feedbackBySession = indexFeedback(extras.feedback);
+  for (const [key, edited] of edits) feedbackBySession.set(key, edited);
+  const feedbackList = [...feedbackBySession.values()];
+  const studentLogs = data.snapshot.logs.filter((log) => log.studentId === student.doc.id);
+  const whatsapp = whatsappLink(profile.phone);
+  const last =
+    student.kind === "linked"
+      ? lastSession(studentLogs, feedbackList, data.snapshot.earlierLogs.find((log) => log.studentId === student.doc.id) ?? null, data.timeZone, (ms) => localDate(ms, data.timeZone))
+      : null;
+  const week = weekSummary(trainedDays(studentLogs, data.timeZone).get(student.doc.id) ?? new Set<string>(), data.today);
+  const anamnese =
+    student.kind === "linked" && extras.assessments.status === "ready"
+      ? anamnesisStatus(extras.assessments.assessments, student.doc.pendingAssessmentRequest, data.now)
+      : null;
+  const appointments = scheduleLines(extras.schedules);
+
   return (
     <main>
       <p className="eyebrow">
@@ -160,33 +232,135 @@ function Detail({ trainerId, studentId }: { trainerId: string; studentId: string
           </p>
         </div>
       </div>
-      <p>
-        <button
-          type="button"
-          disabled={pauseBusy}
-          onClick={async () => {
-            setPauseBusy(true);
-            setPauseStatus(null);
-            try {
-              await setStudentPaused(getFirebase().db, student, !student.doc.paused);
-              setPauseStatus(student.doc.paused ? "Aluno reativado." : "Aluno pausado.");
-              reload();
-            } catch (error) {
-              setPauseStatus(error instanceof Error ? error.message : "Não foi possível alterar a situação do aluno.");
-            } finally {
-              setPauseBusy(false);
-            }
-          }}
-        >
-          {pauseBusy ? "Salvando…" : student.doc.paused ? "Reativar aluno" : "Pausar aluno"}
-        </button>
-      </p>
-      <p className="section-footnote">
-        A pausa afeta o diretório e os indicadores do painel; o aluno mantém acesso aos treinos e registros, e as cobranças continuam normalmente.
-      </p>
-      {pauseStatus && <p role="status">{pauseStatus}</p>}
 
-      <section>
+      {/* GOALS.md §38i (U9): the summary first - what the personal opens this page to know. */}
+      <section className="student-summary" aria-label="Resumo do aluno">
+        <dl>
+          {student.kind === "linked" && (
+            <>
+              <dt>Último treino</dt>
+              <dd>
+                {last === null ? (
+                  "ainda não treinou"
+                ) : (
+                  <>
+                    {formatDate(last.day)}
+                    {last.effort !== null && ` · esforço ${last.effort.toLowerCase()}`}
+                    {last.pain && <span className="status-pill is-pain"> Relatou dor</span>}
+                  </>
+                )}
+              </dd>
+              <dt>Esta semana</dt>
+              <dd>{weekSummaryText(week)}</dd>
+              <dt>Horários</dt>
+              <dd>{appointments.length === 0 ? "nenhum marcado" : appointments.join(" · ")}</dd>
+            </>
+          )}
+          <dt>Contato</dt>
+          <dd>
+            {whatsapp === null ? (
+              profile.phone || "sem telefone"
+            ) : (
+              <>
+                <a href={whatsapp} target="_blank" rel="noopener noreferrer">
+                  WhatsApp
+                </a>
+                {" · "}
+                <a href={telLink(profile.phone) ?? undefined}>Ligar</a>
+              </>
+            )}
+          </dd>
+          {student.kind === "linked" && (
+            <>
+              <dt>Anamnese</dt>
+              <dd>
+                {anamnese === null ? "—" : anamnese.label}
+                {anamnese !== null && (anamnese.kind === "current" || anamnese.kind === "outdated") && ` (${formatDate(localDate(anamnese.since, data.timeZone))})`}
+              </dd>
+            </>
+          )}
+        </dl>
+        <nav className="anchor-chips" aria-label="Seções desta página">
+          <a href="#fichas">Fichas</a>
+          {student.kind === "linked" && <a href="#treinos">Treinos</a>}
+          {student.kind === "linked" && <a href="#progressao">Progressão</a>}
+          <a href="#medidas">Medidas</a>
+          {student.kind === "linked" && <a href="#anamneses">Anamneses</a>}
+          <a href="#mensalidade">Mensalidade</a>
+          <a href="#permissoes">{student.kind === "linked" ? "Permissões" : "Convite"}</a>
+          <a href="#dados">Dados</a>
+          <a href="#gerenciar">Gerenciar</a>
+        </nav>
+      </section>
+
+      <div id="fichas">
+      {/* keyed by the student: moving from one student to another must not show the previous one's cards while loading */}
+      <FichasSection
+        key={student.doc.id}
+        trainerId={trainerId}
+        studentId={student.doc.id}
+        connected={student.kind === "linked"}
+        timeZone={data.timeZone}
+      />
+      </div>
+
+      {student.kind === "linked" && (
+        <ProgressSection
+          key={`progresso-${student.doc.id}`}
+          workoutNames={workoutNames}
+          logs={studentLogs}
+          timeZone={data.timeZone}
+          sessionsFirst
+          sessionExtras={(session) => (
+            <FeedbackPanel
+              trainerId={trainerId}
+              studentId={student.doc.id}
+              day={session.day}
+              feedback={feedbackBySession.get(feedbackKey(session.studentId, session.day))}
+              onChange={(next) => {
+                setEdits((previous) => new Map(previous).set(feedbackKey(next.studentId, next.day), next));
+                invalidate();
+              }}
+            />
+          )}
+          windowFrom={data.snapshot.logsFrom}
+          loadAll={() => loadStudentLogs(getFirebase().db, trainerId, student.doc.id)}
+        />
+      )}
+
+      <div id="medidas">
+      <MeasurementsSection
+        trainerId={trainerId}
+        studentId={student.doc.id}
+        connected={student.kind === "linked"}
+        timeZone={data.timeZone}
+      />
+      </div>
+
+      {student.kind === "linked" && (
+        <AssessmentsSection studentId={student.doc.id} timeZone={data.timeZone} state={extras.assessments} />
+      )}
+
+      <div id="mensalidade">
+      <BillingSection
+        trainerId={trainerId}
+        studentId={student.doc.id}
+        snapshot={data.snapshot}
+        today={data.today}
+        timeZone={data.timeZone}
+        onChanged={reload}
+      />
+      </div>
+
+      <div id="permissoes">
+      {student.kind === "draft" ? (
+        <InviteSection trainerId={trainerId} student={student} timeZone={data.timeZone} />
+      ) : (
+        <PermissionsSection trainerId={trainerId} studentId={student.doc.id} account={student.doc} timeZone={data.timeZone} onChanged={reload} />
+      )}
+      </div>
+
+      <section id="dados">
         <h2>Dados</h2>
         {editing ? (
           <StudentForm
@@ -234,51 +408,34 @@ function Detail({ trainerId, studentId }: { trainerId: string; studentId: string
         )}
       </section>
 
-      {student.kind === "draft" ? (
-        <InviteSection trainerId={trainerId} student={student} timeZone={data.timeZone} />
-      ) : (
-        <PermissionsSection trainerId={trainerId} studentId={student.doc.id} account={student.doc} timeZone={data.timeZone} onChanged={reload} />
-      )}
-
-      <BillingSection
-        trainerId={trainerId}
-        studentId={student.doc.id}
-        snapshot={data.snapshot}
-        today={data.today}
-        timeZone={data.timeZone}
-        onChanged={reload}
-      />
-
-      {/* keyed by the student: moving from one student to another must not show the previous one's cards while loading */}
-      <FichasSection
-        key={student.doc.id}
-        trainerId={trainerId}
-        studentId={student.doc.id}
-        connected={student.kind === "linked"}
-        timeZone={data.timeZone}
-      />
-
-      {student.kind === "linked" && (
-        <AssessmentsSection trainerId={trainerId} studentId={student.doc.id} timeZone={data.timeZone} />
-      )}
-
-      <MeasurementsSection
-        trainerId={trainerId}
-        studentId={student.doc.id}
-        connected={student.kind === "linked"}
-        timeZone={data.timeZone}
-      />
-
-      {student.kind === "linked" && (
-        <ProgressSection
-          key={`progresso-${student.doc.id}`}
-          workoutNames={workoutNames}
-          logs={data.snapshot.logs.filter((log) => log.studentId === student.doc.id)}
-          timeZone={data.timeZone}
-          windowFrom={data.snapshot.logsFrom}
-          loadAll={() => loadStudentLogs(getFirebase().db, trainerId, student.doc.id)}
-        />
-      )}
+      <section id="gerenciar">
+        <h2>Gerenciar aluno</h2>
+      <p>
+        <button
+          type="button"
+          disabled={pauseBusy}
+          onClick={async () => {
+            setPauseBusy(true);
+            setPauseStatus(null);
+            try {
+              await setStudentPaused(getFirebase().db, student, !student.doc.paused);
+              setPauseStatus(student.doc.paused ? "Aluno reativado." : "Aluno pausado.");
+              reload();
+            } catch (error) {
+              setPauseStatus(error instanceof Error ? error.message : "Não foi possível alterar a situação do aluno.");
+            } finally {
+              setPauseBusy(false);
+            }
+          }}
+        >
+          {pauseBusy ? "Salvando…" : student.doc.paused ? "Reativar aluno" : "Pausar aluno"}
+        </button>
+      </p>
+      <p className="section-footnote">
+        A pausa afeta o diretório e os indicadores do painel; o aluno mantém acesso aos treinos e registros, e as cobranças continuam normalmente.
+      </p>
+      {pauseStatus && <p role="status">{pauseStatus}</p>}
+      </section>
     </main>
   );
 }

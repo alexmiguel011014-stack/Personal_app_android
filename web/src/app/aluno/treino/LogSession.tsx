@@ -7,7 +7,7 @@ import { getFirebase } from "../../../data/firebase";
 import { logSession, updateSession } from "../../../data/workoutLogs";
 import { decodePerformedSets, type Exercise } from "../../../domain/exercise";
 import { summarizeExercise } from "../../../domain/exerciseDetails";
-import { formatDayMonth } from "../../../domain/dates";
+import { formatDayMonth, localDate } from "../../../domain/dates";
 import { formatLastSets, lastPerformance, repeatRows, rowPlaceholder, type LastPerformance } from "../../../domain/lastPerformance";
 import type { WorkoutLogDoc } from "../../../domain/metrics";
 import { adjustRest, clock, restDuration } from "../../../domain/restTimer";
@@ -22,6 +22,7 @@ import { ExerciseNote } from "../../_shared/ExerciseNote";
 import { useSession } from "../../SessionProvider";
 import { useStudentData } from "../useStudentData";
 import { RestTimerChip, type RestTimer } from "./RestTimerChip";
+import { SessionFeedbackForm } from "./SessionFeedbackForm";
 import { createAudio } from "./restAlert";
 
 // GOALS.md §23h: logging today's session — StudentLogSessionScreen. Each exercise gets rows of
@@ -135,6 +136,8 @@ function SessionForm({
       ),
   );
   const [saved, setSaved] = useState(false);
+  // GOALS.md §38h: the local day this session was saved on, kept for the "Como foi o treino?" question that follows.
+  const [savedDay, setSavedDay] = useState<string | null>(null);
   const [summary, setSummary] = useState<SessionSummary | null>(null);
   // GOALS.md §38e (D8): one rest timer at a time; the AudioContext is made inside the tap that starts it.
   const [rest, setRest] = useState<RestTimer | null>(null);
@@ -214,7 +217,11 @@ function SessionForm({
     setError(null);
     try {
       if (editing) await updateSession(getFirebase().db, uid, trainerId, workout.id, editing.logs, entries);
-      else await logSession(getFirebase().db, uid, trainerId, workout.id, entries, Date.now());
+      else {
+        const now = Date.now();
+        await logSession(getFirebase().db, uid, trainerId, workout.id, entries, now);
+        setSavedDay(localDate(now, timeZone));
+      }
       removeDraft(browserStorage(), draftId);
       if (!editing) setSummary(summarizeSession(entries, logs));
       setRest(null);
@@ -251,6 +258,7 @@ function SessionForm({
             )}
           </section>
         )}
+        {savedDay !== null && <SessionFeedbackForm uid={uid} trainerId={trainerId} day={savedDay} onSent={onSaved} />}
         <p>
           <Link href="/aluno">Voltar para as fichas</Link>
         </p>

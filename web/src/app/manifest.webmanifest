@@ -1,0 +1,17 @@
+{
+  "id": "./entrar/",
+  "name": "ALLU personal",
+  "short_name": "ALLU",
+  "description": "Gestão de alunos, fichas de treino e evolução para personal trainers.",
+  "lang": "pt-BR",
+  "start_url": "./entrar/",
+  "scope": "./",
+  "display": "standalone",
+  "theme_color": "#12161c",
+  "background_color": "#faf9f7",
+  "icons": [
+    { "src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

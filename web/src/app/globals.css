@@ -844,6 +844,38 @@ fieldset.consent label.check > input { margin-top: 2px; }
 @media (min-width: 700px) {
   .report dl.answers > div { grid-template-columns: minmax(200px, 40%) 1fr; align-items: baseline; gap: 16px; }
 }
+/* ---------- Configurações: the tab strip and the install guide (GOALS.md §40) ---------- */
+
+.settings-tabs { display: flex; gap: 8px; margin: 0 0 4px; padding-bottom: 2px; overflow-x: auto; }
+.settings-tabs a { display: inline-flex; min-height: 44px; align-items: center; padding: 0 16px; border: 1px solid var(--field); border-radius: var(--radius); background: var(--white); color: var(--ink); font-size: 14px; font-weight: 650; text-decoration: none; white-space: nowrap; }
+.settings-tabs a:hover { background: var(--tint); }
+.settings-tabs a[aria-current="page"] { border-color: var(--forest); background: var(--forest); color: #ffffff; }
+
+.install-intro { margin: 0 0 14px; max-width: 640px; color: var(--ink); font-size: 15px; line-height: 1.6; }
+.install-installed { margin: 0 0 14px; padding: 12px 14px; border: 1px solid var(--success-line); border-radius: var(--radius); background: var(--success-bg); color: var(--success); font-size: 14px; font-weight: 650; line-height: 1.5; }
+.install-toggle { display: flex; gap: 8px; }
+.install-toggle button { flex: 1 1 0; }
+.install-toggle button[aria-pressed="true"] { border-color: var(--primary); background: var(--primary); color: #ffffff; }
+.install-steps { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.install-step { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 4px 14px; padding: 16px 0; border-top: 1px solid var(--line); }
+.install-step:first-child { padding-top: 0; border-top: 0; }
+.install-step-number { display: flex; width: 36px; height: 36px; align-items: center; justify-content: center; border-radius: 50%; background: var(--forest); color: #ffffff; font-family: var(--font-display); font-size: 20px; font-weight: 600; line-height: 1; }
+.install-step h3 { margin: 6px 0 6px; font-size: 17px; line-height: 1.25; }
+.install-step p { margin: 0; color: var(--ink); font-size: 15px; line-height: 1.55; }
+.install-shot { grid-column: 2; margin: 12px 0 0; }
+.install-shot-frame { position: relative; width: min(100%, 280px); overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: var(--tint); }
+.install-shot-frame img { display: block; width: 100%; height: auto; }
+.install-ring { position: absolute; border: 3px solid var(--primary); border-radius: 10px; box-shadow: 0 0 0 2px #ffffff; pointer-events: none; }
+.install-problems summary { justify-content: space-between; gap: 12px; }
+.install-problems summary::after { content: "+"; flex: none; font-size: 22px; font-weight: 500; line-height: 1; }
+.install-problems details[open] > summary::after { transform: rotate(45deg); }
+.install-problems details p { margin: 0 0 8px; color: var(--ink); font-size: 15px; line-height: 1.55; }
+.install-note { margin: 16px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+@media (min-width: 861px) {
+  .install-step:has(.install-shot) { grid-template-columns: 36px minmax(0, 1fr) 280px; }
+  .install-shot { grid-column: 3; grid-row: 1 / span 2; margin: 0; }
+}
+
 /* On paper: no navigation, no buttons, black on white, and every point of attention still says what it is in words. */
 @media print {
   @page { size: A4; margin: 14mm; }

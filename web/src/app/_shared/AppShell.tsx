@@ -49,7 +49,7 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const { session } = useSession();
-  const who = session.status === "signedIn" ? (session.email ?? "Minha conta") : "";
+  const who = session.status === "signedIn" ? (session.email ?? "ALLU") : "";
   const accountHref = `${home.replace(/\/$/, "")}/conta`;
 
   return (
@@ -92,16 +92,16 @@ export function AppShell({
             <Link
               className="profile-account"
               href={accountHref}
-              title="Abrir configurações da minha conta"
-              aria-label="Abrir configurações da minha conta"
+              title={`${roleLabel} · abrir as configurações`}
+              aria-label="Abrir as configurações"
               aria-current={pathname.replace(/\/+$/, "") === accountHref ? "page" : undefined}
             >
               <Avatar name={who || "ALLU"} tone="dark" uid={session.status === "signedIn" ? session.uid : undefined} />
               <span className="profile-meta">
                 <strong title={who}>{who}</strong>
-                <small>{roleLabel} · Minha conta</small>
+                <small>Configurações</small>
               </span>
-              <span className="account-mobile-label" aria-hidden="true">Conta</span>
+              <span className="account-mobile-label" aria-hidden="true">Config.</span>
             </Link>
             <SignOutButton className="signout" />
           </div>

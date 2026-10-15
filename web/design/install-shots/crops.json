@@ -1,0 +1,102 @@
+{
+  "_doc": "GOALS.md §40h. Per output picture: the raw file in raw/ (gitignored) and the crop rectangle in that file's own pixels (the phone captures are 738 x 1600). Everything above the page's own content (the status bar: time, battery) is left out. Run `npm run shots:install`. `retouch` (optional): `fill` [r,g,b], `erase` rectangles painted with it, `paste` patches ({from, dx, dy}) cut from the untouched capture and moved.",
+  "ios-01-pagina": {
+    "source": "ios-01-pagina.jpg",
+    "crop": {
+      "left": 0,
+      "top": 920,
+      "width": 738,
+      "height": 680
+    }
+  },
+  "ios-02-menu": {
+    "source": "ios-02-menu.jpg",
+    "crop": {
+      "left": 0,
+      "top": 780,
+      "width": 738,
+      "height": 820
+    }
+  },
+  "ios-03-folha": {
+    "source": "ios-03-folha.jpg",
+    "crop": {
+      "left": 0,
+      "top": 830,
+      "width": 738,
+      "height": 770
+    }
+  },
+  "ios-04-lista": {
+    "source": "ios-04-lista.jpg",
+    "crop": {
+      "left": 0,
+      "top": 880,
+      "width": 738,
+      "height": 520
+    }
+  },
+  "ios-05-confirmar": {
+    "source": "ios-05-confirmar.jpg",
+    "crop": {
+      "left": 0,
+      "top": 110,
+      "width": 738,
+      "height": 630
+    }
+  },
+  "android-01-pagina": {
+    "source": "android-01-pagina.jpg",
+    "crop": {
+      "left": 0,
+      "top": 70,
+      "width": 738,
+      "height": 490
+    }
+  },
+  "android-02-menu": {
+    "source": "android-02-menu.jpg",
+    "crop": {
+      "left": 0,
+      "top": 1000,
+      "width": 738,
+      "height": 600
+    }
+  },
+  "android-03-instalar": {
+    "source": "android-03-instalar-ANTES-do-manifest.jpg",
+    "retouch": {
+      "fill": [
+        32,
+        29,
+        36
+      ],
+      "erase": [
+        {
+          "left": 168,
+          "top": 1280,
+          "width": 480,
+          "height": 92
+        }
+      ],
+      "paste": [
+        {
+          "from": {
+            "left": 170,
+            "top": 1284,
+            "width": 120,
+            "height": 38
+          },
+          "dx": 0,
+          "dy": 22
+        }
+      ]
+    },
+    "crop": {
+      "left": 0,
+      "top": 1120,
+      "width": 738,
+      "height": 480
+    }
+  }
+}

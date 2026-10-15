@@ -72,7 +72,7 @@ export function actionErrorMessage(code: string | undefined, mode: ActionMode | 
       case "verifyEmail":
         return "Este link já foi usado ou expirou. Se você já confirmou o e-mail, volte e continue; se não, volte à página do convite e toque em “Reenviar e-mail”.";
       case "verifyAndChangeEmail":
-        return "Este link já foi usado ou expirou. Se a troca de e-mail não foi concluída, peça outra em Minha conta.";
+        return "Este link já foi usado ou expirou. Se a troca de e-mail não foi concluída, peça outra em Configurações.";
       case "resetPassword":
         return "Este link já foi usado ou expirou. Peça outro em Entrar → Esqueci minha senha.";
       default:

@@ -27,14 +27,14 @@ try {
   // ---------- sign in and reach the account page ----------
   check(`[${role}] signs in and lands in its own area`, (await b.login(OLD)) === HOME, await b.url());
   await b.go(PATH, 3500);
-  check(`[${role}] account page opens from the profile entry`, await b.eval(`!!document.querySelector('a[aria-label*="conta"][href*="/conta"]')`));
+  check(`[${role}] account page opens from the profile entry`, await b.eval(`!!document.querySelector('a.profile-account[href*="/conta"]')`));
   check(`[${role}] sign-out is a separate control`, await b.eval(`[...document.querySelectorAll('button')].some(x=>/^Sair$/.test(x.textContent.trim()))`));
-  check(`[${role}] tab title is the page's own`, /Minha conta/.test(await b.eval("document.title")), await b.eval("document.title"));
+  check(`[${role}] tab title is the page's own`, /Configurações/.test(await b.eval("document.title")), await b.eval("document.title"));
 
   // ---------- keyboard: order, names, visible focus ----------
   await b.go(PATH, 3000);
   const stops = [];
-  for (let i = 0; i < 45; i++) {
+  for (let i = 0; i < 50; i++) {
     await b.key("Tab");
     const s = await b.eval(`(()=>{const e=document.activeElement; if(!e||e===document.body) return null; const cs=getComputedStyle(e); const name=(e.labels&&e.labels[0]?e.labels[0].innerText:'')||e.getAttribute('aria-label')||e.textContent||e.getAttribute('placeholder')||''; return {tag:e.tagName, type:e.type||'', name:name.trim().replace(/\\s+/g,' ').slice(0,40), outline: parseFloat(cs.outlineWidth)>0 && cs.outlineStyle!=='none', main: !!e.closest('main'), href:e.getAttribute('href')||''};})()`);
     if (s && s.tag !== 'NEXTJS-PORTAL') stops.push(s);

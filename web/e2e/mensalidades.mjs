@@ -121,6 +121,8 @@ try {
   check("an expired mensalidade locks the trainer and names the date", /Conta temporariamente bloqueada/.test(await T.text("main")) && /venceu em \d{2}\/\d{2}\/\d{4}/.test(await T.text("main")), (await T.text("main")).slice(0, 160));
   await T.go("/app/conta/", 3500);
   check("a locked trainer still reads their plan and expiry", /Plano e mensalidade/.test(await T.text()) && /Em atraso/.test(await T.text()), (await T.text()).slice(0, 200));
+  await T.go("/app/conta/instalar/", 3000);
+  check("a locked trainer can still open the install tab of Configurações (§40c)", /Configurações/.test(await T.text()) && /No iPhone/.test(await T.text()) && !/temporariamente bloqueada/.test(await T.text()), (await T.text()).slice(0, 160));
   await A.go("/admin/mensalidades/", 2500); await loaded(A);
   check("the list shows the trainer 'Em atraso há 3 dias'", /Em atraso há 3 dias/.test((await rowText(A, trainerName)) ?? ""), (await rowText(A, trainerName)) ?? "");
   await clickRow(A, trainerName, "Marcar como pago"); await sleep(1500);

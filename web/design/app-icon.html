@@ -1,0 +1,40 @@
+<!doctype html>
+<!-- GOALS.md §40b: the app icon's artwork. `scripts/make-app-icons.mjs` opens this page at each icon size
+     (?kind=any | maskable | full, &mark=barbell-a | dumbbell) and screenshots it into public/icons/ and src/app/.
+     "barbell-a" (the default) is the wordmark's "A" with a barbell for its crossbar — the letter of ALLU, and the gym.
+     "dumbbell" is the plain alternative. Colours are the site's own tokens: ink --forest #12161c, white, --leaf #fb923c.
+     Not part of the site; nothing here is served. -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ALLU app icon</title>
+<style>
+  html, body { margin: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; }
+  .tile { width: 100vw; height: 100vh; display: grid; place-items: center; background: #12161c; }
+  /* "any": a rounded square with transparent corners, like a favicon. "full" (iOS) and "maskable" (Android) are
+     opaque squares the system rounds or masks itself; maskable keeps the mark inside the central 80 % circle. */
+  .tile[data-kind="any"] { border-radius: 22%; }
+  .tile svg { display: block; width: 78vw; height: 78vw; }
+  .tile[data-kind="maskable"] svg { width: 66vw; height: 66vw; }
+</style>
+<div class="tile" id="tile"></div>
+<script>
+  const W = "#ffffff", O = "#fb923c";
+  const MARKS = {
+    // The A is open at the bottom of its counter on purpose: the barbell is its crossbar.
+    "barbell-a": `<svg viewBox="0 0 100 100">
+      <path d="M41 17 H59 L77 85 H63 L50 36.3 L37 85 H23 Z" fill="${W}"/>
+      <rect x="12" y="57" width="76" height="7" rx="3.5" fill="${O}"/>
+      <rect x="14" y="42" width="7.5" height="37" rx="3" fill="${O}"/><rect x="78.5" y="42" width="7.5" height="37" rx="3" fill="${O}"/>
+      <rect x="5" y="50" width="7" height="21" rx="3" fill="${O}"/><rect x="88" y="50" width="7" height="21" rx="3" fill="${O}"/>
+    </svg>`,
+    "dumbbell": `<svg viewBox="0 0 100 100"><g transform="rotate(-35 50 50)">
+      <rect x="26" y="46" width="48" height="8" rx="4" fill="${W}"/>
+      <rect x="20" y="29" width="10" height="42" rx="3.5" fill="${W}"/><rect x="70" y="29" width="10" height="42" rx="3.5" fill="${W}"/>
+      <rect x="10" y="37" width="9" height="26" rx="3.5" fill="${O}"/><rect x="81" y="37" width="9" height="26" rx="3.5" fill="${O}"/>
+    </g></svg>`,
+  };
+  const params = new URLSearchParams(location.search);
+  const tile = document.getElementById("tile");
+  tile.dataset.kind = params.get("kind") ?? "any";
+  tile.innerHTML = MARKS[params.get("mark") ?? "barbell-a"];
+</script>

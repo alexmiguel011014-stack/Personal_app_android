@@ -88,7 +88,7 @@ describe("actionErrorMessage", () => {
   it("says what to do for a spent or expired code, per mode", () => {
     expect(actionErrorMessage("auth/expired-action-code", "verifyEmail")).toContain("Reenviar e-mail");
     expect(actionErrorMessage("auth/invalid-action-code", "resetPassword")).toContain("Esqueci minha senha");
-    expect(actionErrorMessage("auth/invalid-action-code", "verifyAndChangeEmail")).toContain("Minha conta");
+    expect(actionErrorMessage("auth/invalid-action-code", "verifyAndChangeEmail")).toContain("Configurações");
     expect(actionErrorMessage("auth/invalid-action-code", null)).toBe("Este link já foi usado ou expirou.");
   });
 

@@ -122,14 +122,17 @@ image or web font in the mail, a layout beyond what the template editor keeps (G
 | `/admin/personais/novo` | `src/app/admin/personais/novo/` | ADM — create a trainer account and send its password-reset link |
 | `/admin/solicitacoes` | `src/app/admin/solicitacoes/` | ADM — approve or reject trainer requests |
 | `/admin/planos` | `src/app/admin/planos/` | ADM — default platform plans and trial terms (§30) |
-| `/admin/conta` | `src/app/admin/conta/` | ADM — own profile, avatar, contact phone, e-mail and password (§29) |
-| `/app/conta` | `src/app/app/conta/` | Trainer — own profile and sign-in settings (§29) |
-| `/aluno/conta` | `src/app/aluno/conta/` | Student — own profile and sign-in settings (§29) |
+| `/admin/conta` | `src/app/admin/conta/` | ADM — own profile, avatar, contact phone, e-mail and password (§29) — shown as "Configurações" (§40) |
+| `/admin/conta/instalar` | `src/app/admin/conta/instalar/` | ADM — "Instalar no celular": how to put the site on a phone's home screen (§40) |
+| `/app/conta` | `src/app/app/conta/` | Trainer — own profile and sign-in settings (§29), "Configurações" (§40) |
+| `/app/conta/instalar` | `src/app/app/conta/instalar/` | Trainer — "Instalar no celular" (§40) |
+| `/aluno/conta` | `src/app/aluno/conta/` | Student — own profile and sign-in settings (§29), "Configurações" (§40) |
+| `/aluno/conta/instalar` | `src/app/aluno/conta/instalar/` | Student — "Instalar no celular" (§40) |
 
 `src/app/app/` is not a typo: the outer `app/` is the App Router directory, the inner one is the
 `/app` URL segment. `/app` and `/aluno` have separate layouts on purpose — see §23's decisions —
 and each guards itself (`RequireArea`): whoever belongs elsewhere is sent there. `/admin` has its
-own guard and shell with Visão geral, Personais, Solicitações and Minha conta; `destinationFor`
+own guard and shell with Visão geral, Personais, Solicitações and Configurações; `destinationFor`
 sends ADM to `/admin`, including when they open `/app`.
 
 ### First ADM account (manual Firebase console setup; GOALS.md §26b)
@@ -177,6 +180,27 @@ do not describe the current counter as global. See `../GOALS.md` §30.
 Actions, route handlers, cookies, redirects or dynamic path segments — Next refuses them even in
 `next dev`. That is why the invite link carries its code as `?c=` rather than in the path. All auth
 and data run in the browser through the Firebase client SDK; `firestore.rules` is the security.
+
+## Install on a phone (GOALS.md §40)
+
+Saved to a phone's home screen, the site is an app: its own icon and name ("ALLU"), full screen, no browser bar. It is the
+website, not a store app, and it needs no service worker (the install menu works without one, and a service worker on a site
+that redeploys often is the usual cause of "I still see the old version").
+
+- `src/app/manifest.webmanifest` — a static file; every URL in it is **relative** (`./entrar/`, `./icons/…`), so it works under
+  the Pages sub-path and at a domain root alike. `start_url` is `/entrar/`: a signed-in visitor is sent to their area, anyone
+  else sees the form. `src/app/icon.png` (favicon) and `src/app/apple-icon.png` (iOS) are Next file conventions, linked with the
+  base path by Next itself; the manifest's own icons are in `public/icons/` (192, 512, and a maskable 512).
+- `npm run check:manifest` reads the **built** `out/` the way a phone would (manifest link → manifest → every URL in it) and fails
+  on a wrong path, a wrong icon size, a transparent iOS or maskable icon, or a colour that differs from the page's theme colour;
+  it runs in `web-ci.yml` and before the Pages upload in `web-deploy.yml`. `src/domain/webManifest.test.ts` guards the source
+  (the colours must be the site's own tokens).
+- `npm run icons:app [-- dumbbell]` regenerates the PNG icons from `design/app-icon.html` in headless Chrome; the PNGs are committed.
+- The guide (Configurações → "Instalar no celular") is data in `src/domain/installGuide.ts` — the words and the steps, tested — shown
+  by `src/app/_shared/InstallGuide.tsx`. Its pictures are WebP files in `src/app/_shared/installGuide/shots/`, prepared by
+  `npm run shots:install` from the phone captures in `design/install-shots/raw/` (**gitignored** — never commit a raw capture) with
+  the crops in `design/install-shots/crops.json`. `design/install-shots/SHOTLIST.md` says which captures are wanted and which are
+  still temporary; `META.md` says what they were taken on.
 
 ## Run and check
 
@@ -235,6 +259,7 @@ npm run e2e:detalhes                    # carga, descanso and observação from 
 npm run e2e:registro                    # the log screen: compact rows, "Última vez", repeat, rest timer, summary and records  (GOALS.md §38e)
 npm run e2e:aluno-home                  # próximo treino, esta semana, meus horários, the charts in Evolução  (GOALS.md §38f)
 npm run e2e:feedback                    # "Como foi o treino?", Registros / Hoje / the aluno's page, the comment back to the aluno, the WhatsApp card  (GOALS.md §38h, §38i)
+npm run e2e:install-guide [-- role]      # Configurações and "Instalar no celular": both tabs, the iPhone/Android guides, the manifest and its icons  (GOALS.md §40)
 ```
 
 `e2e:read-budget` reseeds with `--heavy` (a personal with 20 alunos and ~20,000 documents) and wants a **production

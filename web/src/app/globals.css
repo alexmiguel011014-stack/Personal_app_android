@@ -891,3 +891,33 @@ fieldset.consent label.check > input { margin-top: 2px; }
   .flag > strong, .flag-alert > strong, .flag-warn > strong { color: #000; }
   a { color: #000; text-decoration: none; }
 }
+
+/* GOALS.md §38h/§38i: a session's feedback — the aluno's effort, pain and comment, and the personal's answer. */
+.status-pill.is-pain { border-color: var(--alert-line); background: var(--alert-bg); color: var(--alert); }
+.feedback-form { margin: 20px 0; padding: 16px 18px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--white); }
+.feedback-form h2 { margin-top: 0; }
+.feedback-form fieldset { margin: 0 0 12px; padding: 0; border: 0; }
+.feedback-form textarea { display: block; width: 100%; margin-top: 6px; }
+.feedback-summary p { margin: 0 0 6px; }
+.feedback-summary .feedback-comment { color: var(--muted); font-size: 14px; line-height: 1.55; }
+.feedback-panel { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
+.feedback-panel.is-unseen { border-top-color: var(--warning-line); }
+.feedback-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.feedback-comment-form { margin-top: 10px; }
+.feedback-comment-form textarea { display: block; width: 100%; margin-top: 6px; }
+.filters label.check-line { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 8px; min-height: 44px; }
+.filters label.check-line input { width: 20px; height: 20px; margin: 0; }
+
+/* GOALS.md §38i (U9): the summary at the top of an aluno's page, and the chip row that jumps to a section on a phone. */
+.student-summary { margin: 0 0 20px; padding: 14px 18px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--white); }
+.student-summary dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0; }
+.student-summary dt { color: var(--muted); font-weight: 600; }
+.student-summary dd { margin: 0; }
+.anchor-chips { display: none; }
+@media (max-width: 860px) {
+  .student-summary dl { grid-template-columns: 1fr; gap: 0; }
+  .student-summary dd { margin-bottom: 8px; }
+  .anchor-chips { display: flex; gap: 8px; margin-top: 12px; padding-bottom: 4px; overflow-x: auto; scrollbar-width: thin; }
+  .anchor-chips a { flex: 0 0 auto; display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; border: 1px solid var(--field); border-radius: 99px; background: var(--white); color: var(--ink); font-size: 14px; font-weight: 600; text-decoration: none; }
+}
+#fichas, #treinos, #progressao, #medidas, #anamneses, #mensalidade, #permissoes, #dados, #gerenciar { scroll-margin-top: 16px; }

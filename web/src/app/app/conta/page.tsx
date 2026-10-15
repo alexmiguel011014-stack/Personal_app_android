@@ -1,5 +1,10 @@
 import { AccountSettingsPage } from "../../_shared/AccountSettingsPage";
+import { TrainerContactSettings } from "./TrainerContactSettings";
 
 export default function TrainerAccountPage() {
-  return <AccountSettingsPage />;
+  return (
+    <AccountSettingsPage>
+      <TrainerContactSettings />
+    </AccountSettingsPage>
+  );
 }

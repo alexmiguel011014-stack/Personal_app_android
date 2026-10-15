@@ -4,6 +4,8 @@ import { createContext, createElement, useCallback, useContext, useEffect, useMe
 import { loadMyBiometrics } from "../../data/biometrics";
 import { getFirebase } from "../../data/firebase";
 import { loadMySchedules } from "../../data/schedules";
+import { loadMyFeedback } from "../../data/sessionFeedback";
+import { loadTrainerContact } from "../../data/trainerContacts";
 import { loadMyProfile } from "../../data/session";
 import { loadMyLogs } from "../../data/workoutLogs";
 import { loadMyWorkouts } from "../../data/workouts";
@@ -12,6 +14,8 @@ import { localDate } from "../../domain/dates";
 import type { WorkoutLogDoc } from "../../domain/metrics";
 import { CACHE_TTL_MS, STUDENT_LOG_WINDOW_DAYS, windowStart } from "../../domain/readWindows";
 import type { Schedule } from "../../domain/schedules";
+import type { SessionFeedback } from "../../domain/sessionFeedback";
+import type { TrainerContact } from "../../domain/trainerContact";
 import type { LinkedStudentDoc } from "../../domain/students";
 import type { Workout } from "../../domain/workouts";
 import { browserTimeZone } from "../_shared/browserTimeZone";
@@ -34,6 +38,10 @@ export type StudentData =
       biometrics: Biometric[];
       /** GOALS.md §38f: the aluno's own weekly appointments (a handful of documents). */
       schedules: Schedule[];
+      /** GOALS.md §38h: the aluno's feedback on sessions of the same window (empty while the Rules that carry it are not published). */
+      feedback: SessionFeedback[];
+      /** GOALS.md §38h (D9): the personal's contact card, when they turned it on. */
+      contact: TrainerContact | null;
       /** The aluno's logs dated from `logsFrom` on, not all time. */
       logs: WorkoutLogDoc[];
       /** Epoch ms where `logs` starts. */
@@ -121,7 +129,13 @@ class StudentDataStore {
         this.set({ status: "error", message: "Não foi possível carregar seu perfil." });
         return;
       }
-      this.set({ status: "ready", profile, workouts, biometrics, schedules, logs, logsFrom, loadedAt: now, today, timeZone });
+      // GOALS.md §38h: both are extras — a read the Rules refuse (v8 not published yet) leaves them empty, never breaks the area.
+      const [feedback, contact] = await Promise.all([
+        loadMyFeedback(db, uid, localDate(logsFrom, timeZone)).catch(() => []),
+        profile.trainerId ? loadTrainerContact(db, profile.trainerId).catch(() => null) : Promise.resolve(null),
+      ]);
+      if (ticket !== this.ticket) return;
+      this.set({ status: "ready", profile, workouts, biometrics, schedules, feedback, contact, logs, logsFrom, loadedAt: now, today, timeZone });
     } catch {
       if (ticket === this.ticket) this.set({ status: "error", message: "Não foi possível carregar seus dados. Verifique a conexão." });
     } finally {

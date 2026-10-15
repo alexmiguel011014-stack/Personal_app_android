@@ -8,7 +8,9 @@ import { getFirebase } from "../../../../data/firebase";
 import { updateStudentProfile } from "../../../../data/students";
 import { profilePatchChanges, profilePatchFrom } from "../../../../domain/anamnesis";
 import type { Assessment } from "../../../../domain/assessments";
+import { withOpened } from "../../../../domain/anamnesisAlerts";
 import { normalizeProfile, type StudentProfile } from "../../../../domain/studentProfile";
+import { browserStorage } from "../../../_shared/browserStorage";
 import { AnamnesisReport } from "../../../_shared/AnamnesisReport";
 import { ConfirmDialog } from "../../../_shared/ConfirmDialog";
 import { useSession } from "../../../SessionProvider";
@@ -44,6 +46,18 @@ function Loaded({ trainerId, studentId, assessmentId }: { trainerId: string; stu
       cancelled = true;
     };
   }, [trainerId, studentId]);
+
+  // GOALS.md §38i: opening the report is what clears its alert on "Hoje" - remembered on this device only.
+  const opened = state.status === "ready" && state.assessments.some((assessment) => assessment.id === assessmentId);
+  useEffect(() => {
+    if (!opened) return;
+    const storage = browserStorage();
+    try {
+      storage?.setItem(`anamnesis-opened:${trainerId}`, withOpened(storage.getItem(`anamnesis-opened:${trainerId}`), assessmentId));
+    } catch {
+      // No storage: the alert simply stays until the 30-day window passes.
+    }
+  }, [opened, trainerId, assessmentId]);
 
   if (data.status === "loading" || state.status === "loading") return <p className="loading">Carregando…</p>;
   if (data.status === "error") return <p role="alert">{data.message}</p>;

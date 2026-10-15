@@ -1,9 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { loadStudentAssessments } from "../../../../data/assessments";
-import { getFirebase } from "../../../../data/firebase";
 import { anamnesisFlags } from "../../../../domain/anamnesis";
 import { flaggedQuestions, type Assessment } from "../../../../domain/assessments";
 import { formatDateTime } from "../../../../domain/dates";
@@ -11,32 +8,20 @@ import { formatDateTime } from "../../../../domain/dates";
 // GOALS.md §23g: the phone's "Autoavaliações" (AssessmentCard) — every PAR-Q+ the student sent,
 // newest first, with the "sim" answers spelled out: those are what the trainer must look at.
 
-type State = { status: "loading" } | { status: "error" } | { status: "ready"; assessments: Assessment[] };
+/** GOALS.md §38i: the aluno's page reads the assessments once (its header needs them too) and hands them down. */
+export type AssessmentsState = { status: "loading" } | { status: "error" } | { status: "ready"; assessments: Assessment[] };
 
 export function AssessmentsSection({
-  trainerId,
   studentId,
   timeZone,
+  state,
 }: {
-  trainerId: string;
   studentId: string;
   timeZone: string;
+  state: AssessmentsState;
 }) {
-  const [state, setState] = useState<State>({ status: "loading" });
-
-  useEffect(() => {
-    let cancelled = false;
-    loadStudentAssessments(getFirebase().db, trainerId, studentId).then(
-      (assessments) => !cancelled && setState({ status: "ready", assessments }),
-      () => !cancelled && setState({ status: "error" }),
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [trainerId, studentId]);
-
   return (
-    <section>
+    <section id="anamneses">
       <h2>Anamneses e autoavaliações</h2>
       {state.status === "loading" && <p className="loading">Carregando…</p>}
       {state.status === "error" && <p role="alert">Não foi possível carregar as anamneses.</p>}

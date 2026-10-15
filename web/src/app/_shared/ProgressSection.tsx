@@ -22,6 +22,8 @@ export function ProgressSection({
   timeZone,
   workoutNames,
   sessionActions,
+  sessionExtras,
+  sessionsFirst = false,
   windowFrom,
   loadAll,
 }: {
@@ -31,6 +33,10 @@ export function ProgressSection({
   workoutNames?: ReadonlyMap<string, string>;
   /** Buttons under a session (the aluno's "Corrigir" / "Excluir sessão"); none for the personal. */
   sessionActions?: (session: LoggedSession) => ReactNode;
+  /** GOALS.md §38h: what goes under a session's exercises — the feedback on it (the aluno's and the personal's views differ). */
+  sessionExtras?: (session: LoggedSession) => ReactNode;
+  /** GOALS.md §38i (U9): the personal's page lists the sessions ("Treinos") before the load progression. */
+  sessionsFirst?: boolean;
   /** GOALS.md §38b: where `logs` starts when it is a window of recent logs, not the whole history. */
   windowFrom?: number;
   /** Reads the whole history — only when the person asks for it ("Ver histórico completo"). */
@@ -46,9 +52,8 @@ export function ProgressSection({
   const recentSessions = groupSessions(logs, timeZone).slice(0, RECENT_SESSIONS);
   const sessions = moreSessions ? recentSessions : recentSessions.slice(0, FIRST_SESSIONS);
 
-  return (
-    <>
-      <section>
+  const progression = (
+      <section id="progressao">
         <h2>Progressão de carga</h2>
         {exercise === null ? (
           <p>Nenhuma sessão registrada ainda.</p>
@@ -103,9 +108,10 @@ export function ProgressSection({
           </>
         )}
       </section>
-
-      <section>
-        <h2>Atividade recente</h2>
+  );
+  const activity = (
+      <section id="treinos">
+        <h2>{sessionsFirst ? "Treinos" : "Atividade recente"}</h2>
         {sessions.length === 0 ? (
           <p>Nenhuma sessão registrada ainda.</p>
         ) : (
@@ -123,6 +129,7 @@ export function ProgressSection({
                     </li>
                   ))}
                 </ul>
+                {sessionExtras?.(session)}
                 {sessionActions?.(session)}
               </li>
             ))}
@@ -152,6 +159,17 @@ export function ProgressSection({
           </p>
         )}
       </section>
+  );
+
+  return sessionsFirst ? (
+    <>
+      {activity}
+      {progression}
+    </>
+  ) : (
+    <>
+      {progression}
+      {activity}
     </>
   );
 }

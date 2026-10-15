@@ -1,4 +1,4 @@
-// Rules version: 7
+// Rules version: 8
 rules_version = '2';
 
 // Schema (see GOALS.md §4a, §7):
@@ -23,6 +23,11 @@ rules_version = '2';
 //   cleared by the student's assessment batch), lastAssessmentId (that batch's link). Web-only
 //   flag, same rule: canAddSets — whether the student may add extra sets when logging a session
 //   (off unless the trainer turns it on; a missing field reads as off).
+//
+//   sessionFeedback/{studentId}_{YYYY-MM-DD} - how one session went (GOALS.md §38h, web-only): the aluno's effort, pain and
+//                           comment and the personal's "seen"/comment on the same document, each side writing only its own
+//                           fields. Read by the aluno and the owning trainer; never deleted.
+//   trainerContacts/{trainerId} - the opt-in card (name + WhatsApp) a personal shows their linked alunos (§38h, D9).
 //
 //   appData/exerciseCatalog - the trainer's exercise reference, which the web's ficha editor reads to fill each
 //                           exercise's muscles (GOALS.md §33). Never a public file: only an approved, active
@@ -543,7 +548,115 @@ service cloud.firestore {
         request.resource.data.studentId == request.auth.uid &&
         field(get(/databases/$(database)/documents/users/$(request.auth.uid)).data, 'canSelfAssess') == true &&
         request.resource.data.trainerId ==
-          field(get(/databases/$(database)/documents/users/$(request.auth.uid)).data, 'trainerId');
+          field(get(/databases/$(database)/documents/users/$(request.auth.uid)).data, 'trainerId') &&
+        validAssessmentShape(request.resource.data);
+
+      // v8 (GOALS.md §38h): the keys are the phone's seven plus the web's anamnese. The anamnese is a bounded map and
+      // comes with its consent, stamped by the server; a phone-shaped document (no anamnesis) is unchanged.
+      function validAssessmentShape(d) {
+        return d.keys().hasOnly(['studentId', 'trainerId', 'submittedAt', 'parQAnswersJson', 'goal',
+            'experienceLevel', 'trainingDays', 'anamnesis', 'consentVersion', 'consentAt']) &&
+          (d.keys().hasAny(['anamnesis']) ? validAnamnesis(d) : !d.keys().hasAny(['consentVersion', 'consentAt']));
+      }
+
+      function validAnamnesis(d) {
+        return d.anamnesis is map && d.anamnesis.keys().hasOnly(['version', 'answers']) &&
+          d.anamnesis.version is int && d.anamnesis.answers is map && d.anamnesis.answers.size() <= 40 &&
+          boundedText(d.anamnesis.answers, 'conditions_other', 120) &&
+          boundedText(d.anamnesis.answers, 'medication_which', 200) &&
+          boundedText(d.anamnesis.answers, 'surgery_which', 200) &&
+          boundedText(d.anamnesis.answers, 'dislikes', 200) &&
+          boundedText(d.anamnesis.answers, 'notes', 500) &&
+          d.consentVersion is string && d.consentVersion.size() > 0 && d.consentVersion.size() <= 32 &&
+          d.consentAt == request.time;
+      }
+
+      function boundedText(answers, key, max) {
+        return !answers.keys().hasAny([key]) || (answers[key] is string && answers[key].size() <= max);
+      }
+    }
+
+    // sessionFeedback/{studentId}_{YYYY-MM-DD} — GOALS.md §38h (D3–D5). One document per session, two writers:
+    // the aluno (effort, pain, comment, and that they read the personal's comment) and the owning trainer ("seen" and a
+    // comment). Each side's fields carry the server's time, identity is frozen and nothing is ever deleted.
+    match /sessionFeedback/{id} {
+      function validDay(d) {
+        return d.day is string && d.day.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}') &&
+          d.studentId is string && id == d.studentId + '_' + d.day && d.trainerId is string;
+      }
+
+      function boundedComment(d, key, max) {
+        return !d.keys().hasAny([key]) ||
+          (d[key] is string && d[key].size() <= max && d[key].matches('[^\\x00-\\x09\\x0b-\\x1f\\x7f]*'));
+      }
+
+      function validStudentValues(d) {
+        return (!d.keys().hasAny(['effort']) || d.effort == null || (d.effort is int && d.effort >= 0 && d.effort <= 10)) &&
+          (!d.keys().hasAny(['pain']) || d.pain is bool) &&
+          boundedComment(d, 'studentComment', 500);
+      }
+
+      function validTrainerValues(d) {
+        return boundedComment(d, 'trainerComment', 1000);
+      }
+
+      allow read: if isOwningTrainer(resource.data.trainerId) ||
+        (isSignedIn() && resource.data.studentId == request.auth.uid);
+
+      allow create: if validDay(request.resource.data) && (
+        (isSignedIn() && request.resource.data.studentId == request.auth.uid &&
+          request.resource.data.trainerId ==
+            field(get(/databases/$(database)/documents/users/$(request.auth.uid)).data, 'trainerId') &&
+          request.resource.data.keys().hasOnly(['studentId', 'trainerId', 'day', 'effort', 'pain', 'studentComment', 'studentAt']) &&
+          request.resource.data.studentAt == request.time &&
+          validStudentValues(request.resource.data)) ||
+        (isOwningTrainer(request.resource.data.trainerId) &&
+          studentIsLinkedToTrainer(request.resource.data.trainerId, request.resource.data.studentId) &&
+          request.resource.data.keys().hasOnly(['studentId', 'trainerId', 'day', 'trainerComment', 'trainerAt', 'trainerSeenAt']) &&
+          (!request.resource.data.keys().hasAny(['trainerAt']) || request.resource.data.trainerAt == request.time) &&
+          (!request.resource.data.keys().hasAny(['trainerSeenAt']) || request.resource.data.trainerSeenAt == request.time) &&
+          (!request.resource.data.keys().hasAny(['trainerComment']) || request.resource.data.keys().hasAny(['trainerAt'])) &&
+          validTrainerValues(request.resource.data))
+      );
+
+      allow update:
+        if (isSignedIn() && resource.data.studentId == request.auth.uid &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['effort', 'pain', 'studentComment', 'studentAt', 'studentSeenAt']) &&
+          (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['effort', 'pain', 'studentComment']) ||
+            request.resource.data.diff(resource.data).affectedKeys().hasAny(['studentAt'])) &&
+          (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['studentAt']) ||
+            request.resource.data.studentAt == request.time) &&
+          (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['studentSeenAt']) ||
+            request.resource.data.studentSeenAt == request.time) &&
+          validStudentValues(request.resource.data)) ||
+        (isOwningTrainer(resource.data.trainerId) &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['trainerComment', 'trainerAt', 'trainerSeenAt']) &&
+          (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['trainerComment']) ||
+            request.resource.data.diff(resource.data).affectedKeys().hasAny(['trainerAt'])) &&
+          (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['trainerAt']) ||
+            request.resource.data.trainerAt == request.time) &&
+          (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['trainerSeenAt']) ||
+            request.resource.data.trainerSeenAt == request.time) &&
+          validTrainerValues(request.resource.data));
+    }
+
+    // trainerContacts/{trainerId} — GOALS.md §38h (D9): the personal's opt-in card. Written only by that personal;
+    // read by them and by the alunos linked to them. The ADM has no read.
+    match /trainerContacts/{trainerId} {
+      function validContact(d) {
+        return d.keys().hasOnly(['name', 'whatsapp', 'updatedAt']) &&
+          d.name is string && d.name.size() >= 2 && d.name.size() <= 80 && d.name == d.name.trim() &&
+          d.name.matches('[^\\x00-\\x1f\\x7f]+') &&
+          d.whatsapp is string && d.whatsapp.matches('[0-9]{10,13}') &&
+          d.updatedAt == request.time;
+      }
+
+      allow read: if isOwningTrainer(trainerId) ||
+        (isSignedIn() && field(get(/databases/$(database)/documents/users/$(request.auth.uid)).data, 'trainerId') == trainerId);
+      allow create, update: if isOwningTrainer(trainerId) && validContact(request.resource.data);
+      allow delete: if isOwningTrainer(trainerId);
     }
 
     // trainerRequests/{uid} — a self-registered STUDENT asks to become a TRAINER; only the ADM

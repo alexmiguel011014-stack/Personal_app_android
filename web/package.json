@@ -34,6 +34,7 @@
     "e2e:detalhes": "node e2e/detalhes.mjs",
     "e2e:registro": "node e2e/registro.mjs",
     "e2e:aluno-home": "node e2e/aluno-home.mjs",
+    "e2e:feedback": "node e2e/feedback.mjs",
     "test:rules": "npm --prefix ../functions run build && firebase emulators:exec --config ../firebase.json --project demo-personal-tracker --only auth,firestore,functions,storage \"vitest run --dir rules --testTimeout=30000 --no-file-parallelism\""
   },
   "dependencies": {

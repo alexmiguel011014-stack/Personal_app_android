@@ -15,6 +15,12 @@ export const DAY_MS = 86_400_000;
  */
 export const TRAINER_LOG_WINDOW_DAYS = 63;
 
+/**
+ * GOALS.md §38h: "Hoje" flags the pain and the comments of the last seven days; the snapshot reads the feedback of
+ * eight (the aluno's day key is in their own zone). Registros reads its own, longer, window.
+ */
+export const FEEDBACK_ATTENTION_DAYS = 8;
+
 /** The aluno's own screens read this many days of their logs; "Evolução" loads the rest on request. */
 export const STUDENT_LOG_WINDOW_DAYS = 60;
 

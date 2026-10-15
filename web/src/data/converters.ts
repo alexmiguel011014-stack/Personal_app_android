@@ -6,6 +6,8 @@ import type { WorkoutLogDoc } from "../domain/metrics";
 import type { FichaMembership, Workout } from "../domain/workouts";
 import type { BillingPlan, Payment, PaymentMethod, PaymentSource } from "../domain/payments";
 import type { Schedule } from "../domain/schedules";
+import type { SessionFeedback } from "../domain/sessionFeedback";
+import type { TrainerContact } from "../domain/trainerContact";
 import type { DraftStudentDoc, LinkedStudentDoc } from "../domain/students";
 import { ACTIVITY_KINDS, emptyActions, type ActivityKind } from "../domain/activity";
 
@@ -374,6 +376,36 @@ export function toAssessment(id: string, data: Data): Assessment | null {
     consentVersion: str(data, "consentVersion"),
     consentAt: millisOrNull(data.consentAt),
   };
+}
+
+/** `sessionFeedback/{id}` (GOALS.md §38h) — web-only. Each side's fields read leniently; a document without its keys is skipped. */
+export function toSessionFeedback(_id: string, data: Data): SessionFeedback | null {
+  const studentId = str(data, "studentId");
+  const trainerId = str(data, "trainerId");
+  const day = str(data, "day");
+  if (studentId === null || trainerId === null || day === null) return null;
+  const effort = int(data, "effort");
+  return {
+    studentId,
+    trainerId,
+    day,
+    effort: effort !== null && effort >= 0 && effort <= 10 ? effort : null,
+    pain: bool(data, "pain") ?? false,
+    studentComment: str(data, "studentComment") ?? "",
+    studentAt: millisOrNull(data.studentAt),
+    studentSeenAt: millisOrNull(data.studentSeenAt),
+    trainerComment: str(data, "trainerComment") ?? "",
+    trainerAt: millisOrNull(data.trainerAt),
+    trainerSeenAt: millisOrNull(data.trainerSeenAt),
+  };
+}
+
+/** `trainerContacts/{trainerId}` (GOALS.md §38h, D9) — web-only. */
+export function toTrainerContact(id: string, data: Data): TrainerContact | null {
+  const name = str(data, "name");
+  const whatsapp = str(data, "whatsapp");
+  if (name === null || whatsapp === null) return null;
+  return { trainerId: id, name, whatsapp, updatedAt: millisOrNull(data.updatedAt) };
 }
 
 /** A stored instant as epoch ms: a plain number, or a Firestore Timestamp (what `serverTimestamp()` becomes). */

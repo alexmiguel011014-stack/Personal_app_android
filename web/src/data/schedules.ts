@@ -36,3 +36,11 @@ export async function loadMySchedules(db: Firestore, uid: string): Promise<Sched
   const snapshot = await getDocs(query(collection(db, "schedules"), where("studentId", "==", uid)));
   return snapshot.docs.map((document) => toSchedule(document.id, document.data())).filter((schedule) => schedule !== null);
 }
+
+/** GOALS.md §38i: one aluno's weekly appointments, for the personal's page about them — a handful of documents, two equality filters, no index. */
+export async function loadStudentSchedules(db: Firestore, trainerId: string, studentId: string): Promise<Schedule[]> {
+  const snapshot = await getDocs(
+    query(collection(db, "schedules"), where("trainerId", "==", trainerId), where("studentId", "==", studentId)),
+  );
+  return snapshot.docs.map((document) => toSchedule(document.id, document.data())).filter((schedule) => schedule !== null);
+}

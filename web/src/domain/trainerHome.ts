@@ -1,9 +1,11 @@
+import type { AnamnesisAlert } from "./anamnesisAlerts";
 import type { AttentionItem as GenericAttentionItem } from "./attention";
 import type { BillingOwner } from "./billing";
 import { addDays, daysBetween, formatDate, localDate } from "./dates";
 import { overallAdherence, studentCounts, trainedDays, type PaymentSummary, type QuietStudent, type StudentCounts, type TrainedDays, type WorkoutLogDoc } from "./metrics";
 import { formatCents } from "./payments";
 import { delta, windowedCounts, type Delta } from "./series";
+import { effortLabel, isUnseenPain, type SessionFeedback } from "./sessionFeedback";
 import { filterStudentsByPause, type Student } from "./students";
 
 // GOALS.md §37a/§37c — what the trainer's "Hoje" shows, as pure functions over the documents the page has already
@@ -97,7 +99,7 @@ export function recentSessions(logs: readonly WorkoutLogDoc[], timeZone: string,
   return [...sessions.values()].sort((a, b) => b.last - a.last).slice(0, count).map(({ studentId, day, exercises }) => ({ studentId, day, exercises }));
 }
 
-export type AttentionKind ="atraso" | "quieto" | "avaliacao" | "aguardando";
+export type AttentionKind = "dor" | "atraso" | "quieto" | "comentario" | "avaliacao" | "anamnese" | "aguardando";
 type AttentionItem = GenericAttentionItem<AttentionKind>;
 
 export interface TrainerAttentionInput {
@@ -105,16 +107,48 @@ export interface TrainerAttentionInput {
   money: TrainerMoney;
   quiet: readonly QuietStudent[];
   pendingAssessments: readonly Student[];
+  /** GOALS.md §38i: the alunos' feedback of the last FEEDBACK_ATTENTION_DAYS days (the snapshot's), for the pain and comment rows. */
+  feedback?: readonly SessionFeedback[];
+  /** GOALS.md §38i: anamneses with a flag that this device has not opened (domain/anamnesisAlerts.ts). */
+  anamneses?: readonly AnamnesisAlert[];
 }
+
+/** "Relatou dor" and "Comentário não visto" look at the last seven days, today included. */
+export const FEEDBACK_ALERT_DAYS = 7;
 
 const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name, "pt-BR");
 
 /**
- * Who needs the trainer, most urgent first: late mensalidade → quiet → assessment waiting → not yet connected.
+ * Who needs the trainer, most urgent first: pain reported (GOALS.md §38i) → late mensalidade → quiet → an aluno's
+ * comment not yet seen → assessment waiting → anamnese with a flag → not yet connected.
  * The whole list; the screen shows the first few and folds the rest.
  */
 export function trainerAttention(input: TrainerAttentionInput, today: string, timeZone: string): AttentionItem[] {
   const items: AttentionItem[] = [];
+  const nameOf = (studentId: string) => input.students.find((student) => student.id === studentId)?.name ?? "Aluno não encontrado";
+  const since = addDays(today, -(FEEDBACK_ALERT_DAYS - 1));
+  const recentFeedback = (input.feedback ?? []).filter((item) => item.day >= since && item.day <= today);
+
+  // Pain first: one row per aluno, for their latest session with a pain report nobody has looked at.
+  const painByStudent = new Map<string, SessionFeedback>();
+  for (const item of recentFeedback.filter(isUnseenPain)) {
+    const known = painByStudent.get(item.studentId);
+    if (!known || item.day > known.day) painByStudent.set(item.studentId, item);
+  }
+  [...painByStudent.values()]
+    .sort((a, b) => b.day.localeCompare(a.day) || nameOf(a.studentId).localeCompare(nameOf(b.studentId), "pt-BR"))
+    .forEach((item) => {
+      const effort = effortLabel(item.effort);
+      items.push({
+        id: `dor:${item.studentId}`,
+        kind: "dor",
+        name: nameOf(item.studentId),
+        reason: "Relatou dor",
+        detail: `Treino de ${formatDate(item.day)}${effort === null ? "" : ` · esforço ${effort.toLowerCase()}`}`,
+        href: studentHref(item.studentId),
+        actionLabel: "Ver aluno",
+      });
+    });
 
   // One row per student with the sum of what they owe and the oldest due date.
   const late = new Map<string, { studentId: string | null; name: string; cents: number; dueDate: string }>();
@@ -152,6 +186,25 @@ export function trainerAttention(input: TrainerAttentionInput, today: string, ti
     });
   }
 
+  // A comment the aluno wrote that the personal has not seen (pain already has its row above).
+  const commentByStudent = new Map<string, SessionFeedback>();
+  for (const item of recentFeedback) {
+    if (item.studentComment === "" || item.trainerSeenAt !== null || painByStudent.has(item.studentId)) continue;
+    const known = commentByStudent.get(item.studentId);
+    if (!known || item.day > known.day) commentByStudent.set(item.studentId, item);
+  }
+  [...commentByStudent.values()]
+    .sort((a, b) => b.day.localeCompare(a.day) || nameOf(a.studentId).localeCompare(nameOf(b.studentId), "pt-BR"))
+    .forEach((item) => items.push({
+      id: `comentario:${item.studentId}`,
+      kind: "comentario",
+      name: nameOf(item.studentId),
+      reason: "Comentário não visto",
+      detail: `Sobre o treino de ${formatDate(item.day)}`,
+      href: studentHref(item.studentId),
+      actionLabel: "Ver aluno",
+    }));
+
   [...input.pendingAssessments].sort(byName).forEach((student) => items.push({
     id: `avaliacao:${student.id}`,
     kind: "avaliacao",
@@ -161,6 +214,18 @@ export function trainerAttention(input: TrainerAttentionInput, today: string, ti
     href: studentHref(student.id),
     actionLabel: "Ver aluno",
   }));
+
+  for (const alert of input.anamneses ?? []) {
+    items.push({
+      id: `anamnese:${alert.assessmentId}`,
+      kind: "anamnese",
+      name: nameOf(alert.studentId),
+      reason: "Anamnese com ponto de atenção",
+      detail: `${alert.points} ${alert.points === 1 ? "ponto" : "pontos"} de atenção · enviada em ${formatDate(localDate(alert.submittedAt, timeZone))}`,
+      href: `/app/alunos/anamnese?aluno=${encodeURIComponent(alert.studentId)}&id=${encodeURIComponent(alert.assessmentId)}`,
+      actionLabel: "Ver relatório",
+    });
+  }
 
   filterStudentsByPause(input.students)
     .filter((student) => !student.linked && daysBetween(localDate(student.createdAt, timeZone), today) >= WAITING_AFTER_DAYS)

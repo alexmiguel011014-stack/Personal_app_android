@@ -14,6 +14,8 @@ export type LedgerEntry =
       kind: "session";
       id: string;
       studentId: string;
+      /** The session's local day, `YYYY-MM-DD` — where its feedback is keyed (GOALS.md §38h). */
+      day: string;
       ms: number;
       /** The treinos the session was done under — Registros names them when it can (GOALS.md §38c, U10). */
       workoutIds: string[];
@@ -62,6 +64,7 @@ export function buildLedger({
       kind: "session",
       id: `sessao-${session.studentId}-${session.day}`,
       studentId: session.studentId,
+      day: session.day,
       ms: session.ms,
       workoutIds: session.workoutIds,
       exercises: session.exercises,

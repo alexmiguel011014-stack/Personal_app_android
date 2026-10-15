@@ -434,6 +434,36 @@ try {
     ...session(diego, 2),
   ]);
 
+  // GOALS.md §38h/§38j: how two of those sessions went, and the personal's opt-in contact card. Ana's latest session (1 day ago)
+  // was answered by the personal and read by her, so her home shows no banner; Bruno's (12 days ago, outside "Hoje"'s week)
+  // reported pain and waits for the personal. Fake text only; the times are plain numbers, as the converters read both.
+  const feedbackDay = (daysAgo) => localDate(morningOf(daysAgo));
+  const interaction = {
+    [`sessionFeedback/${ana}_${feedbackDay(1)}`]: {
+      studentId: ana,
+      trainerId,
+      day: feedbackDay(1),
+      effort: 8,
+      pain: false,
+      studentComment: "Pesado, mas consegui terminar.",
+      studentAt: morningOf(1) + 3_600_000,
+      trainerSeenAt: morningOf(1) + 7_200_000,
+      trainerComment: "Boa! Na próxima mantém a carga.",
+      trainerAt: morningOf(1) + 7_200_000,
+      studentSeenAt: morningOf(1) + 10_800_000,
+    },
+    [`sessionFeedback/${bruno}_${feedbackDay(12)}`]: {
+      studentId: bruno,
+      trainerId,
+      day: feedbackDay(12),
+      effort: 10,
+      pain: true,
+      studentComment: "O ombro incomodou no supino.",
+      studentAt: morningOf(12) + 3_600_000,
+    },
+    [`trainerContacts/${trainerId}`]: { name: "Treinador de teste", whatsapp: "5511999990000", updatedAt: morningOf(30) },
+  };
+
   // `--demo` (GOALS.md §37): eight weeks of training and the platform's own billing, so the two dashboards have something
   // to draw. Off by default — the e2e scripts count payments and plans from the plain seed. Everything is fake.
   const demo = {};
@@ -519,7 +549,7 @@ try {
 
   await env.withSecurityRulesDisabled(async (context) => {
     const db = context.firestore();
-    await Promise.all(Object.entries({ ...documents, ...logs, ...demo, ...reference }).map(([path, data]) => db.doc(path).set(data)));
+    await Promise.all(Object.entries({ ...documents, ...logs, ...interaction, ...demo, ...reference }).map(([path, data]) => db.doc(path).set(data)));
   });
 
   // GOALS.md §38b: `--heavy` adds a personal with a year of data, for `npm run e2e:read-budget`.

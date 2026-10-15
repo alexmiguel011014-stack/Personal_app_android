@@ -10,9 +10,13 @@ import {
   type QuerySnapshot,
 } from "firebase/firestore";
 import { getDoc, getDocs, noteReads } from "./firestoreRead";
+import { loadTrainerFeedback } from "./sessionFeedback";
+import { localDate } from "../domain/dates";
+import type { SessionFeedback } from "../domain/sessionFeedback";
 import type { WorkoutLogDoc } from "../domain/metrics";
 import { monthlyCharge, plansMissingCharge, type BillingPlan, type Payment } from "../domain/payments";
 import {
+  FEEDBACK_ATTENTION_DAYS,
   TRAINER_LOG_WINDOW_DAYS,
   mergeLogWindow,
   refreshStart,
@@ -65,6 +69,8 @@ export interface TrainerSnapshot {
   earlierByStudent: Map<string, WorkoutLogDoc | null>;
   payments: Payment[];
   plans: BillingPlan[];
+  /** GOALS.md §38h: the alunos' feedback on the last FEEDBACK_ATTENTION_DAYS days — what "Hoje" flags (pain first); Registros reads its own window. */
+  feedback: SessionFeedback[];
 }
 
 function mapDocs<T>(snapshot: QuerySnapshot, convert: (id: string, data: Record<string, unknown>) => T | null): T[] {
@@ -100,6 +106,8 @@ export async function loadTrainerSnapshot(
     getDocs(byTrainer("payments")),
     getDocs(byTrainer("billingPlans")),
   ]);
+  // An extra: the Rules that carry it may not be published yet, and "Hoje" must open without it.
+  const feedback = await loadTrainerFeedback(db, trainerId, localDate(windowStart(now, FEEDBACK_ATTENTION_DAYS))).catch(() => []);
   const draftStudents = mapDocs(drafts, toDraftStudent);
   const linkedStudents = mapDocs(linked, toLinkedStudent);
   const draftIdByInvite = await draftIdsForInvites(db, linkedStudents, previous?.draftIdByInvite);
@@ -121,6 +129,7 @@ export async function loadTrainerSnapshot(
     earlierByStudent,
     payments: mapDocs(payments, toPayment),
     plans: mapDocs(plans, toBillingPlan),
+    feedback,
   };
 }
 

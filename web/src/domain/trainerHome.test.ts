@@ -3,6 +3,7 @@ import { billingOwners } from "./billing";
 import { dashboardFigures } from "./dashboard";
 import type { WorkoutLogDoc } from "./metrics";
 import type { Payment } from "./payments";
+import type { SessionFeedback } from "./sessionFeedback";
 import type { Student } from "./students";
 import { moneyFromPayments, recentSessions, trainerAttention, trainerKpis } from "./trainerHome";
 
@@ -157,5 +158,67 @@ describe("trainerAttention", () => {
 
   it("is empty when everyone is fine", () => {
     expect(trainerAttention({ students: [ana], money: empty, quiet: [], pendingAssessments: [] }, TODAY, SP)).toEqual([]);
+  });
+});
+
+describe("trainerAttention: feedback and anamnese (GOALS.md §38i)", () => {
+  const ana = student("ana", { name: "Ana" });
+  const bruno = student("bruno", { name: "Bruno" });
+  const carla = student("carla", { name: "Carla", pendingAssessmentRequest: true });
+  const empty = { expectedCents: 0, receivedCents: 0, overdueCents: 0, overdue: [] };
+  const feedback = (studentId: string, day: string, extra: Partial<SessionFeedback> = {}): SessionFeedback => ({
+    studentId, trainerId: "t", day, effort: 8, pain: false, studentComment: "", studentAt: 1, studentSeenAt: null,
+    trainerComment: "", trainerAt: null, trainerSeenAt: null, ...extra,
+  });
+
+  it("puts pain first, a comment after the quiet ones and the anamnese after the pending assessment", () => {
+    const money = { ...empty, overdueCents: 1, overdue: [{ studentId: "ana", name: "Ana", amountCents: 100, dueDate: "2026-09-05" }] };
+    const items = trainerAttention(
+      {
+        students: [ana, bruno, carla],
+        money,
+        quiet: [{ student: bruno, lastTrained: "2026-09-30" }],
+        pendingAssessments: [carla],
+        feedback: [feedback("carla", "2026-10-11", { pain: true }), feedback("ana", "2026-10-10", { studentComment: "Cansei" })],
+        anamneses: [{ assessmentId: "a1", studentId: "bruno", submittedAt: Date.parse("2026-10-08T10:00:00-03:00"), points: 2 }],
+      },
+      TODAY,
+      SP,
+    );
+    expect(items.map((i) => [i.kind, i.name])).toEqual([
+      ["dor", "Carla"], ["atraso", "Ana"], ["quieto", "Bruno"], ["comentario", "Ana"], ["avaliacao", "Carla"], ["anamnese", "Bruno"],
+    ]);
+    expect(items[0].detail).toBe("Treino de 11/10/2026 · esforço pesado");
+    expect(items[5]).toMatchObject({ reason: "Anamnese com ponto de atenção", detail: "2 pontos de atenção · enviada em 08/10/2026", actionLabel: "Ver relatório" });
+    expect(items[5].href).toBe("/app/alunos/anamnese?aluno=bruno&id=a1");
+  });
+
+  it("shows pain only while unseen and within seven days, once per aluno with the latest session", () => {
+    const rows = (list: SessionFeedback[]) => trainerAttention({ students: [ana], money: empty, quiet: [], pendingAssessments: [], feedback: list }, TODAY, SP);
+    expect(rows([feedback("ana", "2026-10-11", { pain: true, trainerSeenAt: 5 })])).toEqual([]);
+    expect(rows([feedback("ana", "2026-10-05", { pain: true })])).toEqual([]);
+    expect(rows([feedback("ana", "2026-10-06", { pain: true })])).toHaveLength(1);
+    const two = rows([feedback("ana", "2026-10-07", { pain: true }), feedback("ana", "2026-10-11", { pain: true, effort: 4 })]);
+    expect(two).toHaveLength(1);
+    expect(two[0].detail).toBe("Treino de 11/10/2026 · esforço leve");
+  });
+
+  it("does not repeat an aluno in pain as a comment row, and ignores comments already seen or empty", () => {
+    const rows = trainerAttention(
+      {
+        students: [ana, bruno],
+        money: empty,
+        quiet: [],
+        pendingAssessments: [],
+        feedback: [
+          feedback("ana", "2026-10-11", { pain: true, studentComment: "Joelho" }),
+          feedback("bruno", "2026-10-11", { studentComment: "Ok", trainerSeenAt: 9 }),
+          feedback("bruno", "2026-10-10"),
+        ],
+      },
+      TODAY,
+      SP,
+    );
+    expect(rows.map((r) => r.kind)).toEqual(["dor"]);
   });
 });

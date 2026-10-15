@@ -1,6 +1,7 @@
+import type { ReactNode } from "react";
 import { AccountSettings } from "./AccountSettings";
 
-export function AccountSettingsPage() {
+export function AccountSettingsPage({ children }: { children?: ReactNode }) {
   return (
     <main>
       <header className="page-header">
@@ -11,6 +12,7 @@ export function AccountSettingsPage() {
         </div>
       </header>
       <AccountSettings />
+      {children}
     </main>
   );
 }

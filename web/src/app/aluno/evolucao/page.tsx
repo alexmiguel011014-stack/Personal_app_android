@@ -1,13 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { logOwnBiometric } from "../../../data/biometrics";
+import { markTrainerCommentSeen } from "../../../data/sessionFeedback";
 import { deleteSession, loadMyLogs } from "../../../data/workoutLogs";
 import { getFirebase } from "../../../data/firebase";
 import { formatBodyFat, formatKg, parseMeasurement } from "../../../domain/biometrics";
 import { formatDate, formatDayMonth, localDate } from "../../../domain/dates";
+import { hasUnreadTrainerComment, indexFeedback, feedbackKey } from "../../../domain/sessionFeedback";
 import { isEditableSession, type LoggedSession } from "../../../domain/sessions";
+import { SessionFeedbackSummary } from "../../_shared/SessionFeedbackSummary";
 import { ConfirmDialog } from "../../_shared/ConfirmDialog";
 import { LineChart } from "../../_shared/dashboard/charts";
 import { ProgressSection } from "../../_shared/ProgressSection";
@@ -26,9 +29,23 @@ export default function EvolutionPage() {
 }
 
 function Evolution({ uid }: { uid: string }) {
-  const { data, reload } = useStudentData(uid);
+  const { data, reload, invalidate } = useStudentData(uid);
   const [deleting, setDeleting] = useState<LoggedSession | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // GOALS.md §38h: the personal's comments this visit opens — "novo" stays on them for the visit, and each is marked read once.
+  const unread = useRef<ReadonlySet<string> | null>(null);
+  const [, repaint] = useState(0);
+
+  useEffect(() => {
+    if (data.status !== "ready" || unread.current !== null) return;
+    const fresh = data.feedback.filter(hasUnreadTrainerComment);
+    unread.current = new Set(fresh.map((item) => feedbackKey(item.studentId, item.day)));
+    repaint((n) => n + 1);
+    const { db } = getFirebase();
+    // Best effort: a failed mark just leaves it "novo" on the next visit.
+    // The home reads the comment's state again on its next visit (invalidate), so its banner goes away.
+    for (const item of fresh) void markTrainerCommentSeen(db, item.studentId, item.trainerId, item.day).then(invalidate, () => {});
+  }, [data, invalidate]);
 
   if (data.status === "loading") return <p className="loading">Carregando…</p>;
   if (data.status === "error") {
@@ -42,7 +59,8 @@ function Evolution({ uid }: { uid: string }) {
     );
   }
 
-  const { profile, biometrics, logs, logsFrom, timeZone, workouts, today } = data;
+  const { profile, biometrics, logs, logsFrom, timeZone, workouts, today, feedback } = data;
+  const feedbackBySession = indexFeedback(feedback);
 
   async function confirmDelete() {
     if (deleting === null) return;
@@ -114,6 +132,10 @@ function Evolution({ uid }: { uid: string }) {
         timeZone={timeZone}
         workoutNames={new Map(workouts.map((workout) => [workout.id, workout.name]))}
         sessionActions={sessionActions}
+        sessionExtras={(session) => {
+          const item = feedbackBySession.get(feedbackKey(session.studentId, session.day));
+          return item === undefined ? null : <SessionFeedbackSummary feedback={item} audience="aluno" isNew={unread.current?.has(feedbackKey(item.studentId, item.day)) ?? false} />;
+        }}
         windowFrom={logsFrom}
         loadAll={() => loadMyLogs(getFirebase().db, uid)}
       />

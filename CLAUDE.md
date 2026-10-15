@@ -410,8 +410,33 @@ sentence a person reads is in Portuguese, with a word for every state (never col
   trained last), "Esta semana" (`domain/weekSummary.ts`), "Meus horários" (`loadMySchedules`: one more query of a handful of
   documents in the provider; `domain/schedules.ts` `scheduleLines`) and the lines in "Evolução" (`LineChart` in §37b's kit,
   with its sentence from `domain/chartText.ts`; the tables stay behind "Ver em tabela").
-- **Not built yet** (GOALS.md §38h–§38i, PR 3, after §36's Rules v8 so the version numbers stay linear): `sessionFeedback`,
-  `trainerContacts`, the feedback step after saving, and the personal's Registros / aluno page / "Hoje" additions.
+- **The feedback loop (GOALS.md §38h, Rules v8).** `sessionFeedback/{studentId}_{YYYY-MM-DD}` is one document per session
+  (the aluno's local day, the same key `groupSessions` gives) with two writers that each touch only their own fields:
+  the aluno `effort` (CR-10 int 0–10, shown as five words — `domain/sessionFeedback.ts` `EFFORT_CHOICES`), `pain`,
+  `studentComment` (≤ 500), `studentAt`, `studentSeenAt`; the owning personal `trainerComment` (≤ 1,000), `trainerAt`,
+  `trainerSeenAt`. Every `*At` is `serverTimestamp()` (the Rules compare with `request.time`), writes are
+  `setDoc(..., { merge: true })` with explicit fields (`data/sessionFeedback.ts`), identity is frozen, nothing is deleted,
+  the ADM has no read. The aluno answers "Como foi o treino?" right after "Salvar sessão" (skippable), sees it in
+  "Evolução" ("✓ Visto pelo personal", the comment marked "novo" until that visit stamps `studentSeenAt`) and a banner
+  on the home; the personal reads and answers in Registros ("Só não vistas", "Marcar como visto", "Comentar") and in the
+  "Treinos" list of the aluno's page (`app/app/FeedbackPanel.tsx`). The snapshot carries the last 8 days of feedback for
+  "Hoje" (`FEEDBACK_ATTENTION_DAYS`); Registros and the aluno's page read their own windows (indexes on
+  `sessionFeedback`: `trainerId`+`day`, `studentId`+`day` and `trainerId`+`studentId`+`day` — the owner deploys them before
+  the site, as for §38b). Both reads are **extras**: a refusal (Rules not published yet) leaves them empty, never breaks a page.
+- **The contact card (§38h, D9).** `trainerContacts/{trainerId}` = `{ name, whatsapp (digits, 10–13), updatedAt }`, written
+  only by that personal from `/app/conta` ("Mostrar meu WhatsApp para os meus alunos", opt-in, delete = off), read by them
+  and by their linked alunos (the aluno's home shows "Falar com <nome> no WhatsApp", read once in `StudentDataProvider`).
+- **The personal's side (§38i).** The aluno's page opens with a summary (`domain/studentSummary.ts`: último treino with
+  effort and pain, the week, the horários, WhatsApp/ligar, "Anamnese: em dia · desatualizada · pendente · nunca enviada")
+  and follows U9's order (Fichas → Treinos → Progressão → Medidas → Anamneses → Mensalidade → Permissões → Dados →
+  Gerenciar aluno, with a chip row of anchors on phones). "Hoje" gains three rows in `trainerAttention`: "Relatou dor"
+  (first, unseen, last 7 days), "Comentário não visto" (after "Sem treinar") and "Anamnese com ponto de atenção" (sent in the
+  last 30 days, with a flag, and the report not yet opened **on this device** — `domain/anamnesisAlerts.ts`, `localStorage`
+  key `anamnesis-opened:<uid>`, nothing written to Firestore).
+- **`assessments` create is shaped by v8**: `hasOnly` the phone's seven keys plus `anamnesis`, `consentVersion`,
+  `consentAt`; an `anamnesis` is a map `{ version: int, answers: map ≤ 40 keys }` with caps on its five free-text keys and
+  must come with a `consentVersion` and `consentAt == request.time`; consent without an anamnese is refused. Phone-shaped
+  documents are unchanged. If you add a free-text question to `domain/anamnesis.ts`, add its cap to `validAnamnesis`.
 
 Checks, from `web/`: `npm test`, `npm run lint`, `npx tsc --noEmit` (run `npx next typegen` first
 on a fresh checkout), `npm run build`, and `npm run test:rules` (emulators, Java 21).
@@ -430,7 +455,9 @@ and every set is kept byte for byte as `firestore-rules/versions/vN.rules` (v3 i
 Work that changes the rules bumps N by one for the whole unpublished set — **v4** carried the
 account/plan/billing rules (§29–§30) and the spent-invite read restriction (§31b), **v5** adds the 60-day own-name
 rule (§29g), **v6** adds the gated `appData/exerciseCatalog` document (§33), **v7** adds the `platformPayments`
-ledger and retires `platformBillingConfig` and the template's trial student cap (§35) — and adds `vN.rules`
+ledger and retires `platformBillingConfig` and the template's trial student cap (§35), **v8** adds `sessionFeedback`,
+`trainerContacts` and the shape of a new `assessments` document (§38h; §36e had reserved v8 but never wrote it, so
+§36's Rules take the next free number) — and adds `vN.rules`
 in the same PR, identical to `firestore.rules`. Until the trainer publishes it, a candidate may still change:
 edit both files together (`cp firestore.rules firestore-rules/versions/vN.rules`) and keep them identical.
 Once a version is published its file is frozen: later changes start the next number. `npm run check:rules-version`

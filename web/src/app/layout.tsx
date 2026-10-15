@@ -18,6 +18,10 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: { default: "ALLU personal", template: "%s — ALLU personal" },
   description: "Gestão de alunos, fichas de treino e evolução para personal trainers.",
+  // GOALS.md §40b: saved to a phone's home screen the site is an app with its own icon and name. The manifest
+  // (manifest.webmanifest), the favicon (icon.png) and the iOS icon (apple-icon.png) are Next file conventions next to
+  // this file, linked by Next with the base path. "default" keeps iOS's status bar opaque (no top inset to handle).
+  appleWebApp: { capable: true, title: "ALLU", statusBarStyle: "default" },
 };
 
 export const viewport: Viewport = {

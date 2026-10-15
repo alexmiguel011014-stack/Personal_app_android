@@ -9,7 +9,7 @@ const NAV: readonly NavItem[] = [
   { href: "/admin/mensalidades", label: "Mensalidades", shortLabel: "Mensal.", icon: "wallet" },
   { href: "/admin/planos", label: "Modelos de plano", shortLabel: "Planos", icon: "clipboard" },
   { href: "/admin/solicitacoes", label: "Solicitações", shortLabel: "Pedidos", icon: "inbox" },
-  { href: "/admin/conta", label: "Minha conta", shortLabel: "Conta", icon: "account" },
+  { href: "/admin/conta", label: "Configurações", shortLabel: "Config.", icon: "account" },
 ];
 
 export const metadata: Metadata = { title: { template: "%s — ALLU personal", default: "Visão geral" } };

@@ -183,7 +183,7 @@ export function AccountSettings() {
 
   return (
     <>
-      {session.status === "signedIn" && <AccountAvatarSettings uid={session.uid} name={accountEmail || "Minha conta"} />}
+      {session.status === "signedIn" && <AccountAvatarSettings uid={session.uid} name={accountEmail || "ALLU"} />}
       {session.status === "signedIn" && <AccountNameSettings uid={session.uid} />}
       {session.status === "signedIn" && session.profile.role === "TRAINER" && <TrainerPlatformBilling uid={session.uid} />}
       <section className="panel" aria-labelledby="account-email-title">

@@ -193,8 +193,10 @@ client (web, Android's reset, iOS), so the page must be live before the console 
 verification first and password reset last; clearing the URL is the rollback. Console steps and the order are
 in `web/README.md`; sender domain / SMTP / own sending are deferred decisions (GOALS.md §32h).
 
-**Account settings (§29).** Each role has a guarded account route: `/admin/conta`, `/app/conta`,
-and `/aluno/conta`; the profile/avatar chip links there while sign-out stays separate. `users/{uid}`
+**Account settings (§29) — "Configurações" (§40).** Each role has a guarded settings route: `/admin/conta`, `/app/conta`,
+and `/aluno/conta` (the label became "Configurações" in §40; **the URLs stay `/conta/`** — e-mails already sent link to them); the
+profile/avatar chip links there while sign-out stays separate. The page has two tabs, "Minha conta" (the form below) and "Instalar
+no celular" (`…/conta/instalar/`, §40). `users/{uid}`
 stores the optional contact `phone` and `avatarStoragePath`. Phone is unverified contact info, not
 Firebase phone authentication. Auth remains authoritative for e-mail/password: e-mail changes use
 `verifyBeforeUpdateEmail`, then reload/refresh the ID token and sync the verified address into the
@@ -210,6 +212,16 @@ authenticated client (no bearer download URL), and are limited by UI and `storag
 PNG or WebP up to 2 MiB. Keep initials as fallback. `firebase.json` configures the Storage emulator
 on port 9199. Production bucket/plan/App Check setup and deployment of reviewed rules are owner-run
 manual gates; never enable Blaze or publish rules automatically.
+
+**Install on a phone (§40).** "Instalar no celular" teaches how to put the site on an iPhone's or Android's home screen. The site
+is installable through `src/app/manifest.webmanifest` (static, **relative URLs only** so one file serves the Pages sub-path and a
+root domain; `start_url` `./entrar/`), `icon.png`/`apple-icon.png` (Next file conventions) and `public/icons/`; `npm run
+check:manifest` checks the built `out/` and runs in both web workflows. **No service worker, no offline mode, no custom install
+button** — decided in §40 (stale-deploy risk; the browser menu installs without one). The guide's words are data in
+`domain/installGuide.ts`; its pictures are WebP files made by `npm run shots:install` from raw phone captures that are
+**gitignored** (`web/design/install-shots/raw/`, never commit one — the repository is public). A picture may carry a `retouch`
+in `crops.json`; the current Android install sheet does, **temporarily** (GOALS.md §40g), and the real one replaces it after the
+manifest is live. On iOS an installed web app keeps its own storage, so the user signs in again there (§40j confirms on devices).
 
 **Platform subscriptions and website invite capacity (§30, reshaped by §35).** What a trainer pays the
 platform is separate from `billingPlans`/`payments`, which are what a trainer charges their own

@@ -44,7 +44,8 @@ export function RequireArea({ area, children }: { area: "/app" | "/admin" | "/al
     session.profile.platformBillingStatus === "blocked" ||
     ((session.profile.platformBillingStatus === "trial" || session.profile.platformBillingStatus === "current") && billingUntil !== null && billingUntil <= now)
   );
-  const trainerAccountRoute = pathname.replace(/\/+$/, "") === "/app/conta";
+  // A blocked trainer still reaches Configurações (account and install tabs): it reads no student data (§40c).
+  const trainerAccountRoute = ["/app/conta", "/app/conta/instalar"].includes(pathname.replace(/\/+$/, ""));
   if (billingBlocked && !trainerAccountRoute) {
     return <main className="public-main">
       <p className="eyebrow">Acesso ao personal</p>

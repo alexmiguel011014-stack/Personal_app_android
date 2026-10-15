@@ -47,3 +47,6 @@ next-env.d.ts
 firebase-debug.log*
 firestore-debug.log*
 ui-debug.log*
+
+# GOALS.md 40g: raw phone screenshots stay on this machine (they carry status bars and system UI); only the cropped WebP files under src/ are committed.
+/design/install-shots/raw/

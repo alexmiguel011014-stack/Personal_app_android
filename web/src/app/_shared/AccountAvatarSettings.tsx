@@ -47,7 +47,7 @@ export function AccountAvatarSettings({ uid, name }: { uid: string; name: string
   return <section className="panel account-avatar-settings" aria-labelledby="account-avatar-heading">
     <h2 id="account-avatar-heading">Imagem da conta</h2>
     <div className="account-avatar-row">
-      <Avatar name={name || "Minha conta"} uid={uid} />
+      <Avatar name={name || "ALLU"} uid={uid} />
       <div>
         <label>
           <span>{busy ? "Salvando imagem…" : "Cadastrar ou trocar imagem"}</span>

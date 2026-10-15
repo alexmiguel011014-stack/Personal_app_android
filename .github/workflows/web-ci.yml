@@ -47,6 +47,11 @@ jobs:
       - name: No reference table in the build
         run: npm run check:leak
 
+      # GOALS.md section 40b: the built site is installable under its own base path — the manifest link, the manifest's
+      # relative URLs, the icons' sizes and the iOS icon, read from the files a phone would fetch.
+      - name: Installable manifest
+        run: npm run check:manifest
+
       # The Functions lockfile targets Node 22; keep the Web checks on Node 24 above.
       - name: Set up Node 22 for emulator tests
         uses: actions/setup-node@v4
